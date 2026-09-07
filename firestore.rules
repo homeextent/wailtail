@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        request.auth.token.email != null && 
+        (request.auth.token.email.lower() == 'jeremygoodmurphy@gmail.com' ||
+         request.auth.token.email.lower() == 'jeremy@theinnovativegroup.ca');
+    }
+
+    // Auctions collection
+    match /auctions/{auctionId} {
+      // Anyone can read auction details
+      allow read: if true;
+      
+      // Only admin can create or update auction setup
+      // Authenticated users can only update currentBid / bidCount / endTime via valid bids
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentBid', 'highBidderId', 'highBidderName', 'highBidderEmail', 'bidCount', 'endTime', 'isReserveMet', 'updatedAt'])
+      );
+    }
+
+    // Bids collection
+    match /bids/{bidId} {
+      // Anyone can view the public bid stream
+      allow read: if true;
+      
+      // Verified users can submit a bid
+      allow create: if isAuthenticated();
+      
+      // Only admin can delete or edit bids in audit emergencies
+      allow update, delete: if isAdmin();
+    }
+
+    // Comments collection
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
+
+    // Users / Bidders collection
+    match /users/{userId} {
+      // Users can read and edit their own profile
+      // Admin can read all user profiles (for bidder registry)
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create, update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Consignment applications collection
+    match /consignment_applications/{applicationId} {
+      // Anyone can submit a consignment application
+      allow create: if true;
+      // Authenticated users and admins can read/manage
+      allow read, update, delete: if isAdmin() || (isAuthenticated() && resource.data.submittedByUid == request.auth.uid);
+    }
+
+    // Inquiries collection
+    match /inquiries/{inquiryId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}

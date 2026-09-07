@@ -1,0 +1,8 @@
+{
+  "name": "WailTail Auction",
+  "description": "An editorial-grade multi-vehicle auction web platform featuring live bidding, anti-sniping countdown timers, dynamic reserve status, showcase chapters, full categorized photo galleries, verified bidder Q&A, and a full-page listing authoring workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

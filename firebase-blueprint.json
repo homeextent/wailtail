@@ -1,0 +1,145 @@
+{
+  "entities": {
+    "Auction": {
+      "title": "Auction",
+      "description": "Represents the active vehicle auction lot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "vin": { "type": "string" },
+        "mileage": { "type": "string" },
+        "location": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "startingBid": { "type": "number" },
+        "minimumIncrement": { "type": "number" },
+        "currentBid": { "type": "number" },
+        "reserveAmount": { "type": "number" },
+        "isReserveMet": { "type": "boolean" },
+        "bidCount": { "type": "number" },
+        "highBidderId": { "type": "string" },
+        "highBidderName": { "type": "string" },
+        "highBidderEmail": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "currentBid", "endTime", "status"]
+    },
+    "Bid": {
+      "title": "Bid",
+      "description": "Represents an individual bid placed on the auction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "auctionId": { "type": "string" },
+        "amount": { "type": "number" },
+        "bidderId": { "type": "string" },
+        "bidderName": { "type": "string" },
+        "bidderEmail": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "antiSniped": { "type": "boolean" }
+      },
+      "required": ["auctionId", "amount", "bidderId", "bidderName", "timestamp"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Q&A comment or question posted on the auction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "auctionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userBadge": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "upvotes": { "type": "number" },
+        "upvotedBy": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["auctionId", "userId", "userName", "text", "timestamp"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Bidder profile and verification details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "phone": { "type": "string" },
+        "isEmailVerified": { "type": "boolean" },
+        "registeredAt": { "type": "number" },
+        "totalBidsPlaced": { "type": "number" },
+        "highestBidPlaced": { "type": "number" }
+      },
+      "required": ["uid", "email", "displayName", "registeredAt"]
+    },
+    "ConsignmentApplication": {
+      "title": "ConsignmentApplication",
+      "description": "Seller consignment inquiry and vehicle intake submission",
+      "type": "object",
+      "properties": {
+        "year": { "type": "string" },
+        "make": { "type": "string" },
+        "model": { "type": "string" },
+        "vin": { "type": "string" },
+        "mileage": { "type": "string" },
+        "transmission": { "type": "string" },
+        "location": { "type": "string" },
+        "reserveExpectation": { "type": "string" },
+        "sellerName": { "type": "string" },
+        "sellerEmail": { "type": "string" },
+        "sellerPhone": { "type": "string" },
+        "notes": { "type": "string" },
+        "submittedAt": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["year", "make", "model", "sellerName", "sellerEmail", "sellerPhone", "submittedAt", "status"]
+    },
+    "SellerInquiry": {
+      "title": "SellerInquiry",
+      "description": "Private buyer inquiry sent to consignor",
+      "type": "object",
+      "properties": {
+        "auctionId": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "buyerEmail": { "type": "string" },
+        "buyerPhone": { "type": "string" },
+        "buyerStatus": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["auctionId", "buyerName", "buyerEmail", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "auctions": {
+      "schema": "Auction",
+      "description": "Vehicle auction listings"
+    },
+    "bids": {
+      "schema": "Bid",
+      "description": "Real-time bids history"
+    },
+    "comments": {
+      "schema": "Comment",
+      "description": "Public comments and community Q&A thread"
+    },
+    "users": {
+      "schema": "UserProfile",
+      "description": "Registered bidder profiles and contact info"
+    },
+    "consignment_applications": {
+      "schema": "ConsignmentApplication",
+      "description": "Seller consignment inquiries and vehicle submissions"
+    },
+    "inquiries": {
+      "schema": "SellerInquiry",
+      "description": "Private buyer inquiry messages"
+    }
+  }
+}
