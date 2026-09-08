@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Consignment Intake Taxonomy & Location Upgrade**:
+  - Integrated 3-tier taxonomy dropdowns (Year, Make, Model, Generation/Chassis) backed by `src/data/vehicleTaxonomy.json` into `src/components/ConsignmentModal.tsx` with unconstrained `TAXONOMY_OTHER_CUSTOM` text fallback inputs.
+  - Implemented 3-column structured location inputs (`locationCity`, `locationProvince`, `locationCountry`) with dynamic composite location formatting (`formattedLocation`).
+  - Added Option A registered member auto-link detection banner triggered `onBlur` via `checkUserAccountByEmail()`, identifying existing members and attaching `registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole` to consignment application payloads.
+- **Serverless Admin Email Dispatcher**:
+  - Built Vercel serverless email proxy endpoint `/api/send-consignment-email` (`api/send-consignment-email.ts`) using the Resend API with SendGrid fallback and development mock delivery.
+  - Dispatches structured, branded HTML email digests compiling vehicle taxonomy, VIN, mileage, transmission, location, seller contacts, and member status tags (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` vs `GUEST / UNREGISTERED`) directly to curation staff.
+- **Admin Moderation Services & 3-Way Role Selector**:
+  - Engineered atomic Firestore moderation services in `src/services/auctionService.ts` executing dual-collection updates across `users` and `bidders`:
+    - `updateUserRole(userId, newRole)`: Tri-role switching (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`).
+    - `setUserBannedStatus(userId, isBanned)` / `banOrRemoveBidder()` / `unbanBidder()`: Atomic ban/unban toggling with audit timestamps.
+    - `setUserEmailVerified(userId, isVerified)`: Staff manual email verification override.
+    - `deleteUserRecord(userId)`: Atomic multi-document purge removing user profiles permanently.
+- **1-Click Consignment Approval Draft Conversion**:
+  - Added `convertConsignmentToDraftListing()` in `src/services/auctionService.ts`.
+  - Automatically provisions a new vehicle document in `auctions/{newAuctionId}` populated with applicant vehicle particulars, structured location, generated title, and parsed CAD reserve defaults.
+  - Promotes consignor to `SELLER` role and updates consignment application status to `approved` with `convertedAuctionId`, redirecting administrators straight into `/dashboard/listings/[id]/edit`.
+- **Full-Page Admin Operations Portal (`/admin`)**:
+  - Implemented `src/components/AdminPortalPage.tsx`, a dedicated full-screen administrative dashboard route gated to `ADMIN` users.
+  - Integrated server-assisted paginated search across Bidder Registry (`fetchPaginatedBidders`) and Consignment Applications (`fetchPaginatedConsignments`) with text querying and status filtering pills.
+  - Embedded inline moderation controls for instant role switches, ban toggling, email verification, deletion, and draft conversions.
+- **Unified User Account Activity Hub (`UserAccountHubModal`)**:
+  - Built `src/components/UserAccountHubModal.tsx`, a role-aware personal activity hub accessible to all registered users from the navigation bar.
+  - Active bid tracking with real-time `★ LEADING` and `⚠️ OUTBID` telemetry, high bids, and quick "Increase Bid" deep-links.
+  - Won auctions overview with 4-stage Canadian offline CAD settlement checklist (1. Bank Wire / Certified Draft, 2. Title & Bill of Sale, 3. Transport / Collection, 4. VIN Check & Key Handover) and direct seller contact credentials.
+  - Seller lot telemetry displaying draft and active listings with 1-click workspace launch hooks.
+  - Real-time consignment application status tracker (`PENDING`, `APPROVED`, `REVIEWED`, `REJECTED`).
+- **Real-Time User Profile Listener**:
+  - Implemented `subscribeToUserProfile()` in `src/App.tsx` utilizing a real-time Firestore `onSnapshot` listener on `users/{user.uid}`.
+  - Instantly updates local profile state, authorization guards, and navigation privileges across the platform upon role changes without requiring a browser refresh.
+
+---
+
 ## [1.3.0] - 2026-09-08
 
 ### Added

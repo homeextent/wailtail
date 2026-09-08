@@ -13,7 +13,13 @@ export interface Auction {
   vin: string;
   mileage: string;
   location: string;
+  locationCity?: string;
+  locationProvince?: string;
+  locationCountry?: string;
   sellerName: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+  sellerId?: string;
   engine?: string;
   drivetrain?: string;
   exteriorColor?: string;
@@ -37,7 +43,7 @@ export interface Auction {
   highBidderName?: string;
   highBidderEmail?: string;
   watchlist?: string[];
-  status: 'upcoming' | 'active' | 'ended' | 'sold' | 'reserve_not_met';
+  status: 'upcoming' | 'active' | 'ended' | 'sold' | 'reserve_not_met' | 'preview';
   createdAt: number;
   updatedAt: number;
 }
@@ -71,19 +77,30 @@ export interface Comment {
   editedAt?: number;
 }
 
+export type UserRole = 'ADMIN' | 'SELLER' | 'BIDDER';
+
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
   phone?: string;
-  role?: 'admin' | 'seller' | 'bidder';
+  role?: 'admin' | 'seller' | 'bidder' | UserRole;
   isEmailVerified: boolean;
   registeredAt: number;
   totalBidsPlaced?: number;
   highestBidPlaced?: number;
   bannedFromBidding?: boolean;
+  isBanned?: boolean;
   bannedAt?: number;
   banReason?: string;
+}
+
+export interface BidderProfile extends UserProfile {
+  isBanned?: boolean;
+}
+
+export interface User extends UserProfile {
+  isBanned?: boolean;
 }
 
 export interface ShowcaseImage {
@@ -272,15 +289,83 @@ export interface ConsignmentApplication {
   year: string | number;
   make: string;
   model: string;
+  generation?: string;
   vin?: string;
   mileage?: string;
   transmission?: string;
   location?: string;
+  locationCity?: string;
+  locationProvince?: string;
+  locationCountry?: string;
   reserveExpectation?: string;
   sellerName: string;
   sellerEmail: string;
   sellerPhone: string;
   notes?: string;
   submittedAt: number;
-  status: 'pending' | 'reviewed' | 'approved' | 'declined';
+  status?: 'pending' | 'reviewed' | 'approved' | 'declined' | 'rejected';
+  convertedAuctionId?: string;
+  registeredUserId?: string;
+  isRegisteredUser?: boolean;
+  registeredUserRole?: string;
+}
+
+export interface UserBidActivity {
+  auctionId: string;
+  auctionTitle: string;
+  auctionHeroImage: string;
+  currentHighBid: number;
+  userHighestBid: number;
+  status: 'LEADING' | 'OUTBID';
+  endTime: number;
+  bidCount: number;
+  currency: string;
+  isReserveMet?: boolean;
+}
+
+export interface UserWonAuction {
+  auctionId: string;
+  auctionTitle: string;
+  auctionHeroImage: string;
+  winningBid: number;
+  currency: string;
+  endTime: number;
+  sellerName: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+  location?: string;
+  vin?: string;
+}
+
+export interface UserSellerListing {
+  auctionId: string;
+  title: string;
+  heroImage: string;
+  status: Auction['status'];
+  currentBid: number;
+  bidCount: number;
+  currency: string;
+  draftEditUrl: string;
+  endTime: number;
+  startTime?: number;
+}
+
+export interface UserConsignmentItem {
+  id: string;
+  year: string | number;
+  make: string;
+  model: string;
+  generation?: string;
+  submittedAt: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEWED' | string;
+  convertedAuctionId?: string;
+  reserveExpectation?: string;
+  location?: string;
+}
+
+export interface UserActivitySummary {
+  activeBids: UserBidActivity[];
+  wonAuctions: UserWonAuction[];
+  sellerListings: UserSellerListing[];
+  consignments: UserConsignmentItem[];
 }

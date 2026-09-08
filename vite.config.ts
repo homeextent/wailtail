@@ -8,6 +8,19 @@ function localApiPlugin(): Plugin {
     name: 'local-api-handler',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
+        if (req.url && req.url.startsWith('/api/send-consignment-email')) {
+          try {
+            const { default: handler } = await server.ssrLoadModule('./api/send-consignment-email.ts');
+            await handler(req, res);
+            return;
+          } catch (err: any) {
+            console.error('Error in local /api/send-consignment-email handler:', err);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: false, error: err?.message || 'Internal server error' }));
+            return;
+          }
+        }
         if (req.url && req.url.startsWith('/api/youtube-playlist')) {
           try {
             const { default: handler } = await server.ssrLoadModule('./api/youtube-playlist.ts');

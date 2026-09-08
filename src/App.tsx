@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Auction, Bid, Comment, MediaConfiguration } from './types';
+import { Auction, Bid, Comment, MediaConfiguration, UserProfile } from './types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from './mediaConfig';
 import { 
   initializeAuctionIfNotExists, 
@@ -10,6 +10,7 @@ import {
   subscribeToBids, 
   subscribeToComments, 
   subscribeToMediaConfig,
+  subscribeToUserProfile,
   saveMediaConfig,
   toggleWatchAuction,
   createNewListing,
@@ -33,10 +34,12 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { ShareModal } from './components/ShareModal';
 import { ContactSellerModal } from './components/ContactSellerModal';
 import { ConsignmentModal } from './components/ConsignmentModal';
+import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
+import { AdminPortalPage } from './components/AdminPortalPage';
 
 // Icons for listing facts & features
 import { 
@@ -53,7 +56,35 @@ import {
 } from 'lucide-react';
 
 const AuctionAppContent: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin } = useAuth();
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(initialUserProfile);
+
+  // Sync initial profile from auth context
+  useEffect(() => {
+    if (initialUserProfile) {
+      setUserProfile(initialUserProfile);
+    }
+  }, [initialUserProfile]);
+
+  // Real-time Firestore profile listener (reflects role promotions/demotions BIDDER <-> SELLER <-> ADMIN instantly)
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(null);
+      return;
+    }
+    const unsubscribe = subscribeToUserProfile(user.uid, (profile) => {
+      setUserProfile(profile);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [user?.uid]);
+
+  const isAdmin = Boolean(
+    authIsAdmin || 
+    userProfile?.role?.toUpperCase() === 'ADMIN' || 
+    (user as any)?.role === 'ADMIN'
+  );
 
   const [auction, setAuction] = useState<Auction>(BLANK_AUCTION);
   const [bids, setBids] = useState<Bid[]>([]);
@@ -70,12 +101,19 @@ const AuctionAppContent: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
+  const [isAccountHubOpen, setIsAccountHubOpen] = useState(false);
+  const [accountHubActiveTab, setAccountHubActiveTab] = useState<'bids' | 'listings' | 'consignments'>('bids');
+
+  const handleOpenAccountHub = (tab: 'bids' | 'listings' | 'consignments' = 'bids') => {
+    setIsAccountHubOpen(true);
+    setAccountHubActiveTab(tab);
+  };
   const [selectedLightboxIndex, setSelectedLightboxIndex] = useState<number | null>(null);
   const [isWatching, setIsWatching] = useState(() => {
     return localStorage.getItem('wailtail_watching') === 'true';
   });
 
-  // Dedicated Full-Page Workspace Routing (/dashboard/listings/[id]/edit)
+  // Dedicated Full-Page Workspace Routing (/dashboard/listings/[id]/edit, /admin)
   const [currentPath, setCurrentPath] = useState(() => {
     return window.location.pathname + window.location.search + window.location.hash;
   });
@@ -98,25 +136,36 @@ const AuctionAppContent: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const isAdminRoute = 
+    currentPath === '/admin' || 
+    currentPath.startsWith('/admin?') || 
+    currentPath.startsWith('/admin/') || 
+    currentPath.startsWith('/admin#') || 
+    currentPath.includes('#/admin');
+
   const isEditorRoute = 
     (currentPath.startsWith('/dashboard/listings') || 
     currentPath.includes('/edit') || 
     currentPath.includes('#/dashboard/listings')) &&
-    !currentPath.includes('/dashboard/listings/new');
+    !currentPath.includes('/dashboard/listings/new') &&
+    !isAdminRoute;
 
   const isNewListingRoute = 
-    currentPath === '/dashboard/listings/new' || 
+    (currentPath === '/dashboard/listings/new' || 
     currentPath.startsWith('/dashboard/listings/new') || 
-    currentPath.includes('#/dashboard/listings/new');
+    currentPath.includes('#/dashboard/listings/new')) &&
+    !isAdminRoute;
 
   const isSpecificAuctionRoute = 
-    currentPath.startsWith('/auctions/') || 
+    !isAdminRoute &&
+    (currentPath.startsWith('/auctions/') || 
     currentPath.startsWith('/lot/') || 
     currentPath.startsWith('/vehicle/') || 
-    currentPath.startsWith('/#auctions/');
+    currentPath.startsWith('/#auctions/'));
 
   // The multi-car Vehicle Auction Catalog view (/catalog) is the primary homepage route (/)
   const isCatalogRoute = 
+    !isAdminRoute &&
     !isEditorRoute && 
     !isNewListingRoute && 
     !isSpecificAuctionRoute;
@@ -145,6 +194,19 @@ const AuctionAppContent: React.FC = () => {
   };
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
+
+  // RBAC Authorization Guard for /admin
+  useEffect(() => {
+    if (isAdminRoute && !authLoading) {
+      const isAuthorized = Boolean(
+        user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
+      );
+      if (!isAuthorized) {
+        setRouteToast("Access Restricted: Administrator privileges required.");
+        navigateTo('/');
+      }
+    }
+  }, [isAdminRoute, authLoading, user, userProfile, isAdmin]);
 
   // Auto-create and redirect if user directly lands on /dashboard/listings/new
   useEffect(() => {
@@ -298,6 +360,70 @@ const AuctionAppContent: React.FC = () => {
     }
   };
 
+  // Session Loading State for /admin to prevent flash redirects on page refresh
+  if (isAdminRoute && authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0d1114] text-white flex flex-col font-sans animate-pulse">
+        {/* Top Header Skeleton */}
+        <div className="h-16 bg-[#121619] border-b border-zinc-800 flex items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-zinc-800" />
+            <div className="h-4 w-36 bg-zinc-800 rounded" />
+          </div>
+          <div className="h-8 w-28 bg-zinc-800 rounded-lg" />
+        </div>
+
+        {/* Analytics Header Skeleton */}
+        <div className="bg-[#151a1e] border-b border-zinc-800/90 py-8 px-6">
+          <div className="max-w-7xl mx-auto space-y-4">
+            <div className="h-6 w-48 bg-zinc-800 rounded" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="h-24 rounded-xl bg-zinc-900 border border-zinc-800 p-4 space-y-2">
+                  <div className="h-3 w-20 bg-zinc-800 rounded" />
+                  <div className="h-7 w-12 bg-zinc-800 rounded" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="max-w-7xl mx-auto px-6 py-8 w-full flex-1 space-y-6">
+          <div className="h-16 rounded-2xl bg-zinc-900 border border-zinc-800" />
+          <div className="h-96 rounded-2xl bg-zinc-900 border border-zinc-800" />
+        </div>
+      </div>
+    );
+  }
+
+  // Dedicated Full-Page Admin Operations Portal Route (/admin)
+  if (isAdminRoute) {
+    const isAuthorized = Boolean(
+      user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
+    );
+    if (isAuthorized) {
+      return (
+        <AdminPortalPage
+          auction={auction}
+          allAuctions={allAuctions}
+          bids={bids}
+          mediaConfig={currentMedia}
+          onUpdateMediaConfig={handleUpdateMediaConfig}
+          onNavigateHome={() => navigateTo('/')}
+          onOpenListingEditor={(targetId) => {
+            const target = targetId || activeAuctionId || auction.id;
+            setActiveAuctionId(target);
+            navigateTo(`/dashboard/listings/${target}/edit`);
+          }}
+          onSelectAuction={(newAuctionId) => {
+            setActiveAuctionId(newAuctionId);
+          }}
+        />
+      );
+    }
+  }
+
   // Dedicated Full-Page Authoring Route (/dashboard/listings/[id]/edit)
   if (isEditorRoute) {
     return (
@@ -339,8 +465,10 @@ const AuctionAppContent: React.FC = () => {
           </div>
         )}
         <Navbar
+          userProfile={userProfile}
           onOpenAuth={() => setIsAuthModalOpen(true)}
-          onOpenAdmin={() => setIsAdminModalOpen(true)}
+          onOpenAdmin={() => navigateTo('/admin')}
+          onOpenAccountHub={handleOpenAccountHub}
           onOpenListingEditor={() => navigateTo(`/dashboard/listings/${activeAuctionId}/edit`)}
           onOpenShare={() => setIsShareModalOpen(true)}
           isWatching={isWatching}
@@ -423,10 +551,23 @@ const AuctionAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex flex-col font-sans selection:bg-red-700 selection:text-white">
+      {routeToast && (
+        <div className="fixed top-4 right-4 z-50 max-w-md bg-red-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-red-700 flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <span>{routeToast}</span>
+          <button
+            onClick={() => setRouteToast(null)}
+            className="text-red-200 hover:text-white p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* 1. Navbar */}
       <Navbar
+        userProfile={userProfile}
         onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenAdmin={() => setIsAdminModalOpen(true)}
+        onOpenAdmin={() => navigateTo('/admin')}
+        onOpenAccountHub={handleOpenAccountHub}
         onOpenListingEditor={() => navigateTo(`/dashboard/listings/${auction.id}/edit`)}
         onOpenShare={() => setIsShareModalOpen(true)}
         isWatching={isWatching}
@@ -702,6 +843,30 @@ const AuctionAppContent: React.FC = () => {
         isOpen={isConsignmentModalOpen}
         onClose={() => setIsConsignmentModalOpen(false)}
         onLaunchDirectListing={handleLaunchListingWorkspace}
+      />
+
+      <UserAccountHubModal
+        isOpen={isAccountHubOpen}
+        onClose={() => setIsAccountHubOpen(false)}
+        initialTab={accountHubActiveTab}
+        userProfile={userProfile}
+        onNavigateToAuction={(targetId: string) => {
+          setActiveAuctionId(targetId);
+          navigateTo(`/auctions/${targetId}`);
+        }}
+        onOpenListingEditor={(targetId: string) => {
+          setActiveAuctionId(targetId);
+          navigateTo(`/dashboard/listings/${targetId}/edit`);
+        }}
+        onOpenBidModal={(targetId: string) => {
+          setActiveAuctionId(targetId);
+          if (activeAuctionId !== targetId) {
+            navigateTo(`/auctions/${targetId}`);
+          }
+          setIsBidModalOpen(true);
+        }}
+        onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+        onBrowseCatalog={() => navigateTo('/')}
       />
 
       {isAdmin && (

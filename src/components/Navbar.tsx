@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { UserProfile } from '../types';
 import { WailtailLogo } from './WailtailLogo';
 import { 
   ShieldCheck, 
@@ -13,12 +14,17 @@ import {
   Bookmark,
   FileText,
   Car,
-  Tag
+  Tag,
+  ChevronDown,
+  Gavel,
+  ClipboardList
 } from 'lucide-react';
 
 interface NavbarProps {
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
+  onOpenAccountHub?: (initialTab?: 'bids' | 'listings' | 'seller' | 'consignments') => void;
+  userProfile?: UserProfile | null;
   onOpenListingEditor?: () => void;
   onOpenShare: () => void;
   isWatching: boolean;
@@ -39,6 +45,8 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenAuth,
   onOpenAdmin,
+  onOpenAccountHub,
+  userProfile: userProfileProp,
   onOpenListingEditor,
   onOpenShare,
   isWatching,
@@ -55,7 +63,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   isCatalogView = false,
   totalAuctionsCount
 }) => {
-  const { user, userProfile, isAdmin, isEmailVerified, signOut } = useAuth();
+  const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller, isEmailVerified, signOut } = useAuth();
+  const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
+  const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
+  const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isUserMenuOpen]);
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -206,45 +233,132 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
 
               <button
-                onClick={onOpenAdmin}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (onOpenAdmin) {
+                    onOpenAdmin();
+                  } else {
+                    window.history.pushState({}, '', '/admin');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }
+                }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-950/90 hover:bg-red-900 border border-red-600 text-red-200 transition-all flex items-center gap-1.5 shadow-sm ring-1 ring-red-500/40 cursor-pointer"
-                title="Open Private Owner Dashboard"
+                title="Open Operations Admin Portal (/admin)"
               >
-                <Settings className="w-3.5 h-3.5 text-red-400" />
-                <span className="hidden sm:inline">Owner Dashboard</span>
-                <span className="sm:hidden">Owner</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-red-400" />
+                <span className="hidden sm:inline">Admin</span>
+                <span className="sm:hidden">Admin</span>
               </button>
             </div>
           )}
 
           {/* User Auth Profile State */}
           {user ? (
-            <div className="flex items-center gap-2 pl-2 border-l border-zinc-800">
-              <div className="text-right hidden sm:block">
-                <div className="text-xs font-bold text-zinc-100 flex items-center justify-end gap-1">
-                  <span>{userProfile?.displayName || 'Registered Bidder'}</span>
-                  {isEmailVerified ? (
-                    <span title="Verified Bidder" className="text-emerald-400">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                    </span>
-                  ) : (
-                    <span title="Email Verification Required" className="text-amber-400">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-zinc-400">
-                  {isAdmin ? 'Administrator' : isEmailVerified ? 'Verified Bidder (CAD)' : 'Verification Needed'}
-                </div>
-              </div>
-
+            <div className="relative pl-2 border-l border-zinc-800" ref={userMenuRef}>
               <button
-                onClick={signOut}
-                className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-red-300 transition-colors"
-                title="Sign Out"
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 transition-all text-left cursor-pointer group"
+                aria-expanded={isUserMenuOpen}
+                aria-haspopup="true"
+                title="Account Menu & Activity Hub"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                {/* User Avatar Circle */}
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-600 to-amber-400 text-black font-black flex items-center justify-center text-xs shadow-xs flex-shrink-0 uppercase">
+                  {(userProfile?.displayName || user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
+                </div>
+
+                <div className="text-left hidden sm:block">
+                  <div className="text-xs font-bold text-zinc-100 flex items-center gap-1 leading-tight group-hover:text-amber-300 transition-colors">
+                    <span className="truncate max-w-[120px]">{userProfile?.displayName || 'Registered Bidder'}</span>
+                    {isEmailVerified ? (
+                      <span title="Verified Bidder" className="text-emerald-400 flex-shrink-0">
+                        <CheckCircle className="w-3 h-3" />
+                      </span>
+                    ) : (
+                      <span title="Email Verification Required" className="text-amber-400 flex-shrink-0">
+                        <AlertCircle className="w-3 h-3" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 font-mono">
+                    {isAdmin ? 'Administrator' : isSeller ? 'Verified Seller' : 'Verified Bidder'}
+                  </div>
+                </div>
+
+                <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180 text-amber-400' : ''}`} />
               </button>
+
+              {/* Floating Dropdown Menu */}
+              {isUserMenuOpen && (
+                <div className="absolute right-0 mt-2 w-64 rounded-xl bg-slate-900 text-white border border-slate-800 shadow-2xl py-2 z-50 animate-fadeIn">
+                  {/* Dropdown User Info Header */}
+                  <div className="px-4 py-2.5 border-b border-slate-800">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-white truncate">
+                        {userProfile?.displayName || user?.displayName || 'Registered Member'}
+                      </span>
+                      <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase rounded bg-slate-800 text-amber-300 border border-slate-700">
+                        {isAdmin ? 'ADMIN' : isSeller ? 'SELLER' : 'BIDDER'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate mt-0.5 font-mono">
+                      {userProfile?.email || user?.email}
+                    </p>
+                  </div>
+
+                  {/* Menu Items */}
+                  <div className="py-1">
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        onOpenAccountHub?.('bids');
+                      }}
+                      className="w-full px-4 py-2.5 text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                    >
+                      <Gavel className="w-4 h-4 text-amber-400" />
+                      <span>My Bids & Activity</span>
+                    </button>
+
+                    {(isSeller || isAdmin) && (
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          onOpenAccountHub?.('listings');
+                        }}
+                        className="w-full px-4 py-2.5 text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                      >
+                        <Car className="w-4 h-4 text-emerald-400" />
+                        <span>My Vehicle Listings</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        onOpenAccountHub?.('consignments');
+                      }}
+                      className="w-full px-4 py-2.5 text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                    >
+                      <ClipboardList className="w-4 h-4 text-sky-400" />
+                      <span>Consignment Requests</span>
+                    </button>
+                  </div>
+
+                  {/* Divider and Sign Out */}
+                  <div className="border-t border-slate-800 pt-1 mt-1">
+                    <button
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        signOut();
+                      }}
+                      className="w-full px-4 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-950/40 hover:text-rose-300 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <button

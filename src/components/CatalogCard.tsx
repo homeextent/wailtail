@@ -250,7 +250,11 @@ export const CatalogCard: React.FC<CatalogCardProps> = ({
 
             <button
               type="button"
-              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-red-700 text-white text-xs font-bold transition-colors flex items-center gap-1 group-hover:translate-x-0.5"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAuction(lot.id);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-red-700 text-white text-xs font-bold transition-colors flex items-center gap-1 group-hover:translate-x-0.5 cursor-pointer"
             >
               <span>View Lot</span>
               <ChevronRight className="w-3.5 h-3.5" />

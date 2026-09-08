@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Auction, Bid, UserProfile, MediaConfiguration, GalleryImage, ShowcaseSection, VideoChapter, ConsignmentApplication } from '../types';
+import { Auction, Bid, UserProfile, UserRole, MediaConfiguration, GalleryImage, ShowcaseSection, VideoChapter, ConsignmentApplication } from '../types';
 import { 
   updateAuctionConfig, 
   subscribeToAllBidders, 
@@ -7,6 +7,10 @@ import {
   clearAllBidsAndReset,
   banOrRemoveBidder,
   unbanBidder,
+  updateUserRole,
+  setUserBannedStatus,
+  setUserEmailVerified,
+  deleteUserRecord,
   createNewListing,
   deleteListing,
   duplicateListing,
@@ -14,10 +18,12 @@ import {
   purgeAllListings,
   subscribeToConsignments,
   approveConsignmentAndPromoteSeller,
+  convertConsignmentToDraftListing,
   compressImageDataUrl,
   uploadImageToStorage,
   MAIN_AUCTION_ID
 } from '../services/auctionService';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { WailtailLogo } from './WailtailLogo';
@@ -71,7 +77,9 @@ import {
   DownloadCloud,
   Copy,
   Wand2,
-  MapPin
+  MapPin,
+  Zap,
+  UserCheck
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 
@@ -235,12 +243,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [bidders, setBidders] = useState<UserProfile[]>([]);
   const [consignments, setConsignments] = useState<ConsignmentApplication[]>([]);
   
+  const { user: authUser, userProfile: authUserProfile } = useAuth();
+  const [moderatingBidderId, setModeratingBidderId] = useState<string | null>(null);
+  const [convertingConsignmentId, setConvertingConsignmentId] = useState<string | null>(null);
+  
   // Inventory Management State
   const [inventory, setInventory] = useState<Auction[]>(allAuctions || [auction]);
   const [inventorySearch, setInventorySearch] = useState<string>('');
   const [inventoryFilter, setInventoryFilter] = useState<'all' | 'live' | 'upcoming' | 'ended'>('all');
   const [confirmDeleteLot, setConfirmDeleteLot] = useState<Auction | null>(null);
   const [deletingListing, setDeletingListing] = useState<boolean>(false);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<UserProfile | null>(null);
+  const [deletingUser, setDeletingUser] = useState<boolean>(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [showNewListingModal, setShowNewListingModal] = useState<boolean>(false);
   const [newListingTitle, setNewListingTitle] = useState<string>('');
@@ -808,6 +822,44 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       setMessage({ type: 'error', text: `Failed to delete listing: ${err.message || 'Unknown error'}` });
     } finally {
       setDeletingListing(false);
+    }
+  };
+
+  // Delete User Account handler
+  const handleDeleteUserSubmit = async () => {
+    if (!confirmDeleteUser) return;
+    const currentAdminId = authUser?.uid || authUserProfile?.uid;
+    const isSelf = Boolean(
+      (currentAdminId && currentAdminId === confirmDeleteUser.uid) ||
+      (authUser?.email && confirmDeleteUser.email && authUser.email.toLowerCase() === confirmDeleteUser.email.toLowerCase())
+    );
+    if (isSelf) {
+      setMessage({
+        type: 'error',
+        text: 'Self-Deletion Guard: You cannot delete your own active administrator account.'
+      });
+      setTimeout(() => setMessage(null), 4000);
+      setConfirmDeleteUser(null);
+      return;
+    }
+
+    const targetId = confirmDeleteUser.uid;
+    const targetEmail = confirmDeleteUser.email || 'User';
+    setDeletingUser(true);
+    try {
+      await deleteUserRecord(targetId);
+      setBidders(prev => prev.filter(b => b.uid !== targetId));
+      setMessage({
+        type: 'success',
+        text: `Account for ${targetEmail} has been permanently deleted.`
+      });
+      setConfirmDeleteUser(null);
+      setTimeout(() => setMessage(null), 3500);
+    } catch (err: any) {
+      console.error('Error deleting user record:', err);
+      setMessage({ type: 'error', text: `Failed to delete user account: ${err.message || 'Unknown error'}` });
+    } finally {
+      setDeletingUser(false);
     }
   };
 
@@ -3856,47 +3908,201 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       No registered bidders found in registry.
                     </div>
                   ) : (
-                    bidders.map((userItem, uIdx) => (
-                      <div key={userItem.uid || uIdx} className="py-3 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-zinc-100 font-bold text-zinc-700 flex items-center justify-center uppercase">
-                            {userItem.displayName ? userItem.displayName[0] : 'U'}
-                          </div>
-                          <div>
-                            <div className="font-bold text-zinc-900 flex items-center gap-2">
-                              <span>{userItem.displayName || 'Anonymous Bidder'}</span>
-                              <span className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-bold ${
-                                userItem.role === 'admin' 
-                                  ? 'bg-red-100 text-red-800' 
-                                  : userItem.role === 'seller'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : 'bg-zinc-100 text-zinc-700'
-                              }`}>
-                                {userItem.role || 'bidder'}
+                    bidders.map((userItem, uIdx) => {
+                      const currentAdminId = authUser?.uid || authUserProfile?.uid;
+                      const isSelf = Boolean(
+                        (currentAdminId && currentAdminId === userItem.uid) ||
+                        (authUser?.email && userItem.email && authUser.email.toLowerCase() === userItem.email.toLowerCase())
+                      );
+                      const isUserBanned = Boolean(userItem.isBanned || userItem.bannedFromBidding);
+                      const isUserAdmin = userItem.role?.toUpperCase() === 'ADMIN';
+                      const isUserSeller = userItem.role?.toUpperCase() === 'SELLER';
+                      const currentRoleUpper: UserRole = isUserAdmin ? 'ADMIN' : isUserSeller ? 'SELLER' : 'BIDDER';
+
+                      const handleRoleChange = async (newRole: UserRole) => {
+                        if (isSelf && isUserAdmin && newRole !== 'ADMIN') {
+                          setMessage({
+                            type: 'error',
+                            text: 'Self-Demotion Guard: You cannot demote your own active administrator account.'
+                          });
+                          setTimeout(() => setMessage(null), 4000);
+                          return;
+                        }
+                        setModeratingBidderId(userItem.uid);
+                        try {
+                          await updateUserRole(userItem.uid, newRole);
+                          setBidders(prev => prev.map(b => b.uid === userItem.uid ? { ...b, role: newRole.toLowerCase() as any } : b));
+                          setMessage({
+                            type: 'success',
+                            text: `Role updated to ${newRole} for ${userItem.displayName || userItem.email}.`
+                          });
+                          setTimeout(() => setMessage(null), 3000);
+                        } catch (err: any) {
+                          setMessage({ type: 'error', text: `Failed to update role: ${err.message || 'Unknown error'}` });
+                        } finally {
+                          setModeratingBidderId(null);
+                        }
+                      };
+
+                      const handleToggleEmailVerified = async () => {
+                        const nextVerified = !userItem.isEmailVerified;
+                        setModeratingBidderId(userItem.uid);
+                        try {
+                          await setUserEmailVerified(userItem.uid, nextVerified);
+                          setBidders(prev => prev.map(b => b.uid === userItem.uid ? { ...b, isEmailVerified: nextVerified } : b));
+                          setMessage({
+                            type: 'success',
+                            text: `Email status set to ${nextVerified ? 'Verified' : 'Unverified'} for ${userItem.displayName || userItem.email}.`
+                          });
+                          setTimeout(() => setMessage(null), 3000);
+                        } catch (err: any) {
+                          setMessage({ type: 'error', text: `Failed to update verification: ${err.message || 'Unknown error'}` });
+                        } finally {
+                          setModeratingBidderId(null);
+                        }
+                      };
+
+                      const handleToggleBan = async () => {
+                        if (isSelf && !isUserBanned) {
+                          setMessage({
+                            type: 'error',
+                            text: 'Self-Demotion Guard: You cannot ban your own active administrator account.'
+                          });
+                          setTimeout(() => setMessage(null), 4000);
+                          return;
+                        }
+                        const nextBanned = !isUserBanned;
+                        setModeratingBidderId(userItem.uid);
+                        try {
+                          await setUserBannedStatus(userItem.uid, nextBanned);
+                          setBidders(prev => prev.map(b => b.uid === userItem.uid ? { ...b, isBanned: nextBanned, bannedFromBidding: nextBanned } : b));
+                          setMessage({
+                            type: 'success',
+                            text: `${nextBanned ? 'Banned' : 'Unbanned'} ${userItem.displayName || userItem.email}.`
+                          });
+                          setTimeout(() => setMessage(null), 3000);
+                        } catch (err: any) {
+                          setMessage({ type: 'error', text: `Failed to update ban status: ${err.message || 'Unknown error'}` });
+                        } finally {
+                          setModeratingBidderId(null);
+                        }
+                      };
+
+                      return (
+                        <div key={userItem.uid || uIdx} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`w-9 h-9 rounded-full font-bold flex items-center justify-center uppercase shrink-0 ${
+                              isUserBanned ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-700'
+                            }`}>
+                              {userItem.displayName ? userItem.displayName[0] : 'U'}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold text-zinc-900 flex items-center gap-2 flex-wrap">
+                                <span className={isUserBanned ? 'line-through text-red-700' : ''}>
+                                  {userItem.displayName || 'Anonymous Bidder'}
+                                </span>
+
+                                {/* Interactive 3-Way Role Selector (ADMIN, SELLER, BIDDER) */}
+                                <select
+                                  value={currentRoleUpper}
+                                  disabled={moderatingBidderId === userItem.uid || (isSelf && isUserAdmin)}
+                                  onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+                                  title={isSelf && isUserAdmin ? 'Self-Demotion Guard: Cannot change own role' : 'Select user role'}
+                                  className={`px-2 py-0.5 rounded text-[10px] uppercase font-extrabold tracking-wider transition-all border cursor-pointer ${
+                                    currentRoleUpper === 'ADMIN'
+                                      ? 'bg-red-100 hover:bg-red-200 text-red-800 border-red-300'
+                                      : currentRoleUpper === 'SELLER'
+                                      ? 'bg-purple-100 hover:bg-purple-200 text-purple-800 border-purple-300'
+                                      : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border-zinc-300'
+                                  } disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-zinc-400`}
+                                >
+                                  <option value="ADMIN">ADMIN</option>
+                                  <option value="SELLER">SELLER</option>
+                                  <option value="BIDDER">BIDDER</option>
+                                </select>
+
+                                {isUserBanned && (
+                                  <span className="px-1.5 py-0.2 rounded bg-red-600 text-white font-black text-[9px] uppercase tracking-wider">
+                                    BANNED
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-zinc-500 font-mono text-[11px] block truncate ${isUserBanned ? 'line-through opacity-60' : ''}`}>
+                                {userItem.email}
                               </span>
                             </div>
-                            <span className="text-zinc-500 font-mono text-[11px]">{userItem.email}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap self-end sm:self-center shrink-0">
+                            {/* Verification Badge toggle (Verified vs Mark Verified) */}
+                            <button
+                              type="button"
+                              disabled={moderatingBidderId === userItem.uid}
+                              onClick={handleToggleEmailVerified}
+                              title="Click to toggle email verification status"
+                              className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer border ${
+                                userItem.isEmailVerified
+                                  ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                              } disabled:opacity-50`}
+                            >
+                              {userItem.isEmailVerified ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                  <span>Verified</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  <span>Mark Verified</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Ban / Unban toggle button with visual indication */}
+                            <button
+                              type="button"
+                              disabled={moderatingBidderId === userItem.uid || (isSelf && !isUserBanned)}
+                              onClick={handleToggleBan}
+                              title={isSelf && !isUserBanned ? 'Self-Demotion Guard: Cannot ban your own account' : isUserBanned ? 'Restore bidder account access' : 'Ban user from bidding'}
+                              className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer border disabled:opacity-40 disabled:cursor-not-allowed ${
+                                isUserBanned
+                                  ? 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-900'
+                                  : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-200'
+                              }`}
+                            >
+                              {isUserBanned ? (
+                                <>
+                                  <UserCheck className="w-3 h-3 text-white" />
+                                  <span>Unban</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Ban className="w-3 h-3 text-red-600" />
+                                  <span>Ban</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* User Deletion Action (Delete User Record) */}
+                            <button
+                              type="button"
+                              disabled={moderatingBidderId === userItem.uid || isSelf}
+                              onClick={() => setConfirmDeleteUser(userItem)}
+                              title={isSelf ? 'Self-Deletion Guard: Cannot delete your own active session account' : 'Permanently delete user account'}
+                              className="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 text-red-600 hover:text-white hover:bg-red-600 transition-colors border border-red-200 hover:border-red-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete</span>
+                            </button>
+
+                            <span className="text-zinc-400 font-mono text-[11px] hidden md:inline ml-1">
+                              {formatDateTime(userItem.registeredAt)}
+                            </span>
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-3">
-                          {userItem.isEmailVerified ? (
-                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3 text-emerald-600" />
-                              Email Verified
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 text-amber-600" />
-                              Unverified
-                            </span>
-                          )}
-                          <span className="text-zinc-400 font-mono text-[11px]">
-                            {formatDateTime(userItem.registeredAt)}
-                          </span>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -3983,70 +4189,155 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       No consignment applications submitted yet.
                     </div>
                   ) : (
-                    consignments.map((app) => (
-                      <div key={app.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
-                        <div className="space-y-1.5 flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm text-zinc-900">
-                              {app.year} {app.make} {app.model}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                              app.status === 'approved' 
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                                : app.status === 'declined'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-amber-100 text-amber-800 border border-amber-300'
-                            }`}>
-                              {app.status}
-                            </span>
+                    consignments.map((app) => {
+                      const matchingUser = bidders.find(
+                        b => (b.email && app.sellerEmail && b.email.toLowerCase() === app.sellerEmail.toLowerCase()) ||
+                             (app.registeredUserId && b.uid === app.registeredUserId)
+                      );
+
+                      let registrationBadge: 'ADMIN' | 'BIDDER' | 'GUEST' = 'GUEST';
+                      if (app.registeredUserRole) {
+                        registrationBadge = app.registeredUserRole.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'BIDDER';
+                      } else if (matchingUser) {
+                        registrationBadge = matchingUser.role?.toUpperCase() === 'ADMIN' ? 'ADMIN' : 'BIDDER';
+                      } else if (app.isRegisteredUser) {
+                        registrationBadge = 'BIDDER';
+                      }
+
+                      const structuredLocation = [app.locationCity, app.locationProvince, app.locationCountry].filter(Boolean).join(', ') || app.location;
+                      const isConverted = Boolean(app.convertedAuctionId || app.status === 'approved');
+                      const convertedAuctionId = app.convertedAuctionId;
+
+                      const handleConvert = async () => {
+                        if (!app.id) return;
+                        setConvertingConsignmentId(app.id);
+                        try {
+                          const newAuctionId = await convertConsignmentToDraftListing(app.id);
+                          setConsignments(prev => prev.map(c => c.id === app.id ? { ...c, status: 'approved', convertedAuctionId: newAuctionId } : c));
+                          setMessage({
+                            type: 'success',
+                            text: `Draft listing created successfully for ${app.year} ${app.make} ${app.model}!`
+                          });
+                          setTimeout(() => setMessage(null), 5000);
+                        } catch (err: any) {
+                          console.error('Conversion failed:', err);
+                          setMessage({ type: 'error', text: `Conversion failed: ${err.message || 'Unknown error'}` });
+                        } finally {
+                          setConvertingConsignmentId(null);
+                        }
+                      };
+
+                      const handleOpenEditor = (targetAuctionId: string) => {
+                        if (onSelectAuction) {
+                          onSelectAuction(targetAuctionId);
+                        } else {
+                          window.history.pushState({}, '', `/dashboard/listings/${targetAuctionId}/edit`);
+                          window.dispatchEvent(new PopStateEvent('popstate'));
+                        }
+                        onClose();
+                      };
+
+                      return (
+                        <div key={app.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                          <div className="space-y-2 flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-sm text-zinc-900">
+                                {app.year} {app.make} {app.model}
+                              </span>
+                              {app.generation && (
+                                <span className="px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 font-semibold text-[11px] border border-zinc-200">
+                                  {app.generation}
+                                </span>
+                              )}
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
+                                registrationBadge === 'ADMIN' 
+                                  ? 'bg-red-100 text-red-800 border border-red-200' 
+                                  : registrationBadge === 'BIDDER'
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                  : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
+                              }`}>
+                                {registrationBadge}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                app.status === 'approved' 
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                  : app.status === 'declined' || app.status === 'rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+                              }`}>
+                                {app.status || 'pending'}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-zinc-600 text-xs">
+                              <div>
+                                <span>Consignor: <strong>{app.sellerName}</strong></span>
+                                <span className="block text-zinc-500 font-mono text-[11px]">{app.sellerEmail}</span>
+                                {app.sellerPhone && <span className="block text-zinc-500">Phone: {app.sellerPhone}</span>}
+                              </div>
+                              <div className="space-y-0.5">
+                                {structuredLocation && (
+                                  <div className="flex items-center gap-1">
+                                    <MapPin className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                                    <span>Location: <strong>{structuredLocation}</strong></span>
+                                  </div>
+                                )}
+                                <div>
+                                  <span>Reserve Expectation: <strong>{app.reserveExpectation || 'None specified / No Reserve'}</strong></span>
+                                </div>
+                                {app.vin && (
+                                  <div className="font-mono text-[11px] text-zinc-500">
+                                    VIN: {app.vin} {app.mileage ? `• ${app.mileage}` : ''}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {app.notes && (
+                              <p className="text-zinc-500 italic text-[11px] bg-zinc-50 p-2 rounded-lg border border-zinc-100">
+                                "{app.notes}"
+                              </p>
+                            )}
                           </div>
 
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 text-xs">
-                            <span>Consignor: <strong>{app.sellerName}</strong> ({app.sellerEmail})</span>
-                            {app.sellerPhone && <span>Phone: <strong>{app.sellerPhone}</strong></span>}
-                            {app.location && <span>Location: <strong>{app.location}</strong></span>}
-                            {app.reserveExpectation && <span>Expectation: <strong>{app.reserveExpectation}</strong></span>}
+                          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                            {!isConverted ? (
+                              <button
+                                type="button"
+                                disabled={convertingConsignmentId === app.id || isConverted}
+                                onClick={handleConvert}
+                                className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Zap className="w-3.5 h-3.5 fill-current" />
+                                <span>{convertingConsignmentId === app.id ? 'Converting...' : '⚡ Convert to Draft Listing'}</span>
+                              </button>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                {convertedAuctionId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditor(convertedAuctionId)}
+                                    className="px-3.5 py-2 rounded-lg text-xs font-bold bg-zinc-900 hover:bg-black text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer group"
+                                  >
+                                    <span>Open in Listing Editor</span>
+                                    <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="px-3.5 py-2 rounded-lg text-xs font-bold bg-zinc-100 text-zinc-400 border border-zinc-200 cursor-not-allowed flex items-center gap-1.5"
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>Converted</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
-
-                          {app.notes && (
-                            <p className="text-zinc-500 italic text-[11px] bg-zinc-50 p-2 rounded-lg border border-zinc-100">
-                              "{app.notes}"
-                            </p>
-                          )}
                         </div>
-
-                        {app.status !== 'approved' && (
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  // Find matching user by email in bidders registry if available
-                                  const matchingUser = bidders.find(b => b.email.toLowerCase() === app.sellerEmail.toLowerCase());
-                                  const newLot = await approveConsignmentAndPromoteSeller(
-                                    app.id!, 
-                                    matchingUser?.uid, 
-                                    `${app.year} ${app.make} ${app.model}`
-                                  );
-                                  setInventory(prev => [...prev, newLot]);
-                                  setMessage({
-                                    type: 'success',
-                                    text: `Approved consignment for ${app.sellerName}! Created new lot "${newLot.title}" and promoted seller.`
-                                  });
-                                  setTimeout(() => setMessage(null), 5000);
-                                } catch (err: any) {
-                                  setMessage({ type: 'error', text: `Approval failed: ${err.message}` });
-                                }
-                              }}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                            >
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              <span>Approve & Promote Seller</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -4400,6 +4691,52 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               >
                 {deletingListing ? 'Deleting...' : 'Yes, Permanently Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION DIALOG: Delete User Account */}
+      {confirmDeleteUser && (
+        <div 
+          onClick={() => setConfirmDeleteUser(null)}
+          className="fixed inset-0 z-60 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-red-200 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-full bg-red-100 text-red-700 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-zinc-900">Permanently Delete User Account?</h3>
+                <p className="text-xs text-zinc-700 font-medium">
+                  Permanently delete account for <span className="font-bold text-zinc-900">{confirmDeleteUser.email || 'User'}</span>? This will remove all bidder records and access permissions.
+                </p>
+                <p className="text-[11px] text-zinc-500">
+                  This action removes matching documents from both users and bidders collections. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteUser(null)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteUserSubmit}
+                disabled={deletingUser}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                {deletingUser ? 'Deleting...' : 'Yes, Delete Account'}
               </button>
             </div>
           </div>

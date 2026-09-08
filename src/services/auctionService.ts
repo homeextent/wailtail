@@ -14,12 +14,27 @@ import {
   deleteDoc,
   writeBatch,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  DocumentReference
 } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { storage } from './firebase';
-import { Auction, Bid, Comment, UserProfile, MediaConfiguration, SellerInquiry, ConsignmentApplication } from '../types';
+import { 
+  Auction, 
+  Bid, 
+  Comment, 
+  UserProfile, 
+  UserRole, 
+  MediaConfiguration, 
+  SellerInquiry, 
+  ConsignmentApplication,
+  UserActivitySummary,
+  UserBidActivity,
+  UserWonAuction,
+  UserSellerListing,
+  UserConsignmentItem
+} from '../types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from '../mediaConfig';
 export { DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG };
 import { sendBidPlacedEmail, sendOutbidAlertEmail, sendSellerInquiryEmail } from './emailService';
@@ -325,6 +340,36 @@ export function subscribeToAuction(
 }
 
 /**
+ * Subscribe to real-time updates on a user's profile document
+ */
+export function subscribeToUserProfile(
+  uid: string,
+  callback: (profile: UserProfile | null) => void
+) {
+  if (!uid) {
+    callback(null);
+    return () => {};
+  }
+  const userRef = doc(db, 'users', uid);
+  return onSnapshot(
+    userRef,
+    (snap) => {
+      if (snap.exists()) {
+        callback({
+          uid: snap.id,
+          ...snap.data()
+        } as UserProfile);
+      } else {
+        callback(null);
+      }
+    },
+    (err) => {
+      console.error('Error listening to user profile:', err);
+    }
+  );
+}
+
+/**
  * Subscribe to all vehicle listings in Firestore
  */
 export function subscribeToAllAuctions(
@@ -464,19 +509,94 @@ export async function createNewListing(title: string): Promise<Auction> {
 export async function submitConsignmentApplication(
   app: Omit<ConsignmentApplication, 'id' | 'submittedAt' | 'status'>
 ): Promise<string> {
-  const colRef = collection(db, 'consignments');
+  // Query Firestore bidders or users collections by email prior to creating consignment document
+  let registeredUserId: string | undefined = undefined;
+  let isRegisteredUser = false;
+  let registeredUserRole = 'GUEST';
+
+  const cleanEmail = (app.sellerEmail || '').trim().toLowerCase();
+  if (cleanEmail) {
+    try {
+      // 1. Check 'users' collection by email
+      const usersCol = collection(db, 'users');
+      const userQ = query(usersCol, where('email', '==', cleanEmail));
+      const userSnap = await getDocs(userQ);
+      if (!userSnap.empty) {
+        const userDoc = userSnap.docs[0];
+        const data = userDoc.data();
+        registeredUserId = data?.uid || userDoc.id;
+        isRegisteredUser = true;
+        registeredUserRole = (data?.role || 'BIDDER').toUpperCase();
+      } else {
+        // 2. Check 'bidders' collection by email
+        const biddersCol = collection(db, 'bidders');
+        const bidderQ = query(biddersCol, where('email', '==', cleanEmail));
+        const bidderSnap = await getDocs(bidderQ);
+        if (!bidderSnap.empty) {
+          const bidderDoc = bidderSnap.docs[0];
+          const data = bidderDoc.data();
+          registeredUserId = data?.uid || bidderDoc.id;
+          isRegisteredUser = true;
+          registeredUserRole = (data?.role || 'BIDDER').toUpperCase();
+        }
+      }
+    } catch (err) {
+      console.warn('Could not query users/bidders for consignment email lookup:', err);
+    }
+  }
+
   const payload: ConsignmentApplication = {
     ...app,
     submittedAt: Date.now(),
-    status: 'pending'
+    status: 'pending',
+    isRegisteredUser,
+    registeredUserRole,
+    ...(registeredUserId ? { registeredUserId } : {})
   };
+
+  let createdId = `consignment-${Date.now()}`;
   try {
+    const colRef = collection(db, 'consignment_applications');
     const docRef = await addDoc(colRef, sanitizePayload(payload));
-    return docRef.id;
+    createdId = docRef.id;
+
+    // Dual-write to legacy 'consignments' collection for backwards compatibility
+    try {
+      const legacyRef = doc(db, 'consignments', createdId);
+      await setDoc(legacyRef, sanitizePayload(payload));
+    } catch {
+      // Silently continue if legacy write fails
+    }
   } catch (err) {
     console.warn('Saved consignment locally fallback:', err);
-    return `consignment-${Date.now()}`;
   }
+
+  // Non-blocking serverless email notification with 5000ms timeout
+  (async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      await fetch('/api/send-consignment-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...payload,
+          applicationId: createdId
+        }),
+        signal: controller.signal
+      }).catch((fetchErr) => {
+        console.warn('Non-blocking consignment email dispatch failed:', fetchErr);
+      }).finally(() => {
+        clearTimeout(timeoutId);
+      });
+    } catch (emailErr) {
+      console.warn('Non-blocking consignment email error:', emailErr);
+    }
+  })();
+
+  return createdId;
 }
 
 /**
@@ -485,17 +605,151 @@ export async function submitConsignmentApplication(
 export function subscribeToConsignments(
   callback: (apps: ConsignmentApplication[]) => void
 ) {
-  const colRef = collection(db, 'consignments');
+  const colRef = collection(db, 'consignment_applications');
   const q = query(colRef, orderBy('submittedAt', 'desc'));
   return onSnapshot(q, (snapshot) => {
+    if (snapshot.empty) {
+      // Check legacy consignments collection if consignment_applications is empty
+      const legacyCol = collection(db, 'consignments');
+      const legacyQ = query(legacyCol, orderBy('submittedAt', 'desc'));
+      getDocs(legacyQ).then((legacySnap) => {
+        const legacyList = legacySnap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        })) as ConsignmentApplication[];
+        callback(legacyList);
+      }).catch(() => callback([]));
+      return;
+    }
     const list: ConsignmentApplication[] = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data()
     })) as ConsignmentApplication[];
     callback(list);
   }, (err) => {
-    console.warn('Error fetching consignments:', err);
+    console.warn('Error fetching consignment_applications, falling back to consignments:', err);
+    const legacyCol = collection(db, 'consignments');
+    const legacyQ = query(legacyCol, orderBy('submittedAt', 'desc'));
+    onSnapshot(legacyQ, (legacySnap) => {
+      const list = legacySnap.docs.map(d => ({ id: d.id, ...d.data() })) as ConsignmentApplication[];
+      callback(list);
+    });
   });
+}
+
+/**
+ * Resolves all matching document references for a user across both 'users' and 'bidders' collections.
+ * Handles exact UID matches, document ID matches, and fallback email queries to prevent stale state.
+ */
+export async function resolveUserAndBidderDocuments(userId: string): Promise<{
+  userDocRefs: DocumentReference[];
+  bidderDocRefs: DocumentReference[];
+  userData?: Partial<UserProfile>;
+  resolvedUid: string;
+}> {
+  const cleanId = userId?.trim();
+  if (!cleanId) throw new Error('User ID is required.');
+
+  const userDocRefs = new Map<string, DocumentReference>();
+  const bidderDocRefs = new Map<string, DocumentReference>();
+  let mergedData: any = null;
+
+  // 1. Direct doc reference in 'users'
+  const directUserRef = doc(db, 'users', cleanId);
+  try {
+    const directUserSnap = await getDoc(directUserRef);
+    if (directUserSnap.exists()) {
+      userDocRefs.set(directUserRef.path, directUserRef);
+      mergedData = { ...directUserSnap.data() };
+    }
+  } catch (err) {
+    console.warn('Direct user doc fetch check failed:', err);
+  }
+
+  // 2. Query 'users' by field 'uid'
+  try {
+    const userQ = query(collection(db, 'users'), where('uid', '==', cleanId));
+    const userSnap = await getDocs(userQ);
+    userSnap.forEach((d) => {
+      userDocRefs.set(d.ref.path, d.ref);
+      if (!mergedData) mergedData = { ...d.data() };
+      else mergedData = { ...d.data(), ...mergedData };
+    });
+  } catch (err) {
+    console.warn('Users uid query check failed:', err);
+  }
+
+  // 3. Direct doc reference in 'bidders'
+  const directBidderRef = doc(db, 'bidders', cleanId);
+  try {
+    const directBidderSnap = await getDoc(directBidderRef);
+    if (directBidderSnap.exists()) {
+      bidderDocRefs.set(directBidderRef.path, directBidderRef);
+      if (!mergedData) mergedData = { ...directBidderSnap.data() };
+      else mergedData = { ...directBidderSnap.data(), ...mergedData };
+    }
+  } catch (err) {
+    console.warn('Direct bidder doc fetch check failed:', err);
+  }
+
+  // 4. Query 'bidders' by field 'uid'
+  try {
+    const bidderQ = query(collection(db, 'bidders'), where('uid', '==', cleanId));
+    const bidderSnap = await getDocs(bidderQ);
+    bidderSnap.forEach((d) => {
+      bidderDocRefs.set(d.ref.path, d.ref);
+      if (!mergedData) mergedData = { ...d.data() };
+      else mergedData = { ...d.data(), ...mergedData };
+    });
+  } catch (err) {
+    console.warn('Bidders uid query check failed:', err);
+  }
+
+  // 5. Cross-collection email check if mergedData contains email
+  const cleanEmail = (mergedData?.email || '').trim().toLowerCase();
+  if (cleanEmail) {
+    if (userDocRefs.size === 0) {
+      try {
+        const uEmailQ = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const uEmailSnap = await getDocs(uEmailQ);
+        uEmailSnap.forEach((d) => {
+          userDocRefs.set(d.ref.path, d.ref);
+          mergedData = { ...d.data(), ...mergedData };
+        });
+      } catch (err) {
+        console.warn('Users email query check failed:', err);
+      }
+    }
+    if (bidderDocRefs.size === 0) {
+      try {
+        const bEmailQ = query(collection(db, 'bidders'), where('email', '==', cleanEmail));
+        const bEmailSnap = await getDocs(bEmailQ);
+        bEmailSnap.forEach((d) => {
+          bidderDocRefs.set(d.ref.path, d.ref);
+          mergedData = { ...d.data(), ...mergedData };
+        });
+      } catch (err) {
+        console.warn('Bidders email query check failed:', err);
+      }
+    }
+  }
+
+  // Fallback defaults to ensure canonical targets exist even if document was absent
+  if (userDocRefs.size === 0) {
+    userDocRefs.set(directUserRef.path, directUserRef);
+  }
+  if (bidderDocRefs.size === 0) {
+    bidderDocRefs.set(directBidderRef.path, directBidderRef);
+  }
+
+  const resolvedUid = mergedData?.uid || cleanId;
+
+  return {
+    userDocRefs: Array.from(userDocRefs.values()),
+    bidderDocRefs: Array.from(bidderDocRefs.values()),
+    userData: mergedData ? { uid: resolvedUid, ...mergedData } : { uid: resolvedUid },
+    resolvedUid
+  };
 }
 
 /**
@@ -506,26 +760,50 @@ export async function approveConsignmentAndPromoteSeller(
   userUid?: string,
   vehicleTitle?: string
 ): Promise<Auction> {
-  // 1. Update consignment application status
+  // 1. Update consignment application status in both collections
   try {
-    const appRef = doc(db, 'consignments', applicationId);
+    const appRef = doc(db, 'consignment_applications', applicationId);
     await updateDoc(appRef, {
       status: 'approved',
       reviewedAt: Date.now()
     });
   } catch (err) {
-    console.warn('Could not update consignment doc status:', err);
+    console.warn('Could not update consignment_applications doc status:', err);
+  }
+  try {
+    const legacyRef = doc(db, 'consignments', applicationId);
+    await updateDoc(legacyRef, {
+      status: 'approved',
+      reviewedAt: Date.now()
+    });
+  } catch {
+    // Ignore legacy doc status failure
   }
 
-  // 2. Promote user to 'seller' role if userUid exists
+  // 2. Promote user to 'seller' role if userUid exists and not admin
   if (userUid) {
     try {
-      const userRef = doc(db, 'users', userUid);
-      await updateDoc(userRef, {
-        role: 'seller'
-      });
+      const { userDocRefs, bidderDocRefs, userData } = await resolveUserAndBidderDocuments(userUid);
+      const currentRole = (userData?.role || '').toUpperCase();
+      if (currentRole !== 'ADMIN') {
+        const batch = writeBatch(db);
+        const payload = {
+          uid: userUid,
+          ...(userData?.email ? { email: userData.email } : {}),
+          ...(userData?.displayName ? { displayName: userData.displayName } : {}),
+          role: 'seller',
+          updatedAt: Date.now()
+        };
+        for (const ref of userDocRefs) {
+          batch.set(ref, payload, { merge: true });
+        }
+        for (const ref of bidderDocRefs) {
+          batch.set(ref, payload, { merge: true });
+        }
+        await batch.commit();
+      }
     } catch (err) {
-      console.warn('Could not promote user to seller in users col:', err);
+      console.warn('Could not promote user to seller:', err);
     }
   }
 
@@ -533,6 +811,220 @@ export async function approveConsignmentAndPromoteSeller(
   const lotTitle = vehicleTitle || 'Consigned Vehicle Lot';
   const newLot = await createNewListing(lotTitle);
   return newLot;
+}
+
+/**
+ * Safely parse numeric reserve amount from text expectations (e.g. "Around 50k", "$50,000", "No Reserve")
+ */
+export function parseReserveAmount(reserveExpectation?: string | number | null): number {
+  if (reserveExpectation == null) return 0;
+  if (typeof reserveExpectation === 'number') {
+    return isNaN(reserveExpectation) ? 0 : Math.max(0, reserveExpectation);
+  }
+  const str = String(reserveExpectation).trim();
+  if (!str) return 0;
+  if (/no\s*reserve/i.test(str)) return 0;
+
+  // Suffix check like '50k' or '50 k'
+  const kMatch = str.match(/(\d+(?:\.\d+)?)\s*k\b/i);
+  if (kMatch) {
+    const val = parseFloat(kMatch[1]) * 1000;
+    return isNaN(val) ? 0 : Math.max(0, Math.round(val));
+  }
+
+  const cleaned = str.replace(/[^0-9.]/g, '');
+  if (!cleaned) return 0;
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : Math.max(0, Math.round(parsed));
+}
+
+/**
+ * 1-Click Consignment Approval & Draft Conversion
+ * Converts incoming consignment submissions directly into pre-populated vehicle listing drafts.
+ */
+export async function convertConsignmentToDraftListing(consignmentId: string): Promise<string> {
+  const cleanId = consignmentId?.trim();
+  if (!cleanId) {
+    throw new Error('Consignment ID is required for conversion.');
+  }
+
+  // 1. Fetch target consignment application
+  const appRef = doc(db, 'consignment_applications', cleanId);
+  let appSnap = await getDoc(appRef);
+
+  if (!appSnap.exists()) {
+    const legacyRef = doc(db, 'consignments', cleanId);
+    appSnap = await getDoc(legacyRef);
+  }
+
+  if (!appSnap.exists()) {
+    throw new Error(`Consignment application with ID "${cleanId}" not found.`);
+  }
+
+  const app = appSnap.data() as ConsignmentApplication;
+
+  // 2. Prepare taxonomy, title, location, identification & financial parameters
+  const yearStr = app.year != null ? String(app.year).trim() : '';
+  const makeStr = (app.make || '').trim();
+  const modelStr = (app.model || '').trim();
+  const genStr = (app.generation || '').trim();
+
+  const titleParts = [yearStr, makeStr, modelStr].filter(Boolean);
+  const fullTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Consigned Vehicle Listing';
+
+  const highlightsBadge = [yearStr, makeStr, modelStr, genStr].filter(Boolean).map(s => String(s).trim()).filter(Boolean).join(' ');
+
+  const city = (app.locationCity || '').trim();
+  const province = (app.locationProvince || '').trim();
+  const country = (app.locationCountry || '').trim();
+  const structuredParts = [city, province, country].filter(Boolean);
+  const locationCombined = structuredParts.length > 0
+    ? structuredParts.join(', ')
+    : (app.location || '').trim();
+
+  const reserve = parseReserveAmount(app.reserveExpectation);
+
+  const slug = fullTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 30) || 'consigned-lot';
+  const newAuctionId = `lot-${slug}-${Date.now().toString(36)}`;
+
+  const now = Date.now();
+  const newAuction: Auction = {
+    id: newAuctionId,
+    title: fullTitle,
+    subtitle: genStr,
+    headline: '',
+    year: app.year,
+    make: makeStr,
+    model: modelStr,
+    generation: genStr,
+    vin: (app.vin || '').trim(),
+    mileage: (app.mileage || '').trim(),
+    distanceUnit: 'km',
+    location: locationCombined,
+    locationCity: city || undefined,
+    locationProvince: province || undefined,
+    locationCountry: country || undefined,
+    sellerName: (app.sellerName || '').trim(),
+    sellerEmail: (app.sellerEmail || '').trim(),
+    sellerPhone: (app.sellerPhone || '').trim(),
+    engine: '',
+    drivetrain: '',
+    exteriorColor: '',
+    interior: '',
+    titleStatus: 'Clean Registration',
+    currency: 'CAD',
+    startTime: now,
+    endTime: now + 7 * 24 * 60 * 60 * 1000,
+    startingBid: 1000,
+    minimumIncrement: 250,
+    currentBid: 0,
+    reserveAmount: reserve,
+    isReserveMet: reserve <= 0,
+    bidCount: 0,
+    highBidderId: '',
+    highBidderName: '',
+    highBidderEmail: '',
+    highlightsBadge: highlightsBadge,
+    watchCount: 0,
+    status: 'preview',
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const cleanMediaConfig: MediaConfiguration = {
+    vehicleName: fullTitle,
+    heroImages: [],
+    overviewHeading: '',
+    overviewParagraphs: [],
+    overviewImage: {
+      url: '',
+      caption: '',
+      alt: ''
+    },
+    overviewSpecs: [],
+    inlineShowcase: [],
+    fullGallery: [],
+    youtubePlaylistUrl: '',
+    videoTitle: '',
+    videoSubtitle: '',
+    videoChapters: []
+  };
+
+  // 3. Atomically create Auction document, media config & update consignment application status
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'auctions', newAuctionId), sanitizePayload(newAuction));
+  batch.set(doc(db, 'settings', `media-${newAuctionId}`), sanitizePayload(cleanMediaConfig));
+
+  const targetAppRef = doc(db, 'consignment_applications', cleanId);
+  batch.set(targetAppRef, {
+    status: 'approved',
+    convertedAuctionId: newAuctionId,
+    reviewedAt: now
+  }, { merge: true });
+
+  const legacyRef = doc(db, 'consignments', cleanId);
+  batch.set(legacyRef, {
+    status: 'approved',
+    convertedAuctionId: newAuctionId,
+    reviewedAt: now
+  }, { merge: true });
+
+  // Promote consignor user to 'seller' if registered user exists and current role is 'BIDDER' or 'GUEST', preserving 'ADMIN'
+  let targetUserId = app.registeredUserId;
+  let targetRole = (app.registeredUserRole || 'GUEST').toUpperCase();
+
+  if (!targetUserId && app.sellerEmail) {
+    try {
+      const cleanEmail = app.sellerEmail.trim().toLowerCase();
+      const userQ = query(collection(db, 'users'), where('email', '==', cleanEmail));
+      const userSnap = await getDocs(userQ);
+      if (!userSnap.empty) {
+        const uDoc = userSnap.docs[0];
+        targetUserId = uDoc.data()?.uid || uDoc.id;
+        targetRole = (uDoc.data()?.role || 'BIDDER').toUpperCase();
+      } else {
+        const bidderQ = query(collection(db, 'bidders'), where('email', '==', cleanEmail));
+        const bidderSnap = await getDocs(bidderQ);
+        if (!bidderSnap.empty) {
+          const bDoc = bidderSnap.docs[0];
+          targetUserId = bDoc.data()?.uid || bDoc.id;
+          targetRole = (bDoc.data()?.role || 'BIDDER').toUpperCase();
+        }
+      }
+    } catch (err) {
+      console.warn('Could not resolve user for consignment seller promotion:', err);
+    }
+  }
+
+  if (targetUserId && targetRole !== 'ADMIN') {
+    try {
+      const { userDocRefs, bidderDocRefs, userData } = await resolveUserAndBidderDocuments(targetUserId);
+      const payload = {
+        uid: targetUserId,
+        ...(userData?.email ? { email: userData.email } : {}),
+        ...(userData?.displayName ? { displayName: userData.displayName } : {}),
+        role: 'seller',
+        updatedAt: now
+      };
+      for (const ref of userDocRefs) {
+        batch.set(ref, payload, { merge: true });
+      }
+      for (const ref of bidderDocRefs) {
+        batch.set(ref, payload, { merge: true });
+      }
+    } catch (err) {
+      console.warn('Could not resolve user doc refs for seller upgrade:', err);
+      batch.set(doc(db, 'users', targetUserId), { role: 'seller', updatedAt: now }, { merge: true });
+      batch.set(doc(db, 'bidders', targetUserId), { role: 'seller', updatedAt: now }, { merge: true });
+    }
+  }
+
+  await batch.commit();
+  return newAuctionId;
 }
 
 /**
@@ -671,7 +1163,7 @@ export function subscribeToComments(
 /**
  * Place a Bid with Anti-Sniping Protection
  */
-export async function placeBid(
+export async function placeBidWithAntiSnipe(
   auctionId: string,
   amount: number,
   bidder: {
@@ -680,6 +1172,10 @@ export async function placeBid(
     email: string;
   }
 ): Promise<{ success: boolean; message?: string; antiSniped?: boolean; newEndTime?: number }> {
+  if (!auth.currentUser) {
+    throw new Error("Please log in to place a bid");
+  }
+
   const auctionRef = doc(db, 'auctions', auctionId);
 
   return await runTransaction(db, async (transaction) => {
@@ -821,6 +1317,8 @@ export async function placeBid(
   });
 }
 
+export const placeBid = placeBidWithAntiSnipe;
+
 /**
  * Remove or Ban a Bidder (Moderation)
  * Clears their active bids from the bid log and revokes bidding privileges.
@@ -890,10 +1388,158 @@ export async function banOrRemoveBidder(userId: string, auctionId: string): Prom
  * Unban a Bidder / Restore Bidding Privileges
  */
 export async function unbanBidder(userId: string): Promise<void> {
-  const userRef = doc(db, 'users', userId);
-  await updateDoc(userRef, {
-    bannedFromBidding: false
-  });
+  await setUserBannedStatus(userId, false);
+}
+
+/**
+ * Admin: Update user role (supports 3-way matrix: 'ADMIN' | 'SELLER' | 'BIDDER')
+ * Persists updates atomically across Firestore 'users' and 'bidders' collections.
+ */
+export async function updateUserRole(userId: string, newRole: UserRole | string): Promise<void> {
+  if (!userId) throw new Error('User ID is required to update role.');
+  const normalizedRole = newRole.toLowerCase() as 'admin' | 'seller' | 'bidder';
+  const { userDocRefs, bidderDocRefs, userData, resolvedUid } = await resolveUserAndBidderDocuments(userId);
+
+  const batch = writeBatch(db);
+  const payload = {
+    uid: resolvedUid,
+    ...(userData?.email ? { email: userData.email } : {}),
+    ...(userData?.displayName ? { displayName: userData.displayName } : {}),
+    role: normalizedRole,
+    updatedAt: Date.now()
+  };
+
+  for (const ref of userDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+  for (const ref of bidderDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+
+  await batch.commit();
+}
+
+/**
+ * Admin: Set user banned status (ban/unban)
+ * Persists updates atomically across Firestore 'users' and 'bidders' collections.
+ */
+export async function setUserBannedStatus(userId: string, isBanned: boolean): Promise<void> {
+  if (!userId) throw new Error('User ID is required to update banned status.');
+  const { userDocRefs, bidderDocRefs, userData, resolvedUid } = await resolveUserAndBidderDocuments(userId);
+
+  const batch = writeBatch(db);
+  const payload = {
+    uid: resolvedUid,
+    ...(userData?.email ? { email: userData.email } : {}),
+    ...(userData?.displayName ? { displayName: userData.displayName } : {}),
+    isBanned,
+    bannedFromBidding: isBanned,
+    bannedAt: isBanned ? Date.now() : null,
+    updatedAt: Date.now()
+  };
+
+  for (const ref of userDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+  for (const ref of bidderDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+
+  await batch.commit();
+}
+
+/**
+ * Admin: Set user email verified status
+ * Persists updates atomically across Firestore 'users' and 'bidders' collections.
+ */
+export async function setUserEmailVerified(userId: string, isVerified: boolean): Promise<void> {
+  if (!userId) throw new Error('User ID is required to update email verification.');
+  const { userDocRefs, bidderDocRefs, userData, resolvedUid } = await resolveUserAndBidderDocuments(userId);
+
+  const batch = writeBatch(db);
+  const payload = {
+    uid: resolvedUid,
+    ...(userData?.email ? { email: userData.email } : {}),
+    ...(userData?.displayName ? { displayName: userData.displayName } : {}),
+    isEmailVerified: isVerified,
+    updatedAt: Date.now()
+  };
+
+  for (const ref of userDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+  for (const ref of bidderDocRefs) {
+    batch.set(ref, payload, { merge: true });
+  }
+
+  await batch.commit();
+}
+
+/**
+ * Permanent User Deletion Service
+ * Atomically deletes matching user documents from both 'users' and 'bidders' Firestore collections.
+ */
+export async function deleteUserRecord(userId: string): Promise<void> {
+  const cleanId = userId?.trim();
+  if (!cleanId) throw new Error('User ID is required for deletion.');
+
+  const { userDocRefs, bidderDocRefs } = await resolveUserAndBidderDocuments(cleanId);
+  const batch = writeBatch(db);
+
+  for (const ref of userDocRefs) {
+    batch.delete(ref);
+  }
+  for (const ref of bidderDocRefs) {
+    batch.delete(ref);
+  }
+
+  await batch.commit();
+}
+
+/**
+ * Member Email Lookup Service
+ * Query Firestore users / bidders by normalized lowercase email address and return account metadata.
+ */
+export async function checkUserAccountByEmail(
+  email: string
+): Promise<{ exists: boolean; role?: UserRole; name?: string } | null> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { exists: false };
+  }
+
+  try {
+    // 1. Query 'users' collection
+    const usersCol = collection(db, 'users');
+    const userQ = query(usersCol, where('email', '==', cleanEmail));
+    const userSnap = await getDocs(userQ);
+
+    if (!userSnap.empty) {
+      const data = userSnap.docs[0].data();
+      const rawRole = (data?.role || 'BIDDER').toUpperCase();
+      const role: UserRole = rawRole === 'ADMIN' ? 'ADMIN' : rawRole === 'SELLER' ? 'SELLER' : 'BIDDER';
+      const name = data?.displayName || data?.name || '';
+      return { exists: true, role, name };
+    }
+
+    // 2. Query 'bidders' collection
+    const biddersCol = collection(db, 'bidders');
+    const bidderQ = query(biddersCol, where('email', '==', cleanEmail));
+    const bidderSnap = await getDocs(bidderQ);
+
+    if (!bidderSnap.empty) {
+      const data = bidderSnap.docs[0].data();
+      const rawRole = (data?.role || 'BIDDER').toUpperCase();
+      const role: UserRole = rawRole === 'ADMIN' ? 'ADMIN' : rawRole === 'SELLER' ? 'SELLER' : 'BIDDER';
+      const name = data?.displayName || data?.name || '';
+      return { exists: true, role, name };
+    }
+
+    return { exists: false };
+  } catch (err) {
+    console.warn('Error looking up user account by email:', err);
+    return null;
+  }
 }
 
 /**
@@ -1199,10 +1845,13 @@ export function subscribeToAllBidders(
 ) {
   const q = query(collection(db, 'users'), orderBy('registeredAt', 'desc'));
   return onSnapshot(q, (snapshot) => {
-    const list: UserProfile[] = snapshot.docs.map((d) => ({
-      uid: d.id,
-      ...d.data()
-    })) as UserProfile[];
+    const list: UserProfile[] = snapshot.docs.map((d) => {
+      const data = d.data();
+      return {
+        uid: (data as any)?.uid || d.id,
+        ...data
+      };
+    }) as UserProfile[];
     callback(list);
   }, (err) => {
     console.error('Error fetching registered bidders:', err);
@@ -1328,4 +1977,496 @@ export async function fetchYouTubePlaylistVideos(
   }
 
   return uniqueChapters;
+}
+
+export interface FetchPaginatedBiddersParams {
+  page: number;
+  pageSize: number;
+  searchQuery?: string;
+  roleFilter?: string; // 'ALL' | 'ADMIN' | 'SELLER' | 'BIDDER'
+  banFilter?: string;  // 'ALL' | 'BANNED' | 'VERIFIED'
+}
+
+export interface FetchPaginatedConsignmentsParams {
+  page: number;
+  pageSize: number;
+  searchQuery?: string;
+  statusFilter?: string; // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/**
+ * Admin: Fetch paginated bidders with search and filtering
+ */
+export async function fetchPaginatedBidders({
+  page = 1,
+  pageSize = 10,
+  searchQuery = '',
+  roleFilter = 'ALL',
+  banFilter = 'ALL'
+}: FetchPaginatedBiddersParams): Promise<PaginatedResult<UserProfile>> {
+  try {
+    const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('registeredAt', 'desc')));
+    let list: UserProfile[] = usersSnap.docs.map((d) => {
+      const data = d.data();
+      return {
+        uid: (data as any)?.uid || d.id,
+        ...data
+      } as UserProfile;
+    });
+
+    // Also check bidders collection to merge any unique records
+    try {
+      const biddersSnap = await getDocs(collection(db, 'bidders'));
+      const existingUids = new Set(list.map(u => u.uid));
+      biddersSnap.docs.forEach((d) => {
+        const data = d.data();
+        const uid = (data as any)?.uid || d.id;
+        if (!existingUids.has(uid)) {
+          existingUids.add(uid);
+          list.push({ uid, ...data } as UserProfile);
+        }
+      });
+    } catch (e) {
+      // ignore bidders collection error if it doesn't exist
+    }
+
+    // Filter by searchQuery (name, email, phone, uid)
+    const cleanSearch = searchQuery.trim().toLowerCase();
+    if (cleanSearch) {
+      list = list.filter((user) => {
+        const name = (user.displayName || '').toLowerCase();
+        const email = (user.email || '').toLowerCase();
+        const phone = (user.phone || '').toLowerCase();
+        const uid = (user.uid || '').toLowerCase();
+        return name.includes(cleanSearch) || email.includes(cleanSearch) || phone.includes(cleanSearch) || uid.includes(cleanSearch);
+      });
+    }
+
+    // Filter by role
+    if (roleFilter && roleFilter !== 'ALL') {
+      const targetRole = roleFilter.toUpperCase();
+      list = list.filter((user) => {
+        const currentRole = (user.role || 'BIDDER').toUpperCase();
+        return currentRole === targetRole;
+      });
+    }
+
+    // Filter by status (Banned or Verified)
+    if (banFilter && banFilter !== 'ALL') {
+      const targetBan = banFilter.toUpperCase();
+      if (targetBan === 'BANNED') {
+        list = list.filter((user) => Boolean(user.isBanned || user.bannedFromBidding));
+      } else if (targetBan === 'VERIFIED') {
+        list = list.filter((user) => Boolean(user.isEmailVerified));
+      }
+    }
+
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const clampedPage = Math.max(1, Math.min(page, totalPages));
+    const start = (clampedPage - 1) * pageSize;
+    const items = list.slice(start, start + pageSize);
+
+    return {
+      items,
+      total,
+      page: clampedPage,
+      pageSize,
+      totalPages
+    };
+  } catch (err) {
+    console.error('Error fetching paginated bidders:', err);
+    throw err;
+  }
+}
+
+/**
+ * Admin: Fetch paginated consignment applications with search and filtering
+ */
+export async function fetchPaginatedConsignments({
+  page = 1,
+  pageSize = 10,
+  searchQuery = '',
+  statusFilter = 'ALL'
+}: FetchPaginatedConsignmentsParams): Promise<PaginatedResult<ConsignmentApplication>> {
+  try {
+    let list: ConsignmentApplication[] = [];
+    const colRef = collection(db, 'consignment_applications');
+    const q = query(colRef, orderBy('submittedAt', 'desc'));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      // Fallback to legacy 'consignments'
+      try {
+        const legacyCol = collection(db, 'consignments');
+        const legacyQ = query(legacyCol, orderBy('submittedAt', 'desc'));
+        const legacySnap = await getDocs(legacyQ);
+        list = legacySnap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        })) as ConsignmentApplication[];
+      } catch (e) {
+        list = [];
+      }
+    } else {
+      list = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      })) as ConsignmentApplication[];
+    }
+
+    // Filter by searchQuery across make, model, VIN, and consignor email/name
+    const cleanSearch = searchQuery.trim().toLowerCase();
+    if (cleanSearch) {
+      list = list.filter((app) => {
+        const make = (app.make || '').toLowerCase();
+        const model = (app.model || '').toLowerCase();
+        const vin = (app.vin || '').toLowerCase();
+        const email = (app.sellerEmail || '').toLowerCase();
+        const name = (app.sellerName || '').toLowerCase();
+        const generation = (app.generation || '').toLowerCase();
+        const year = String(app.year || '').toLowerCase();
+        return (
+          make.includes(cleanSearch) ||
+          model.includes(cleanSearch) ||
+          vin.includes(cleanSearch) ||
+          email.includes(cleanSearch) ||
+          name.includes(cleanSearch) ||
+          generation.includes(cleanSearch) ||
+          year.includes(cleanSearch)
+        );
+      });
+    }
+
+    // Filter by status
+    if (statusFilter && statusFilter !== 'ALL') {
+      const targetStatus = statusFilter.toUpperCase();
+      list = list.filter((app) => {
+        const appStatus = (app.status || 'pending').toUpperCase();
+        if (targetStatus === 'REJECTED') {
+          return appStatus === 'REJECTED' || appStatus === 'DECLINED';
+        }
+        return appStatus === targetStatus;
+      });
+    }
+
+    const total = list.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const clampedPage = Math.max(1, Math.min(page, totalPages));
+    const start = (clampedPage - 1) * pageSize;
+    const items = list.slice(start, start + pageSize);
+
+    return {
+      items,
+      total,
+      page: clampedPage,
+      pageSize,
+      totalPages
+    };
+  } catch (err) {
+    console.error('Error fetching paginated consignments:', err);
+    throw err;
+  }
+}
+
+/**
+ * Aggregates unified user activity across four vectors:
+ * 1. Active & Historical Bids (LEADING vs OUTBID)
+ * 2. Won Auctions (Reserve satisfied, CAD price, Seller contact details)
+ * 3. Seller Listings (Telemetry, Bid count, Draft edit deep links)
+ * 4. Consignment Submissions (Status, Converted draft auction ID)
+ */
+export async function fetchUserActivitySummary(
+  userId: string,
+  userEmail: string
+): Promise<UserActivitySummary> {
+  const cleanEmail = (userEmail || '').trim().toLowerCase();
+  const summary: UserActivitySummary = {
+    activeBids: [],
+    wonAuctions: [],
+    sellerListings: [],
+    consignments: []
+  };
+
+  if (!userId && !cleanEmail) {
+    return summary;
+  }
+
+  try {
+    // 1. Fetch all auctions to join with bids and seller listings
+    const auctionsSnap = await getDocs(collection(db, 'auctions'));
+    let allAuctions: Auction[] = auctionsSnap.docs.map((d) => {
+      const data = d.data() as Auction;
+      const lotId = d.id;
+      let heroImgs: string[] = Array.isArray(data.heroImages) ? data.heroImages : [];
+      if (heroImgs.length === 0 && lotId === MAIN_AUCTION_ID) {
+        heroImgs = DEFAULT_MEDIA_CONFIG.heroImages;
+      }
+      const leadHero = data.leadHeroImage || heroImgs[0] || '';
+      return {
+        ...data,
+        id: lotId,
+        heroImages: heroImgs,
+        leadHeroImage: leadHero
+      };
+    });
+
+    // If Firestore auctions collection is empty or missing MAIN_AUCTION_ID, add default if it exists
+    if (!allAuctions.some((a) => a.id === MAIN_AUCTION_ID)) {
+      try {
+        const mainDoc = await getDoc(doc(db, 'auctions', MAIN_AUCTION_ID));
+        if (mainDoc.exists()) {
+          const mData = mainDoc.data() as Auction;
+          allAuctions.push({
+            ...mData,
+            id: MAIN_AUCTION_ID,
+            leadHeroImage: mData.leadHeroImage || mData.heroImages?.[0] || DEFAULT_MEDIA_CONFIG.heroImages[0]
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const auctionMap = new Map<string, Auction>(allAuctions.map((a) => [a.id, a]));
+
+    // 2. Query user bids across all auctions
+    const userBids: Bid[] = [];
+    if (userId) {
+      try {
+        const bidsSnap = await getDocs(
+          query(collection(db, 'bids'), where('bidderId', '==', userId))
+        );
+        userBids.push(...(bidsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Bid[]));
+      } catch (err) {
+        console.warn('Could not query bids by bidderId:', err);
+      }
+    }
+
+    if (cleanEmail) {
+      try {
+        const bidsByEmailSnap = await getDocs(
+          query(collection(db, 'bids'), where('bidderEmail', '==', cleanEmail))
+        );
+        const existingIds = new Set(userBids.map((b) => b.id));
+        bidsByEmailSnap.docs.forEach((d) => {
+          if (!existingIds.has(d.id)) {
+            userBids.push({ id: d.id, ...d.data() } as Bid);
+            existingIds.add(d.id);
+          }
+        });
+      } catch (err) {
+        console.warn('Could not query bids by bidderEmail:', err);
+      }
+    }
+
+    // Map user bids by auctionId to find highest bid placed by user
+    const userAuctionBids = new Map<string, { maxBid: number; count: number }>();
+    for (const b of userBids) {
+      if (!b.auctionId) continue;
+      const current = userAuctionBids.get(b.auctionId) || { maxBid: 0, count: 0 };
+      userAuctionBids.set(b.auctionId, {
+        maxBid: Math.max(current.maxBid, Number(b.amount) || 0),
+        count: current.count + 1
+      });
+    }
+
+    // Also include any auctions where the user is registered as highBidderId or highBidderEmail
+    for (const auction of allAuctions) {
+      const isHighBidder =
+        (userId && auction.highBidderId === userId) ||
+        (cleanEmail && auction.highBidderEmail?.toLowerCase() === cleanEmail);
+      if (isHighBidder && !userAuctionBids.has(auction.id)) {
+        userAuctionBids.set(auction.id, {
+          maxBid: auction.currentBid || auction.startingBid || 0,
+          count: 1
+        });
+      }
+    }
+
+    const now = Date.now();
+
+    // 3. Process Active Bids & Won Auctions
+    for (const [auctionId, bidInfo] of userAuctionBids.entries()) {
+      const auction = auctionMap.get(auctionId);
+      if (!auction) continue;
+
+      const isEnded =
+        auction.status === 'ended' ||
+        auction.status === 'sold' ||
+        (auction.endTime > 0 && now >= auction.endTime);
+
+      const isWinningBidder =
+        (userId && auction.highBidderId === userId) ||
+        (cleanEmail && auction.highBidderEmail?.toLowerCase() === cleanEmail);
+
+      const isReserveSatisfied =
+        auction.isReserveMet ||
+        (auction.reserveAmount ? auction.currentBid >= auction.reserveAmount : true);
+
+      if (isEnded) {
+        // Check if Won Auction (holds winning bid and reserve met or sold)
+        if (isWinningBidder && (isReserveSatisfied || auction.status === 'sold')) {
+          summary.wonAuctions.push({
+            auctionId: auction.id,
+            auctionTitle: auction.title || 'Collector Vehicle Lot',
+            auctionHeroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
+            winningBid: auction.currentBid || bidInfo.maxBid || 0,
+            currency: auction.currency || 'CAD',
+            endTime: auction.endTime || now,
+            sellerName: auction.sellerName || 'Verified Consignor',
+            sellerEmail: auction.sellerEmail || '',
+            sellerPhone: auction.sellerPhone || '',
+            location:
+              [auction.locationCity, auction.locationProvince, auction.locationCountry]
+                .filter(Boolean)
+                .join(', ') ||
+              auction.location ||
+              'Canada',
+            vin: auction.vin || ''
+          });
+        }
+      } else {
+        // Active auction bid
+        const isLeading =
+          isWinningBidder ||
+          (auction.currentBid > 0 && bidInfo.maxBid >= auction.currentBid);
+
+        summary.activeBids.push({
+          auctionId: auction.id,
+          auctionTitle: auction.title || 'Collector Vehicle Lot',
+          auctionHeroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
+          currentHighBid: auction.currentBid || auction.startingBid || 0,
+          userHighestBid: bidInfo.maxBid,
+          status: isLeading ? 'LEADING' : 'OUTBID',
+          endTime: auction.endTime || (now + 7 * 24 * 60 * 60 * 1000),
+          bidCount: auction.bidCount || 0,
+          currency: auction.currency || 'CAD',
+          isReserveMet: auction.isReserveMet
+        });
+      }
+    }
+
+    // Sort active bids by urgency (endTime ascending)
+    summary.activeBids.sort((a, b) => a.endTime - b.endTime);
+    // Sort won auctions by recent completion (endTime descending)
+    summary.wonAuctions.sort((a, b) => b.endTime - a.endTime);
+
+    // 4. Query Seller Listings
+    for (const auction of allAuctions) {
+      const isOwner =
+        (cleanEmail &&
+          auction.sellerEmail &&
+          auction.sellerEmail.trim().toLowerCase() === cleanEmail) ||
+        (userId && auction.sellerId === userId);
+
+      if (isOwner) {
+        summary.sellerListings.push({
+          auctionId: auction.id,
+          title: auction.title || 'Untitled Listing',
+          heroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
+          status: auction.status || 'preview',
+          currentBid: auction.currentBid || auction.startingBid || 0,
+          bidCount: auction.bidCount || 0,
+          currency: auction.currency || 'CAD',
+          draftEditUrl: `/dashboard/listings/${auction.id}/edit`,
+          endTime: auction.endTime || now,
+          startTime: auction.startTime
+        });
+      }
+    }
+    // Sort seller listings by start/end time descending
+    summary.sellerListings.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+
+    // 5. Query Consignment Submissions
+    const consignmentsList: ConsignmentApplication[] = [];
+    if (userId) {
+      try {
+        const qUser = query(
+          collection(db, 'consignment_applications'),
+          where('registeredUserId', '==', userId)
+        );
+        const snapUser = await getDocs(qUser);
+        consignmentsList.push(
+          ...(snapUser.docs.map((d) => ({ id: d.id, ...d.data() })) as ConsignmentApplication[])
+        );
+      } catch (err) {
+        console.warn('Error querying consignment_applications by registeredUserId:', err);
+      }
+    }
+
+    if (cleanEmail) {
+      try {
+        const qEmail = query(
+          collection(db, 'consignment_applications'),
+          where('sellerEmail', '==', cleanEmail)
+        );
+        const snapEmail = await getDocs(qEmail);
+        const existingIds = new Set(consignmentsList.map((c) => c.id));
+        snapEmail.docs.forEach((d) => {
+          if (!existingIds.has(d.id)) {
+            consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
+            existingIds.add(d.id);
+          }
+        });
+      } catch (err) {
+        console.warn('Error querying consignment_applications by sellerEmail:', err);
+      }
+    }
+
+    // Fallback to legacy 'consignments' collection if empty
+    if (consignmentsList.length === 0) {
+      try {
+        const legacySnap = await getDocs(collection(db, 'consignments'));
+        const matched = legacySnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as ConsignmentApplication))
+          .filter(
+            (c) =>
+              (userId && c.registeredUserId === userId) ||
+              (cleanEmail && c.sellerEmail?.toLowerCase() === cleanEmail)
+          );
+        consignmentsList.push(...matched);
+      } catch {
+        // ignore
+      }
+    }
+
+    summary.consignments = consignmentsList.map((c) => {
+      let normalizedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEWED' | string = 'PENDING';
+      const rawStatus = (c.status || 'pending').toLowerCase();
+      if (rawStatus === 'approved') normalizedStatus = 'APPROVED';
+      else if (rawStatus === 'rejected' || rawStatus === 'declined') normalizedStatus = 'REJECTED';
+      else if (rawStatus === 'reviewed') normalizedStatus = 'REVIEWED';
+      else normalizedStatus = 'PENDING';
+
+      return {
+        id: c.id || '',
+        year: c.year,
+        make: c.make,
+        model: c.model,
+        generation: c.generation,
+        submittedAt: c.submittedAt || now,
+        status: normalizedStatus,
+        convertedAuctionId: c.convertedAuctionId,
+        reserveExpectation: c.reserveExpectation,
+        location:
+          [c.locationCity, c.locationProvince, c.locationCountry].filter(Boolean).join(', ') ||
+          c.location
+      };
+    });
+
+    summary.consignments.sort((a, b) => b.submittedAt - a.submittedAt);
+  } catch (err) {
+    console.error('Error executing fetchUserActivitySummary:', err);
+  }
+
+  return summary;
 }

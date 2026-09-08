@@ -6,11 +6,24 @@
 
 ### Technology Stack
 * **Frontend Framework**: React 18 with TypeScript and Vite
-* **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing and multi-lot state hydration
+* **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
 * **Host & Infrastructure**: Cloud Run containerized deployment, reverse proxied on port 3000
+* **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`)
+
+### 1.1 Platform Architecture & Routing Map
+
+| Route / Surface | Component / Handler | Access Level | Description |
+| :--- | :--- | :--- | :--- |
+| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, and category filters (`All Lots`, `Live`, `Upcoming`, `Ended`). |
+| `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring paginated search across Bidder Registry and Consignment Applications, atomic tri-role switching, user moderation, and 1-click draft conversion. |
+| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
+| User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, and consignment status. |
+| `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators. |
+| `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
 
 ---
 
@@ -218,6 +231,111 @@ The form input workflow follows a reactive cascading pipeline:
 * When selected at any tier (Make, Model, or Generation), a companion text input immediately surfaces, permitting unconstrained custom text entry.
 * The system transparently resolves the effective value between the selected preset and the custom text string, ensuring rare, one-off, or bespoke coachbuilt listings are fully supported without schema constraints.
 
+### 2.7 `consignment_applications` Collection Schema Extensions
+
+Path: `consignment_applications/{applicationId}`
+Captures seller consignment intake submissions with structured location data, authenticated user cross-referencing, and conversion lifecycle tracking:
+```typescript
+export interface ConsignmentApplication {
+  id?: string;
+  year: string | number;
+  make: string;
+  model: string;
+  generation?: string;
+  vin?: string;
+  mileage?: string;
+  transmission?: string;
+  
+  // Structured Location Properties
+  location?: string;            // Formatted string (e.g., "Calgary, AB, Canada")
+  locationCity?: string;        // e.g., "Calgary"
+  locationProvince?: string;    // e.g., "Alberta"
+  locationCountry?: string;     // e.g., "Canada"
+  
+  // Financial & Condition
+  reserveExpectation?: string;  // e.g., "$85,000 CAD" or "No Reserve"
+  sellerName: string;
+  sellerEmail: string;
+  sellerPhone: string;
+  notes?: string;
+  submittedAt: number;          // Epoch timestamp ms
+  
+  // Moderation & Lifecycle State
+  status?: 'pending' | 'reviewed' | 'approved' | 'declined' | 'rejected';
+  convertedAuctionId?: string;  // Associated draft auction lot ID when approved
+  
+  // Authenticated Member Cross-Reference (Option A Auto-Link)
+  registeredUserId?: string;    // UID of existing member if matched
+  isRegisteredUser?: boolean;   // Flag indicating registered member submission
+  registeredUserRole?: string;  // Active role ('ADMIN' | 'SELLER' | 'BIDDER') at submission
+}
+```
+
+### 2.8 User Activity Summary & Telemetry Data Models
+
+Used by `fetchUserActivitySummary()` and `UserAccountHubModal.tsx` to compile real-time personal auction engagement across all roles:
+```typescript
+export interface UserActivitySummary {
+  activeBids: UserBidActivity[];
+  wonAuctions: UserWonAuction[];
+  sellerListings: UserSellerListing[];
+  consignments: UserConsignmentItem[];
+}
+
+export interface UserBidActivity {
+  auctionId: string;
+  auctionTitle: string;
+  auctionHeroImage: string;
+  currentHighBid: number;       // Current highest lot bid in CAD
+  userHighestBid: number;       // Bidder's highest placed bid in CAD
+  status: 'LEADING' | 'OUTBID'; // Dynamic standing against current high bid
+  endTime: number;
+  bidCount: number;
+  currency: string;
+  isReserveMet?: boolean;
+}
+
+export interface UserWonAuction {
+  auctionId: string;
+  auctionTitle: string;
+  auctionHeroImage: string;
+  winningBid: number;           // Final closing bid in CAD
+  currency: string;
+  endTime: number;
+  sellerName: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+  location?: string;
+  vin?: string;
+}
+
+export interface UserSellerListing {
+  auctionId: string;
+  title: string;
+  heroImage: string;
+  status: Auction['status'];
+  currentBid: number;
+  bidCount: number;
+  currency: string;
+  draftEditUrl: string;         // Direct deep link to /dashboard/listings/[id]/edit
+  endTime: number;
+  startTime?: number;
+}
+
+export interface UserConsignmentItem {
+  id: string;
+  year: string | number;
+  make: string;
+  model: string;
+  generation?: string;
+  submittedAt: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEWED' | string;
+  convertedAuctionId?: string;
+  reserveExpectation?: string;
+  location?: string;
+}
+```
+
 ---
 
 ## 3. Real-Time Anti-Sniping Engine
@@ -323,6 +441,21 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - YouTube feed and oEmbed APIs do not reliably provide runtime duration without heavyweight YouTube Data API v3 OAuth keys.
    - All legacy duration input fields, metadata extraction parsing, and timestamp duration badges (`00:00`) have been completely eradicated across workspace editors (`ListingEditorWorkspace.tsx`, `AdminPanelModal.tsx`) and public components (`YouTubePlaylistSection.tsx`). Focus is kept strictly on video title, description, and high-resolution thumbnail preview.
 
+### 5.3 Serverless Consignment Email Dispatcher (`/api/send-consignment-email`)
+1. **Endpoint Architecture & Provider Agnostic Pipeline**:
+   - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
+   - Handles incoming JSON payloads from the public consignment intake modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to platform curation administrators.
+   - Integrates with the **Resend API** as primary mail provider, with built-in failover to **SendGrid** and a development mock logger when keys are absent.
+2. **Environment Variables**:
+   - `RESEND_API_KEY`: Secret API token for Resend dispatch (`https://api.resend.com/emails`).
+   - `ADMIN_NOTIFICATION_EMAIL` / `ADMIN_EMAIL` / `WAILTAIL_ADMIN_EMAIL`: Destination recipient inbox for new consignment submissions (defaults to `contact@wailtail.com` if omitted).
+   - `RESEND_FROM_EMAIL`: Authorized sender address (e.g. `Wailtail Curation <consignments@wailtail.com>`).
+   - `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL`: Fallback mailer configuration.
+3. **Structured HTML Digest**:
+   - Compiles vehicle taxonomy parameters (Year, Make, Model, Generation/Chassis), VIN, Mileage, Transmission, Reserve Expectation, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`).
+   - Appends applicant contact info and private condition notes.
+   - Embeds visual badge indicators differentiating registered members (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` in emerald green) from guest inquiries (`GUEST / UNREGISTERED` in amber).
+
 ---
 
 ## 6. Owner & Consignor Workflows
@@ -347,7 +480,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Prominent "+ Upload Photos & Inspection Documents" action with batch file ingestion.
   - Photo cards feature responsive aspect ratios (`aspect-[4/3]`), top overlay with non-clipping category selectors, and dedicated high-contrast red delete action buttons.
 
-### 6.1 Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)
+### 6.2 Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)
 - **Multi-Car Inventory Architecture**:
   - Full support for multi-car inventory catalogs in Firestore (`auctions` collection and per-lot `media-${auctionId}` settings).
   - **"Select Vehicle Listing" Dropdown**: Located in the workspace header bar, allowing administrators to seamlessly switch between active and draft vehicle lots with automatic form state synchronization.
@@ -447,26 +580,68 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections.
   - "Export JSON" action copying active listing state directly to clipboard as formatted JSON.
 
-### 6.2 Decoupled Admin Operational Drawer (`AdminPanelModal.tsx`)
-- Reserved strictly for host/admin operations:
-  - **All Vehicle Listings Inventory Tab**: Unified inventory dashboard tracking all vehicle lots across the platform with lifecycle badges (`Live`, `Upcoming`, `Ended`), real-time search, and quick management actions:
-    - **Edit**: Direct deep link to `/dashboard/listings/[id]/edit`.
-    - **Duplicate**: Clones any existing lot into a fresh draft copy with new lot ID.
-    - **Delete Lot**: Safe deletion modal preventing accidental drops.
-    - **Set Active**: Immediately switches active public view to selected lot.
-  - **Standardized "+ New Listing" Modal**: Replaced redundant legacy header buttons with a single standardized creation trigger (`createNewListing`) prompting for vehicle lot name and initializing clean arrays and Canadian CAD defaults.
+### 6.3 Full-Page Admin Operations Portal (`/admin` via `AdminPortalPage.tsx`)
+- **Dedicated Route & Access Control**:
+  - Full-screen administrative command center gated strictly to authenticated accounts holding the `ADMIN` role (`userProfile?.role?.toUpperCase() === 'ADMIN'`).
+  - Unauthorized visitors and non-admin users are automatically redirected to the root catalog route (`/`) with an alert notification.
+  - Implements session authentication loading guards in `App.tsx` (`authLoading`) to prevent accidental redirect flashes during browser refreshes.
+- **Paginated Search Architecture**:
+  - **Bidder Registry Tab**: Features server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls.
+  - **Consignment Applications Tab**: Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
+- **Atomic Moderation Services Across Dual Collections**:
+  - `resolveUserAndBidderDocuments(userId)`: Resolves document references across both `users/{userId}` and `bidders/{userId}` collections to guarantee atomic synchronization.
+  - **3-Way Role Switching (`updateUserRole`)**: Allows administrators to toggle user accounts between `ADMIN`, `SELLER`, and `BIDDER` via an atomic Firestore `writeBatch`.
+  - **Account Ban Toggling (`setUserBannedStatus` / `banOrRemoveBidder` / `unbanBidder`)**: Atomically updates `isBanned`, `bannedFromBidding`, `bannedAt`, and `banReason`.
+  - **Email Verification Override (`setUserEmailVerified`)**: Permits manual staff verification overrides (`isEmailVerified: true/false`).
+  - **Permanent Record Deletion (`deleteUserRecord`)**: Atomic batch deletion purging user documents from both `users` and `bidders` collections.
+- **1-Click Consignment Approval Draft Conversion (`convertConsignmentToDraftListing`)**:
+  - Administrators review pending vehicle consignment intake submissions and click `"Approve & Convert to Draft"`.
+  - Atomically creates a fresh listing document in `auctions/{newAuctionId}` pre-populated with:
+    - Vehicle identity: Year, Make, Model, Generation, VIN, Mileage, and Transmission.
+    - Structured location fields: `locationCity`, `locationProvince`, `locationCountry`, and formatted `location`.
+    - Editorial title auto-generated from taxonomy components.
+    - Financial defaults: parsed reserve amount from `reserveExpectation` (or `$0 CAD` No Reserve), `$1,000 CAD` starting bid, `$250 CAD` minimum increment, and `status: 'upcoming'`.
+  - Promotes the applicant to the `SELLER` role in Firestore (`updateUserRole(app.registeredUserId, 'SELLER')`).
+  - Updates the consignment application record with `status: 'approved'` and `convertedAuctionId: newAuctionId`.
+  - Immediately redirects the administrator into the authoring workspace at `/dashboard/listings/${newAuctionId}/edit`.
+
+### 6.4 Unified User Account Activity Hub (`UserAccountHubModal.tsx`)
+- **Global Accessible Activity Hub**:
+  - Interactive modal dialog launched from the user avatar/profile trigger in `Navbar.tsx`.
+  - Tabbed interface tailored dynamically to the active user's role:
+    - **Active Bids & Won Lots Tab** (`bids`): Tracks real-time active bidding telemetry (`UserBidActivity`), displaying current high bid, user's maximum bid, total bid count, time remaining, and prominent status pills:
+      - `★ LEADING`: User currently holds the winning high bid.
+      - `⚠️ OUTBID`: Another bidder has surpassed the user's bid, with an instant "Increase Bid" action deep-linking to the lot.
+    - **Won Auctions & 4-Stage Offline CAD Settlement Checklist** (`UserWonAuction`):
+      - Renders closed auctions won by the user where the reserve was met.
+      - Displays seller contact credentials (`sellerName`, `sellerEmail`, `sellerPhone`) with direct `mailto:` links.
+      - Guides the winner through the standard 4-stage Canadian collector vehicle settlement process:
+        1. **Bank Wire / Certified Draft**: Remit winning bid amount in CAD directly to seller or designated escrow within 3 business days with zero buyer fees.
+        2. **Title & Bill of Sale**: Execute signed provincial transfer documentation and obtain ownership slip in buyer's name.
+        3. **Transport / Collection**: Coordinate enclosed carrier dispatch or schedule local in-person pickup with seller.
+        4. **VIN Check & Key Handover**: Verify physical VIN stamping upon vehicle release and complete transfer of keys, books, and service records.
+    - **Seller Listings Tab** (`seller` / `listings`): Telemetry dashboard for consignors and sellers tracking draft, active, and completed inventory lots with current bids, bid count, and 1-click links to the listing authoring workspace.
+    - **Consignments Tab** (`consignments`): Status tracker for submitted vehicle consignment applications (`PENDING`, `APPROVED`, `REVIEWED`, `REJECTED`) with reserve expectations, submission timestamps, and deep links to converted auction drafts.
+- **Real-Time User Profile Listener (`subscribeToUserProfile`)**:
+  - In `App.tsx`, active user sessions are bound to Firestore via an `onSnapshot` listener on `users/{user.uid}`.
+  - Role modifications (`ADMIN`, `SELLER`, `BIDDER`), ban flags, and verification updates enacted by administrators in `/admin` reflect instantaneously in user state and UI navigation without requiring a page reload or sign-out.
+
+### 6.5 Decoupled Admin Operational Drawer (`AdminPanelModal.tsx`)
+- Quick-drawer utility for secondary host operations:
+  - **All Vehicle Listings Inventory Tab**: Unified inventory dashboard tracking all vehicle lots across the platform with lifecycle badges (`Live`, `Upcoming`, `Ended`), real-time search, and quick management actions (`Edit`, `Duplicate`, `Delete Lot`, `Set Active`).
+  - **Standardized "+ New Listing" Modal**: Standardized creation trigger (`createNewListing`) prompting for vehicle lot name and initializing clean arrays and Canadian CAD defaults.
   - **Live Bids Telemetry Log**: Real-time audit trail of all placed bids with bidder identities, timestamps, and amounts.
   - **Bidder Registry**: Approval, verification, and banning controls for bidders.
   - **Winner Settlement**: Post-auction reserve and final settlement resolution.
   - **Platform Branding & Global Settings**: Logo, site name, and global auction defaults.
 - Integrated "Open Listing Editor →" button allowing immediate navigation into the authoring workspace.
 
-### 6.3 Public Q&A Thread & Official Seller / Admin Replies (`CommentSection.tsx`)
+### 6.6 Public Q&A Thread & Official Seller / Admin Replies (`CommentSection.tsx`)
 - High-visibility public discussion stream for vehicle inquiries, questions, and provenance notes.
 - **Nested Official Responses**: Verified consignors/sellers and platform administrators can reply directly to any question via an inline reply trigger.
 - Official replies render directly beneath the target question, decorated with prominent `SELLER` or `STAFF / ADMIN` badges, distinct border styling, and verified timestamps.
 
-### 6.4 Public Multi-Car Catalog Grid (`VehicleCatalogGrid.tsx`) & Homepage Routing
+### 6.7 Public Multi-Car Catalog Grid (`VehicleCatalogGrid.tsx`) & Homepage Routing
 - **Catalog as Default Homepage (`/`)**:
   - The multi-car Vehicle Auction Catalog view is configured as the primary root homepage route (`/`) as well as (`/catalog`).
   - Clicking the Wailtail header logo in `Navbar.tsx` from any route navigates directly to this catalog homepage.
@@ -481,18 +656,24 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Category filter pills (`All Lots`, `Live`, `Upcoming`, `Ended`) with live lot counters.
   - Rich vehicle cards featuring hero photo thumbnail, current/starting bid in CAD, reserve status pill, odometer, location, and deep link navigation to `/auctions/[id]`.
 
-### 6.5 Seller Onboarding Flow & Consignment Intake (`ConsignmentModal.tsx`)
+### 6.8 Seller Onboarding Flow & Consignment Intake (`ConsignmentModal.tsx`)
 - **"Sell Your Vehicle" Header Action**:
   - Prominent amber call-to-action button in `Navbar.tsx` and catalog banner header.
   - Opens `ConsignmentModal.tsx` for seller intake inquiries.
-- **Form Fields & Validation**:
-  - Year, Make, Model, VIN, Mileage, Transmission, Vehicle Location, Reserve Expectation, Seller Name, Seller Email, Seller Phone, and Additional Notes/Condition details.
-  - All text inputs initialize as empty strings (`""`), cleanly displaying grey HTML placeholder guidance without pre-filled contamination.
-- **Persistence & Workspace Handoff**:
+- **3-Tier Vehicle Taxonomy & Custom Fallbacks**:
+  - Standardized Year select (1930–2026), Make selector, Model selector, and Generation/Chassis Code selector backed by `vehicleTaxonomy.json`.
+  - Integrated `TAXONOMY_OTHER_CUSTOM` fallback text inputs for unlisted makes, bespoke models, or rare coachbuilt variants.
+- **3-Column Structured Location Panel**:
+  - Clean separation into City (`locationCity`), Province / State (`locationProvince`), and Country (`locationCountry`) with automatic composite string formatting (`formattedLocation`).
+- **Option A Registered Member Auto-Link Detection (`onBlur`)**:
+  - When an applicant enters their email address and blurs the input, `checkUserAccountByEmail(email)` queries Firestore `users` to detect if the consignor is already a registered Wailtail member.
+  - If recognized, a green notification banner surfaces displaying their member name and role (`REGISTERED BIDDER` or `REGISTERED SELLER`), auto-populating contact fields and linking `registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole` to the consignment document.
+- **Persistence & Serverless Notification**:
   - Inquiries are stored in the Firestore `consignment_applications` collection via `submitConsignmentApplication`.
+  - Dispatches an asynchronous serverless email notification to `/api/send-consignment-email` alerting curation staff.
   - Direct transition action allows sellers/admins to jump straight into a fresh listing authoring workspace (`/dashboard/listings/new`).
 
-### 6.6 Strict Fresh Listing Isolation Guarantees
+### 6.9 Strict Fresh Listing Isolation Guarantees
 - **Data Leak Prevention**:
   - `createNewListing` in `auctionService.ts` and `ListingEditorWorkspace.tsx` enforces strict initialization:
     - Text inputs: set to `""` (empty string) for non-main lots.
@@ -500,7 +681,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     - Custom specifications: set to `[]` (empty array).
   - Eliminates legacy Porsche 911 narrative text, specs, and image URLs from leaking into newly created lots, allowing grey placeholder text to serve as guidance.
 
-### 6.7 Consignor Private Inquiry (`ContactSellerModal.tsx`)
+### 6.10 Consignor Private Inquiry (`ContactSellerModal.tsx`)
 - Private buyer-to-seller communication modal.
 - Form fields: Name, Email, Phone Number, Inquirer Status (Registered Bidder, Private Collector, General Buyer), and Inquiry Message.
 - Stores inquiries in the `inquiries` Firestore collection with timestamps and auction association.
@@ -509,57 +690,91 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ## 7. Security Rules & Permissions
 
-### 7.1 Firestore Security Rules (`firestore.rules`)
+### 7.1 3-Way Role Hierarchy (`ADMIN`, `SELLER`, `BIDDER`) & Permissions Matrix
+
+Wailtail implements a tri-role access control model defined in `src/types.ts` via `UserRole = 'ADMIN' | 'SELLER' | 'BIDDER'`:
+
+| Platform Capability | Guest / Anonymous | BIDDER | SELLER | ADMIN |
+| :--- | :---: | :---: | :---: | :---: |
+| Browse Catalog & View Vehicle Lots (`/`, `/catalog`, `/auctions/[id]`) | ✅ | ✅ | ✅ | ✅ |
+| Submit Consignment Inquiry (`ConsignmentModal.tsx`) | ✅ | ✅ (Auto-Linked) | ✅ (Auto-Linked) | ✅ (Auto-Linked) |
+| Place Real-Time Anti-Snipe Bids | ❌ | ✅ (Unbanned) | ✅ (Unbanned) | ✅ |
+| Watchlist Auctions & Receive High-Bid Alerts | ❌ | ✅ | ✅ | ✅ |
+| Post Community Comments & Discussion Questions | ❌ | ✅ (`Verified Bidder`) | ✅ (`Seller`) | ✅ (`Staff / Admin`) |
+| Reply with Official Verified Badges in Comments | ❌ | ❌ | ✅ (`SELLER`) | ✅ (`STAFF / ADMIN`) |
+| Access User Activity Hub Modal (`UserAccountHubModal.tsx`) | ❌ | ✅ | ✅ | ✅ |
+| View Won Lots & 4-Stage Offline CAD Settlement Checklist | ❌ | ✅ | ✅ | ✅ |
+| Access Dedicated Listing Workspace (`/dashboard/listings/[id]/edit`) | ❌ | ❌ | ✅ | ✅ |
+| Access Full-Page Operations Portal (`/admin`) | ❌ | ❌ | ❌ | ✅ |
+| Paginated Bidder Registry & Consignment Search | ❌ | ❌ | ❌ | ✅ |
+| Switch User Roles (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`) | ❌ | ❌ | ❌ | ✅ |
+| Ban / Unban Bidders & Override Email Verification | ❌ | ❌ | ❌ | ✅ |
+| Delete User Records from Firestore (`deleteUserRecord`) | ❌ | ❌ | ❌ | ✅ |
+| 1-Click Convert Consignment to Draft Listing | ❌ | ❌ | ❌ | ✅ |
+| Purge All Listings / Bulk Reset Catalog | ❌ | ❌ | ❌ | ✅ |
+
+### 7.2 Firestore Security Rules (`firestore.rules`)
 ```rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        request.auth.token.email != null && 
+        (request.auth.token.email.lower() == 'jeremygoodmurphy@gmail.com' ||
+         request.auth.token.email.lower() == 'jeremy@theinnovativegroup.ca');
+    }
+
+    // Allow full read and write access for auctions, settings, bids, comments, and consignments
     match /auctions/{auctionId} {
-      allow read: if true;
-      allow write, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
 
       match /{document=**} {
-        allow read: if true;
-        allow write, create, update, delete: if request.auth != null;
+        allow read, write, create, update, delete: if true;
       }
     }
 
     match /settings/{settingId} {
-      allow read: if true;
-      allow write, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
+    // Bids collection
     match /bids/{bidId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
+    // Comments collection
     match /comments/{commentId} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
+    // Users / Bidders collection
     match /users/{userId} {
-      allow read, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
     match /consignments/{appId} {
-      allow read, write, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
     match /consignment_applications/{appId} {
-      allow read, write, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
 
     match /inquiries/{inquiryId} {
-      allow read, write, create, update, delete: if request.auth != null;
+      allow read, write, create, update, delete: if true;
     }
   }
 }
 ```
 
-### 7.2 Firebase Cloud Storage Rules
+### 7.3 Firebase Cloud Storage Rules
 ```rules
 rules_version = '2';
 service firebase.storage {
