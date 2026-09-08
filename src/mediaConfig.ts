@@ -7,7 +7,7 @@ export const BLANK_MEDIA_CONFIG: MediaConfiguration = {
   siteTagline: '',
   highlightsBadge: '',
   heroImages: [],
-  overviewHeading: 'Listing Overview',
+  overviewHeading: '',
   overviewParagraphs: [],
   overviewImage: { url: '', caption: '', alt: '' },
   overviewSpecs: [],
@@ -15,6 +15,7 @@ export const BLANK_MEDIA_CONFIG: MediaConfiguration = {
   videoSubtitle: '',
   youtubePlaylistUrl: '',
   videoChapters: [],
+  showcaseChapters: [],
   inlineShowcase: [],
   fullGallery: []
 };

@@ -8,6 +8,7 @@ export interface Auction {
   siteTagline?: string;
   make?: string;
   model?: string;
+  generation?: string;
   year?: string | number;
   vin: string;
   mileage: string;
@@ -221,6 +222,7 @@ export interface ListingDraftSchema {
   year: number | string;
   make: string;
   model: string;
+  generation?: string;
   vin: string;
   mileage: number | string;
   distanceUnit: 'km' | 'mi';

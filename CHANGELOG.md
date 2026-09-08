@@ -6,7 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased] - 2026-09-07
+## [1.3.0] - 2026-09-08
+
+### Added
+- **3-Tier Dependent Vehicle Taxonomy**:
+  - Curated 80+ collector vehicle dataset (`src/data/vehicleTaxonomy.json`) supporting iconic enthusiast marques, models, and generational chassis codes.
+  - Built reactive cascading 3-tier selection pipeline (Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code) in Section 1 of `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx`.
+  - Implemented `TAXONOMY_OTHER_CUSTOM` fallback text inputs for bespoke or unlisted makes, models, and generations.
+  - Reordered Section 1 layout placing Year, Make, Model, and Generation at the top row with an "Auto Generate from Year / Make / Model / Gen" listing title generator.
+  - Added auto-synchronizing Highlights Tag Badge (`formatHighlightsBadge`) with `isBadgeOverridden` manual override protection.
+- **Vercel Serverless Playlist Ingestion**:
+  - Implemented `/api/youtube-playlist` serverless proxy endpoint (`api/youtube-playlist.ts`) bypassing browser CORS constraints for 1-click YouTube playlist video chapter auto-import.
+  - Added 1-click "Auto-Import Playlist Videos" button in `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx` via `fetchYouTubePlaylistVideos()` in `src/services/auctionService.ts`.
+  - Automatically parses video IDs, clean titles, descriptions, and high-resolution thumbnail images directly into driving chapters from YouTube RSS Atom feeds.
+- **Section 7 Native Datetime Pickers**:
+  - Interactive calendar trigger icons and native `.showPicker()` modal invocation with dark-mode styling (`[color-scheme:dark]`).
+  - Streamlined auction scheduling with instant date calculation shortcuts (`Set to Now`, `+3 Days`, `+7 Days`).
+
+### Changed
+- **Cloud Storage Asset Pipeline & Payload Guard**:
+  - Direct Firebase Cloud Storage URL asset streaming paired with pre-flight canvas micro-compression (`compressImageDataUrl`).
+  - Enforced a strict 900KB serialized document payload cap in `saveMediaConfig()` (`auctionService.ts`), permanently resolving Firestore 1MB (`1,048,576 bytes`) document limit exceptions.
+  - Preserved root auction lead hero synchronization (`leadHeroImage`) during batch saves to guarantee zero-latency catalog card resolution.
+- **Video Duration UI Clean-Up**:
+  - Complete removal of video duration input fields, metadata fields, and timestamp badges across public (`YouTubePlaylistSection.tsx`) and workspace video components (`ListingEditorWorkspace.tsx`, `AdminPanelModal.tsx`).
+  - Streamlined video chapter data model to focus strictly on video ID, title, narrative description, embed URL, and high-res thumbnail preview.
+
+## [1.2.1] - 2026-09-07
 
 ### Added
 - **Firebase Cloud Storage Integration (`uploadImageToStorage`)**:

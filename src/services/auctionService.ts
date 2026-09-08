@@ -1254,3 +1254,78 @@ export async function setAuctionEndingSoon(auctionId: string, secondsFromNow = 1
     updatedAt: Date.now()
   });
 }
+
+export interface ExtractedVideoChapter {
+  id: string;
+  title: string;
+  description: string;
+  videoUrl: string;
+  thumbnailUrl?: string;
+}
+
+/**
+ * Fetches YouTube playlist videos via the serverless proxy endpoint (/api/youtube-playlist)
+ * and deduplicates against existing video chapters.
+ */
+export async function fetchYouTubePlaylistVideos(
+  playlistUrl: string,
+  existingChapters: Array<{ videoUrl?: string } | string> = []
+): Promise<ExtractedVideoChapter[]> {
+  const match = playlistUrl.match(/[?&]list=([^&]+)/);
+  let playlistId = match && match[1] ? match[1].trim() : '';
+  if (!playlistId && /^[a-zA-Z0-9_-]{10,}$/.test(playlistUrl.trim())) {
+    playlistId = playlistUrl.trim();
+  }
+
+  if (!playlistId) {
+    throw new Error("Invalid YouTube Playlist URL. Ensure the link contains a 'list=...' parameter.");
+  }
+
+  const response = await fetch(`/api/youtube-playlist?playlistId=${encodeURIComponent(playlistId)}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.error || 'Could not auto-import playlist. Please verify the playlist is Public or add video URLs manually.');
+  }
+
+  const data = await response.json();
+  if (!data || !data.success || !Array.isArray(data.videos)) {
+    throw new Error(data?.error || 'Failed to fetch playlist videos from API.');
+  }
+
+  const parsedChapters: ExtractedVideoChapter[] = data.videos;
+
+  // Chapter Deduplication: Filter out video IDs that already exist in active video chapters
+  const existingIds = new Set<string>();
+  for (const ch of existingChapters) {
+    const url = typeof ch === 'string' ? ch : ch.videoUrl;
+    if (!url) continue;
+    const matchId = url.match(/(?:v=|youtu\.be\/|\/embed\/|\/v\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+    if (matchId && matchId[1]) {
+      existingIds.add(matchId[1]);
+    } else if (/^[a-zA-Z0-9_-]{11}$/.test(url.trim())) {
+      existingIds.add(url.trim());
+    }
+  }
+
+  const uniqueChapters: ExtractedVideoChapter[] = [];
+  for (const chapter of parsedChapters) {
+    if (!chapter.videoUrl) continue;
+    const vMatch = chapter.videoUrl.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    const videoId = vMatch ? vMatch[1] : '';
+    if (videoId) {
+      if (existingIds.has(videoId)) {
+        continue;
+      }
+      existingIds.add(videoId);
+    }
+    uniqueChapters.push({
+      id: chapter.id,
+      title: chapter.title,
+      description: chapter.description,
+      videoUrl: chapter.videoUrl,
+      thumbnailUrl: chapter.thumbnailUrl
+    });
+  }
+
+  return uniqueChapters;
+}

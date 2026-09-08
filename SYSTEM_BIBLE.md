@@ -25,6 +25,7 @@ interface Auction {
   subtitle: string;
   make: string;
   model: string;
+  generation?: string; // Optional generation / chassis code (e.g. "930", "E46", "993")
   year: number;
   vin: string;
   mileage: string; // Formatted number or string (e.g. "126,200")
@@ -127,7 +128,7 @@ interface MediaConfiguration {
     title: string;
     description: string;
     videoUrl: string;
-    duration: string;
+    thumbnailUrl?: string;
   }>;
   
   // Predefined Curated Showcase Chapters (New Standard)
@@ -196,6 +197,26 @@ interface GalleryImage {
 
 #### Context-Aware Hybrid Spec Cards System
 Each spec card uses a searchable Combobox (`SpecCardCombobox.tsx`) that contextually filters available preset keys based on the parent chapter's category. Sellers can either select a recommended preset or type a bespoke attribute and click `"Add Custom Key..."`, flagging `isCustomKey: true`. Automatic bi-directional normalization (`showcaseConverter.ts`) guarantees full backward-compatibility with legacy listings.
+
+### 2.6 3-Tier Collector Vehicle Taxonomy Architecture & Schema
+
+The platform implements a curated, hierarchical vehicle taxonomy system specifically structured for collector, classic, and enthusiast automobiles:
+
+#### 80+ Collector Vehicle Dataset (`src/data/vehicleTaxonomy.json`)
+* Curated repository spanning 80+ enthusiast marques (including Porsche, Ferrari, BMW, Mercedes-Benz, Alpina, Aston Martin, Bugatti, Shelby, McLaren, Lotus, Lamborghini, and Lancia).
+* Each marque maps to distinct enthusiast models, which further nest specific chassis codes, series designations, and production generations (e.g. `Porsche` $\rightarrow$ `911` $\rightarrow$ `930`, `964`, `993`, `996`, `997`, `991`, `992`).
+
+#### 3-Tier Dependent Selection Pipeline
+The form input workflow follows a reactive cascading pipeline:
+1. **Year**: Standardized numerical selection dropdown (1930–2026).
+2. **Make**: Primary selector filtering the top-level brands from `vehicleTaxonomy.json`.
+3. **Model**: Dynamically hydrated based on the selected Make. Modifying the Make immediately cascades a reset of downstream Model and Generation states.
+4. **Generation / Chassis Code**: Dynamically hydrated based on the selected Model. When a model contains recognized chassis codes (e.g. `E30`, `E36`, `E46` for BMW 3-Series), a dedicated Generation dropdown activates. If no generations exist, the field cleanly disables or prompts custom entry.
+
+#### `TAXONOMY_OTHER_CUSTOM` Fallback Handling
+* Every tier provides an `"Other / Custom..."` (`TAXONOMY_OTHER_CUSTOM = '__OTHER_CUSTOM__'`) option.
+* When selected at any tier (Make, Model, or Generation), a companion text input immediately surfaces, permitting unconstrained custom text entry.
+* The system transparently resolves the effective value between the selected preset and the custom text string, ensuring rare, one-off, or bespoke coachbuilt listings are fully supported without schema constraints.
 
 ---
 
@@ -269,16 +290,38 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ## 5. Media & Asset Pipeline
 
-1. **Firebase Cloud Storage Integration**:
+### 5.1 Cloud Storage Asset Pipeline & 900KB Document Size Guard
+1. **Firebase Cloud Storage HTTPS Pipeline**:
    - All uploaded vehicle photos, hero banners, and inspection documents are streamed directly to Firebase Cloud Storage (`gs://wailtail`) via `uploadImageToStorage()`.
    - Cloud Storage returns public HTTPS download URLs (`https://firebasestorage.googleapis.com/...`), taking ~120 bytes of text per photo inside Firestore documents.
    - Eliminates Firestore's 1MB per-document payload ceiling, allowing listings to host 100+ high-resolution vehicle photos.
-2. **Hero Carousel**:
+2. **Client-Side Micro-Compression Engine (`compressImageDataUrl`)**:
+   - Prior to bucket dispatch, raw image Data URLs undergo client-side HTML5 canvas micro-compression, scaling down excessively oversized imagery (max dimension 1200px, 75% quality JPEG).
+   - Serves as an essential fallback mechanism if non-storage or cached payloads are passed through form state.
+3. **900KB Document Payload Size Cap (`saveMediaConfig`)**:
+   - `saveMediaConfig()` in `auctionService.ts` executes rigorous pre-flight payload sanitization and size enforcement.
+   - Sets a strict internal threshold of 900KB (below Firestore's hard 1,048,576 byte limit) for serialized documents, guaranteeing zero `FirebaseError: Payload exceeds maximum allowed size` exceptions.
+4. **Hero Carousel & Root Auction Lead Hero Sync**:
    - Ordered image array rendered in Bring-a-Trailer style carousel format with drag-and-drop reordering (`onDragStart`, `onDrop`) and positional nudges (`← Left` / `Right →`).
-   - Automatically mirrors `leadHeroImage` to the root `auctions/{id}` document during master save operations.
-3. **Categorized Photo Grid & Documents**:
+   - Automatically mirrors `leadHeroImage` to the root `auctions/{id}` document during master save operations to power catalog card thumbnails.
+5. **Categorized Photo Grid & Documents**:
    - 6 categorized sub-galleries: `exterior`, `interior`, `engine`, `underbody`, `docs`, `documentation`.
-   - Native support for PDF vehicle inspection reports with high-contrast document badges.
+   - Native support for PDF vehicle inspection reports with high-contrast document badges and full-screen lightbox inspection.
+
+### 5.2 Serverless YouTube Video Ingestion Pipeline
+1. **Vercel Serverless Proxy Endpoint (`api/youtube-playlist.ts`)**:
+   - Bypasses browser cross-origin resource sharing (CORS) restrictions that block client-side requests to YouTube feed endpoints.
+   - Exposes `/api/youtube-playlist?list={playlistId}` returning sanitized JSON chapter data with permissive CORS headers (`Access-Control-Allow-Origin: *`).
+2. **Server-Side RSS XML Feed Ingestion**:
+   - Serverless handler extracts valid YouTube playlist IDs (regex matching `[?&]list=([a-zA-Z0-9_-]+)` or direct playlist tokens).
+   - Fetches the public YouTube channel/playlist Atom RSS feed (`https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`).
+   - Parses `<entry>` nodes server-side with XML entity decoding (`decodeXmlEntities`), extracting `<yt:videoId>`, `<title>`, `<media:description>`, and high-res `<media:thumbnail>`.
+3. **1-Click Video Chapter Auto-Import**:
+   - Integrated into `auctionService.ts` (`fetchYouTubePlaylistVideos()`), `ListingEditorWorkspace.tsx`, and `AdminPanelModal.tsx`.
+   - Administrators or sellers paste a playlist URL, click "Auto-Import Playlist Videos", and instantly populate the vehicle's driving chapter timeline with titles, descriptions, embed URLs, and thumbnails.
+4. **Complete Eradication of Video Duration Metadata**:
+   - YouTube feed and oEmbed APIs do not reliably provide runtime duration without heavyweight YouTube Data API v3 OAuth keys.
+   - All legacy duration input fields, metadata extraction parsing, and timestamp duration badges (`00:00`) have been completely eradicated across workspace editors (`ListingEditorWorkspace.tsx`, `AdminPanelModal.tsx`) and public components (`YouTubePlaylistSection.tsx`). Focus is kept strictly on video title, description, and high-resolution thumbnail preview.
 
 ---
 
@@ -321,13 +364,27 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Sticky Vertical Progress Stepper**: Left-hand navigation tracking completion status across all 7 listing sections with live visual badges (`Complete`, `In Progress`, `Pending`), scroll anchoring, and sticky top pinning (`sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto`).
 - **Responsive Preview Viewport**: Toggle between full Desktop mode and 390px Mobile simulated phone container with live state hydration.
 - **100% Feature Parity Across All 7 Sections**:
-  - **Section 1 (Vehicle Identity)**: Standardized Year select (1900–2026), Title & Registration status dropdown, Drivetrain / Gearbox dropdown, structured City / Province / Country location fields, and highlights badge.
+  - **Section 1 (Vehicle Identity & 9-Row Form Layout)**:
+    - **9-Row Form Hierarchy**:
+      - **Row 1 (Top Row)**: 4-column responsive grid featuring the 3-tier dependent vehicle taxonomy pipeline: **Year** select (1930–2026), **Make** dropdown, **Model** dropdown, and **Generation / Chassis Code** dropdown (with dynamic custom input fallbacks).
+      - **Row 2**: Primary Listing Title input equipped with an `"Auto Generate from Year / Make / Model / Gen"` helper trigger.
+      - **Row 3**: Subtitle / Highlights Bar input for editorial headline summaries (e.g. `3.0L Flat-Six • 5-Speed 915 • Guards Red (027)`).
+      - **Row 4**: 2-column grid featuring Vehicle Identification Number (VIN) uppercase text input and Odometer reading paired with an interactive `km` / `mi` distance unit toggle.
+      - **Row 5**: 2-column grid for Engine specification and standardized Drivetrain / Gearbox dropdown with custom fallback entry.
+      - **Row 6**: 2-column grid for Exterior finish and Interior / Cabin specifications.
+      - **Row 7**: Standardized Title & Registration Status dropdown with custom fallback entry.
+      - **Row 8**: Structured 3-field vehicle location panel (City, Province / State, and Country).
+      - **Row 9 (Bottom Row)**: 2-column grid featuring Seller / Consignor name and the **Highlights Tag Badge** input.
+    - **`formatHighlightsBadge` Auto-Sync & `isBadgeOverridden` Manual Override Protection**:
+      - The Highlights Tag Badge displays the prominent badge rendered in the public Vehicle Highlights sidebar (e.g. `"1978 Porsche 911 930"`).
+      - When the user selects or updates Year, Make, Model, or Generation in Row 1, `formatHighlightsBadge(year, make, model, generation)` dynamically computes the badge label.
+      - If the user manually customizes the badge field, `isBadgeOverridden` is immediately flagged `true`, safeguarding custom text from being overwritten by future taxonomy adjustments. If the field is subsequently cleared or reset to match the auto-generated string, `isBadgeOverridden` returns to `false`.
   - **Section 2 (Overview Narrative)**: Editable heading, markdown/prose multiline text area, and featured overview image with local upload, gallery picker modal, or URL entry with lightbox preview.
   - **Section 3 (Technical Specifications)**: Automatic real-time synchronization from Section 1 into Section 3 table and public highlights card, with support for appending, reordering, and deleting custom specification rows.
   - **Section 4 (Showcase Chapters)**: Narrative chapter cards with photo uploader (file upload, gallery modal picker, manual URL), multiline checkmark bullet highlights, dynamic technical spec key-value pills, and chapter reordering/deletion.
   - **Section 5 (Hero Carousel & Full Photo Gallery)**: Drag-and-drop and positional hero carousel reordering (`← Left` / `Right →`) with `★ Lead Hero` indicator; categorized gallery supporting exterior, interior, engine, underbody, and PDF inspection documents with non-clipping category selectors and high-visibility delete buttons.
-  - **Section 6 (Videos & Driving Chapters)**: YouTube video metadata fetching via OpenGraph/oEmbed, driving chapter timeline cards with live thumbnail previews, duration timestamps, and chapter management.
-  - **Section 7 (Auction Financials & Schedule)**: Canadian Dollar (`CAD $`) financial ledger (starting bid, reserve, minimum increment), lifecycle status dropdown, datetime pickers, and "Simulate Final 2 Minutes" Anti-Sniping test button.
+  - **Section 6 (Videos & Driving Chapters)**: 1-click YouTube playlist video chapter ingestion via serverless proxy (`api/youtube-playlist.ts`), video metadata auto-fetching, driving chapter timeline cards with live thumbnail previews, and complete eradication of video duration metadata.
+  - **Section 7 (Auction Financials & Schedule)**: Canadian Dollar (`CAD $`) financial ledger (starting bid, reserve, minimum increment), lifecycle status dropdown, interactive native datetime pickers with calendar trigger icons and native `.showPicker()` modal invocation styled with `[color-scheme:dark]`, and "Simulate Final 2 Minutes" Anti-Sniping test button.
 - **Full Public Preview Parity**:
   - Live public header with dynamic countdown calculated via `formatAuctionCountdown`, starting/high bid, reserve status pill, and key header specs.
   - Interactive `HeroMediaCarousel` with image navigation and lightbox triggers.
@@ -337,7 +394,56 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Section 5 `PhotoGalleryGrid` with categorized filtering and full-screen lightbox modal.
   - Section 7 Financials & Scheduling Summary Card detailing soft-close rules and auction dates.
 - **JSON Import / Export (`ListingDraftSchema`)**:
-  - Standardized `ListingDraftSchema` interface capturing Sections 1–4 and 7 in clean, standardized JSON format.
+  - Standardized `ListingDraftSchema` interface capturing Sections 1–4 and 7 in clean, standardized JSON format:
+    ```typescript
+    export interface ListingDraftSchema {
+      // Section 1: Vehicle Identity & Header Specs
+      title: string;
+      subtitle: string;
+      year: number | string;
+      make: string;
+      model: string;
+      generation?: string; // Optional chassis code / generation
+      vin: string;
+      mileage: number | string;
+      distanceUnit: 'km' | 'mi';
+      location: string;
+      engine: string;
+      gearbox: string;
+      exteriorColor: string;
+      interior: string;
+      titleStatus: string;
+      sellerName: string;
+      highlightsBadge: string;
+      
+      // Section 2: Overview Narrative & Provenance
+      overviewHeading: string;
+      overviewNarrative: string[];
+      
+      // Section 3: Technical Specifications Table
+      specifications: Array<{ label: string; value: string }>;
+      
+      // Section 4: Showcase Chapters 01–04
+      showcaseChapters: Array<{
+        category: ShowcaseChapterCategory;
+        title: string;
+        subtitle: string;
+        narrative: string;
+        photoUrl: string;
+        photoCaption: string;
+        highlights: string[];
+        specCards: Array<{ key: string; value: string; isCustomKey: boolean }>;
+      }>;
+      
+      // Section 7: Auction Financials & Schedule
+      financials: {
+        startingBid: number;
+        minimumIncrement: number;
+        reserveAmount: number;
+        durationDays: number;
+      };
+    }
+    ```
   - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections.
   - "Export JSON" action copying active listing state directly to clipboard as formatted JSON.
 

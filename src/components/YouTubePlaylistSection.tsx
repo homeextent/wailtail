@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Film, Volume2, ExternalLink, CheckCircle2, ListVideo, Sparkles } from 'lucide-react';
-import { VideoChapter } from '../types';
+import { VideoChapter, MediaConfiguration } from '../types';
 
 export function extractYouTubeVideoId(urlOrId?: string): string {
   if (!urlOrId) return '';
@@ -36,19 +36,31 @@ export function extractYouTubePlaylistId(url?: string): string {
 }
 
 interface YouTubePlaylistSectionProps {
-  playlistUrl: string;
+  mediaConfig?: MediaConfiguration;
+  playlistUrl?: string;
   videoTitle?: string;
   videoSubtitle?: string;
   chapters?: VideoChapter[];
 }
 
 export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
-  playlistUrl,
-  videoTitle = "Cold Start, Driving Footage & 360 Walkaround",
-  videoSubtitle = "Complete high-definition video playlist showcasing the air-cooled flat-six acoustics, 915 gearbox operation, and exterior walkaround.",
-  chapters
+  mediaConfig,
+  playlistUrl: propPlaylistUrl,
+  videoTitle: propVideoTitle,
+  videoSubtitle: propVideoSubtitle,
+  chapters: propChapters
 }) => {
-  const activeChapters = chapters || [];
+  const chapters = mediaConfig?.videoChapters || propChapters || [];
+  const playlistUrl = (mediaConfig?.youtubePlaylistUrl || propPlaylistUrl || '').trim();
+  const videoTitle = (mediaConfig?.videoTitle || propVideoTitle || 'Video Documentation Series').trim();
+  const videoSubtitle = (mediaConfig?.videoSubtitle || propVideoSubtitle || '').trim();
+
+  // Hide section completely on public listings if no playlist or chapters exist
+  if (!playlistUrl && chapters.length === 0) {
+    return null;
+  }
+
+  const activeChapters = chapters;
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [hasUserInteracted, setHasUserInteracted] = useState<boolean>(false);
 
@@ -96,7 +108,7 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
 
   // Synchronize player when component mounts or active chapter changes
   useEffect(() => {
-    if (activeChapters.length === 0) {
+    if (activeChapters.length === 0 && !playlistUrl) {
       setActiveIframeSrc('');
       return;
     }
@@ -115,36 +127,6 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
 
   const selectedChapter = activeChapters[selectedIndex] || activeChapters[0];
 
-  if (activeChapters.length === 0) {
-    return (
-      <section id="videos" className="bg-white rounded-xl border border-zinc-200/90 shadow-sm overflow-hidden scroll-mt-24">
-        <div className="p-6 sm:p-8 border-b border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase tracking-widest font-bold text-red-700 mb-1 flex items-center gap-1.5">
-              <Film className="w-3.5 h-3.5" />
-              <span>Video Documentation Series</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight font-serif">
-              {videoTitle}
-            </h2>
-            {videoSubtitle && (
-              <p className="text-sm text-zinc-600 mt-1">
-                {videoSubtitle}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="p-12 text-center text-zinc-500">
-          <ListVideo className="w-10 h-10 mx-auto mb-3 text-zinc-300 stroke-[1.5]" />
-          <p className="text-sm font-medium text-zinc-500">
-            No video documentation chapters configured yet.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section id="videos" className="bg-white rounded-xl border border-zinc-200/90 shadow-sm overflow-hidden scroll-mt-24">
       {/* Header */}
@@ -157,26 +139,32 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
           <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight font-serif">
             {videoTitle}
           </h2>
-          <p className="text-sm text-zinc-600 mt-1">
-            {videoSubtitle}
-          </p>
+          {videoSubtitle && (
+            <p className="text-sm text-zinc-600 mt-1">
+              {videoSubtitle}
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-600">
-            <ListVideo className="w-4 h-4 text-zinc-700" />
-            <span>{activeChapters.length} Total Videos</span>
-          </div>
+          {activeChapters.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-600">
+              <ListVideo className="w-4 h-4 text-zinc-700" />
+              <span>{activeChapters.length} Total Videos</span>
+            </div>
+          )}
 
-          <a
-            href={playlistUrl.includes('playlist?list=') ? playlistUrl.replace('/embed/videoseries', '/playlist') : playlistUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
-          >
-            <span>Open on YouTube</span>
-            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
-          </a>
+          {playlistUrl && (
+            <a
+              href={playlistUrl.includes('playlist?list=') ? playlistUrl.replace('/embed/videoseries', '/playlist') : playlistUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-black text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <span>Open on YouTube</span>
+              <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+            </a>
+          )}
         </div>
       </div>
 
@@ -187,7 +175,7 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
             <iframe
               key={activeIframeSrc}
               src={activeIframeSrc}
-              title={selectedChapter?.title || "Vehicle Video Series"}
+              title={selectedChapter?.title || videoTitle || "Vehicle Video Series"}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
@@ -196,35 +184,38 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
         </div>
 
         {/* Selected Video Status Bar */}
-        <div className="flex items-center justify-between bg-zinc-100/80 px-4 py-2.5 rounded-lg border border-zinc-200 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
-            </span>
-            <span className="font-bold text-zinc-800">
-              Active Video: <span className="text-red-700">{selectedChapter?.title || `Video ${selectedIndex + 1}`}</span>
+        {selectedChapter && (
+          <div className="flex items-center justify-between bg-zinc-100/80 px-4 py-2.5 rounded-lg border border-zinc-200 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+              </span>
+              <span className="font-bold text-zinc-800">
+                Active Video: <span className="text-red-700">{selectedChapter?.title || `Video ${selectedIndex + 1}`}</span>
+              </span>
+            </div>
+
+            <span className="text-zinc-500 text-[11px] font-medium hidden sm:inline">
+              Click any chapter below to switch and play that specific video
             </span>
           </div>
-
-          <span className="text-zinc-500 text-[11px] font-medium hidden sm:inline">
-            Click any chapter below to switch and play that specific video
-          </span>
-        </div>
+        )}
 
         {/* Full Dynamic Playlist / Chapter Switcher List */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-700 flex items-center gap-1.5">
-              <ListVideo className="w-4 h-4 text-red-600" />
-              <span>Full Video Playlist & Chapters ({activeChapters.length})</span>
-            </h3>
-            <span className="text-xs text-zinc-500">
-              Select chapter to load footage
-            </span>
-          </div>
+        {activeChapters.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-700 flex items-center gap-1.5">
+                <ListVideo className="w-4 h-4 text-red-600" />
+                <span>Full Video Playlist & Chapters ({activeChapters.length})</span>
+              </h3>
+              <span className="text-xs text-zinc-500">
+                Select chapter to load footage
+              </span>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[600px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 max-h-[600px] overflow-y-auto pr-1">
             {activeChapters.map((ch, idx) => {
               const isSelected = selectedIndex === idx;
               const videoId = extractYouTubeVideoId(ch.videoUrl);
@@ -252,15 +243,10 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           referrerPolicy="no-referrer"
                         />
-                        {ch.duration && (
-                          <span className="absolute bottom-1.5 right-1.5 text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/80 text-white font-bold">
-                            {ch.duration}
-                          </span>
-                        )}
                       </div>
                     )}
 
-                    {/* Chapter Info Header: Number, Title, Duration */}
+                    {/* Chapter Info Header: Number, Title */}
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5">
                       <div className="flex items-start gap-1.5 min-w-0">
                         <div
@@ -276,14 +262,6 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
                           {ch.title}
                         </span>
                       </div>
-
-                      {!thumb && ch.duration && (
-                        <span className={`self-start sm:self-auto text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
-                          isSelected ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-200/70 text-zinc-600'
-                        }`}>
-                          {ch.duration}
-                        </span>
-                      )}
                     </div>
 
                     {ch.description && (
@@ -311,8 +289,9 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
             })}
           </div>
         </div>
-      </div>
-    </section>
-  );
+      )}
+    </div>
+  </section>
+);
 };
 

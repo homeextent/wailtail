@@ -1,0 +1,1199 @@
+{
+  "Alpina": {
+    "models": [
+      {"name": "B3", "generations": ["E30", "E36", "E46", "E90", "F30", "G20"]},
+      {"name": "C2", "generations": ["E30", "E36", "E46", "E90", "F30", "G20"]},
+      {"name": "B5", "generations": ["E28", "E34", "E39", "E60", "F10", "G30", "G60"]},
+      {"name": "B10", "generations": ["E28", "E34", "E39", "E60", "F10", "G30", "G60"]},
+      {"name": "B7", "generations": ["E32", "E38", "E65", "F01", "G12"]},
+      {"name": "B12", "generations": ["E32", "E38", "E65", "F01", "G12"]},
+      {"name": "XB7", "generations": ["G07"]},
+      {"name": "B8 Gran Coupe", "generations": ["G16"]},
+      {"name": "Roadster", "generations": ["E52 (Z8)", "E85 (Z4)"]},
+      {"name": "Roadster V8", "generations": ["E52 (Z8)", "E85 (Z4)"]},
+      {"name": "Roadster S", "generations": ["E52 (Z8)", "E85 (Z4)"]}
+    ]
+  },
+  "Alpine": {
+    "models": [
+      {"name": "A110", "generations": ["Classic (1961-1977)", "Modern (2017+)"]},
+      {"name": "A310", "generations": ["A310"]},
+      {"name": "A610", "generations": ["A610"]},
+      {"name": "GTA", "generations": ["GTA"]},
+      {"name": "A290", "generations": ["Ampere Small Platform"]}
+    ]
+  },
+  "Ariel": {
+    "models": [
+      {"name": "Atom", "generations": ["Atom 1", "Atom 2", "Atom 3", "Atom 4", "Atom 4R"]},
+      {"name": "Nomad", "generations": ["Nomad 1", "Nomad 2"]},
+      {"name": "Hipercar", "generations": ["Gen 1"]}
+    ]
+  },
+  "BAC (Briggs Automotive Company)": {
+    "models": [
+      {"name": "Mono", "generations": ["Mono R"]}
+    ]
+  },
+  "Bugatti": {
+    "models": [
+      {"name": "EB110", "generations": ["EB110 GT", "EB110 SS"]},
+      {"name": "Veyron", "generations": ["16.4", "Grand Sport", "Super Sport", "Grand Sport Vitesse"]},
+      {"name": "Chiron", "generations": ["Standard", "Sport", "Pur Sport", "Super Sport 300+"]},
+      {"name": "Divo", "generations": ["Divo"]},
+      {"name": "Centodieci", "generations": ["Centodieci"]},
+      {"name": "La Voiture Noire", "generations": ["La Voiture Noire"]},
+      {"name": "Bolide", "generations": ["Bolide"]},
+      {"name": "Tourbillon", "generations": ["V16 Hybrid Era"]}
+    ]
+  },
+  "Caterham": {
+    "models": [
+      {"name": "Seven", "generations": ["Series 3", "Series 5 / SV", "CSR"]},
+      {"name": "Project V", "generations": ["EV Platform"]}
+    ]
+  },
+  "Fisker": {
+    "models": [
+      {"name": "Karma", "generations": ["Gen 1"]},
+      {"name": "Ocean", "generations": ["FM29"]},
+      {"name": "Pear", "generations": ["Gen 1 Prototypes"]},
+      {"name": "Alaska", "generations": ["Gen 1 Prototypes"]},
+      {"name": "Rōnin", "generations": ["Gen 1 Prototypes"]}
+    ]
+  },
+  "Koenigsegg": {
+    "models": [
+      {"name": "CC8S", "generations": ["Early Era (CC8S/CCR)"]},
+      {"name": "CCR", "generations": ["Early Era (CC8S/CCR)"]},
+      {"name": "CCX", "generations": ["CCX Era"]},
+      {"name": "CCXR", "generations": ["Early Era (CC8S/CCR)", "CCX Era"]},
+      {"name": "Agera", "generations": ["Standard", "R", "S", "RS", "One:1"]},
+      {"name": "Regera", "generations": ["Direct Drive Era"]},
+      {"name": "Jesko", "generations": ["Attack", "Absolut"]},
+      {"name": "Gemera", "generations": ["TNG (3-Cyl / HV8)"]},
+      {"name": "CC850", "generations": ["Anniversary Edition"]}
+    ]
+  },
+  "Lucid": {
+    "models": [
+      {"name": "Air", "generations": ["Pure", "Touring", "Grand Touring", "Sapphire"]},
+      {"name": "Gravity", "generations": ["Gen 1"]}
+    ]
+  },
+  "Pagani": {
+    "models": [
+      {"name": "Zonda", "generations": ["C12", "S", "F", "Cinque", "Tricolore", "R", "Revolucion", "HP Barchetta"]},
+      {"name": "Huayra", "generations": ["C9 (Coupe/Roadster)", "BC / Roadster BC", "R / R Evo", "Codalunga"]},
+      {"name": "Utopia", "generations": ["Utopia Roadster"]}
+    ]
+  },
+  "Polestar": {
+    "models": [
+      {"name": "Polestar 1", "generations": ["P1"]},
+      {"name": "Polestar 2", "generations": ["P2"]},
+      {"name": "Polestar 3", "generations": ["P3"]},
+      {"name": "Polestar 4", "generations": ["P4"]},
+      {"name": "Polestar 5", "generations": ["P5 (GT)", "P6 (Roadster)"]},
+      {"name": "6", "generations": ["P6 (Roadster)"]}
+    ]
+  },
+  "Radical": {
+    "models": [
+      {"name": "SR1", "generations": ["SR1", "SR10 (XXR)"]},
+      {"name": "SR3", "generations": ["SR3 (RS/XX/XXR)"]},
+      {"name": "SR8", "generations": ["SR8"]},
+      {"name": "SR10", "generations": ["SR10 (XXR)"]},
+      {"name": "RXC", "generations": ["RXC V6", "RXC Spyder", "RXC GT3"]}
+    ]
+  },
+  "Rivian": {
+    "models": [
+      {"name": "R1T", "generations": ["Gen 1"]},
+      {"name": "R1S", "generations": ["Gen 2"]},
+      {"name": "R2", "generations": ["Gen 1"]},
+      {"name": "R3", "generations": ["Gen 1"]},
+      {"name": "R3X", "generations": ["Gen 1"]},
+      {"name": "EDV", "generations": ["EDV 500 / 700"]}
+    ]
+  },
+  "RUF": {
+    "models": [
+      {"name": "CTR", "generations": ["CTR Yellowbird", "CTR2", "CTR3", "CTR Anniversary"]},
+      {"name": "BTR", "generations": ["BTR"]},
+      {"name": "RCT", "generations": ["RCT"]},
+      {"name": "Turbo Florio", "generations": ["Turbo Florio"]},
+      {"name": "SCR", "generations": ["SCR"]},
+      {"name": "Rodeo", "generations": ["Rodeo"]}
+    ]
+  },
+  "Saleen": {
+    "models": [
+      {"name": "S7", "generations": ["Naturally Aspirated", "Twin Turbo"]},
+      {"name": "S281", "generations": ["SN95", "S197", "S550"]},
+      {"name": "S302", "generations": ["SN95", "S197", "S550"]},
+      {"name": "S550 Mustang", "generations": ["S550"]},
+      {"name": "S1", "generations": ["S1 Mid-Engine"]},
+      {"name": "GTX", "generations": ["GTX (Tesla)"]},
+      {"name": "S331", "generations": ["S331 (Truck)"]}
+    ]
+  },
+  "Spyker": {
+    "models": [
+      {"name": "C8", "generations": ["Spyder", "Laviolette", "Double12", "Aileron", "Preliator"]},
+      {"name": "C12", "generations": ["LaTurbie", "Zagato"]},
+      {"name": "D12", "generations": ["SUE Concept"]},
+      {"name": "D8 Peking-to-Paris", "generations": ["SUE Concept"]}
+    ]
+  },
+  "Abarth": {
+    "models": [
+      {"name": "500", "generations": ["312"]},
+      {"name": "595", "generations": ["312"]},
+      {"name": "695", "generations": ["312"]},
+      {"name": "124 Spider", "generations": ["348"]},
+      {"name": "Biposto", "generations": ["312 Special Edition"]},
+      {"name": "Tributo Ferrari", "generations": ["312 Special Edition"]},
+      {"name": "OT 1000", "generations": ["Tipo 102", "Tipo 103"]},
+      {"name": "OT 1300", "generations": ["Tipo 102", "Tipo 103"]},
+      {"name": "OT 2000", "generations": ["Tipo 102", "Tipo 103"]},
+      {"name": "Monoposto", "generations": ["Classic Abarth"]},
+      {"name": "Monomille", "generations": ["Classic Abarth"]}
+    ]
+  },
+  "AC Cars": {
+    "models": [
+      {"name": "Cobra", "generations": ["Cobra GT Roadster"]},
+      {"name": "Ace", "generations": ["Bristol/BMW Engine Era"]},
+      {"name": "Aceca", "generations": ["Ford Zephyr Era"]},
+      {"name": "428", "generations": ["Spider"]},
+      {"name": "Frua", "generations": ["Coupe"]},
+      {"name": "3000ME", "generations": ["ME3000"]}
+    ]
+  },
+  "AMC (American Motors)": {
+    "models": [
+      {"name": "AMX", "generations": ["1st Gen", "2nd Gen"]},
+      {"name": "Javelin", "generations": ["1st Gen", "2nd Gen"]},
+      {"name": "Rebel Machine", "generations": ["1st Gen", "2nd Gen"]},
+      {"name": "Eagle", "generations": ["1st Gen (SX/4, Kammback, Wagon)"]},
+      {"name": "Gremlin", "generations": ["1st Gen"]},
+      {"name": "Pacer", "generations": ["1st Gen (Sedan, Wagon, X)"]},
+      {"name": "Rambler", "generations": ["Classic", "Rebel", "Matador 1st/2nd Gen"]},
+      {"name": "Rebel", "generations": ["Rebel"]},
+      {"name": "Matador", "generations": ["Matador 1st/2nd Gen"]}
+    ]
+  },
+  "Austin": {
+    "models": [
+      {"name": "Mini", "generations": ["Mk I", "Mk II", "Mk III", "Mk IV-VII"]},
+      {"name": "Cooper S", "generations": ["Mk I", "Mk II", "Mk III", "Mk IV-VII"]},
+      {"name": "Seven", "generations": ["Classic Seven"]},
+      {"name": "A30", "generations": ["A30"]},
+      {"name": "A35", "generations": ["A35"]},
+      {"name": "A40", "generations": ["A40 Farina"]},
+      {"name": "A50", "generations": ["A40 Farina", "Cambridge Era"]},
+      {"name": "A55", "generations": ["A40 Farina", "Cambridge Era"]},
+      {"name": "A60 Cambridge", "generations": ["Cambridge Era"]},
+      {"name": "1100", "generations": ["ADO16"]},
+      {"name": "1300", "generations": ["ADO16"]},
+      {"name": "Allegro", "generations": ["ADO67"]},
+      {"name": "Princess", "generations": ["ADO71"]}
+    ]
+  },
+  "Austin-Healey": {
+    "models": [
+      {"name": "100", "generations": ["BN1/BN2", "BN4/BN6", "BN7/BT7", "BJ7/BJ8"]},
+      {"name": "3000", "generations": ["BN1/BN2", "BN4/BN6", "BN7/BT7", "BJ7/BJ8"]},
+      {"name": "Sprite", "generations": ["AN5 (Bugeye)", "AN6-AN10"]}
+    ]
+  },
+  "Autobianchi": {
+    "models": [
+      {"name": "A112", "generations": ["Series 1-7"]},
+      {"name": "A112 Abarth", "generations": ["Series 1-7"]},
+      {"name": "Bianchina", "generations": ["Trasformabile", "Berlina", "Panoramica", "Cabriolet"]},
+      {"name": "Y10", "generations": ["1st Gen (Turbo/4WD)"]}
+    ]
+  },
+  "Avanti": {
+    "models": [
+      {"name": "Avanti", "generations": ["Avanti II"]},
+      {"name": "Avanti II", "generations": ["Avanti II"]}
+    ]
+  },
+  "Buick": {
+    "models": [
+      {"name": "Regal", "generations": ["G-Body", "5th Gen", "6th Gen"]},
+      {"name": "Grand National", "generations": ["G-Body", "5th Gen", "6th Gen"]},
+      {"name": "GNX", "generations": ["G-Body", "5th Gen", "6th Gen"]},
+      {"name": "TourX", "generations": ["G-Body", "5th Gen", "6th Gen"]},
+      {"name": "Riviera", "generations": ["1st Gen", "2nd Gen", "3rd Gen (Boattail)", "4th-8th Gen"]},
+      {"name": "Skylark", "generations": ["1st Gen", "2nd Gen (A-Body)", "3rd Gen", "4th Gen (X-Body)", "5th/6th Gen"]},
+      {"name": "GS", "generations": ["1st Gen", "2nd Gen (A-Body)", "3rd Gen", "4th Gen (X-Body)", "5th/6th Gen"]},
+      {"name": "GSX", "generations": ["1st Gen", "2nd Gen (A-Body)", "3rd Gen", "4th Gen (X-Body)", "5th/6th Gen"]},
+      {"name": "LeSabre", "generations": ["B-Body", "C-Body", "G-Body", "H-Body"]},
+      {"name": "Park Avenue", "generations": ["B-Body", "C-Body", "G-Body", "H-Body"]},
+      {"name": "Electra", "generations": ["B-Body", "C-Body", "G-Body", "H-Body"]},
+      {"name": "Roadmaster", "generations": ["B-Body (1991-1996)"]}
+    ]
+  },
+  "Citroën": {
+    "models": [
+      {"name": "DS", "generations": ["DS19", "DS21", "DS23"]},
+      {"name": "ID", "generations": ["DS19", "DS21", "DS23"]},
+      {"name": "SM", "generations": ["SM Classic"]},
+      {"name": "2CV", "generations": ["2CV"]},
+      {"name": "Dyane", "generations": ["Dyane 6"]},
+      {"name": "Ami", "generations": ["Ami 6/8"]},
+      {"name": "CX", "generations": ["CX Series 1/2"]},
+      {"name": "XM", "generations": ["XM Series 1/2"]},
+      {"name": "Traction Avant", "generations": ["7", "11", "15-Six"]},
+      {"name": "GS", "generations": ["GS/GSA"]},
+      {"name": "GSA", "generations": ["GS/GSA"]},
+      {"name": "BX", "generations": ["BX / BX GTI 16V"]}
+    ]
+  },
+  "Datsun": {
+    "models": [
+      {"name": "Z-Car", "generations": ["S30 (240Z/260Z/280Z)", "S130 (280ZX)"]},
+      {"name": "510", "generations": ["P510"]},
+      {"name": "Fairlady", "generations": ["SPL310"]},
+      {"name": "Sports Roadster", "generations": ["SPL311/SR311"]},
+      {"name": "1200", "generations": ["B110", "B210", "B310"]},
+      {"name": "B210", "generations": ["B210"]},
+      {"name": "210", "generations": ["B210"]},
+      {"name": "620", "generations": ["620"]},
+      {"name": "720 Truck", "generations": ["720"]}
+    ]
+  },
+  "DeLorean": {
+    "models": [
+      {"name": "DMC-12", "generations": ["DMC-12 (1981-1983)"]}
+    ]
+  },
+  "De Tomaso": {
+    "models": [
+      {"name": "Pantera", "generations": ["Early/Pre-L", "L-Model", "GTS", "GT5", "GT5-S", "90 Si"]},
+      {"name": "Mangusta", "generations": ["Mangusta"]},
+      {"name": "Vallelunga", "generations": ["Vallelunga"]},
+      {"name": "Deauville", "generations": ["Deauville"]},
+      {"name": "Longchamp", "generations": ["Longchamp"]}
+    ]
+  },
+  "DeSoto": {
+    "models": [
+      {"name": "Adventurer", "generations": ["Forward Look Era (1955-1960)"]},
+      {"name": "Firedome", "generations": ["Forward Look Era (1955-1960)"]},
+      {"name": "Firesweep", "generations": ["Forward Look Era (1955-1960)"]},
+      {"name": "Custom", "generations": ["Pre-War / Post-War Era (1939-1952)"]},
+      {"name": "Deluxe", "generations": ["Pre-War / Post-War Era (1939-1952)"]}
+    ]
+  },
+  "Fiat": {
+    "models": [
+      {"name": "124 Spider", "generations": ["BS/CS (Classic)"]},
+      {"name": "Coupe", "generations": ["NF (Modern)", "850"]},
+      {"name": "500", "generations": ["Nuova 500"]},
+      {"name": "Cinquecento", "generations": ["Nuova 500", "312", "332"]},
+      {"name": "Dino Coupe", "generations": ["135 (2.0L / 2.4L Ferrari V6)"]},
+      {"name": "Spider", "generations": ["135 (2.0L / 2.4L Ferrari V6)"]},
+      {"name": "X1/9", "generations": ["128 AS (1.3L)", "128 AS (1.5L Bertone)"]},
+      {"name": "850 Spider", "generations": ["850"]},
+      {"name": "131 Abarth", "generations": ["131"]},
+      {"name": "Mirafiori", "generations": ["131"]}
+    ]
+  },
+  "Hudson": {
+    "models": [
+      {"name": "Hornet", "generations": ["1st Gen (Step-down)", "2nd Gen"]},
+      {"name": "Commodore", "generations": ["1st Gen (Step-down)", "2nd Gen"]},
+      {"name": "Greater Eight", "generations": ["1st Gen (Step-down)", "2nd Gen"]},
+      {"name": "Super Six", "generations": ["Super Six"]},
+      {"name": "Italia", "generations": ["Italia"]}
+    ]
+  },
+  "Jensen": {
+    "models": [
+      {"name": "Interceptor", "generations": ["Mk I", "Mk II", "Mk III", "FF (Four-Wheel Drive)"]},
+      {"name": "Jensen-Healey", "generations": ["Mk I", "Mk II", "GT Coupe"]},
+      {"name": "541", "generations": ["541", "541R", "541S"]}
+    ]
+  },
+  "Lancia": {
+    "models": [
+      {"name": "Delta HF Integrale", "generations": ["831"]},
+      {"name": "S4", "generations": ["831"]},
+      {"name": "Stratos", "generations": ["Stratos HF"]},
+      {"name": "Fulvia", "generations": ["Fulvia Coupé"]},
+      {"name": "037", "generations": ["037 Rally"]},
+      {"name": "Montecarlo", "generations": ["Beta Montecarlo"]},
+      {"name": "Aurelia", "generations": ["B20/B24 Spider", "Flaminia"]},
+      {"name": "Flaminia", "generations": ["Flaminia"]},
+      {"name": "Gamma", "generations": ["Gamma Coupe"]},
+      {"name": "Thema 8.32", "generations": ["Thema (Ferrari V8)"]}
+    ]
+  },
+  "Mercury": {
+    "models": [
+      {"name": "Cougar", "generations": ["1st Gen (1967-1970)", "2nd Gen", "3rd-6th Gen (Fox)", "7th Gen (MN12)", "8th Gen"]},
+      {"name": "Marauder", "generations": ["1st Gen", "2nd Gen (Panther)"]},
+      {"name": "Grand Marquis", "generations": ["Panther Platform"]},
+      {"name": "Marquis", "generations": ["Panther Platform"]},
+      {"name": "Comet", "generations": ["1st-5th Gen"]},
+      {"name": "Cyclone", "generations": ["1st-5th Gen"]},
+      {"name": "Capri", "generations": ["Mk I/II (European Import)", "Fox Body", "SA30 (Convertible)"]}
+    ]
+  },
+  "MG": {
+    "models": [
+      {"name": "MGB", "generations": ["Mk I"]},
+      {"name": "MGB GT", "generations": ["Mk II"]},
+      {"name": "MGC", "generations": ["Mk III"]},
+      {"name": "V8", "generations": ["Rubber Bumper"]},
+      {"name": "MGA", "generations": ["1500", "1600", "Twin Cam"]},
+      {"name": "Midget", "generations": ["Mk I", "Mk II", "Mk III", "1500"]},
+      {"name": "TA", "generations": ["TA"]},
+      {"name": "TB", "generations": ["TB"]},
+      {"name": "TC", "generations": ["TC"]},
+      {"name": "TD", "generations": ["TD"]},
+      {"name": "TF", "generations": ["TF", "MG TF"]},
+      {"name": "Metro 6R4", "generations": ["Group B 6R4"]},
+      {"name": "MG F", "generations": ["MG F"]}
+    ]
+  },
+  "Morgan": {
+    "models": [
+      {"name": "Plus 4", "generations": ["Classic"]},
+      {"name": "Plus 8", "generations": ["CX-Series"]},
+      {"name": "3 Wheeler", "generations": ["Classic", "5-Speed", "Super 3"]},
+      {"name": "Super 3", "generations": ["Super 3"]},
+      {"name": "Plus 6", "generations": ["Plus 6"]},
+      {"name": "Aero 8", "generations": ["Aero 8"]},
+      {"name": "4/4", "generations": ["1st-5th Gen"]}
+    ]
+  },
+  "Nash": {
+    "models": [
+      {"name": "Metropolitan", "generations": ["Classic Era"]},
+      {"name": "Nash-Healey", "generations": ["Classic Era"]},
+      {"name": "Ambassador", "generations": ["Classic Era"]},
+      {"name": "Rambler", "generations": ["Airflyte Era"]},
+      {"name": "Statesman", "generations": ["Airflyte Era"]}
+    ]
+  },
+  "Oldsmobile": {
+    "models": [
+      {"name": "442", "generations": ["A-Body"]},
+      {"name": "Cutlass", "generations": ["G-Body"]},
+      {"name": "Hurst/Olds", "generations": ["N-Body"]},
+      {"name": "Toronado", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "88", "generations": ["1st-10th Gen"]},
+      {"name": "Delta 88", "generations": ["B-Body"]},
+      {"name": "Starfire", "generations": ["H-Body"]},
+      {"name": "98", "generations": ["1st-11th Gen"]},
+      {"name": "Regency", "generations": ["C-Body"]},
+      {"name": "Aurora", "generations": ["G-Body (1st/2nd Gen)"]}
+    ]
+  },
+  "Packard": {
+    "models": [
+      {"name": "Super Eight", "generations": ["Classic Era"]},
+      {"name": "Caribbean", "generations": ["Classic Era"]},
+      {"name": "Clipper", "generations": ["Classic Era"]},
+      {"name": "Twelve", "generations": ["Pre-War Era"]},
+      {"name": "One-Twenty (120)", "generations": ["Pre-War Era"]}
+    ]
+  },
+  "Peugeot": {
+    "models": [
+      {"name": "205 GTI", "generations": ["205 GTI"]},
+      {"name": "Turbo 16", "generations": ["205 GTI", "T16"]},
+      {"name": "504 Coupe", "generations": ["504"]},
+      {"name": "Cabriolet", "generations": ["504"]},
+      {"name": "Sedan", "generations": ["504"]},
+      {"name": "206 GTi", "generations": ["206"]},
+      {"name": "RC", "generations": ["206"]},
+      {"name": "405 T16", "generations": ["405"]},
+      {"name": "Mi16", "generations": ["405"]},
+      {"name": "RCZ", "generations": ["RCZ / RCZ R"]}
+    ]
+  },
+  "Plymouth": {
+    "models": [
+      {"name": "Barracuda", "generations": ["1st Gen (A-Body)", "2nd Gen (A-Body)", "3rd Gen (E-Body)"]},
+      {"name": "'Cuda", "generations": ["1st Gen (A-Body)", "2nd Gen (A-Body)", "3rd Gen (E-Body)"]},
+      {"name": "Road Runner", "generations": ["1st Gen (B-Body)", "2nd Gen (B-Body)"]},
+      {"name": "GTX", "generations": ["1st Gen (B-Body)", "2nd Gen (B-Body)"]},
+      {"name": "Satellite", "generations": ["1st Gen (B-Body)", "2nd Gen (B-Body)"]},
+      {"name": "Superbird", "generations": ["1970 B-Body"]},
+      {"name": "Duster", "generations": ["A-Body"]},
+      {"name": "Valiant", "generations": ["A-Body"]},
+      {"name": "Fury", "generations": ["1st-7th Gen", "B-Body", "C-Body", "M-Body"]},
+      {"name": "Belvedere", "generations": ["1st-7th Gen", "B-Body", "C-Body", "M-Body"]},
+      {"name": "Prowler", "generations": ["PR"]}
+    ]
+  },
+  "Pontiac": {
+    "models": [
+      {"name": "Firebird", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "Trans Am", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "Firehawk", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "GTO", "generations": ["1st Gen (1964-1974)", "5th Gen (2004-2006 Holden V-Body)"]},
+      {"name": "Tempest", "generations": ["1st Gen (1964-1974)", "5th Gen (2004-2006 Holden V-Body)"]},
+      {"name": "LeMans", "generations": ["1st Gen (1964-1974)", "5th Gen (2004-2006 Holden V-Body)"]},
+      {"name": "Grand Prix", "generations": ["1st-4th Gen", "5th/6th Gen (W-Body)", "7th Gen"]},
+      {"name": "Fiero", "generations": ["1984-1988"]},
+      {"name": "Solstice", "generations": ["Kappa"]},
+      {"name": "Solstice GXP", "generations": ["Kappa"]},
+      {"name": "Bonneville", "generations": ["1st-10th Gen", "B-Body", "H-Body", "G-Body"]}
+    ]
+  },
+  "Renault": {
+    "models": [
+      {"name": "5 Turbo", "generations": ["R8240"]},
+      {"name": "Turbo 2", "generations": ["R8240"]},
+      {"name": "Maxi", "generations": ["R8240"]},
+      {"name": "Clio V6", "generations": ["Phase 1", "Phase 2", "Clio Williams"]},
+      {"name": "Williams", "generations": ["Clio Williams"]},
+      {"name": "Alpine A110", "generations": ["Classic A110"]},
+      {"name": "A310", "generations": ["A310"]},
+      {"name": "Caravelle", "generations": ["R8 Gordini"]},
+      {"name": "Floride", "generations": ["R8 Gordini"]},
+      {"name": "R8 Gordini", "generations": ["R8 Gordini"]},
+      {"name": "Megane RS", "generations": ["Mk2 RS", "Mk3 RS", "Mk4 RS"]}
+    ]
+  },
+  "Saab": {
+    "models": [
+      {"name": "900 Turbo", "generations": ["Classic 900 (1978-1993)"]},
+      {"name": "SPG", "generations": ["Classic 900 (1978-1993)"]},
+      {"name": "9-3 Viggen", "generations": ["YS3D"]},
+      {"name": "Aero", "generations": ["YS3F"]},
+      {"name": "96", "generations": ["Saab 96"]},
+      {"name": "93", "generations": ["Saab 96", "Sonett I/II/III"]},
+      {"name": "Sonett", "generations": ["Sonett I/II/III"]},
+      {"name": "9-5 Aero", "generations": ["YS3E", "YS3G"]}
+    ]
+  },
+  "Shelby": {
+    "models": [
+      {"name": "Cobra", "generations": ["CSX2000 (289)", "CSX3000 (427)"]},
+      {"name": "GT350", "generations": ["1965-1970"]},
+      {"name": "GT500", "generations": ["S197"]},
+      {"name": "Super Snake", "generations": ["S550"]},
+      {"name": "GLHS", "generations": ["L-Body (GLHS)"]},
+      {"name": "Series 1", "generations": ["Series 1"]}
+    ]
+  },
+  "Studebaker": {
+    "models": [
+      {"name": "Avanti", "generations": ["Classic Era"]},
+      {"name": "Lark", "generations": ["Classic Era"]},
+      {"name": "Hawk", "generations": ["Classic Era"]},
+      {"name": "Silver Hawk", "generations": ["Classic Era"]},
+      {"name": "Commander", "generations": ["Starliner Era"]},
+      {"name": "Champion", "generations": ["Starliner Era"]}
+    ]
+  },
+  "Sunbeam": {
+    "models": [
+      {"name": "Tiger", "generations": ["Mk I", "Mk II"]},
+      {"name": "Alpine", "generations": ["Series I-V"]},
+      {"name": "Rapier", "generations": ["Series I-V", "Sunbeam Lotus"]},
+      {"name": "Talbot Sunbeam Lotus", "generations": ["Sunbeam Lotus"]}
+    ]
+  },
+  "Triumph": {
+    "models": [
+      {"name": "TR2", "generations": ["TR2"]},
+      {"name": "TR3", "generations": ["TR3"]},
+      {"name": "TR4", "generations": ["TR4"]},
+      {"name": "TR5", "generations": ["TR5"]},
+      {"name": "TR6", "generations": ["TR6"]},
+      {"name": "TR7", "generations": ["TR7"]},
+      {"name": "TR8", "generations": ["TR8"]},
+      {"name": "TR250", "generations": ["TR250"]},
+      {"name": "Spitfire", "generations": ["Mk I-III", "Mk IV", "1500"]},
+      {"name": "GT6", "generations": ["Mk I", "Mk II", "Mk III"]},
+      {"name": "Stag", "generations": ["Stag"]},
+      {"name": "Herald", "generations": ["Herald"]},
+      {"name": "Vitesse", "generations": ["Vitesse"]}
+    ]
+  },
+  "TVR": {
+    "models": [
+      {"name": "Tuscan", "generations": ["Tuscan"]},
+      {"name": "Sagaris", "generations": ["Sagaris"]},
+      {"name": "Chimaera", "generations": ["Chimaera"]},
+      {"name": "Griffith", "generations": ["Griffith"]},
+      {"name": "Cerbera", "generations": ["Cerbera"]},
+      {"name": "Tamora", "generations": ["Tamora"]},
+      {"name": "T350", "generations": ["T350"]},
+      {"name": "Vixen", "generations": ["Vixen"]},
+      {"name": "Tuscan V8", "generations": ["Vixen", "M-Series"]},
+      {"name": "M-Series", "generations": ["M-Series"]}
+    ]
+  },
+  "Willys": {
+    "models": [
+      {"name": "Jeep", "generations": ["MB", "CJ-2A", "CJ-3A", "Americar"]},
+      {"name": "Americar", "generations": ["Americar"]},
+      {"name": "Station Wagon", "generations": ["MB", "CJ-2A", "CJ-3A", "Americar"]}
+    ]
+  },
+  "Acura": {
+    "models": [
+      {"name": "NSX", "generations": ["NA1", "NA2", "NC1"]},
+      {"name": "Integra", "generations": ["DA1-DA4", "DA5-DA9", "DC2/DC4", "DC5", "DE4/DE5"]},
+      {"name": "RSX", "generations": ["DC5"]},
+      {"name": "TL", "generations": ["UA1-UA3", "UA4-UA5", "UA6-UA7", "UB1-UB4", "UB5-UB7"]},
+      {"name": "TLX", "generations": ["UA1-UA3", "UA4-UA5", "UA6-UA7", "UB1-UB4", "UB5-UB7"]},
+      {"name": "Type S", "generations": ["UA1-UA3", "UA4-UA5", "UA6-UA7", "UB1-UB4", "UB5-UB7", "YD1", "YD2", "YD3", "YD4"]},
+      {"name": "MDX", "generations": ["YD1", "YD2", "YD3", "YD4"]},
+      {"name": "RDX", "generations": ["TB1/TB2", "TB3/TB4", "TC1/TC2"]},
+      {"name": "ZDX", "generations": ["YB1", "BEV3"]}
+    ]
+  },
+  "Alfa Romeo": {
+    "models": [
+      {"name": "Giulia", "generations": ["105/115"]},
+      {"name": "Quadrifoglio", "generations": ["952", "949"]},
+      {"name": "Spider", "generations": ["Series 1", "Series 2", "Series 3", "Series 4"]},
+      {"name": "4C", "generations": ["960"]},
+      {"name": "GTV", "generations": ["116"]},
+      {"name": "GTV6", "generations": ["116"]},
+      {"name": "Stelvio", "generations": ["949"]},
+      {"name": "Tonale", "generations": ["965"]}
+    ]
+  },
+  "Aston Martin": {
+    "models": [
+      {"name": "DB5", "generations": ["Classic"]},
+      {"name": "DB6", "generations": ["Classic"]},
+      {"name": "DB7", "generations": ["DB7"]},
+      {"name": "DB9", "generations": ["VH100"]},
+      {"name": "DB11", "generations": ["VH500 (DB11)"]},
+      {"name": "DB12", "generations": ["DB12"]},
+      {"name": "Vantage", "generations": ["V8 Vantage (VH2)", "Vantage (AM6)", "Vantage (2024+)"]},
+      {"name": "DBS", "generations": ["DBS Superleggera (VH700)"]},
+      {"name": "Vanquish", "generations": ["Vanquish (VH1)", "Vanquish (VH2)"]},
+      {"name": "DBX", "generations": ["DBX707"]}
+    ]
+  },
+  "Audi": {
+    "models": [
+      {"name": "R8", "generations": ["Type 42", "Type 4S"]},
+      {"name": "TT", "generations": ["8N", "8J", "8S"]},
+      {"name": "TT RS", "generations": ["8N", "8J", "8S"]},
+      {"name": "S4", "generations": ["B5", "B6", "B7", "B8", "B9"]},
+      {"name": "RS4", "generations": ["B5", "B6", "B7", "B8", "B9"]},
+      {"name": "S6", "generations": ["C4", "C5", "C6", "C7", "C8"]},
+      {"name": "RS6", "generations": ["C4", "C5", "C6", "C7", "C8"]},
+      {"name": "A3", "generations": ["8L", "8P", "8V", "8Y"]},
+      {"name": "S3", "generations": ["8L", "8P", "8V", "8Y"]},
+      {"name": "RS3", "generations": ["8L", "8P", "8V", "8Y"]},
+      {"name": "A5", "generations": ["8T"]},
+      {"name": "S5", "generations": ["F5"]},
+      {"name": "RS5", "generations": ["B10"]},
+      {"name": "Q5", "generations": ["8R", "FY", "MK3"]},
+      {"name": "SQ5", "generations": ["8R", "FY", "MK3"]},
+      {"name": "Q7", "generations": ["4L (Q7)", "4M (Q7)"]},
+      {"name": "Q8", "generations": ["418 (Q8)"]},
+      {"name": "SQ8", "generations": ["4L (Q7)", "4M (Q7)", "418 (Q8)", "e-tron GE"]},
+      {"name": "RS Q8", "generations": ["4L (Q7)", "4M (Q7)", "418 (Q8)", "e-tron GE"]},
+      {"name": "e-tron", "generations": ["e-tron GE"]}
+    ]
+  },
+  "Bentley": {
+    "models": [
+      {"name": "Continental GT", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "Arnage", "generations": ["Arnage"]},
+      {"name": "Turbo R", "generations": ["SZ", "Arnage"]},
+      {"name": "Mulsanne", "generations": ["Classic", "Modern (2010-2020)"]},
+      {"name": "Bentayga", "generations": ["4V1"]},
+      {"name": "Flying Spur", "generations": ["1st Gen", "2nd Gen", "3rd Gen"]}
+    ]
+  },
+  "BMW": {
+    "models": [
+      {"name": "3 Series", "generations": ["E21", "E30", "E36", "E46", "E90/E92/E93", "F30/F80", "G20/G80"]},
+      {"name": "M3", "generations": ["E21", "E30", "E36", "E46", "E90/E92/E93", "F30/F80", "G20/G80"]},
+      {"name": "5 Series", "generations": ["E12", "E28", "E34", "E39", "E60/E61", "F10/F90", "G30/F90", "G60/G90"]},
+      {"name": "M5", "generations": ["E12", "E28", "E34", "E39", "E60/E61", "F10/F90", "G30/F90", "G60/G90"]},
+      {"name": "4 Series", "generations": ["F32/F33/F36/F82"]},
+      {"name": "M4", "generations": ["G22/G23/G26/G82"]},
+      {"name": "8 Series", "generations": ["E31"]},
+      {"name": "M8", "generations": ["G14/G15/G16/F91/F92/F93"]},
+      {"name": "Z3", "generations": ["E36/7", "E85/E86", "E89", "G29"]},
+      {"name": "Z4", "generations": ["E36/7", "E85/E86", "E89", "G29"]},
+      {"name": "X5", "generations": ["E53", "E70/F85", "F15/F85", "G05/F95"]},
+      {"name": "X5 M", "generations": ["E53", "E70/F85", "F15/F85", "G05/F95"]}
+    ]
+  },
+  "Cadillac": {
+    "models": [
+      {"name": "CTS", "generations": ["1st Gen (Sigma)", "2nd Gen (Sigma II)", "3rd Gen (Alpha)"]},
+      {"name": "CTS-V", "generations": ["1st Gen (Sigma)", "2nd Gen (Sigma II)", "3rd Gen (Alpha)"]},
+      {"name": "CT4", "generations": ["Alpha 2"]},
+      {"name": "CT4-V", "generations": ["Alpha 2"]},
+      {"name": "Blackwing", "generations": ["Alpha 2"]},
+      {"name": "CT5", "generations": ["Alpha 2"]},
+      {"name": "CT5-V", "generations": ["Alpha 2"]},
+      {"name": "CT6", "generations": ["Omega"]},
+      {"name": "CT6-V", "generations": ["Omega"]},
+      {"name": "ATS", "generations": ["Alpha"]},
+      {"name": "ATS-V", "generations": ["Alpha"]},
+      {"name": "Escalade", "generations": ["GMT400", "GMT800", "GMT900", "K2XL", "T1XX", "BT1"]},
+      {"name": "ESV", "generations": ["GMT400", "GMT800", "GMT900", "K2XL", "T1XX", "BT1"]},
+      {"name": "EXT", "generations": ["GMT400", "GMT800", "GMT900", "K2XL", "T1XX", "BT1"]},
+      {"name": "IQ", "generations": ["GMT400", "GMT800", "GMT900", "K2XL", "T1XX", "BT1"]},
+      {"name": "Eldorado", "generations": ["1st-10th Gen", "11th Gen (E-Body)", "12th Gen"]},
+      {"name": "DeVille", "generations": ["C-Body", "D-Body", "K-Body", "G-Body"]},
+      {"name": "Fleetwood", "generations": ["C-Body", "D-Body", "K-Body", "G-Body"]},
+      {"name": "DTS", "generations": ["C-Body", "D-Body", "K-Body", "G-Body"]},
+      {"name": "Seville", "generations": ["K-Body", "E-Body", "G-Body", "Sigma"]},
+      {"name": "STS", "generations": ["K-Body", "E-Body", "G-Body", "Sigma"]},
+      {"name": "Lyriq", "generations": ["BEV3 Platform"]},
+      {"name": "Optiq", "generations": ["BEV3 Platform"]},
+      {"name": "Vistiq", "generations": ["BEV3 Platform"]},
+      {"name": "Celestiq", "generations": ["BEV3 Platform"]},
+      {"name": "XLR", "generations": ["Y-Body"]}
+    ]
+  },
+  "Chevrolet": {
+    "models": [
+      {"name": "Corvette", "generations": ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8 (Stingray/Z06/E-Ray/ZR1)"]},
+      {"name": "Camaro", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen", "5th Gen", "6th Gen"]},
+      {"name": "Impala", "generations": ["B-Body (1958-1996)"]},
+      {"name": "Bel Air", "generations": ["W-Body (2000-2016)"]},
+      {"name": "Biscayne", "generations": ["E2XX"]},
+      {"name": "Chevelle", "generations": ["A-Body (1964-1977)", "G-Body", "N-Body", "Epsilon", "E2XX"]},
+      {"name": "Malibu", "generations": ["A-Body (1964-1977)", "G-Body", "N-Body", "Epsilon", "E2XX"]},
+      {"name": "Nova", "generations": ["1st Gen", "2nd Gen", "3rd Gen (X-Body)", "4th Gen", "5th Gen"]},
+      {"name": "Chevy II", "generations": ["1st Gen", "2nd Gen", "3rd Gen (X-Body)", "4th Gen", "5th Gen"]},
+      {"name": "Monte Carlo", "generations": ["1st Gen (A-Body)", "2nd Gen", "3rd/4th Gen (G-Body)", "5th/6th Gen (W-Body)"]},
+      {"name": "SS", "generations": ["B-Body"]},
+      {"name": "Caprice", "generations": ["Zeta"]},
+      {"name": "Silverado 1500", "generations": ["C/K Action Line", "Rounded Line", "GMT400", "GMT800", "GMT900", "K2XX", "T1XX"]},
+      {"name": "C/K Series", "generations": ["C/K Action Line", "Rounded Line", "GMT400", "GMT800", "GMT900", "K2XX", "T1XX"]},
+      {"name": "Silverado 2500HD", "generations": ["GMT800 HD", "GMT900 HD", "K2 HD", "T1 HD"]},
+      {"name": "3500HD", "generations": ["GMT800 HD", "GMT900 HD", "K2 HD", "T1 HD"]},
+      {"name": "Silverado EV", "generations": ["BT1"]},
+      {"name": "Colorado", "generations": ["1st Gen S-10", "2nd Gen S-10", "GMT325", "GMT700", "31XX"]},
+      {"name": "S-10", "generations": ["1st Gen S-10", "2nd Gen S-10"]},
+      {"name": "Tahoe", "generations": ["K5 Blazer", "GMT400", "GMT800", "GMT900", "K2UC/K2XL", "T1XX"]},
+      {"name": "Suburban", "generations": ["K5 Blazer", "GMT400", "GMT800", "GMT900", "K2UC/K2XL", "T1XX"]},
+      {"name": "K5 Blazer", "generations": ["K5 Blazer"]},
+      {"name": "Blazer", "generations": ["S-10 Blazer"]},
+      {"name": "Blazer EV", "generations": ["S-10 Blazer", "C1XX (Gas)", "BEV3 (EV)"]},
+      {"name": "Traverse", "generations": ["GMT968", "C1XX", "BEV3", "VSS-F"]},
+      {"name": "Equinox", "generations": ["GMT968", "C1XX", "BEV3", "VSS-F"]},
+      {"name": "Equinox EV", "generations": ["GMT968", "C1XX", "BEV3", "VSS-F"]},
+      {"name": "Cobalt SS", "generations": ["J-Body"]},
+      {"name": "Cavalier", "generations": ["Delta"]},
+      {"name": "Bolt EV", "generations": ["BEV2"]},
+      {"name": "EUV", "generations": ["BEV2"]}
+    ]
+  },
+  "Chrysler": {
+    "models": [
+      {"name": "300", "generations": ["Letter Series (1955-1965)", "LX", "LD"]},
+      {"name": "300C", "generations": ["Letter Series (1955-1965)", "LX", "LD"]},
+      {"name": "Prowler", "generations": ["PR"]},
+      {"name": "Imperial", "generations": ["1st-8th Gen", "Y-Body"]},
+      {"name": "LeBaron", "generations": ["M-Body", "K-Body", "J-Body"]},
+      {"name": "Conquest TSi", "generations": ["Z15A / Starion"]},
+      {"name": "PT Cruiser", "generations": ["PT"]},
+      {"name": "Town & Country", "generations": ["S-Series Minivan"]},
+      {"name": "Pacifica", "generations": ["CS"]},
+      {"name": "Voyager", "generations": ["RU"]},
+      {"name": "Crossfire", "generations": ["ZH"]},
+      {"name": "Sebring", "generations": ["JA", "JR", "JS", "UF"]},
+      {"name": "200", "generations": ["JA", "JR", "JS", "UF"]}
+    ]
+  },
+  "Dodge": {
+    "models": [
+      {"name": "Viper", "generations": ["SR I", "SR II", "ZB I", "ZB II", "VX I"]},
+      {"name": "Challenger", "generations": ["1st Gen (E-Body)", "2nd Gen", "3rd Gen (LA)"]},
+      {"name": "Charger", "generations": ["B-Body", "L-Body", "LX", "LD", "STLA Large"]},
+      {"name": "Charger Daytona", "generations": ["B-Body", "L-Body", "LX", "LD", "STLA Large"]},
+      {"name": "Hornet", "generations": ["GG Platform"]},
+      {"name": "Dart", "generations": ["A-Body"]},
+      {"name": "Demon", "generations": ["PF"]},
+      {"name": "Coronet", "generations": ["B-Body"]},
+      {"name": "Super Bee", "generations": ["B-Body"]},
+      {"name": "Stealth", "generations": ["Z16A"]},
+      {"name": "Durango", "generations": ["DN", "ND", "WD"]},
+      {"name": "Neon", "generations": ["PL", "PL2000 / SRT-4"]},
+      {"name": "Neon SRT-4", "generations": ["PL2000 / SRT-4"]},
+      {"name": "Magnum", "generations": ["LX"]},
+      {"name": "Grand Caravan", "generations": ["S-Series", "NS", "RS", "RT"]}
+    ]
+  },
+  "Ferrari": {
+    "models": [
+      {"name": "308", "generations": ["308/328"]},
+      {"name": "328", "generations": ["308/328"]},
+      {"name": "348", "generations": ["348"]},
+      {"name": "F355", "generations": ["F355"]},
+      {"name": "360", "generations": ["360"]},
+      {"name": "F430", "generations": ["F430"]},
+      {"name": "458", "generations": ["458"]},
+      {"name": "488", "generations": ["488"]},
+      {"name": "F8", "generations": ["F8"]},
+      {"name": "296", "generations": ["296 GTB/GTS"]},
+      {"name": "Testarossa", "generations": ["Testarossa/512TR"]},
+      {"name": "512 TR", "generations": ["Testarossa/512TR"]},
+      {"name": "550", "generations": ["550/575M"]},
+      {"name": "575M", "generations": ["550/575M"]},
+      {"name": "599", "generations": ["599"]},
+      {"name": "F12berlinetta", "generations": ["F12berlinetta"]},
+      {"name": "812", "generations": ["812"]},
+      {"name": "12Cilindri", "generations": ["12Cilindri"]},
+      {"name": "288 GTO", "generations": ["288 GTO"]},
+      {"name": "F40", "generations": ["F40"]},
+      {"name": "F50", "generations": ["F50"]},
+      {"name": "Enzo", "generations": ["Enzo"]},
+      {"name": "LaFerrari", "generations": ["LaFerrari"]},
+      {"name": "Roma", "generations": ["Roma"]},
+      {"name": "Portofino", "generations": ["Portofino"]},
+      {"name": "California", "generations": ["California", "California T"]},
+      {"name": "Purosangue", "generations": ["F175"]}
+    ]
+  },
+  "Ford": {
+    "models": [
+      {"name": "Mustang", "generations": ["Mustang II"]},
+      {"name": "Dark Horse", "generations": ["1st Gen", "Mustang II", "Fox Body", "SN95", "S197", "S550", "S650"]},
+      {"name": "Mustang Mach-E", "generations": ["GE1"]},
+      {"name": "GT", "generations": ["Mk I-IV", "1st Gen (2005-2006)", "2nd Gen (2017-2022)"]},
+      {"name": "GT40", "generations": ["Mk I-IV", "1st Gen (2005-2006)", "2nd Gen (2017-2022)"]},
+      {"name": "Bronco", "generations": ["Early Bronco (U13)"]},
+      {"name": "Bronco Sport", "generations": ["CX430"]},
+      {"name": "F-150", "generations": ["1st-9th Gen", "10th Gen", "11th Gen", "12th Gen", "13th Gen", "14th Gen"]},
+      {"name": "Lightning", "generations": ["1st-9th Gen", "10th Gen", "11th Gen", "12th Gen", "13th Gen", "14th Gen"]},
+      {"name": "Raptor", "generations": ["1st-9th Gen", "10th Gen", "11th Gen", "12th Gen", "13th Gen", "14th Gen", "1st Gen", "2nd Gen", "3rd Gen (T6)", "P703"]},
+      {"name": "Raptor R", "generations": ["1st-9th Gen", "10th Gen", "11th Gen", "12th Gen", "13th Gen", "14th Gen"]},
+      {"name": "F-250", "generations": ["P131", "2nd Gen", "P415", "P552", "P708"]},
+      {"name": "F-350", "generations": ["P131", "2nd Gen", "P415", "P552", "P708"]},
+      {"name": "F-450", "generations": ["P131", "2nd Gen", "P415", "P552", "P708"]},
+      {"name": "F-550", "generations": ["P131", "2nd Gen", "P415", "P552", "P708"]},
+      {"name": "Thunderbird", "generations": ["Classic", "Squarebird", "Bullet Bird", "Flair Bird", "Glamor Bird", "Fox Body", "MN12", "DEW98"]},
+      {"name": "Crown Victoria", "generations": ["Panther Platform"]},
+      {"name": "LTD", "generations": ["Panther Platform"]},
+      {"name": "Taurus", "generations": ["DN5", "2nd Gen", "3rd Gen", "4th Gen", "D3 / SHO"]},
+      {"name": "SHO", "generations": ["D3 / SHO"]},
+      {"name": "Focus", "generations": ["C170 (Mk1)", "C307 (Mk2)", "C346 (Mk3)", "C519 (Mk4)"]},
+      {"name": "ST", "generations": ["C170 (Mk1)", "C307 (Mk2)", "C346 (Mk3)", "C519 (Mk4)", "1st Gen"]},
+      {"name": "RS", "generations": ["C170 (Mk1)", "C307 (Mk2)", "C346 (Mk3)", "C519 (Mk4)"]},
+      {"name": "Ranger", "generations": ["1st Gen", "2nd Gen", "3rd Gen (T6)", "P703"]},
+      {"name": "Explorer", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen", "D4", "CD6"]},
+      {"name": "Expedition", "generations": ["UN93", "U222", "U324", "U553", "5th Gen"]},
+      {"name": "MAX", "generations": ["UN93", "U222", "U324", "U553", "5th Gen"]},
+      {"name": "Escape", "generations": ["BA/ZA", "2nd Gen", "C520", "CX482"]}
+    ]
+  },
+  "Genesis": {
+    "models": [
+      {"name": "G70", "generations": ["IK"]},
+      {"name": "G80", "generations": ["DH"]},
+      {"name": "Electrified G80", "generations": ["RG3"]},
+      {"name": "G90", "generations": ["HI", "RS4"]},
+      {"name": "GV60", "generations": ["JW"]},
+      {"name": "GV70", "generations": ["JK1"]},
+      {"name": "Electrified GV70", "generations": ["JK1"]},
+      {"name": "GV80", "generations": ["JX1"]},
+      {"name": "GV80 Coupe", "generations": ["JX1"]}
+    ]
+  },
+  "Honda": {
+    "models": [
+      {"name": "Civic", "generations": ["EF", "EG", "EK", "EP3", "FD2/FN2", "FK2", "FK8", "FL5"]},
+      {"name": "Type R", "generations": ["EF", "EG", "EK", "EP3", "FD2/FN2", "FK2", "FK8", "FL5"]},
+      {"name": "Si", "generations": ["EF", "EG", "EK", "EP3", "FD2/FN2", "FK2", "FK8", "FL5"]},
+      {"name": "S2000", "generations": ["AP1", "AP2"]},
+      {"name": "CRX", "generations": ["1st Gen", "2nd Gen"]},
+      {"name": "Prelude", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen", "5th Gen", "6th Gen"]},
+      {"name": "Accord", "generations": ["1st-10th Gen", "11th Gen (CY)"]},
+      {"name": "CR-V", "generations": ["CR-V (RD-RS)"]},
+      {"name": "Pilot", "generations": ["Pilot (YF1-YF6)"]},
+      {"name": "Passport", "generations": ["Passport (C519/YF7)"]}
+    ]
+  },
+  "Hyundai": {
+    "models": [
+      {"name": "N Performance", "generations": ["Elantra N (CN7)", "Veloster N (JS)", "Ioniq 5 N (NE1)"]},
+      {"name": "Genesis Coupe", "generations": ["BK1", "BK2"]},
+      {"name": "Tiburon", "generations": ["RD", "GK"]},
+      {"name": "Ioniq 5", "generations": ["E-GMP"]},
+      {"name": "Ioniq 6", "generations": ["E-GMP"]},
+      {"name": "Ioniq 9", "generations": ["E-GMP"]},
+      {"name": "Sonata", "generations": ["Sonata (YF/LF/DN8)"]},
+      {"name": "Elantra", "generations": ["Elantra (MD/AD/CN7)"]},
+      {"name": "Santa Fe", "generations": ["Santa Fe (SM-MX5)"]},
+      {"name": "Palisade", "generations": ["Palisade (LX2)"]}
+    ]
+  },
+  "Infiniti": {
+    "models": [
+      {"name": "G", "generations": ["G35 (V35)", "G37 (V36)"]},
+      {"name": "Q50", "generations": ["Q50/Q60 (V37)"]},
+      {"name": "Q60", "generations": ["Q50/Q60 (V37)"]},
+      {"name": "M", "generations": ["Y34", "Y50", "Y51"]},
+      {"name": "Q70", "generations": ["Y34", "Y50", "Y51"]},
+      {"name": "FX", "generations": ["S50"]},
+      {"name": "QX70", "generations": ["S51"]},
+      {"name": "QX60", "generations": ["L51 (QX60)"]},
+      {"name": "QX80", "generations": ["Z63 (QX80)"]}
+    ]
+  },
+  "Jaguar": {
+    "models": [
+      {"name": "E-Type", "generations": ["Series 1", "Series 2", "Series 3"]},
+      {"name": "XJS", "generations": ["Pre-HE", "HE", "Facelift"]},
+      {"name": "F-Type", "generations": ["X152"]},
+      {"name": "XJ220", "generations": ["XJ220"]},
+      {"name": "XJ Series", "generations": ["XJ6/XJ12", "X300", "X308", "X350", "X351"]},
+      {"name": "XK8", "generations": ["X100"]},
+      {"name": "XKR", "generations": ["X150"]},
+      {"name": "F-Pace", "generations": ["X761 (F-Pace)"]},
+      {"name": "I-Pace", "generations": ["X590 (I-Pace)"]}
+    ]
+  },
+  "Jeep": {
+    "models": [
+      {"name": "Wrangler", "generations": ["YJ", "TJ", "JK", "JL"]},
+      {"name": "Rubicon", "generations": ["YJ", "TJ", "JK", "JL"]},
+      {"name": "392", "generations": ["YJ", "TJ", "JK", "JL"]},
+      {"name": "Grand Cherokee", "generations": ["ZJ", "WJ", "WK", "WK2", "WL"]},
+      {"name": "L", "generations": ["WL"]},
+      {"name": "Trackhawk", "generations": ["ZJ", "WJ", "WK", "WK2", "WL"]},
+      {"name": "CJ-2A", "generations": ["CJ-2A"]},
+      {"name": "CJ-3A/B", "generations": ["CJ-3A/B"]},
+      {"name": "CJ-5", "generations": ["CJ-5"]},
+      {"name": "CJ-7", "generations": ["CJ-7"]},
+      {"name": "CJ-8 Scrambler", "generations": ["CJ-8 Scrambler"]},
+      {"name": "Cherokee", "generations": ["SJ", "XJ", "KJ", "KK", "KL"]},
+      {"name": "Liberty", "generations": ["SJ", "XJ", "KJ", "KK", "KL"]},
+      {"name": "Wagoneer", "generations": ["SJ"]},
+      {"name": "Grand Wagoneer", "generations": ["WS"]},
+      {"name": "Wagoneer S", "generations": ["STLA Large"]},
+      {"name": "Gladiator", "generations": ["SJ Gladiator", "JT Gladiator"]},
+      {"name": "Comanche", "generations": ["MJ Comanche"]},
+      {"name": "Compass", "generations": ["MP (Compass)"]},
+      {"name": "Renegade", "generations": ["BU (Renegade)"]}
+    ]
+  },
+  "Kia": {
+    "models": [
+      {"name": "Stinger", "generations": ["CK"]},
+      {"name": "EV6", "generations": ["CV (EV6)"]},
+      {"name": "EV9", "generations": ["MV (EV9)"]},
+      {"name": "EV3", "generations": ["SV (EV3)"]},
+      {"name": "K5", "generations": ["TF", "JF", "DL3"]},
+      {"name": "Optima", "generations": ["TF", "JF", "DL3"]},
+      {"name": "Telluride", "generations": ["ON (Telluride)"]},
+      {"name": "Sorento", "generations": ["BL/XM/UM/MQ4 (Sorento)"]},
+      {"name": "Soul", "generations": ["AM", "PS", "SK3"]},
+      {"name": "Soul EV", "generations": ["AM", "PS", "SK3"]},
+      {"name": "Sportage", "generations": ["NB-7", "KM", "SL", "QL", "NQ5"]}
+    ]
+  },
+  "Lamborghini": {
+    "models": [
+      {"name": "Countach", "generations": ["LP400", "LP400 S", "LP5000 S", "5000 QV", "25th Anniversary", "LPI 800-4"]},
+      {"name": "Diablo", "generations": ["VT", "SV", "GT", "6.0"]},
+      {"name": "Murciélago", "generations": ["VT", "LP640", "LP670-4 SV"]},
+      {"name": "Gallardo", "generations": ["1st Gen", "LP560-4"]},
+      {"name": "Huracán", "generations": ["LP610-4", "Performante", "EVO", "STO", "Tecnica"]},
+      {"name": "Aventador", "generations": ["LP700-4", "SV", "S", "SVJ", "Ultimae"]},
+      {"name": "Revuelto", "generations": ["LB744 (Revuelto)"]},
+      {"name": "Temerario", "generations": ["LB634 (Temerario)"]},
+      {"name": "Urus", "generations": ["MLB Evo"]},
+      {"name": "SE", "generations": ["MLB Evo"]},
+      {"name": "Performante", "generations": ["MLB Evo"]}
+    ]
+  },
+  "Land Rover": {
+    "models": [
+      {"name": "Defender", "generations": ["Defender (L316)", "Defender (L663)"]},
+      {"name": "Range Rover", "generations": ["Classic", "P38A", "L322", "L405", "L460"]},
+      {"name": "Range Rover Sport", "generations": ["L320", "L494", "L461"]},
+      {"name": "Range Rover Velar", "generations": ["L560 (Velar)"]},
+      {"name": "Evoque", "generations": ["L551 (Evoque)"]},
+      {"name": "Discovery", "generations": ["Discovery 5 (L462)"]},
+      {"name": "LR3", "generations": ["LR3 (L319)"]},
+      {"name": "LR4", "generations": ["LR4 (L319)"]}
+    ]
+  },
+  "Lexus": {
+    "models": [
+      {"name": "LFA", "generations": ["LFA10"]},
+      {"name": "IS", "generations": ["XE10"]},
+      {"name": "IS F", "generations": ["XE20"]},
+      {"name": "IS 500", "generations": ["XE30"]},
+      {"name": "LC 500", "generations": ["Z100"]},
+      {"name": "LC 500h", "generations": ["Z100"]},
+      {"name": "GS", "generations": ["S140", "S160", "S190", "L10"]},
+      {"name": "GS F", "generations": ["S140", "S160", "S190", "L10"]},
+      {"name": "LS", "generations": ["XF10", "XF20", "XF30", "XF40", "XF50"]},
+      {"name": "RC", "generations": ["XC10"]},
+      {"name": "RC F", "generations": ["XC10"]},
+      {"name": "GX", "generations": ["J250 (GX)"]},
+      {"name": "LX", "generations": ["J310 (LX)"]}
+    ]
+  },
+  "Lincoln": {
+    "models": [
+      {"name": "Continental", "generations": ["1st-3rd Gen", "4th Gen (Suicide Doors)", "5th-9th Gen", "10th Gen"]},
+      {"name": "Mark II", "generations": ["Mark II"]},
+      {"name": "Mark III", "generations": ["Mark III"]},
+      {"name": "Mark IV", "generations": ["Mark IV"]},
+      {"name": "Mark V", "generations": ["Mark V"]},
+      {"name": "Mark VI", "generations": ["Mark VI"]},
+      {"name": "Mark VII", "generations": ["Mark VII"]},
+      {"name": "Mark VIII", "generations": ["Mark VIII"]},
+      {"name": "Navigator", "generations": ["UN173", "U228", "U326", "U554"]},
+      {"name": "L", "generations": ["UN173", "U228", "U326", "U554"]},
+      {"name": "Town Car", "generations": ["1st Gen", "2nd Gen (FN36)", "3rd Gen (FN145)"]},
+      {"name": "Aviator", "generations": ["CD6 (Aviator)"]},
+      {"name": "MKZ", "generations": ["CD4 (MKZ)"]},
+      {"name": "LS", "generations": ["DEW98 (LS)"]},
+      {"name": "Nautilus", "generations": ["3rd Gen (Nautilus)"]},
+      {"name": "Corsair", "generations": ["C2 (Corsair)"]}
+    ]
+  },
+  "Lotus": {
+    "models": [
+      {"name": "Elise", "generations": ["S1", "S2", "S3"]},
+      {"name": "Exige", "generations": ["S1", "S2", "S3"]},
+      {"name": "Esprit", "generations": ["S1", "S2", "S3", "S4", "V8"]},
+      {"name": "Emira", "generations": ["Type 131"]},
+      {"name": "Evora", "generations": ["Type 122"]},
+      {"name": "Eletre", "generations": ["Type 132 (Eletre)"]},
+      {"name": "Emeya", "generations": ["Type 133 (Emeya)"]}
+    ]
+  },
+  "Maserati": {
+    "models": [
+      {"name": "GranTurismo", "generations": ["M145"]},
+      {"name": "GranCabrio", "generations": ["M189"]},
+      {"name": "Biturbo", "generations": ["AM331"]},
+      {"name": "MC12", "generations": ["MC12"]},
+      {"name": "MC20", "generations": ["MC20 (M240)"]},
+      {"name": "Ghibli", "generations": ["AM115", "AM336", "M156"]},
+      {"name": "Quattroporte", "generations": ["AM107", "AM121", "AM330", "AM337", "M139", "M156"]},
+      {"name": "Grecale", "generations": ["M161 (Grecale)"]},
+      {"name": "Levante", "generations": ["M166 (Levante)"]}
+    ]
+  },
+  "Mazda": {
+    "models": [
+      {"name": "MX-5 Miata", "generations": ["NA", "NB", "NC", "ND"]},
+      {"name": "RX-7", "generations": ["SA22C / FB", "FC3S", "FD3S"]},
+      {"name": "RX-8", "generations": ["SE3P"]},
+      {"name": "Mazda3", "generations": ["BK", "BL", "BM/BN", "BP"]},
+      {"name": "Mazdaspeed3", "generations": ["BK", "BL", "BM/BN", "BP"]},
+      {"name": "Mazdaspeed6", "generations": ["GG", "GH", "GJ/GL"]},
+      {"name": "Mazda6", "generations": ["GG", "GH", "GJ/GL"]},
+      {"name": "CX-5", "generations": ["KE/KF (CX-5)", "VA (CX-50)"]},
+      {"name": "CX-50", "generations": ["VA (CX-50)"]},
+      {"name": "CX-90", "generations": ["KD (CX-90)"]}
+    ]
+  },
+  "McLaren": {
+    "models": [
+      {"name": "F1", "generations": ["F1"]},
+      {"name": "12C", "generations": ["12C"]},
+      {"name": "650S", "generations": ["650S"]},
+      {"name": "675LT", "generations": ["675LT"]},
+      {"name": "720S", "generations": ["720S"]},
+      {"name": "765LT", "generations": ["765LT"]},
+      {"name": "750S", "generations": ["750S"]},
+      {"name": "570S", "generations": ["570S"]},
+      {"name": "570GT", "generations": ["570GT"]},
+      {"name": "600LT", "generations": ["600LT"]},
+      {"name": "P1", "generations": ["P1"]},
+      {"name": "Senna", "generations": ["Senna"]},
+      {"name": "Speedtail", "generations": ["Speedtail"]},
+      {"name": "Elva", "generations": ["Elva"]},
+      {"name": "W1", "generations": ["W1"]},
+      {"name": "Artura", "generations": ["A650"]}
+    ]
+  },
+  "Mercedes-Benz": {
+    "models": [
+      {"name": "SL-Class", "generations": ["W198", "W113", "R107", "R129", "R230", "R231", "R232"]},
+      {"name": "C-Class", "generations": ["W202", "W203", "W204", "W205", "W206"]},
+      {"name": "C63 AMG", "generations": ["W202", "W203", "W204", "W205", "W206"]},
+      {"name": "E-Class", "generations": ["W124", "W210", "W211", "W212", "W213", "W214"]},
+      {"name": "E63 AMG", "generations": ["W124", "W210", "W211", "W212", "W213", "W214"]},
+      {"name": "S-Class", "generations": ["W116", "W126", "W140", "W220", "W221", "W222", "W223"]},
+      {"name": "S63 AMG", "generations": ["W116", "W126", "W140", "W220", "W221", "W222", "W223"]},
+      {"name": "AMG GT", "generations": ["C190 / R190", "C192", "X290 (4-Door)"]},
+      {"name": "GT 4-Door", "generations": ["X290 (4-Door)"]},
+      {"name": "G-Class", "generations": ["W460", "W463", "W465"]},
+      {"name": "G63 AMG", "generations": ["W460", "W463", "W465"]}
+    ]
+  },
+  "MINI": {
+    "models": [
+      {"name": "Cooper", "generations": ["Classic Mini", "R50 / R53", "R56", "F56", "J01 / F66"]},
+      {"name": "Hatch", "generations": ["Classic Mini", "R50 / R53", "R56", "F56", "J01 / F66"]},
+      {"name": "Cooper S", "generations": ["Classic Mini", "R50 / R53", "R56", "F56", "J01 / F66"]},
+      {"name": "JCW", "generations": ["Classic Mini", "R50 / R53", "R56", "F56", "J01 / F66"]},
+      {"name": "Countryman", "generations": ["R60", "F60", "U25"]},
+      {"name": "Clubman", "generations": ["R55", "F54"]},
+      {"name": "Coupe", "generations": ["R58 (Coupe)"]},
+      {"name": "Roadster", "generations": ["R59 (Roadster)"]},
+      {"name": "Paceman", "generations": ["R61 (Paceman)"]}
+    ]
+  },
+  "Mitsubishi": {
+    "models": [
+      {"name": "Lancer Evolution", "generations": ["Evo I-III", "Evo IV-VI", "Evo VII-IX", "Evo X"]},
+      {"name": "3000GT", "generations": ["Z16A"]},
+      {"name": "GTO", "generations": ["Z15A"]},
+      {"name": "Eclipse", "generations": ["1G", "2G", "3G", "4G"]},
+      {"name": "Galant VR-4", "generations": ["E38A/E39A", "E54A/E84A", "EC5A/EA5A"]},
+      {"name": "Montero", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]},
+      {"name": "Pajero", "generations": ["1st Gen", "2nd Gen", "3rd Gen", "4th Gen"]}
+    ]
+  },
+  "Nissan": {
+    "models": [
+      {"name": "GT-R", "generations": ["C10", "C110", "R30", "R31", "R32", "R33", "R34", "R35"]},
+      {"name": "Skyline", "generations": ["C10", "C110", "R30", "R31", "R32", "R33", "R34", "R35"]},
+      {"name": "Z-Car", "generations": ["S30", "S130", "Z31", "Z32", "Z33 (350Z)", "Z34 (370Z)", "RZ34 (Z)"]},
+      {"name": "Silvia", "generations": ["S13", "S14", "S15"]},
+      {"name": "240SX", "generations": ["S13", "S14", "S15"]},
+      {"name": "Sentra SE-R", "generations": ["B13", "B14", "B15", "B17"]},
+      {"name": "NISMO", "generations": ["B13", "B14", "B15", "B17"]},
+      {"name": "Maxima", "generations": ["G910", "PU11", "J30", "A32", "A33", "A34", "A35", "A36"]},
+      {"name": "Pathfinder", "generations": ["WD21", "R50", "R51", "R52", "R53", "Y62 (Armada)"]},
+      {"name": "Armada", "generations": ["Y62 (Armada)"]}
+    ]
+  },
+  "Porsche": {
+    "models": [
+      {"name": "911", "generations": ["901 / Classic", "G-Series", "964", "993", "996", "997", "991", "992"]},
+      {"name": "Boxster", "generations": ["986", "987", "981", "982 / 718"]},
+      {"name": "Cayman", "generations": ["987", "981", "982 / 718"]},
+      {"name": "718", "generations": ["982 / 718"]},
+      {"name": "924", "generations": ["Base", "S", "Turbo", "Carrera GT", "Carrera GTS", "Carrera GTR"]},
+      {"name": "944", "generations": ["Base", "S", "S2", "Turbo", "Turbo S"]},
+      {"name": "968", "generations": ["Base", "Club Sport", "Turbo S"]},
+      {"name": "928", "generations": ["Base", "S", "S2", "S4", "GT", "GTS"]},
+      {"name": "356", "generations": ["356 Pre-A", "356 A", "356 B", "356 C"]},
+      {"name": "959", "generations": ["959"]},
+      {"name": "Carrera GT", "generations": ["980"]},
+      {"name": "918 Spyder", "generations": ["918"]},
+      {"name": "Taycan", "generations": ["Y1A"]},
+      {"name": "Cayenne", "generations": ["9PA", "92A", "9YA"]},
+      {"name": "Macan", "generations": ["95B", "Macan EV"]}
+    ]
+  },
+  "RAM": {
+    "models": [
+      {"name": "1500", "generations": ["DS (4th Gen)", "DT (5th Gen)"]},
+      {"name": "Rebel", "generations": ["DS (4th Gen)", "DT (5th Gen)"]},
+      {"name": "TRX", "generations": ["DS (4th Gen)", "DT (5th Gen)"]},
+      {"name": "RHO", "generations": ["DS (4th Gen)", "DT (5th Gen)"]},
+      {"name": "2500", "generations": ["BE/BR", "DR/DH", "DS/DJ", "DT/D2"]},
+      {"name": "3500 Heavy Duty", "generations": ["BE/BR", "DR/DH", "DS/DJ", "DT/D2"]},
+      {"name": "Power Wagon", "generations": ["BE/BR", "DR/DH", "DS/DJ", "DT/D2"]},
+      {"name": "4500", "generations": ["DD/DP"]},
+      {"name": "5500", "generations": ["DD/DP"]},
+      {"name": "Ramcharger", "generations": ["1st Gen", "2nd Gen", "2025+ REV"]},
+      {"name": "Dakota", "generations": ["N-Body", "AN", "ND"]},
+      {"name": "ProMaster", "generations": ["VF"]},
+      {"name": "ProMaster City", "generations": ["VM"]}
+    ]
+  },
+  "Rolls-Royce": {
+    "models": [
+      {"name": "Corniche", "generations": ["Classic"]},
+      {"name": "Silver Shadow", "generations": ["Classic"]},
+      {"name": "Phantom", "generations": ["Phantom I-VI"]},
+      {"name": "Ghost", "generations": ["RR4 (Ghost)", "2nd Gen Ghost"]},
+      {"name": "Wraith", "generations": ["RR5 (Wraith)"]},
+      {"name": "Dawn", "generations": ["RR6 (Dawn)"]},
+      {"name": "Cullinan", "generations": ["RR31"]},
+      {"name": "Spectre", "generations": ["RR25"]}
+    ]
+  },
+  "Subaru": {
+    "models": [
+      {"name": "Impreza WRX", "generations": ["GC8 / GF8", "GD / GG", "GR / GV", "VA", "VB"]},
+      {"name": "STI", "generations": ["GC8 / GF8", "GD / GG", "GR / GV", "VA", "VB"]},
+      {"name": "BRZ", "generations": ["ZC6", "ZD8"]},
+      {"name": "Forester", "generations": ["SF", "SG", "SH", "SJ", "SK", "SL"]},
+      {"name": "XT", "generations": ["SF", "SG", "SH", "SJ", "SK", "SL"]},
+      {"name": "Outback", "generations": ["BD/BG", "BE/BH", "BL/BP", "BM/BR", "BN/BS", "BW/BT"]},
+      {"name": "Legacy", "generations": ["BD/BG", "BE/BH", "BL/BP", "BM/BR", "BN/BS", "BW/BT"]},
+      {"name": "Crosstrek", "generations": ["GP", "GT", "GU"]}
+    ]
+  },
+  "Tesla": {
+    "models": [
+      {"name": "Roadster", "generations": ["Gen 1", "Gen 2"]},
+      {"name": "Model S", "generations": ["Gen 1", "Refresh / Plaid"]},
+      {"name": "Plaid", "generations": ["Refresh / Plaid", "Gen 1"]},
+      {"name": "Model 3", "generations": ["Gen 1"]},
+      {"name": "Performance", "generations": ["Highland Refresh"]},
+      {"name": "Model X", "generations": ["Gen 1"]},
+      {"name": "Model Y", "generations": ["Gen 1", "Juniper Refresh"]},
+      {"name": "Cybertruck", "generations": ["Gen 1"]}
+    ]
+  },
+  "Toyota": {
+    "models": [
+      {"name": "Supra", "generations": ["A40 / A50", "A60", "A70", "A80", "A90 / DB"]},
+      {"name": "MR2", "generations": ["W10", "W20", "W30"]},
+      {"name": "Land Cruiser", "generations": ["FJ40", "FJ60", "80 Series", "100 Series", "200 Series", "250 Series", "300 Series"]},
+      {"name": "Corolla", "generations": ["AE86", "E210", "ZN6 / ZC6", "ZN8 / ZD8"]},
+      {"name": "GR Corolla", "generations": ["AE86", "E210", "ZN6 / ZC6", "ZN8 / ZD8"]},
+      {"name": "GR86", "generations": ["AE86", "E210", "ZN6 / ZC6", "ZN8 / ZD8"]},
+      {"name": "Celica", "generations": ["A20/A30", "A40", "A60", "T160", "T180", "T200", "T230"]},
+      {"name": "Tacoma", "generations": ["N400 (Tacoma)"]},
+      {"name": "4Runner", "generations": ["N380 (4Runner)"]},
+      {"name": "GR Yaris", "generations": ["XP210"]}
+    ]
+  },
+  "Volkswagen": {
+    "models": [
+      {"name": "Golf GTI", "generations": ["Mk1", "Mk2", "Mk3", "Mk4", "Mk5", "Mk6", "Mk7", "Mk8"]},
+      {"name": "R", "generations": ["Mk1", "Mk2", "Mk3", "Mk4", "Mk5", "Mk6", "Mk7", "Mk8"]},
+      {"name": "Golf", "generations": ["Mk1", "Mk2", "Mk3", "Mk4", "Mk5", "Mk6", "Mk7", "Mk8"]},
+      {"name": "Beetle", "generations": ["Classic Beetle", "New Beetle (A4)", "Beetle (A5)"]},
+      {"name": "Bug", "generations": ["Classic Beetle", "New Beetle (A4)", "Beetle (A5)"]},
+      {"name": "Bus", "generations": ["T1 (Split)", "T2 (Bay)", "T3 (Vanagon)", "T4", "T5", "T6", "ID. Buzz"]},
+      {"name": "Transporter", "generations": ["T1 (Split)", "T2 (Bay)", "T3 (Vanagon)", "T4", "T5", "T6", "ID. Buzz"]},
+      {"name": "ID. Buzz", "generations": ["ID. Buzz"]},
+      {"name": "Jetta", "generations": ["Mk1", "Mk2", "Mk3", "Mk4", "Mk5", "Mk6", "Mk7"]},
+      {"name": "GLI", "generations": ["Mk1", "Mk2", "Mk3", "Mk4", "Mk5", "Mk6", "Mk7"]},
+      {"name": "Scirocco", "generations": ["Scirocco I", "Scirocco II", "Scirocco III"]},
+      {"name": "Corrado", "generations": ["Corrado (Type 53i)"]}
+    ]
+  },
+  "Volvo": {
+    "models": [
+      {"name": "240", "generations": ["240"]},
+      {"name": "260", "generations": ["260"]},
+      {"name": "850", "generations": ["850"]},
+      {"name": "T-5R", "generations": ["850"]},
+      {"name": "P1800", "generations": ["P1800"]},
+      {"name": "S60", "generations": ["P24"]},
+      {"name": "V60", "generations": ["P3"]},
+      {"name": "Polestar Engineered", "generations": ["SPA"]},
+      {"name": "S90", "generations": ["900 Series"]},
+      {"name": "V90", "generations": ["SPA"]},
+      {"name": "XC60", "generations": ["SPA (XC60)"]},
+      {"name": "XC90", "generations": ["SPA (XC90)"]},
+      {"name": "EX30", "generations": ["SEA (EX30)"]},
+      {"name": "EX90", "generations": ["SPA2 (EX90)"]}
+    ]
+  }
+}

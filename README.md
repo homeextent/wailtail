@@ -10,11 +10,16 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Framework**: React 19 + TypeScript + Vite
 - **Styling**: Tailwind CSS with custom editorial typography and layout styles
 - **Icons**: Lucide React
+- **Taxonomy Engine**: Curated 80+ collector vehicle dataset (`src/data/vehicleTaxonomy.json`) powering a reactive 3-tier dependent selection pipeline (Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code)
 - **State & Synchronization**: Firestore real-time snapshot listeners (`onSnapshot`) paired with optimistic UI state hydration
+
+### Serverless & Cloud Infrastructure
+- **Vercel Serverless Proxy (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
+- **Firebase Cloud Storage Asset Pipeline**: Direct Storage URL streaming (`uploadImageToStorage`) with client-side canvas micro-compression (`compressImageDataUrl`) and a 900KB serialized payload size cap in `saveMediaConfig()`.
 
 ### Firebase Backend Services
 - **Cloud Firestore**:
-  - `auctions`: Core vehicle documents containing specs, financials, and lifecycle status.
+  - `auctions`: Core vehicle documents containing specs, financials, taxonomy generations, and lifecycle status.
   - `auctions/{auctionId}/media/{document=**}`: Recursive wildcard subcollection matching for media configurations, images, chapters, and assets.
   - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification.
   - `comments`: Community Q&A feed with verified seller and administrator official nested replies.
@@ -29,26 +34,38 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 
 ## 2. Key Highlights & Core Features
 
-- **Firebase Cloud Storage Pipeline**: Uploads high-res inspection photos and hero banners directly to Firebase Storage buckets, storing lightweight HTTPS URLs in Firestore and enabling 100+ photo galleries per vehicle without hitting document size limits.
-
-1. **Multi-Car Auction Architecture & Catalog Grid (`/`)**:
+1. **3-Tier Dependent Vehicle Taxonomy (80+ Collector Marques)**:
+   - Curated dataset (`src/data/vehicleTaxonomy.json`) covering 80+ iconic marques with cascading Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code selection.
+   - Built-in `TAXONOMY_OTHER_CUSTOM` fallback text inputs for bespoke, custom, or unlisted vehicle builds.
+   - Reordered top-row Section 1 form layout with listing title auto-generator and an auto-syncing Highlights Tag Badge with manual override protection (`isBadgeOverridden`).
+2. **Serverless YouTube Playlist Ingestion (`api/youtube-playlist.ts`)**:
+   - Vercel serverless proxy endpoint bypassing browser CORS constraints to parse YouTube playlist XML Atom feeds server-side.
+   - 1-click "Auto-Import Playlist Videos" instantly populating driving chapters with titles, descriptions, and high-res thumbnails.
+   - Video duration metadata completely eradicated across public views and workspace authoring interfaces.
+3. **Cloud Storage Asset Pipeline & 900KB Document Guard**:
+   - High-resolution inspection photos and hero banners stream directly to Firebase Storage buckets via `uploadImageToStorage()`, storing lightweight HTTPS URLs in Firestore.
+   - Pre-flight HTML5 canvas micro-compression (`compressImageDataUrl`) and a strict 900KB serialized payload size limit in `saveMediaConfig()` permanently eliminating Firestore 1MB document limit exceptions.
+4. **Section 7 Native Datetime Pickers**:
+   - Interactive calendar trigger icons with native `.showPicker()` modal invocation styled with dark-mode compliance (`[color-scheme:dark]`).
+   - One-click duration shortcuts (`Set to Now`, `+3 Days`, `+7 Days`) for rapid auction scheduling.
+5. **Multi-Car Auction Architecture & Catalog Grid (`/`)**:
    - The multi-car Vehicle Auction Catalog is the default homepage view (`/` and `/catalog`).
    - Clean 0-lot baseline support: snapshot listeners dynamically handle empty databases without forced fallbacks.
-2. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)**:
+6. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)**:
    - Split-screen workspace with live public preview pane (desktop and mobile viewports).
    - 7 listing sections: Vehicle Identity, Editorial Narrative, Single-Source Technical Specifications, Showcase Chapters (01-04), Hero & Categorized Photo Gallery, YouTube Driving Videos, and CAD Financial Rules.
    - 100% blank draft isolation with nullish coalescing defaults (`$0 CAD` No Reserve).
-3. **Role-Based Access Control (RBAC)**:
+7. **Role-Based Access Control (RBAC)**:
    - Protected routes (`/dashboard/listings/*`) redirect non-sellers and non-admins with error alerts.
    - Consignment application review flow promotes users to `seller` and provisions assigned blank auction lots.
-4. **Hero Media Carousel & Media Pending Placeholder**:
+8. **Hero Media Carousel & Media Pending Placeholder**:
    - Purged of hardcoded external fallback URLs.
    - When no images are configured, renders a neutral dark placeholder (`bg-zinc-900 border border-zinc-800 rounded-xl`) with a camera icon and "Media Pending" message.
-5. **YouTube Video Series & Thumbnail URL Sanitization**:
+9. **YouTube Video Series & Thumbnail URL Sanitization**:
    - Validates 11-character video IDs using regex (`/^[a-zA-Z0-9_-]{11}$/`).
    - Prevents 404 network errors in DevTools by only generating `mqdefault.jpg` URLs for validated IDs.
-6. **Bulk Purge & Cache Sanitization**:
-   - `purgeAllListings()` atomic deletion engine cleanses Firestore documents, media subcollections, and `localStorage` cache.
+10. **Bulk Purge & Cache Sanitization**:
+    - `purgeAllListings()` atomic deletion engine cleanses Firestore documents, media subcollections, and `localStorage` cache.
 
 ---
 

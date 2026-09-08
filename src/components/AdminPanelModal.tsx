@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Auction, Bid, UserProfile, MediaConfiguration, GalleryImage, ShowcaseSection, VideoChapter, ConsignmentApplication } from '../types';
 import { 
   updateAuctionConfig, 
@@ -69,8 +69,143 @@ import {
   Palette,
   RefreshCw,
   DownloadCloud,
-  Copy
+  Copy,
+  Wand2,
+  MapPin
 } from 'lucide-react';
+import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
+
+interface TaxonomyModel {
+  name: string;
+  generations?: string[];
+}
+
+interface TaxonomyMake {
+  models: TaxonomyModel[];
+}
+
+const vehicleTaxonomy: Record<string, TaxonomyMake> = vehicleTaxonomyRaw as Record<string, TaxonomyMake>;
+const TAXONOMY_OTHER_CUSTOM = 'OTHER_CUSTOM';
+const AVAILABLE_MAKES = Object.keys(vehicleTaxonomy).sort((a, b) => a.localeCompare(b));
+
+const resolveMakeState = (rawMake: string | undefined | null) => {
+  const trimmed = (rawMake ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (vehicleTaxonomy[trimmed]) {
+    return { dropdown: trimmed, custom: '' };
+  }
+  const matchedKey = Object.keys(vehicleTaxonomy).find(k => k.toLowerCase() === trimmed.toLowerCase());
+  if (matchedKey) {
+    return { dropdown: matchedKey, custom: '' };
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+const resolveModelState = (selectedMakeDropdown: string, rawModel: string | undefined | null) => {
+  const trimmed = (rawModel ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (selectedMakeDropdown && selectedMakeDropdown !== TAXONOMY_OTHER_CUSTOM && vehicleTaxonomy[selectedMakeDropdown]) {
+    const models = vehicleTaxonomy[selectedMakeDropdown].models;
+    const match = models.find(m => m.name.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match.name, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+const resolveGenerationState = (
+  selectedMakeDropdown: string,
+  selectedModelDropdown: string,
+  rawGeneration: string | undefined | null
+) => {
+  const trimmed = (rawGeneration ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (
+    selectedMakeDropdown &&
+    selectedMakeDropdown !== TAXONOMY_OTHER_CUSTOM &&
+    vehicleTaxonomy[selectedMakeDropdown] &&
+    selectedModelDropdown &&
+    selectedModelDropdown !== TAXONOMY_OTHER_CUSTOM
+  ) {
+    const modelObj = vehicleTaxonomy[selectedMakeDropdown].models.find(
+      m => m.name.toLowerCase() === selectedModelDropdown.toLowerCase()
+    );
+    const generations = modelObj?.generations || [];
+    const match = generations.find(g => g.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+const formatGenerationForTitle = (gen: string | undefined | null) => {
+  const trimmed = (gen ?? '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('(') && trimmed.endsWith(')')) return trimmed;
+  if (/^[EFGW]\d{2,3}(\b|\/)/i.test(trimmed)) {
+    return `(${trimmed})`;
+  }
+  return trimmed;
+};
+
+export const formatHighlightsBadge = (
+  year?: number | string | null,
+  make?: string | null,
+  model?: string | null,
+  generation?: string | null
+): string => {
+  const parts: string[] = [];
+
+  const yearStr = year != null ? String(year).trim() : '';
+  if (yearStr) parts.push(yearStr);
+
+  const cleanMake = (make ?? '').trim();
+  if (cleanMake && cleanMake !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanMake);
+  }
+
+  const cleanModel = (model ?? '').trim();
+  if (cleanModel && cleanModel !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanModel);
+  }
+
+  const cleanGen = (generation ?? '').trim();
+  if (cleanGen && cleanGen !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanGen);
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+};
+
+const YEAR_OPTIONS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) => 2026 - i);
+
+const TITLE_STATUS_OPTIONS = [
+  'Clean Registration',
+  'Rebuilt / Reconstructed',
+  'Salvage Title',
+  'Irreparable / Parts Only',
+  'Lien / Lease Pending',
+  'Other / Custom'
+];
+
+const GEARBOX_OPTIONS = [
+  '5-Speed Manual (915)',
+  '5-Speed Manual',
+  '6-Speed Manual',
+  '4-Speed Automatic',
+  '5-Speed Automatic',
+  'Dual-Clutch / PDK',
+  'Sequential',
+  'Other'
+];
 
 interface AdminPanelModalProps {
   isOpen: boolean;
@@ -135,8 +270,21 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [title, setTitle] = useState(auction.title);
   const [subtitle, setSubtitle] = useState(auction.subtitle);
   const [headline, setHeadline] = useState(auction.headline || auction.title);
-  const [make, setMake] = useState(auction.make || 'Porsche');
-  const [model, setModel] = useState(auction.model || '911 Turbo-Look');
+  const initialMakeVal = auction.make || 'Porsche';
+  const initialModelVal = auction.model || '911 Turbo-Look';
+  const initialGenerationVal = auction.generation || 'M491 (G-Series)';
+  const [make, setMake] = useState(initialMakeVal);
+  const [model, setModel] = useState(initialModelVal);
+  const [generation, setGeneration] = useState(initialGenerationVal);
+  const initialMakeState = resolveMakeState(initialMakeVal);
+  const [selectedMakeDropdown, setSelectedMakeDropdown] = useState(initialMakeState.dropdown);
+  const [customMake, setCustomMake] = useState(initialMakeState.custom);
+  const initialModelState = resolveModelState(initialMakeState.dropdown, initialModelVal);
+  const [selectedModelDropdown, setSelectedModelDropdown] = useState(initialModelState.dropdown);
+  const [customModel, setCustomModel] = useState(initialModelState.custom);
+  const initialGenerationState = resolveGenerationState(initialMakeState.dropdown, initialModelState.dropdown, initialGenerationVal);
+  const [selectedGenerationDropdown, setSelectedGenerationDropdown] = useState(initialGenerationState.dropdown);
+  const [customGeneration, setCustomGeneration] = useState(initialGenerationState.custom);
   const [year, setYear] = useState<string | number>(auction.year || '1978');
   const [vin, setVin] = useState(auction.vin);
   const [mileage, setMileage] = useState(auction.mileage);
@@ -144,6 +292,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [sellerName, setSellerName] = useState(auction.sellerName);
   const [engine, setEngine] = useState(auction.engine || '3.0L Flat-Six CIS');
   const [drivetrain, setDrivetrain] = useState(auction.drivetrain || '5-Speed 915 Manual');
+  const [customDrivetrain, setCustomDrivetrain] = useState('');
   const [exteriorColor, setExteriorColor] = useState(auction.exteriorColor || 'Guards Red / Whale Tail');
   const [interior, setInterior] = useState(
     auction.interior || 
@@ -151,13 +300,250 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     'Black Leather / Houndstooth'
   );
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus || 'Clean Registration');
+  const [customTitleStatus, setCustomTitleStatus] = useState('');
   const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>(auction.distanceUnit || 'km');
-  const [highlightsBadge, setHighlightsBadge] = useState(auction.highlightsBadge || mediaConfig.highlightsBadge || '1978 911');
+
+  // Structured Location state (City, Province / State, Country)
+  const [locationCity, setLocationCity] = useState(() => {
+    if (!auction.location) return '';
+    const parts = auction.location.split(',').map(s => s.trim());
+    return parts[0] ?? '';
+  });
+  const [locationRegion, setLocationRegion] = useState(() => {
+    if (!auction.location) return '';
+    const parts = auction.location.split(',').map(s => s.trim());
+    return parts[1] ?? '';
+  });
+  const [locationCountry, setLocationCountry] = useState(() => {
+    if (!auction.location) return '';
+    const parts = auction.location.split(',').map(s => s.trim());
+    return parts[2] ?? '';
+  });
+
+  const formattedLocation = useMemo(() => {
+    return [locationCity.trim(), locationRegion.trim(), locationCountry.trim()].filter(Boolean).join(', ');
+  }, [locationCity, locationRegion, locationCountry]);
+
+  // Highlights Tag Badge Auto-Sync & Override state
+  const initialEffectiveMake = initialMakeState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialMakeState.custom : initialMakeVal;
+  const initialEffectiveModel = initialModelState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialModelState.custom : initialModelVal;
+  const initialEffectiveGen = initialGenerationState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialGenerationState.custom : initialGenerationVal;
+  const initialAutoBadge = formatHighlightsBadge(
+    auction.year || '1978',
+    initialEffectiveMake,
+    initialEffectiveModel,
+    initialEffectiveGen
+  );
+  const rawHighlightsBadge = auction.highlightsBadge || mediaConfig.highlightsBadge || initialAutoBadge;
+  const [highlightsBadge, setHighlightsBadge] = useState<string>(rawHighlightsBadge || initialAutoBadge);
+
+  const [isBadgeOverridden, setIsBadgeOverridden] = useState<boolean>(() => {
+    if (!rawHighlightsBadge) return false;
+    if (
+      rawHighlightsBadge === initialAutoBadge ||
+      rawHighlightsBadge === '1978 911 SC' ||
+      rawHighlightsBadge === '1978 911'
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const prevAutoBadgeRef = useRef<string>(initialAutoBadge);
+
+  // Derived available models list for active make dropdown selection
+  const availableModels = useMemo(() => {
+    if (!selectedMakeDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    return vehicleTaxonomy[selectedMakeDropdown]?.models?.map(m => m.name) || [];
+  }, [selectedMakeDropdown]);
+
+  // Derived available generations list for active make and model dropdown selections
+  const availableGenerations = useMemo(() => {
+    if (!selectedMakeDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    if (!selectedModelDropdown || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    const makeData = vehicleTaxonomy[selectedMakeDropdown];
+    if (!makeData?.models) return [];
+    const modelObj = makeData.models.find(
+      m => m.name === selectedModelDropdown || m.name.toLowerCase() === selectedModelDropdown.toLowerCase()
+    );
+    return modelObj?.generations || [];
+  }, [selectedMakeDropdown, selectedModelDropdown]);
+
+  const handleMakeSelect = (newDropdownValue: string) => {
+    setSelectedMakeDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackMake = make && !vehicleTaxonomy[make] ? make : '';
+      setCustomMake(fallbackMake);
+      setMake(fallbackMake);
+      setSelectedModelDropdown(TAXONOMY_OTHER_CUSTOM);
+      const fallbackModel = model && !availableModels.includes(model) ? model : '';
+      setCustomModel(fallbackModel);
+      setModel(fallbackModel);
+      setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+      setCustomGeneration('');
+      setGeneration('');
+    } else if (!newDropdownValue) {
+      setCustomMake('');
+      setMake('');
+      setSelectedModelDropdown('');
+      setCustomModel('');
+      setModel('');
+      setSelectedGenerationDropdown('');
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomMake('');
+      setMake(newDropdownValue);
+      const models = vehicleTaxonomy[newDropdownValue]?.models || [];
+      const firstModel = models.length > 0 ? models[0].name : '';
+      setSelectedModelDropdown(firstModel || TAXONOMY_OTHER_CUSTOM);
+      setCustomModel('');
+      setModel(firstModel);
+
+      const firstModelGens = models.length > 0 && models[0].generations ? models[0].generations : [];
+      const firstGen = firstModelGens.length > 0 ? firstModelGens[0] : '';
+      if (firstGen) {
+        setSelectedGenerationDropdown(firstGen);
+        setCustomGeneration('');
+        setGeneration(firstGen);
+      } else {
+        setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+        setCustomGeneration('');
+        setGeneration('');
+      }
+    }
+  };
+
+  const handleCustomMakeChange = (val: string) => {
+    setCustomMake(val);
+    setMake(val);
+  };
+
+  const handleModelSelect = (newDropdownValue: string) => {
+    setSelectedModelDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackModel = model && !availableModels.includes(model) ? model : '';
+      setCustomModel(fallbackModel);
+      setModel(fallbackModel);
+      setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+      setCustomGeneration('');
+      setGeneration('');
+    } else if (!newDropdownValue) {
+      setCustomModel('');
+      setModel('');
+      setSelectedGenerationDropdown('');
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomModel('');
+      setModel(newDropdownValue);
+      const makeData = vehicleTaxonomy[selectedMakeDropdown];
+      const modelObj = makeData?.models?.find(
+        m => m.name === newDropdownValue || m.name.toLowerCase() === newDropdownValue.toLowerCase()
+      );
+      const gens = modelObj?.generations || [];
+      const firstGen = gens.length > 0 ? gens[0] : '';
+      if (firstGen) {
+        setSelectedGenerationDropdown(firstGen);
+        setCustomGeneration('');
+        setGeneration(firstGen);
+      } else {
+        setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+        setCustomGeneration('');
+        setGeneration('');
+      }
+    }
+  };
+
+  const handleCustomModelChange = (val: string) => {
+    setCustomModel(val);
+    setModel(val);
+  };
+
+  const handleGenerationSelect = (newDropdownValue: string) => {
+    setSelectedGenerationDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackGen = generation && !availableGenerations.includes(generation) ? generation : '';
+      setCustomGeneration(fallbackGen);
+      setGeneration(fallbackGen);
+    } else if (!newDropdownValue) {
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomGeneration('');
+      setGeneration(newDropdownValue);
+    }
+  };
+
+  const handleCustomGenerationChange = (val: string) => {
+    setCustomGeneration(val);
+    setGeneration(val);
+  };
+
+  // Highlights Tag Badge Auto-Sync:
+  // Automatically populate highlightsBadge on Year/Make/Model/Generation change ONLY if
+  // the badge field is blank or matches the auto-generated pattern (not manually overridden).
+  useEffect(() => {
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake : make;
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel : model;
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration : generation;
+    const newAuto = formatHighlightsBadge(year, curEffectiveMake, curEffectiveModel, curEffectiveGen);
+
+    if (!isBadgeOverridden || !highlightsBadge.trim() || highlightsBadge === prevAutoBadgeRef.current) {
+      setHighlightsBadge(newAuto);
+    }
+    prevAutoBadgeRef.current = newAuto;
+  }, [
+    year,
+    make,
+    customMake,
+    selectedMakeDropdown,
+    model,
+    customModel,
+    selectedModelDropdown,
+    generation,
+    customGeneration,
+    selectedGenerationDropdown,
+    isBadgeOverridden
+  ]);
+
+  const handleHighlightsBadgeChange = (val: string) => {
+    setHighlightsBadge(val);
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake : make;
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel : model;
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration : generation;
+    const currentAuto = formatHighlightsBadge(year, curEffectiveMake, curEffectiveModel, curEffectiveGen);
+
+    if (!val.trim()) {
+      setIsBadgeOverridden(false);
+    } else if (val.trim() === currentAuto.trim()) {
+      setIsBadgeOverridden(false);
+    } else {
+      setIsBadgeOverridden(true);
+    }
+  };
+
+  const handleAutoGenerateTitle = () => {
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : (make || '').trim();
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : (model || '').trim();
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration.trim() : (generation || '').trim();
+    const formattedGen = formatGenerationForTitle(curEffectiveGen);
+    const auto = [year, curEffectiveMake, curEffectiveModel, formattedGen].filter(Boolean).join(' ').trim();
+    if (auto) {
+      setTitle(auto);
+    }
+  };
 
   // Helper to recognize standard core vehicle specs synchronized with Section 1
   const isPrimarySpecLabel = (label: string) => {
     const norm = label.trim().toLowerCase();
     return [
+      'make',
+      'model',
+      'generation',
+      'generation / chassis',
+      'chassis',
+      'year',
       'vin',
       'odometer',
       'mileage',
@@ -192,6 +578,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
   // Auto-calculated Section 1 primary specifications (mirrored live)
   const primarySpecs = [
+    { label: 'Make', value: make || '' },
+    { label: 'Model', value: model || '' },
+    ...(generation ? [{ label: 'Generation / Chassis', value: generation }] : []),
+    { label: 'Year', value: String(year || '') },
     { label: 'VIN', value: vin || '' },
     { 
       label: 'Odometer', 
@@ -202,11 +592,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         : '' 
     },
     { label: 'Engine', value: engine || '' },
-    { label: 'Transmission', value: drivetrain || '' },
+    { label: 'Transmission', value: (drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain) || '' },
     { label: 'Exterior Color', value: exteriorColor || '' },
     { label: 'Interior', value: interior || '' },
-    { label: 'Title Status', value: titleStatus || '' },
-    { label: 'Location', value: location || '' }
+    { label: 'Title Status', value: (titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus) || '' },
+    { label: 'Location', value: formattedLocation || location || '' }
   ];
 
   // Unified full specifications list for public highlights card and Firestore
@@ -478,18 +868,56 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setTitle(auction.title);
     setSubtitle(auction.subtitle);
     setHeadline(auction.headline || auction.title);
-    setMake(auction.make || 'Porsche');
-    setModel(auction.model || '911 Turbo-Look');
+    const nextMake = auction.make || 'Porsche';
+    const nextModel = auction.model || '911 Turbo-Look';
+    const nextGen = auction.generation || 'M491 (G-Series)';
+    setMake(nextMake);
+    setModel(nextModel);
+    setGeneration(nextGen);
+    const mState = resolveMakeState(nextMake);
+    setSelectedMakeDropdown(mState.dropdown);
+    setCustomMake(mState.custom);
+    const modState = resolveModelState(mState.dropdown, nextModel);
+    setSelectedModelDropdown(modState.dropdown);
+    setCustomModel(modState.custom);
+    const genState = resolveGenerationState(mState.dropdown, modState.dropdown, nextGen);
+    setSelectedGenerationDropdown(genState.dropdown);
+    setCustomGeneration(genState.custom);
     setYear(auction.year || '1978');
     setVin(auction.vin);
     setMileage(auction.mileage);
     setLocation(auction.location);
+    const locParts = (auction.location || '').split(',').map(s => s.trim());
+    setLocationCity(locParts[0] ?? '');
+    setLocationRegion(locParts[1] ?? '');
+    setLocationCountry(locParts[2] ?? '');
     setSellerName(auction.sellerName);
     setEngine(auction.engine || '3.0L Flat-Six CIS');
     setDrivetrain(auction.drivetrain || '5-Speed 915 Manual');
+    setCustomDrivetrain('');
     setExteriorColor(auction.exteriorColor || 'Guards Red / Whale Tail');
     if (auction.interior) setInterior(auction.interior);
     setTitleStatus(auction.titleStatus || 'Clean Registration');
+    setCustomTitleStatus('');
+    setDistanceUnit(auction.distanceUnit || 'km');
+
+    const nextEffectiveMake = mState.dropdown === TAXONOMY_OTHER_CUSTOM ? mState.custom : nextMake;
+    const nextEffectiveModel = modState.dropdown === TAXONOMY_OTHER_CUSTOM ? modState.custom : nextModel;
+    const nextEffectiveGen = genState.dropdown === TAXONOMY_OTHER_CUSTOM ? genState.custom : nextGen;
+    const nextAutoBadge = formatHighlightsBadge(
+      auction.year || '1978',
+      nextEffectiveMake,
+      nextEffectiveModel,
+      nextEffectiveGen
+    );
+    const loadedBadge = auction.highlightsBadge || mediaConfig.highlightsBadge || nextAutoBadge;
+    setHighlightsBadge(loadedBadge || nextAutoBadge);
+    prevAutoBadgeRef.current = nextAutoBadge;
+    if (!loadedBadge || loadedBadge === nextAutoBadge || loadedBadge === '1978 911 SC' || loadedBadge === '1978 911') {
+      setIsBadgeOverridden(false);
+    } else {
+      setIsBadgeOverridden(true);
+    }
     setStartTimeInput(formatForInput(auction.startTime));
     setEndTimeInput(formatForInput(auction.endTime));
     if (auction.siteLogo) setSiteLogo(auction.siteLogo);
@@ -675,6 +1103,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       const startMs = new Date(startTimeInput).getTime() || auction.startTime;
       const endMs = new Date(endTimeInput).getTime() || auction.endTime;
       const isReserveMet = auction.currentBid >= Number(reserveAmount);
+      const finalDrivetrain = drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain;
+      const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
+      const finalLocation = formattedLocation || location;
 
       // 1. Update Auction Parameters in Firestore
       await updateAuctionConfig(targetAuctionId, {
@@ -688,16 +1119,17 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         distanceUnit,
         make,
         model,
+        generation: generation.trim() || undefined,
         year,
         vin,
         mileage,
-        location,
+        location: finalLocation,
         sellerName,
         engine,
-        drivetrain,
+        drivetrain: finalDrivetrain,
         exteriorColor,
         interior,
-        titleStatus,
+        titleStatus: finalTitleStatus,
         currency: 'CAD',
         reserveAmount: Number(reserveAmount),
         minimumIncrement: Number(minimumIncrement),
@@ -1495,189 +1927,389 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   <span className="text-xs text-zinc-500">Live auction headline, VIN, and registration</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                  <div className="sm:col-span-2 md:col-span-3">
-                    <label className="block font-bold text-zinc-800 uppercase tracking-wider mb-1">
-                      Main Listing Title
-                    </label>
+                <div className="space-y-4 text-xs">
+                  {/* Row 1 (Top Grid): Year, Make, Model, Generation / Chassis Code */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Year</label>
+                      <select
+                        value={year}
+                        onChange={(e) => setYear(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Select Year...</option>
+                        {YEAR_OPTIONS.map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                        {year && !YEAR_OPTIONS.includes(Number(year)) && (
+                          <option value={year}>{year}</option>
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Make</label>
+                      <select
+                        value={selectedMakeDropdown}
+                        onChange={(e) => handleMakeSelect(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Select Make...</option>
+                        {AVAILABLE_MAKES.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                        <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Make...</option>
+                      </select>
+                      {selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM && (
+                        <input
+                          type="text"
+                          value={customMake}
+                          onChange={(e) => handleCustomMakeChange(e.target.value)}
+                          placeholder="Enter custom make..."
+                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Model & Spec</label>
+                      <select
+                        value={selectedModelDropdown}
+                        onChange={(e) => handleModelSelect(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Select Model...</option>
+                        {availableModels.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                        <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Model...</option>
+                      </select>
+                      {selectedModelDropdown === TAXONOMY_OTHER_CUSTOM && (
+                        <input
+                          type="text"
+                          value={customModel}
+                          onChange={(e) => handleCustomModelChange(e.target.value)}
+                          placeholder="Enter custom model..."
+                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Generation / Chassis Code</label>
+                      {(!selectedMakeDropdown || !selectedModelDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM) ? (
+                        selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? (
+                          <div>
+                            <input
+                              type="text"
+                              value={customGeneration}
+                              onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                              placeholder="Enter generation / chassis..."
+                              className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                            />
+                          </div>
+                        ) : (
+                          <select
+                            disabled
+                            className="w-full p-2.5 rounded-lg bg-slate-900/50 border border-slate-700/50 text-zinc-500 cursor-not-allowed focus:outline-none"
+                          >
+                            <option value="">Select Model first...</option>
+                          </select>
+                        )
+                      ) : availableGenerations.length === 0 ? (
+                        <div>
+                          <input
+                            type="text"
+                            value={customGeneration}
+                            onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                            placeholder="Enter generation / chassis..."
+                            className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <select
+                            value={selectedGenerationDropdown}
+                            onChange={(e) => handleGenerationSelect(e.target.value)}
+                            className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                          >
+                            <option value="">Select Generation...</option>
+                            {availableGenerations.map((g) => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                            <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Generation...</option>
+                          </select>
+                          {selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM && (
+                            <input
+                              type="text"
+                              value={customGeneration}
+                              onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                              placeholder="Enter custom generation..."
+                              className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Row 2: Listing Title input with the "⚡ Auto-generate from Specs" action button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-bold text-zinc-800 uppercase tracking-wider">
+                        Main Listing Title
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateTitle}
+                        className="text-[11px] text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Auto-generate title from Year, Make, and Model"
+                      >
+                        <Wand2 className="w-3 h-3" />
+                        <span>⚡ Auto-generate from Specs</span>
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
-                      className="w-full p-2.5 rounded-lg border border-zinc-300 font-serif font-bold text-base text-zinc-900 focus:ring-2 focus:ring-red-600 focus:outline-none"
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 font-serif font-bold text-base text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
                     />
                   </div>
 
-                  <div className="sm:col-span-2 md:col-span-3">
+                  {/* Row 3: Subtitle / Highlights Bar input */}
+                  <div>
                     <label className="block font-bold text-zinc-800 uppercase tracking-wider mb-1">
-                      Subtitle / One-Line Teaser
+                      Subtitle / Highlights Bar
                     </label>
                     <input
                       type="text"
                       value={subtitle}
                       onChange={(e) => setSubtitle(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-800 focus:ring-2 focus:ring-red-600 focus:outline-none"
+                      placeholder="e.g. 3.0L Flat-Six • 5-Speed 915 • Guards Red (027)"
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                     />
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Year</label>
-                    <input
-                      type="text"
-                      value={year}
-                      onChange={(e) => setYear(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Make</label>
-                    <input
-                      type="text"
-                      value={make}
-                      onChange={(e) => setMake(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Model & Spec</label>
-                    <input
-                      type="text"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">VIN</label>
-                    <input
-                      type="text"
-                      value={vin}
-                      onChange={(e) => setVin(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 font-mono text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block font-bold text-zinc-700">Odometer / Mileage</label>
-                      <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-md border border-zinc-200">
-                        <button
-                          type="button"
-                          onClick={() => setDistanceUnit('km')}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
-                            distanceUnit === 'km' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
-                          }`}
-                        >
-                          km (CAD)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDistanceUnit('mi')}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
-                            distanceUnit === 'mi' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
-                          }`}
-                        >
-                          mi
-                        </button>
-                      </div>
+                  {/* Row 4: VIN (Vehicle Identification Number) and Odometer Reading (with KM / MI toggle) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">VIN (Vehicle Identification Number)</label>
+                      <input
+                        type="text"
+                        value={vin}
+                        onChange={(e) => setVin(e.target.value.toUpperCase())}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 font-mono uppercase text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={mileage}
-                      onChange={(e) => setMileage(e.target.value)}
-                      placeholder="e.g. 126,200"
-                      className="w-full p-2 rounded-lg border border-zinc-300 font-mono text-zinc-900"
-                    />
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-zinc-700">Odometer Reading</label>
+                        <div className="flex items-center gap-1 bg-zinc-100 p-0.5 rounded-md border border-zinc-200">
+                          <button
+                            type="button"
+                            onClick={() => setDistanceUnit('km')}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                              distanceUnit === 'km' ? 'bg-amber-600 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                            }`}
+                          >
+                            km (CAD)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDistanceUnit('mi')}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                              distanceUnit === 'mi' ? 'bg-amber-600 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900'
+                            }`}
+                          >
+                            mi
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        value={mileage}
+                        onChange={(e) => setMileage(e.target.value)}
+                        placeholder="e.g. 126,200"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">
-                      Vehicle Highlights Badge
-                    </label>
-                    <input
-                      type="text"
-                      value={highlightsBadge}
-                      onChange={(e) => setHighlightsBadge(e.target.value)}
-                      placeholder="e.g. 1978 911"
-                      className="w-full p-2 rounded-lg border border-red-200 font-mono text-xs font-bold text-red-700 bg-red-50/50"
-                    />
-                    <span className="text-[10px] text-zinc-400 mt-0.5 block">
-                      Top-right badge on the Vehicle Highlights card
-                    </span>
+                  {/* Row 5: Engine Specification and Drivetrain / Gearbox dropdown */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Engine Specification</label>
+                      <input
+                        type="text"
+                        value={engine}
+                        onChange={(e) => setEngine(e.target.value)}
+                        placeholder="e.g. 3.0L Flat-Six CIS"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Drivetrain / Gearbox</label>
+                      <select
+                        value={drivetrain}
+                        onChange={(e) => setDrivetrain(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        {GEARBOX_OPTIONS.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                        {drivetrain && !GEARBOX_OPTIONS.includes(drivetrain) && (
+                          <option value={drivetrain}>{drivetrain}</option>
+                        )}
+                      </select>
+                      {drivetrain === 'Other' && (
+                        <input
+                          type="text"
+                          value={customDrivetrain}
+                          onChange={(e) => setCustomDrivetrain(e.target.value)}
+                          placeholder="Specify custom gearbox / transaxle..."
+                          className="w-full mt-2 p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      )}
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Location</label>
-                    <input
-                      type="text"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
+                  {/* Row 6: Exterior Finish and Interior / Cabin */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Exterior Finish</label>
+                      <input
+                        type="text"
+                        value={exteriorColor}
+                        onChange={(e) => setExteriorColor(e.target.value)}
+                        placeholder="e.g. Guards Red / Whale Tail"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Interior / Cabin</label>
+                      <input
+                        type="text"
+                        value={interior}
+                        onChange={(e) => setInterior(e.target.value)}
+                        placeholder="e.g. Black Leather / Houndstooth"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Engine Specification</label>
-                    <input
-                      type="text"
-                      value={engine}
-                      onChange={(e) => setEngine(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Drivetrain / Gearbox</label>
-                    <input
-                      type="text"
-                      value={drivetrain}
-                      onChange={(e) => setDrivetrain(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Exterior Finish</label>
-                    <input
-                      type="text"
-                      value={exteriorColor}
-                      onChange={(e) => setExteriorColor(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Interior / Cabin</label>
-                    <input
-                      type="text"
-                      value={interior}
-                      onChange={(e) => setInterior(e.target.value)}
-                      placeholder="e.g. Black Leather / Houndstooth"
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
-                  </div>
-
+                  {/* Row 7: Title & Registration Status dropdown */}
                   <div>
                     <label className="block font-bold text-zinc-700 mb-1">Title & Registration Status</label>
-                    <input
-                      type="text"
+                    <select
                       value={titleStatus}
                       onChange={(e) => setTitleStatus(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                    >
+                      {TITLE_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                      {titleStatus && !TITLE_STATUS_OPTIONS.includes(titleStatus) && (
+                        <option value={titleStatus}>{titleStatus}</option>
+                      )}
+                    </select>
+                    {titleStatus === 'Other / Custom' && (
+                      <input
+                        type="text"
+                        value={customTitleStatus}
+                        onChange={(e) => setCustomTitleStatus(e.target.value)}
+                        placeholder="Specify custom title/registration details..."
+                        className="w-full mt-2 p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    )}
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-zinc-700 mb-1">Seller Name / Handle</label>
-                    <input
-                      type="text"
-                      value={sellerName}
-                      onChange={(e) => setSellerName(e.target.value)}
-                      className="w-full p-2 rounded-lg border border-zinc-300 text-zinc-900"
-                    />
+                  {/* Row 8: Structured Vehicle Location (City, Province / State, Country) */}
+                  <div className="p-3 bg-zinc-900/90 rounded-xl border border-slate-700 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-zinc-200 flex items-center gap-1.5 text-xs">
+                        <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Structured Vehicle Location</span>
+                      </label>
+                      <span className="text-[10px] text-zinc-400 font-mono">
+                        Preview: {formattedLocation || 'Not set'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <span className="text-[10px] text-zinc-400 font-semibold mb-1 block">City</span>
+                        <input
+                          type="text"
+                          value={locationCity}
+                          onChange={(e) => {
+                            setLocationCity(e.target.value);
+                            const updated = [e.target.value.trim(), locationRegion.trim(), locationCountry.trim()].filter(Boolean).join(', ');
+                            setLocation(updated);
+                          }}
+                          placeholder="Vancouver"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-400 font-semibold mb-1 block">Province / State</span>
+                        <input
+                          type="text"
+                          value={locationRegion}
+                          onChange={(e) => {
+                            setLocationRegion(e.target.value);
+                            const updated = [locationCity.trim(), e.target.value.trim(), locationCountry.trim()].filter(Boolean).join(', ');
+                            setLocation(updated);
+                          }}
+                          placeholder="BC"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-zinc-400 font-semibold mb-1 block">Country</span>
+                        <input
+                          type="text"
+                          value={locationCountry}
+                          onChange={(e) => {
+                            setLocationCountry(e.target.value);
+                            const updated = [locationCity.trim(), locationRegion.trim(), e.target.value.trim()].filter(Boolean).join(', ');
+                            setLocation(updated);
+                          }}
+                          placeholder="Canada"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Row 9 (Bottom Grid): Seller / Consignor Name and Highlights Tag Badge */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Seller / Consignor Name</label>
+                      <input
+                        type="text"
+                        value={sellerName}
+                        onChange={(e) => setSellerName(e.target.value)}
+                        placeholder="Private Consignor"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-zinc-700 mb-1">Highlights Tag Badge</label>
+                      <input
+                        type="text"
+                        value={highlightsBadge}
+                        onChange={(e) => handleHighlightsBadgeChange(e.target.value)}
+                        placeholder="e.g. 1978 911"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                      <span className="text-[10px] text-zinc-400 mt-0.5 block">
+                        Top-right badge on the Vehicle Highlights card (auto-synced from specs, editable)
+                      </span>
+                    </div>
                   </div>
                 </div>
               </section>

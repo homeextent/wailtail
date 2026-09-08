@@ -15,14 +15,15 @@ import {
   subscribeToAllAuctions,
   compressImageDataUrl,
   uploadImageToStorage,
-  MAIN_AUCTION_ID
+  MAIN_AUCTION_ID,
+  fetchYouTubePlaylistVideos
 } from '../services/auctionService';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
-import { YouTubePlaylistSection } from './YouTubePlaylistSection';
+import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
 import { PhotoGalleryGrid } from './PhotoGalleryGrid';
 import { ShowcaseChaptersEditor } from './ShowcaseChaptersEditor';
 import { 
@@ -75,8 +76,120 @@ import {
   ShieldCheck,
   Info,
   Gavel,
-  Mail
+  Mail,
+  Wand2
 } from 'lucide-react';
+import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
+
+interface TaxonomyModel {
+  name: string;
+  generations?: string[];
+}
+
+interface TaxonomyMake {
+  models: TaxonomyModel[];
+}
+
+const vehicleTaxonomy: Record<string, TaxonomyMake> = vehicleTaxonomyRaw as Record<string, TaxonomyMake>;
+export const TAXONOMY_OTHER_CUSTOM = 'OTHER_CUSTOM';
+export const AVAILABLE_MAKES = Object.keys(vehicleTaxonomy).sort((a, b) => a.localeCompare(b));
+
+export const resolveMakeState = (rawMake: string | undefined | null) => {
+  const trimmed = (rawMake ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (vehicleTaxonomy[trimmed]) {
+    return { dropdown: trimmed, custom: '' };
+  }
+  const matchedKey = Object.keys(vehicleTaxonomy).find(k => k.toLowerCase() === trimmed.toLowerCase());
+  if (matchedKey) {
+    return { dropdown: matchedKey, custom: '' };
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+export const resolveModelState = (selectedMakeDropdown: string, rawModel: string | undefined | null) => {
+  const trimmed = (rawModel ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (selectedMakeDropdown && selectedMakeDropdown !== TAXONOMY_OTHER_CUSTOM && vehicleTaxonomy[selectedMakeDropdown]) {
+    const models = vehicleTaxonomy[selectedMakeDropdown].models;
+    const match = models.find(m => m.name.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match.name, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+export const resolveGenerationState = (
+  selectedMakeDropdown: string,
+  selectedModelDropdown: string,
+  rawGeneration: string | undefined | null
+) => {
+  const trimmed = (rawGeneration ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '', custom: '' };
+  }
+  if (
+    selectedMakeDropdown &&
+    selectedMakeDropdown !== TAXONOMY_OTHER_CUSTOM &&
+    vehicleTaxonomy[selectedMakeDropdown] &&
+    selectedModelDropdown &&
+    selectedModelDropdown !== TAXONOMY_OTHER_CUSTOM
+  ) {
+    const modelObj = vehicleTaxonomy[selectedMakeDropdown].models.find(
+      m => m.name.toLowerCase() === selectedModelDropdown.toLowerCase()
+    );
+    const generations = modelObj?.generations || [];
+    const match = generations.find(g => g.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+export const formatGenerationForTitle = (gen: string | undefined | null) => {
+  const trimmed = (gen ?? '').trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('(') && trimmed.endsWith(')')) return trimmed;
+  if (/^[EFGW]\d{2,3}(\b|\/)/i.test(trimmed)) {
+    return `(${trimmed})`;
+  }
+  return trimmed;
+};
+
+export const formatHighlightsBadge = (
+  year?: number | string | null,
+  make?: string | null,
+  model?: string | null,
+  generation?: string | null
+): string => {
+  const parts: string[] = [];
+
+  const yearStr = year != null ? String(year).trim() : '';
+  if (yearStr) parts.push(yearStr);
+
+  const cleanMake = (make ?? '').trim();
+  if (cleanMake && cleanMake !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanMake);
+  }
+
+  const cleanModel = (model ?? '').trim();
+  if (cleanModel && cleanModel !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanModel);
+  }
+
+  const cleanGen = (generation ?? '').trim();
+  if (cleanGen && cleanGen !== TAXONOMY_OTHER_CUSTOM) {
+    parts.push(cleanGen);
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+};
 
 interface ListingEditorWorkspaceProps {
   auction: Auction;
@@ -152,7 +265,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
   const [activeStep, setActiveStep] = useState<number>(1);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // Modals inside workspace
   const [showImportModal, setShowImportModal] = useState(false);
@@ -199,13 +312,52 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [title, setTitle] = useState(auction.title ?? '');
   const [subtitle, setSubtitle] = useState(auction.subtitle ?? '');
   const [headline, setHeadline] = useState(auction.headline ?? (isMainLot ? (auction.title ?? '') : ''));
-  const [make, setMake] = useState(auction.make ?? (isMainLot ? 'Porsche' : ''));
-  const [model, setModel] = useState(auction.model ?? (isMainLot ? '911 Turbo-Look' : ''));
+  const initialMakeVal = auction.make ?? (isMainLot ? 'Porsche' : '');
+  const initialModelVal = auction.model ?? (isMainLot ? '911 Turbo-Look' : '');
+  const initialGenerationVal = auction.generation ?? (isMainLot ? 'M491 (G-Series)' : '');
+  const [make, setMake] = useState(initialMakeVal);
+  const [model, setModel] = useState(initialModelVal);
+  const [generation, setGeneration] = useState(initialGenerationVal);
+  const initialMakeState = resolveMakeState(initialMakeVal);
+  const [selectedMakeDropdown, setSelectedMakeDropdown] = useState(initialMakeState.dropdown);
+  const [customMake, setCustomMake] = useState(initialMakeState.custom);
+  const initialModelState = resolveModelState(initialMakeState.dropdown, initialModelVal);
+  const [selectedModelDropdown, setSelectedModelDropdown] = useState(initialModelState.dropdown);
+  const [customModel, setCustomModel] = useState(initialModelState.custom);
+  const initialGenerationState = resolveGenerationState(initialMakeState.dropdown, initialModelState.dropdown, initialGenerationVal);
+  const [selectedGenerationDropdown, setSelectedGenerationDropdown] = useState(initialGenerationState.dropdown);
+  const [customGeneration, setCustomGeneration] = useState(initialGenerationState.custom);
   const [year, setYear] = useState<number | string>(auction.year ? Number(auction.year) : (isMainLot ? 1978 : ''));
   const [vin, setVin] = useState(auction.vin ?? '');
   const [mileage, setMileage] = useState(auction.mileage ?? '');
   const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>(auction.distanceUnit ?? 'km');
-  const [highlightsBadge, setHighlightsBadge] = useState(auction.highlightsBadge ?? (isMainLot ? (mediaConfig.highlightsBadge ?? '1978 911 SC') : ''));
+
+  // Highlights Tag Badge Auto-Sync & Override state
+  const initialEffectiveMake = initialMakeState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialMakeState.custom : initialMakeVal;
+  const initialEffectiveModel = initialModelState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialModelState.custom : initialModelVal;
+  const initialEffectiveGen = initialGenerationState.dropdown === TAXONOMY_OTHER_CUSTOM ? initialGenerationState.custom : initialGenerationVal;
+  const initialAutoBadge = formatHighlightsBadge(
+    auction.year ? Number(auction.year) : (isMainLot ? 1978 : ''),
+    initialEffectiveMake,
+    initialEffectiveModel,
+    initialEffectiveGen
+  );
+  const rawHighlightsBadge = auction.highlightsBadge ?? (isMainLot ? (mediaConfig.highlightsBadge ?? initialAutoBadge) : initialAutoBadge);
+  const [highlightsBadge, setHighlightsBadge] = useState<string>(rawHighlightsBadge || initialAutoBadge);
+
+  const [isBadgeOverridden, setIsBadgeOverridden] = useState<boolean>(() => {
+    if (!rawHighlightsBadge) return false;
+    if (
+      rawHighlightsBadge === initialAutoBadge ||
+      rawHighlightsBadge === '1978 911 SC' ||
+      rawHighlightsBadge === '1978 911'
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const prevAutoBadgeRef = useRef<string>(initialAutoBadge);
   const [engine, setEngine] = useState(auction.engine ?? (isMainLot ? '3.0L Flat-Six CIS' : ''));
   const [drivetrain, setDrivetrain] = useState(auction.drivetrain ?? (isMainLot ? '5-Speed Manual (915)' : ''));
   const [customDrivetrain, setCustomDrivetrain] = useState('');
@@ -236,6 +388,191 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     return [locationCity.trim(), locationRegion.trim(), locationCountry.trim()].filter(Boolean).join(', ');
   }, [locationCity, locationRegion, locationCountry]);
 
+  // Derived available models list for active make dropdown selection
+  const availableModels = useMemo(() => {
+    if (!selectedMakeDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    return vehicleTaxonomy[selectedMakeDropdown]?.models?.map(m => m.name) || [];
+  }, [selectedMakeDropdown]);
+
+  // Derived available generations list for active make and model dropdown selections
+  const availableGenerations = useMemo(() => {
+    if (!selectedMakeDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    if (!selectedModelDropdown || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM) return [];
+    const makeData = vehicleTaxonomy[selectedMakeDropdown];
+    if (!makeData?.models) return [];
+    const modelObj = makeData.models.find(
+      m => m.name === selectedModelDropdown || m.name.toLowerCase() === selectedModelDropdown.toLowerCase()
+    );
+    return modelObj?.generations || [];
+  }, [selectedMakeDropdown, selectedModelDropdown]);
+
+  const handleMakeSelect = (newDropdownValue: string) => {
+    setSelectedMakeDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackMake = make && !vehicleTaxonomy[make] ? make : '';
+      setCustomMake(fallbackMake);
+      setMake(fallbackMake);
+      setSelectedModelDropdown(TAXONOMY_OTHER_CUSTOM);
+      const fallbackModel = model && !availableModels.includes(model) ? model : '';
+      setCustomModel(fallbackModel);
+      setModel(fallbackModel);
+      setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+      setCustomGeneration('');
+      setGeneration('');
+    } else if (!newDropdownValue) {
+      setCustomMake('');
+      setMake('');
+      setSelectedModelDropdown('');
+      setCustomModel('');
+      setModel('');
+      setSelectedGenerationDropdown('');
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomMake('');
+      setMake(newDropdownValue);
+      // Reset model to the first available model under that make or ""
+      const models = vehicleTaxonomy[newDropdownValue]?.models || [];
+      const firstModel = models.length > 0 ? models[0].name : '';
+      setSelectedModelDropdown(firstModel || TAXONOMY_OTHER_CUSTOM);
+      setCustomModel('');
+      setModel(firstModel);
+
+      // Reset generation to first available generation or ""
+      const firstModelGens = models.length > 0 && models[0].generations ? models[0].generations : [];
+      const firstGen = firstModelGens.length > 0 ? firstModelGens[0] : '';
+      if (firstGen) {
+        setSelectedGenerationDropdown(firstGen);
+        setCustomGeneration('');
+        setGeneration(firstGen);
+      } else {
+        setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+        setCustomGeneration('');
+        setGeneration('');
+      }
+    }
+  };
+
+  const handleCustomMakeChange = (val: string) => {
+    setCustomMake(val);
+    setMake(val);
+  };
+
+  const handleModelSelect = (newDropdownValue: string) => {
+    setSelectedModelDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackModel = model && !availableModels.includes(model) ? model : '';
+      setCustomModel(fallbackModel);
+      setModel(fallbackModel);
+      setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+      setCustomGeneration('');
+      setGeneration('');
+    } else if (!newDropdownValue) {
+      setCustomModel('');
+      setModel('');
+      setSelectedGenerationDropdown('');
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomModel('');
+      setModel(newDropdownValue);
+      const makeData = vehicleTaxonomy[selectedMakeDropdown];
+      const modelObj = makeData?.models?.find(
+        m => m.name === newDropdownValue || m.name.toLowerCase() === newDropdownValue.toLowerCase()
+      );
+      const gens = modelObj?.generations || [];
+      const firstGen = gens.length > 0 ? gens[0] : '';
+      if (firstGen) {
+        setSelectedGenerationDropdown(firstGen);
+        setCustomGeneration('');
+        setGeneration(firstGen);
+      } else {
+        setSelectedGenerationDropdown(TAXONOMY_OTHER_CUSTOM);
+        setCustomGeneration('');
+        setGeneration('');
+      }
+    }
+  };
+
+  const handleCustomModelChange = (val: string) => {
+    setCustomModel(val);
+    setModel(val);
+  };
+
+  const handleGenerationSelect = (newDropdownValue: string) => {
+    setSelectedGenerationDropdown(newDropdownValue);
+    if (newDropdownValue === TAXONOMY_OTHER_CUSTOM) {
+      const fallbackGen = generation && !availableGenerations.includes(generation) ? generation : '';
+      setCustomGeneration(fallbackGen);
+      setGeneration(fallbackGen);
+    } else if (!newDropdownValue) {
+      setCustomGeneration('');
+      setGeneration('');
+    } else {
+      setCustomGeneration('');
+      setGeneration(newDropdownValue);
+    }
+  };
+
+  const handleCustomGenerationChange = (val: string) => {
+    setCustomGeneration(val);
+    setGeneration(val);
+  };
+
+  // Highlights Tag Badge Auto-Sync:
+  // Automatically populate highlightsBadge on Year/Make/Model/Generation change ONLY if
+  // the badge field is blank or matches the auto-generated pattern (not manually overridden).
+  useEffect(() => {
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake : make;
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel : model;
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration : generation;
+    const newAuto = formatHighlightsBadge(year, curEffectiveMake, curEffectiveModel, curEffectiveGen);
+
+    if (!isBadgeOverridden || !highlightsBadge.trim() || highlightsBadge === prevAutoBadgeRef.current) {
+      setHighlightsBadge(newAuto);
+    }
+    prevAutoBadgeRef.current = newAuto;
+  }, [
+    year,
+    make,
+    customMake,
+    selectedMakeDropdown,
+    model,
+    customModel,
+    selectedModelDropdown,
+    generation,
+    customGeneration,
+    selectedGenerationDropdown,
+    isBadgeOverridden
+  ]);
+
+  const handleHighlightsBadgeChange = (val: string) => {
+    setHighlightsBadge(val);
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake : make;
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel : model;
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration : generation;
+    const currentAuto = formatHighlightsBadge(year, curEffectiveMake, curEffectiveModel, curEffectiveGen);
+
+    if (!val.trim()) {
+      setIsBadgeOverridden(false);
+    } else if (val.trim() === currentAuto.trim()) {
+      setIsBadgeOverridden(false);
+    } else {
+      setIsBadgeOverridden(true);
+    }
+  };
+
+  const handleAutoGenerateTitle = () => {
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : (make || '').trim();
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : (model || '').trim();
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration.trim() : (generation || '').trim();
+    const formattedGen = formatGenerationForTitle(curEffectiveGen);
+    const auto = [year, curEffectiveMake, curEffectiveModel, formattedGen].filter(Boolean).join(' ').trim();
+    if (auto) {
+      setTitle(auto);
+    }
+  };
+
   // SECTION 2: OVERVIEW NARRATIVE
   const [overviewHeading, setOverviewHeading] = useState(mediaConfig.overviewHeading ?? (isMainLot ? 'Vehicle Overview & Provenance' : ''));
   const [overviewParagraphsText, setOverviewParagraphsText] = useState(() => {
@@ -252,7 +589,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   // SECTION 3: TECHNICAL SPECIFICATIONS (Single Source Mirror + Custom Rows)
   const isPrimarySpecLabel = (label: string) => {
     const norm = label.trim().toLowerCase();
-    return ['vin', 'odometer', 'mileage', 'engine', 'transmission', 'gearbox', 'drivetrain', 'exterior', 'exterior color', 'interior', 'title', 'title status', 'location'].includes(norm);
+    return ['make', 'model', 'generation', 'generation / chassis', 'chassis', 'year', 'vin', 'odometer', 'mileage', 'engine', 'transmission', 'gearbox', 'drivetrain', 'exterior', 'exterior color', 'interior', 'title', 'title status', 'location'].includes(norm);
   };
 
   const [customSpecs, setCustomSpecs] = useState<{ label: string; value: string }[]>(() => {
@@ -273,6 +610,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
   // Auto-calculated core specs from Section 1
   const primarySpecs = useMemo(() => [
+    { label: 'Make', value: make },
+    { label: 'Model', value: model },
+    ...(generation ? [{ label: 'Generation / Chassis', value: generation }] : []),
+    { label: 'Year', value: String(year || '') },
     { label: 'VIN', value: vin },
     { 
       label: 'Odometer', 
@@ -286,7 +627,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     { label: 'Interior', value: interior },
     { label: 'Title Status', value: titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus },
     { label: 'Location', value: formattedLocation }
-  ], [vin, mileage, distanceUnit, engine, drivetrain, customDrivetrain, exteriorColor, interior, titleStatus, customTitleStatus, formattedLocation]);
+  ], [make, model, generation, year, vin, mileage, distanceUnit, engine, drivetrain, customDrivetrain, exteriorColor, interior, titleStatus, customTitleStatus, formattedLocation]);
 
   const compiledOverviewSpecs = useMemo(() => [
     ...primarySpecs.filter(s => s.value.trim() !== ''),
@@ -318,13 +659,62 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [videoSubtitle, setVideoSubtitle] = useState(mediaConfig.videoSubtitle ?? (isMainLot ? 'Experience the responsive 3.0L CIS flat-six' : ''));
   const [videoChapters, setVideoChapters] = useState<VideoChapter[]>(mediaConfig.videoChapters ?? []);
   const [fetchingMetadataIdx, setFetchingMetadataIdx] = useState<number | null>(null);
+  const [loadingPlaylist, setLoadingPlaylist] = useState(false);
+
+  // Synchronized media configuration for preview & persistence
+  const currentMedia = useMemo<MediaConfiguration>(() => {
+    const paragraphs = overviewParagraphsText
+      .split('\n\n')
+      .map(p => p.trim())
+      .filter(Boolean);
+
+    return {
+      ...mediaConfig,
+      vehicleName: title,
+      highlightsBadge,
+      distanceUnit,
+      overviewHeading,
+      overviewParagraphs: paragraphs,
+      overviewImage: overviewImage.url ? overviewImage : undefined,
+      overviewSpecs: compiledOverviewSpecs,
+      inlineShowcase: showcaseChapters.map(chapterToSection),
+      showcaseChapters,
+      heroImages,
+      fullGallery: galleryImages,
+      videoTitle,
+      videoSubtitle,
+      youtubePlaylistUrl: youtubeUrl,
+      videoChapters
+    };
+  }, [
+    mediaConfig,
+    title,
+    highlightsBadge,
+    distanceUnit,
+    overviewHeading,
+    overviewParagraphsText,
+    overviewImage,
+    compiledOverviewSpecs,
+    showcaseChapters,
+    heroImages,
+    galleryImages,
+    videoTitle,
+    videoSubtitle,
+    youtubeUrl,
+    videoChapters
+  ]);
 
   // SECTION 7: AUCTION FINANCIALS & RULES (CAD)
-  const formatForInput = (timestamp: number) => {
-    const d = new Date(timestamp);
+  const formatForInput = (timestamp: number | undefined | null) => {
+    if (!timestamp || isNaN(Number(timestamp))) return '';
+    const d = new Date(Number(timestamp));
+    if (isNaN(d.getTime())) return '';
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().slice(0, 16);
   };
+
+  const startTimeInputRef = useRef<HTMLInputElement>(null);
+  const endTimeInputRef = useRef<HTMLInputElement>(null);
 
   const [startingBid, setStartingBid] = useState(auction.startingBid ?? 0);
   const [minimumIncrement, setMinimumIncrement] = useState(auction.minimumIncrement ?? 0);
@@ -339,13 +729,42 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setTitle(auction.title ?? '');
     setSubtitle(auction.subtitle ?? '');
     setHeadline(auction.headline ?? (isMain ? (auction.title ?? '') : ''));
-    setMake(auction.make ?? (isMain ? 'Porsche' : ''));
-    setModel(auction.model ?? (isMain ? '911 Turbo-Look' : ''));
+    const nextMake = auction.make ?? (isMain ? 'Porsche' : '');
+    const nextModel = auction.model ?? (isMain ? '911 Turbo-Look' : '');
+    const nextGen = auction.generation ?? (isMain ? 'M491 (G-Series)' : '');
+    setMake(nextMake);
+    setModel(nextModel);
+    setGeneration(nextGen);
+    const mState = resolveMakeState(nextMake);
+    setSelectedMakeDropdown(mState.dropdown);
+    setCustomMake(mState.custom);
+    const modState = resolveModelState(mState.dropdown, nextModel);
+    setSelectedModelDropdown(modState.dropdown);
+    setCustomModel(modState.custom);
+    const genState = resolveGenerationState(mState.dropdown, modState.dropdown, nextGen);
+    setSelectedGenerationDropdown(genState.dropdown);
+    setCustomGeneration(genState.custom);
     setYear(auction.year ? Number(auction.year) : (isMain ? 1978 : ''));
     setVin(auction.vin ?? '');
     setMileage(auction.mileage ?? '');
     setDistanceUnit(auction.distanceUnit ?? 'km');
-    setHighlightsBadge(auction.highlightsBadge ?? (isMain ? (mediaConfig.highlightsBadge ?? '1978 911 SC') : ''));
+    const nextEffectiveMake = mState.dropdown === TAXONOMY_OTHER_CUSTOM ? mState.custom : nextMake;
+    const nextEffectiveModel = modState.dropdown === TAXONOMY_OTHER_CUSTOM ? modState.custom : nextModel;
+    const nextEffectiveGen = genState.dropdown === TAXONOMY_OTHER_CUSTOM ? genState.custom : nextGen;
+    const nextAutoBadge = formatHighlightsBadge(
+      auction.year ? Number(auction.year) : (isMain ? 1978 : ''),
+      nextEffectiveMake,
+      nextEffectiveModel,
+      nextEffectiveGen
+    );
+    const loadedBadge = auction.highlightsBadge ?? (isMain ? (mediaConfig.highlightsBadge ?? nextAutoBadge) : nextAutoBadge);
+    setHighlightsBadge(loadedBadge || nextAutoBadge);
+    prevAutoBadgeRef.current = nextAutoBadge;
+    if (!loadedBadge || loadedBadge === nextAutoBadge || loadedBadge === '1978 911 SC' || loadedBadge === '1978 911') {
+      setIsBadgeOverridden(false);
+    } else {
+      setIsBadgeOverridden(true);
+    }
     setEngine(auction.engine ?? (isMain ? '3.0L Flat-Six CIS' : ''));
     setDrivetrain(auction.drivetrain ?? (isMain ? '5-Speed Manual (915)' : ''));
     setCustomDrivetrain('');
@@ -456,6 +875,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         headline: headline || title,
         make,
         model,
+        generation: generation.trim() || undefined,
         year,
         vin,
         mileage,
@@ -527,6 +947,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       year,
       make,
       model,
+      generation: generation.trim() || undefined,
       vin,
       mileage,
       distanceUnit,
@@ -589,8 +1010,48 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.title) setTitle(parsed.title);
       if (parsed.subtitle) setSubtitle(parsed.subtitle);
       if (parsed.year) setYear(Number(parsed.year));
-      if (parsed.make) setMake(parsed.make);
-      if (parsed.model) setModel(parsed.model);
+      if (parsed.make) {
+        setMake(parsed.make);
+        const mState = resolveMakeState(parsed.make);
+        setSelectedMakeDropdown(mState.dropdown);
+        setCustomMake(mState.custom);
+        if (parsed.model) {
+          setModel(parsed.model);
+          const modState = resolveModelState(mState.dropdown, parsed.model);
+          setSelectedModelDropdown(modState.dropdown);
+          setCustomModel(modState.custom);
+          if (parsed.generation) {
+            setGeneration(parsed.generation);
+            const genState = resolveGenerationState(mState.dropdown, modState.dropdown, parsed.generation);
+            setSelectedGenerationDropdown(genState.dropdown);
+            setCustomGeneration(genState.custom);
+          } else {
+            setGeneration('');
+            setSelectedGenerationDropdown('');
+            setCustomGeneration('');
+          }
+        }
+      } else if (parsed.model) {
+        setModel(parsed.model);
+        const modState = resolveModelState(selectedMakeDropdown, parsed.model);
+        setSelectedModelDropdown(modState.dropdown);
+        setCustomModel(modState.custom);
+        if (parsed.generation) {
+          setGeneration(parsed.generation);
+          const genState = resolveGenerationState(selectedMakeDropdown, modState.dropdown, parsed.generation);
+          setSelectedGenerationDropdown(genState.dropdown);
+          setCustomGeneration(genState.custom);
+        } else {
+          setGeneration('');
+          setSelectedGenerationDropdown('');
+          setCustomGeneration('');
+        }
+      } else if (parsed.generation) {
+        setGeneration(parsed.generation);
+        const genState = resolveGenerationState(selectedMakeDropdown, selectedModelDropdown, parsed.generation);
+        setSelectedGenerationDropdown(genState.dropdown);
+        setCustomGeneration(genState.custom);
+      }
       if (parsed.vin) setVin(parsed.vin);
       if (parsed.mileage !== undefined) setMileage(String(parsed.mileage));
       if (parsed.distanceUnit) setDistanceUnit(parsed.distanceUnit);
@@ -875,6 +1336,72 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setGalleryImages(copy);
   };
 
+  // Toast notification helper for Section 6 playlist actions
+  const toast = {
+    info: (msg: string) => {
+      setMessage({ type: 'info', text: msg });
+    },
+    success: (msg: string) => {
+      setMessage({ type: 'success', text: msg });
+      setTimeout(() => setMessage(null), 4000);
+    },
+    error: (msg: string) => {
+      setMessage({ type: 'error', text: msg });
+      setTimeout(() => setMessage(null), 4000);
+    }
+  };
+
+  const handleAutoFetchPlaylist = async () => {
+    const playlistTargetUrl = (youtubeUrl || currentMedia.youtubePlaylistUrl || '').trim();
+    if (!playlistTargetUrl || !/[?&]list=([^&]+)/.test(playlistTargetUrl)) {
+      toast.error("Invalid YouTube Playlist URL. Ensure the link contains a 'list=...' parameter.");
+      return;
+    }
+
+    setLoadingPlaylist(true);
+    toast.info("Importing playlist videos...");
+
+    try {
+      const importedChapters = await fetchYouTubePlaylistVideos(playlistTargetUrl, videoChapters);
+      
+      // Filter out video IDs that already exist in the active videoChapters array to prevent duplicates
+      const existingVideoIds = new Set(
+        (videoChapters || []).map(ch => extractYouTubeVideoId(ch.videoUrl)).filter(Boolean)
+      );
+
+      const uniqueImported = importedChapters.filter(ch => {
+        const vId = extractYouTubeVideoId(ch.videoUrl);
+        return !vId || !existingVideoIds.has(vId);
+      });
+
+      if (uniqueImported.length > 0) {
+        const updatedChapters = [...(videoChapters || []), ...uniqueImported];
+        setVideoChapters(updatedChapters);
+        const updatedMedia: MediaConfiguration = {
+          ...currentMedia,
+          youtubePlaylistUrl: playlistTargetUrl,
+          videoChapters: updatedChapters
+        };
+        await onUpdateMediaConfig(updatedMedia);
+        toast.success(`Successfully imported ${uniqueImported.length} playlist videos!`);
+      } else if (importedChapters.length > 0) {
+        toast.info("All videos from this playlist are already imported.");
+      } else {
+        toast.error("Could not auto-import playlist. Please verify the playlist is Public or add video URLs manually.");
+      }
+    } catch (err: any) {
+      console.error('Playlist import failed:', err);
+      const errMsg = err?.message || '';
+      if (errMsg.includes('list=') || errMsg.includes('Invalid YouTube Playlist URL')) {
+        toast.error("Invalid YouTube Playlist URL. Ensure the link contains a 'list=...' parameter.");
+      } else {
+        toast.error("Could not auto-import playlist. Please verify the playlist is Public or add video URLs manually.");
+      }
+    } finally {
+      setLoadingPlaylist(false);
+    }
+  };
+
   // YouTube Metadata Fetchers
   const handleFetchChapterMetadata = async (index: number) => {
     const targetChapter = videoChapters[index];
@@ -906,16 +1433,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         copy[index].thumbnailUrl = meta.thumbnailUrl;
       }
 
-      if (meta.duration && (meta.isExactDuration || !copy[index].duration || copy[index].duration === '00:00' || copy[index].duration === '')) {
-        copy[index].duration = meta.duration;
-      }
-
       if (meta.description) {
         copy[index].description = meta.description;
       }
 
       setVideoChapters(copy);
-      setMetadataFetchSuccess(`Fetched: "${meta.title}" (${copy[index].duration || 'HD'})`);
+      setMetadataFetchSuccess(`Fetched: "${meta.title}"`);
       setTimeout(() => setMetadataFetchSuccess(null), 4000);
     } catch (err: any) {
       console.error('Error fetching YouTube metadata:', err);
@@ -954,9 +1477,6 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         }
         if (meta.thumbnailUrl) {
           copy[idx].thumbnailUrl = meta.thumbnailUrl;
-        }
-        if (meta.duration) {
-          copy[idx].duration = meta.duration;
         }
         if (meta.description) {
           copy[idx].description = meta.description;
@@ -1142,11 +1662,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         <div className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between border-b transition-all ${
           message.type === 'success' 
             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80' 
-            : 'bg-red-950/80 text-red-300 border-red-800/80'
+            : message.type === 'info'
+              ? 'bg-blue-950/80 text-blue-300 border-blue-800/80'
+              : 'bg-red-950/80 text-red-300 border-red-800/80'
         }`}>
           <div className="flex items-center gap-2">
             {message.type === 'success' ? (
               <CheckCircle className="w-4 h-4 text-emerald-400" />
+            ) : message.type === 'info' ? (
+              <Info className="w-4 h-4 text-blue-400" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-red-400" />
             )}
@@ -1237,37 +1761,16 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 </div>
 
                 <div className="space-y-4 text-xs">
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Listing Title</label>
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. 1978 Porsche 911 SC 'Whale Tail' Coupe"
-                      className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Subtitle / Highlights Bar</label>
-                    <input
-                      type="text"
-                      value={subtitle}
-                      onChange={(e) => setSubtitle(e.target.value)}
-                      placeholder="e.g. 3.0L Flat-Six • 5-Speed 915 • Guards Red (027)"
-                      className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Year, Make, Model Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Row 1: Year, Make, Model, Generation / Chassis Code Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Year</label>
                       <select
                         value={year}
                         onChange={(e) => setYear(Number(e.target.value))}
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none cursor-pointer"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                       >
+                        <option value="">Select Year...</option>
                         {YEAR_OPTIONS.map((y) => (
                           <option key={y} value={y}>{y}</option>
                         ))}
@@ -1276,28 +1779,146 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Make</label>
-                      <input
-                        type="text"
-                        value={make}
-                        onChange={(e) => setMake(e.target.value)}
-                        placeholder="Porsche"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
-                      />
+                      <select
+                        value={selectedMakeDropdown}
+                        onChange={(e) => handleMakeSelect(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Select Make...</option>
+                        {AVAILABLE_MAKES.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                        <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Make...</option>
+                      </select>
+                      {selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM && (
+                        <input
+                          type="text"
+                          value={customMake}
+                          onChange={(e) => handleCustomMakeChange(e.target.value)}
+                          placeholder="Enter custom make..."
+                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      )}
                     </div>
 
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Model</label>
-                      <input
-                        type="text"
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        placeholder="911 SC"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
-                      />
+                      <select
+                        value={selectedModelDropdown}
+                        onChange={(e) => handleModelSelect(e.target.value)}
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Select Model...</option>
+                        {availableModels.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                        <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Model...</option>
+                      </select>
+                      {selectedModelDropdown === TAXONOMY_OTHER_CUSTOM && (
+                        <input
+                          type="text"
+                          value={customModel}
+                          onChange={(e) => handleCustomModelChange(e.target.value)}
+                          placeholder="Enter custom model..."
+                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-zinc-300 mb-1">Generation / Chassis Code</label>
+                      {(!selectedMakeDropdown || !selectedModelDropdown || selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM) ? (
+                        selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM || selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? (
+                          <div>
+                            <input
+                              type="text"
+                              value={customGeneration}
+                              onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                              placeholder="Enter generation / chassis..."
+                              className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                            />
+                          </div>
+                        ) : (
+                          <select
+                            disabled
+                            className="w-full p-2.5 rounded-lg bg-slate-900/50 border border-slate-700/50 text-zinc-500 cursor-not-allowed focus:outline-none"
+                          >
+                            <option value="">Select Model first...</option>
+                          </select>
+                        )
+                      ) : availableGenerations.length === 0 ? (
+                        <div>
+                          <input
+                            type="text"
+                            value={customGeneration}
+                            onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                            placeholder="Enter generation / chassis..."
+                            className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <select
+                            value={selectedGenerationDropdown}
+                            onChange={(e) => handleGenerationSelect(e.target.value)}
+                            className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                          >
+                            <option value="">Select Generation...</option>
+                            {availableGenerations.map((g) => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                            <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom Generation...</option>
+                          </select>
+                          {selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM && (
+                            <input
+                              type="text"
+                              value={customGeneration}
+                              onChange={(e) => handleCustomGenerationChange(e.target.value)}
+                              placeholder="Enter custom generation..."
+                              className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* VIN & Odometer */}
+                  {/* Row 2: Listing Title */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-bold text-zinc-300">Listing Title</label>
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateTitle}
+                        className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Auto-generate title from Year, Make, and Model"
+                      >
+                        <Wand2 className="w-3 h-3" />
+                        <span>⚡ Auto-generate from Specs</span>
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. 1978 Porsche 911 SC 'Whale Tail' Coupe"
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Row 3: Subtitle / Highlights Bar */}
+                  <div>
+                    <label className="block font-bold text-zinc-300 mb-1">Subtitle / Highlights Bar</label>
+                    <input
+                      type="text"
+                      value={subtitle}
+                      onChange={(e) => setSubtitle(e.target.value)}
+                      placeholder="e.g. 3.0L Flat-Six • 5-Speed 915 • Guards Red (027)"
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Row 4: VIN (Vehicle Identification Number) and Odometer Reading */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">VIN (Vehicle Identification Number)</label>
@@ -1306,25 +1927,25 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={vin}
                         onChange={(e) => setVin(e.target.value.toUpperCase())}
                         placeholder="9118200142"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white font-mono uppercase focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono uppercase rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="font-bold text-zinc-300">Odometer Reading</label>
-                        <div className="flex items-center gap-1 bg-zinc-900 rounded p-0.5 border border-zinc-700">
+                        <div className="flex items-center gap-1 bg-slate-900 rounded p-0.5 border border-slate-700">
                           <button
                             type="button"
                             onClick={() => setDistanceUnit('km')}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${distanceUnit === 'km' ? 'bg-red-700 text-white' : 'text-zinc-400'}`}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${distanceUnit === 'km' ? 'bg-amber-600 text-white' : 'text-zinc-400'}`}
                           >
                             KM
                           </button>
                           <button
                             type="button"
                             onClick={() => setDistanceUnit('mi')}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${distanceUnit === 'mi' ? 'bg-red-700 text-white' : 'text-zinc-400'}`}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${distanceUnit === 'mi' ? 'bg-amber-600 text-white' : 'text-zinc-400'}`}
                           >
                             MI
                           </button>
@@ -1335,12 +1956,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={mileage}
                         onChange={(e) => setMileage(e.target.value)}
                         placeholder="42,150"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  {/* Engine & Standardized Gearbox */}
+                  {/* Row 5: Engine Specification and Drivetrain / Gearbox dropdown */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Engine Specification</label>
@@ -1349,7 +1970,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={engine}
                         onChange={(e) => setEngine(e.target.value)}
                         placeholder="3.0L Flat-Six CIS"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
 
@@ -1358,7 +1979,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <select
                         value={drivetrain}
                         onChange={(e) => setDrivetrain(e.target.value)}
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none cursor-pointer"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                       >
                         {GEARBOX_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>{opt}</option>
@@ -1370,13 +1991,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={customDrivetrain}
                           onChange={(e) => setCustomDrivetrain(e.target.value)}
                           placeholder="Specify custom gearbox / transaxle..."
-                          className="w-full mt-2 p-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white text-xs"
+                          className="w-full mt-2 p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         />
                       )}
                     </div>
                   </div>
 
-                  {/* Colors */}
+                  {/* Row 6: Exterior Finish and Interior / Cabin */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Exterior Finish</label>
@@ -1385,7 +2006,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={exteriorColor}
                         onChange={(e) => setExteriorColor(e.target.value)}
                         placeholder="Guards Red (027)"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
 
@@ -1396,18 +2017,18 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={interior}
                         onChange={(e) => setInterior(e.target.value)}
                         placeholder="Black Leather / Houndstooth"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  {/* Standardized Title Status */}
+                  {/* Row 7: Title & Registration Status dropdown */}
                   <div>
                     <label className="block font-bold text-zinc-300 mb-1">Title & Registration Status</label>
                     <select
                       value={titleStatus}
                       onChange={(e) => setTitleStatus(e.target.value)}
-                      className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none cursor-pointer"
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                     >
                       {TITLE_STATUS_OPTIONS.map((opt) => (
                         <option key={opt} value={opt}>{opt}</option>
@@ -1419,16 +2040,16 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={customTitleStatus}
                         onChange={(e) => setCustomTitleStatus(e.target.value)}
                         placeholder="Specify custom title/registration details..."
-                        className="w-full mt-2 p-2 rounded-lg bg-zinc-900 border border-zinc-700 text-white text-xs"
+                        className="w-full mt-2 p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     )}
                   </div>
 
-                  {/* Standardized Structured Location Fields */}
-                  <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800 space-y-2">
+                  {/* Row 8: Structured Vehicle Location (City, Province / State, Country) */}
+                  <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-700 space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="font-bold text-zinc-300 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-red-500" />
+                        <MapPin className="w-3.5 h-3.5 text-amber-500" />
                         <span>Structured Vehicle Location</span>
                       </label>
                       <span className="text-[10px] text-zinc-400 font-mono">
@@ -1444,7 +2065,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={locationCity}
                           onChange={(e) => setLocationCity(e.target.value)}
                           placeholder="Vancouver"
-                          className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         />
                       </div>
                       <div>
@@ -1454,7 +2075,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={locationRegion}
                           onChange={(e) => setLocationRegion(e.target.value)}
                           placeholder="BC"
-                          className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         />
                       </div>
                       <div>
@@ -1464,13 +2085,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={locationCountry}
                           onChange={(e) => setLocationCountry(e.target.value)}
                           placeholder="Canada"
-                          className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs"
+                          className="w-full p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* Seller & Highlights Badge */}
+                  {/* Row 9 (Bottom Grid): Seller / Consignor Name and Highlights Tag Badge */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Seller / Consignor Name</label>
@@ -1479,7 +2100,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={sellerName}
                         onChange={(e) => setSellerName(e.target.value)}
                         placeholder="Private Consignor"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
                     <div>
@@ -1487,9 +2108,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <input
                         type="text"
                         value={highlightsBadge}
-                        onChange={(e) => setHighlightsBadge(e.target.value)}
-                        placeholder="1978 911 SC"
-                        className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
+                        onChange={(e) => handleHighlightsBadgeChange(e.target.value)}
+                        placeholder="e.g. 1978 Porsche 911 SC"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
                   </div>
@@ -1992,13 +2613,37 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <span>YouTube Video / Playlist URL</span>
                       <span className="text-[10px] text-zinc-500 font-normal">Primary Playlist Anchor</span>
                     </label>
-                    <input
-                      type="text"
-                      value={youtubeUrl}
-                      onChange={(e) => setYoutubeUrl(e.target.value)}
-                      placeholder="https://www.youtube.com/playlist?list=... or watch?v=..."
-                      className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-mono text-xs"
-                    />
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/playlist?list=... or watch?v=..."
+                        className="flex-1 p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-mono text-xs focus:border-red-500 focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAutoFetchPlaylist}
+                        disabled={loadingPlaylist || !youtubeUrl.trim()}
+                        className={`px-4 py-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
+                          loadingPlaylist || !youtubeUrl.trim()
+                            ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/50'
+                            : 'bg-red-600 hover:bg-red-500 text-white shadow-xs hover:shadow-red-900/40'
+                        }`}
+                        title="Auto-fetch all video items from this YouTube playlist"
+                      >
+                        {loadingPlaylist ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Importing Playlist...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>⚡ Auto-Import Playlist Videos</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Section Title & Subtitle */}
@@ -2028,7 +2673,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   {/* Batch Fetch Metadata Action Bar */}
                   <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex-wrap gap-2">
                     <div className="text-[11px] text-zinc-400">
-                      Auto-retrieve YouTube titles, high-res thumbnails, and durations.
+                      Auto-retrieve YouTube titles and high-res thumbnails.
                     </div>
                     <button
                       type="button"
@@ -2103,23 +2748,26 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           {/* Thumbnail Box */}
                           <div className="sm:col-span-4 space-y-1.5">
                             <div className="w-full aspect-video rounded-lg bg-black border border-zinc-700 overflow-hidden relative group">
-                              {chapter.thumbnailUrl ? (
-                                <>
+                              {(() => {
+                                const vId = extractYouTubeVideoId(chapter.videoUrl);
+                                const isValid = /^[a-zA-Z0-9_-]{11}$/.test(vId);
+                                const thumb = (chapter.thumbnailUrl && chapter.thumbnailUrl.trim())
+                                  ? chapter.thumbnailUrl
+                                  : (isValid ? `https://img.youtube.com/vi/${vId}/mqdefault.jpg` : '');
+
+                                return thumb ? (
                                   <img
-                                    src={chapter.thumbnailUrl}
+                                    src={thumb}
                                     alt={chapter.title}
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono font-bold text-white">
-                                    {chapter.duration || '00:00'}
+                                ) : (
+                                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 text-center p-2">
+                                    <Film className="w-5 h-5 mb-1 opacity-50" />
+                                    <span className="text-[10px]">No Thumbnail</span>
                                   </div>
-                                </>
-                              ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500 text-center p-2">
-                                  <Film className="w-5 h-5 mb-1 opacity-50" />
-                                  <span className="text-[10px]">No Thumbnail</span>
-                                </div>
-                              )}
+                                );
+                              })()}
                             </div>
 
                             <input
@@ -2135,7 +2783,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                             />
                           </div>
 
-                          {/* Right Fields: URL, Metadata Button, Title, Duration, Description */}
+                          {/* Right Fields: URL, Metadata Button, Title, Description */}
                           <div className="sm:col-span-8 space-y-2">
                             {/* YouTube URL + Fetch Metadata Button */}
                             <div className="flex items-center gap-2">
@@ -2159,41 +2807,26 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                                     ? 'bg-zinc-700 text-zinc-400'
                                     : 'bg-red-800 hover:bg-red-700 text-white'
                                 }`}
-                                title="Auto-fetch title, thumbnail and duration from YouTube"
+                                title="Auto-fetch title and thumbnail from YouTube"
                               >
                                 <Sparkles className="w-3.5 h-3.5" />
                                 <span>{fetchingMetadataIdx === vIdx ? 'Fetching...' : 'Fetch'}</span>
                               </button>
                             </div>
 
-                            {/* Title & Duration */}
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                              <div className="sm:col-span-3">
-                                <input
-                                  type="text"
-                                  value={chapter.title}
-                                  onChange={(e) => {
-                                    const copy = [...videoChapters];
-                                    copy[vIdx].title = e.target.value;
-                                    setVideoChapters(copy);
-                                  }}
-                                  placeholder="Chapter Title"
-                                  className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs font-bold"
-                                />
-                              </div>
-                              <div className="sm:col-span-1">
-                                <input
-                                  type="text"
-                                  value={chapter.duration || ''}
-                                  onChange={(e) => {
-                                    const copy = [...videoChapters];
-                                    copy[vIdx].duration = e.target.value;
-                                    setVideoChapters(copy);
-                                  }}
-                                  placeholder="03:45"
-                                  className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs font-mono"
-                                />
-                              </div>
+                            {/* Title */}
+                            <div>
+                              <input
+                                type="text"
+                                value={chapter.title}
+                                onChange={(e) => {
+                                  const copy = [...videoChapters];
+                                  copy[vIdx].title = e.target.value;
+                                  setVideoChapters(copy);
+                                }}
+                                placeholder="Chapter Title"
+                                className="w-full p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs font-bold"
+                              />
                             </div>
 
                             {/* Description */}
@@ -2219,9 +2852,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         const newCh: VideoChapter = {
                           id: `vid-${Date.now()}`,
                           title: `Driving Chapter #${videoChapters.length + 1}`,
-                          duration: '03:30',
                           videoUrl: '',
-                          description: 'High-RPM acceleration and dynamic audio recording.'
+                          description: ''
                         };
                         setVideoChapters(prev => [...prev, newCh]);
                       }}
@@ -2323,12 +2955,39 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                             Set to Now
                           </button>
                         </div>
-                        <input
-                          type="datetime-local"
-                          value={startTimeInput}
-                          onChange={(e) => setStartTimeInput(e.target.value)}
-                          className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white text-xs font-mono"
-                        />
+                        <div className="relative flex items-center group">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              try {
+                                startTimeInputRef.current?.showPicker?.();
+                              } catch {}
+                            }}
+                            className="absolute left-3 text-zinc-400 group-hover:text-zinc-200 transition-colors cursor-pointer z-10 flex items-center justify-center p-0.5 focus:outline-none"
+                            title="Open calendar picker"
+                            aria-label="Open start time calendar picker"
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </button>
+                          <input
+                            ref={startTimeInputRef}
+                            type="datetime-local"
+                            value={startTimeInput}
+                            onChange={(e) => setStartTimeInput(e.target.value)}
+                            onClick={(e) => {
+                              try {
+                                e.currentTarget.showPicker?.();
+                              } catch {}
+                            }}
+                            onFocus={(e) => {
+                              try {
+                                e.currentTarget.showPicker?.();
+                              } catch {}
+                            }}
+                            className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-black border border-zinc-700 text-white text-xs font-mono cursor-pointer [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                          />
+                        </div>
                       </div>
 
                       <div>
@@ -2353,12 +3012,39 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                             </button>
                           </div>
                         </div>
-                        <input
-                          type="datetime-local"
-                          value={endTimeInput}
-                          onChange={(e) => setEndTimeInput(e.target.value)}
-                          className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white text-xs font-mono"
-                        />
+                        <div className="relative flex items-center group">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              try {
+                                endTimeInputRef.current?.showPicker?.();
+                              } catch {}
+                            }}
+                            className="absolute left-3 text-zinc-400 group-hover:text-zinc-200 transition-colors cursor-pointer z-10 flex items-center justify-center p-0.5 focus:outline-none"
+                            title="Open calendar picker"
+                            aria-label="Open end time calendar picker"
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </button>
+                          <input
+                            ref={endTimeInputRef}
+                            type="datetime-local"
+                            value={endTimeInput}
+                            onChange={(e) => setEndTimeInput(e.target.value)}
+                            onClick={(e) => {
+                              try {
+                                e.currentTarget.showPicker?.();
+                              } catch {}
+                            }}
+                            onFocus={(e) => {
+                              try {
+                                e.currentTarget.showPicker?.();
+                              } catch {}
+                            }}
+                            className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-black border border-zinc-700 text-white text-xs font-mono cursor-pointer [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -2465,12 +3151,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             {/* 1. Live Header & Public Bid Bar Simulation */}
             <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider bg-red-700 text-white">
-                    {highlightsBadge || '1978 911 SC'}
+                    {highlightsBadge || (generation ? `${year} ${model} ${generation}` : '1978 911 SC')}
                   </span>
+                  {generation && (
+                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/30">
+                      {generation}
+                    </span>
+                  )}
                   <span className="text-[11px] font-mono text-zinc-400">
-                    {year} {make} {model}
+                    {year} {make} {model} {generation ? `(${generation})` : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium">
@@ -2614,7 +3305,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   <h3 className="font-bold text-zinc-900 uppercase tracking-wider text-[11px] pb-2 border-b border-zinc-200 flex items-center justify-between">
                     <span>Vehicle Highlights</span>
                     <span className="text-red-700 font-mono font-bold">
-                      {highlightsBadge || '1978 911'}
+                      {highlightsBadge || [year, make, model, generation].filter(Boolean).join(' ') || '1978 911'}
                     </span>
                   </h3>
 
@@ -2667,20 +3358,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             )}
 
             {/* 5. Section 6: Video & Driving Chapters */}
-            {(videoChapters.length > 0 || youtubeUrl) && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-700">
-                  <Video className="w-4 h-4" />
-                  <span>Driving Footage & Video Chapters</span>
-                </div>
-                <YouTubePlaylistSection
-                  playlistUrl={youtubeUrl}
-                  videoTitle={videoTitle}
-                  videoSubtitle={videoSubtitle}
-                  chapters={videoChapters}
-                />
-              </div>
-            )}
+            <YouTubePlaylistSection mediaConfig={currentMedia} />
 
             {/* 6. Section 5: Categorized Photo Gallery Grid */}
             {galleryImages.length > 0 && (
