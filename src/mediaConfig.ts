@@ -1,5 +1,24 @@
 import { MediaConfiguration } from './types';
 
+export const BLANK_MEDIA_CONFIG: MediaConfiguration = {
+  vehicleName: '',
+  siteLogo: '',
+  siteName: '',
+  siteTagline: '',
+  highlightsBadge: '',
+  heroImages: [],
+  overviewHeading: 'Listing Overview',
+  overviewParagraphs: [],
+  overviewImage: { url: '', caption: '', alt: '' },
+  overviewSpecs: [],
+  videoTitle: '',
+  videoSubtitle: '',
+  youtubePlaylistUrl: '',
+  videoChapters: [],
+  inlineShowcase: [],
+  fullGallery: []
+};
+
 /**
  * Media Configuration for WailTail Featured Single-Car Auction
  * You can replace any of the sample image URLs below with direct image URLs or Firebase Storage links.

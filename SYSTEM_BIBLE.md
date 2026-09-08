@@ -53,6 +53,7 @@ interface Auction {
   endTime: number;   // Unix timestamp in milliseconds
   antiSnipeThresholdSeconds: number; // Default: 120 seconds (2 minutes)
   antiSnipeExtensionSeconds: number; // Default: 120 seconds (adds 2 minutes)
+  watchlist?: string[]; // Registered user UIDs watching this auction lot
   
   // Global Platform Branding Overrides
   siteLogo?: string;
@@ -93,8 +94,8 @@ interface Comment {
 }
 ```
 
-### 2.4 `mediaConfig` Document
-Path: `auctions/{auctionId}/media/config`
+### 2.4 `mediaConfig` Document & Media Subcollection
+Path: `auctions/{auctionId}/media/{document=**}` (e.g. `auctions/{auctionId}/media/config` or `settings/media-${auctionId}`)
 ```typescript
 interface MediaConfiguration {
   siteLogo?: string;
@@ -105,7 +106,7 @@ interface MediaConfiguration {
   vehicleName: string;
   
   // Hero Carousel
-  heroImages: string[]; // Ordered URLs for the top carousel
+  heroImages: string[]; // Ordered URLs for the top carousel (Media Pending fallback container when empty)
   
   // Editorial Overview
   overviewHeading: string;
@@ -268,19 +269,16 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ## 5. Media & Asset Pipeline
 
-1. **Hero Carousel**:
-   - Ordered image array rendered in Bring-a-Trailer style carousel format.
-   - Drag-and-drop reordering with HTML5 drag events (`onDragStart`, `onDragOver`, `onDrop`).
-   - Bidirectional positional nudges (`← Left` / `Right →`) on each card.
-   - Visual `★ Lead Hero` highlight for Slide #1.
-2. **Categorized Photo Grid**:
+1. **Firebase Cloud Storage Integration**:
+   - All uploaded vehicle photos, hero banners, and inspection documents are streamed directly to Firebase Cloud Storage (`gs://wailtail`) via `uploadImageToStorage()`.
+   - Cloud Storage returns public HTTPS download URLs (`https://firebasestorage.googleapis.com/...`), taking ~120 bytes of text per photo inside Firestore documents.
+   - Eliminates Firestore's 1MB per-document payload ceiling, allowing listings to host 100+ high-resolution vehicle photos.
+2. **Hero Carousel**:
+   - Ordered image array rendered in Bring-a-Trailer style carousel format with drag-and-drop reordering (`onDragStart`, `onDrop`) and positional nudges (`← Left` / `Right →`).
+   - Automatically mirrors `leadHeroImage` to the root `auctions/{id}` document during master save operations.
+3. **Categorized Photo Grid & Documents**:
    - 6 categorized sub-galleries: `exterior`, `interior`, `engine`, `underbody`, `docs`, `documentation`.
-   - On-the-fly category reassignment via inline dropdown tag directly on each thumbnail card.
-   - Multi-file batch upload support (accepts up to 12MB per image or PDF).
-3. **PDF Document Support**:
-   - Native support for PDF vehicle inspection reports and mechanical records.
-   - Distinctive red PDF file icon, title, and document badge rendered in the gallery and Admin Control Center.
-   - Safe opening in new browser tab for client viewing without iFrame sandbox crashes.
+   - Native support for PDF vehicle inspection reports with high-contrast document badges.
 
 ---
 
@@ -310,7 +308,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Multi-Car Inventory Architecture**:
   - Full support for multi-car inventory catalogs in Firestore (`auctions` collection and per-lot `media-${auctionId}` settings).
   - **"Select Vehicle Listing" Dropdown**: Located in the workspace header bar, allowing administrators to seamlessly switch between active and draft vehicle lots with automatic form state synchronization.
+  - **Zero-Lot Database Support & Snapshot Rules**:
+    - Snapshot listeners in `App.tsx` and `AdminPanelModal.tsx` (`subscribeToAllAuctions`) are configured to support empty states (`list || []`), removing legacy length guards to allow clean operation on a pristine database.
+    - All catalog views render the actual database state without forced ternary fallbacks.
   - **"+ New Listing" Workflow**: Modal prompt requesting Listing Title / Vehicle Lot Name; atomically provisions a new vehicle document in Firestore (`createNewListing`) with clean placeholders and default Canadian CAD financials ($1,000 start, $250 increment, 7-day duration) without overwriting existing listings.
+  - **Optimistic State Hydration**: Immediately appends new lot to local state upon creation to ensure instantaneous UI feedback while bridging Firestore synchronization latency.
 - **Full-Page Split-Screen Route & View Modes**:
   - Dedicated authoring workspace (`ListingEditorWorkspace.tsx`), offering 3 layout view modes:
     1. **Split Mode (Default)**: 60/40 reactive layout with left-pane form authoring and right-pane live public preview.
@@ -399,36 +401,65 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ---
 
-## 7. Security Rules & Permissions (`firestore.rules`)
+## 7. Security Rules & Permissions
 
-```
+### 7.1 Firestore Security Rules (`firestore.rules`)
+```rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /auctions/{auctionId} {
       allow read: if true;
-      allow write: if request.auth != null;
-      
-      match /bids/{bidId} {
+      allow write, create, update, delete: if request.auth != null;
+
+      match /{document=**} {
         allow read: if true;
-        allow create: if request.auth != null;
-      }
-      
-      match /comments/{commentId} {
-        allow read: if true;
-        allow create: if request.auth != null;
+        allow write, create, update, delete: if request.auth != null;
       }
     }
-    
-    match /inquiries/{inquiryId} {
-      allow create: if true;
-      allow read: if request.auth != null;
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write, create, update, delete: if request.auth != null;
+    }
+
+    match /bids/{bidId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+
+    match /users/{userId} {
+      allow read, create, update, delete: if request.auth != null;
+    }
+
+    match /consignments/{appId} {
+      allow read, write, create, update, delete: if request.auth != null;
     }
 
     match /consignment_applications/{appId} {
-      allow create: if true;
-      allow read: if request.auth != null;
+      allow read, write, create, update, delete: if request.auth != null;
     }
+
+    match /inquiries/{inquiryId} {
+      allow read, write, create, update, delete: if request.auth != null;
+    }
+  }
+}
+```
+
+### 7.2 Firebase Cloud Storage Rules
+```rules
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    allow read: if true;
+    allow write, delete: if request.auth != null;
   }
 }
 ```

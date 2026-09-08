@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Auction, Bid, UserProfile, MediaConfiguration, GalleryImage, ShowcaseSection, VideoChapter } from '../types';
+import { Auction, Bid, UserProfile, MediaConfiguration, GalleryImage, ShowcaseSection, VideoChapter, ConsignmentApplication } from '../types';
 import { 
   updateAuctionConfig, 
   subscribeToAllBidders, 
@@ -10,7 +10,13 @@ import {
   createNewListing,
   deleteListing,
   duplicateListing,
-  subscribeToAllAuctions
+  subscribeToAllAuctions,
+  purgeAllListings,
+  subscribeToConsignments,
+  approveConsignmentAndPromoteSeller,
+  compressImageDataUrl,
+  uploadImageToStorage,
+  MAIN_AUCTION_ID
 } from '../services/auctionService';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
@@ -90,8 +96,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onSelectAuction
 }) => {
   // Decoupled Admin Operational Mode (Inventory, Live Bids, Bidders, Winner Settlement, Global Branding, Editor)
-  const [mainView, setMainView] = useState<'inventory' | 'bids' | 'bidders' | 'winner' | 'branding' | 'editor'>('inventory');
+  const [mainView, setMainView] = useState<'inventory' | 'bids' | 'bidders' | 'winner' | 'branding' | 'editor' | 'consignments'>('inventory');
   const [bidders, setBidders] = useState<UserProfile[]>([]);
+  const [consignments, setConsignments] = useState<ConsignmentApplication[]>([]);
   
   // Inventory Management State
   const [inventory, setInventory] = useState<Auction[]>(allAuctions || [auction]);
@@ -105,16 +112,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [creatingListing, setCreatingListing] = useState<boolean>(false);
 
   useEffect(() => {
-    if (allAuctions && allAuctions.length > 0) {
-      setInventory(allAuctions);
-    }
+    setInventory(allAuctions || []);
   }, [allAuctions]);
 
   useEffect(() => {
     const unsub = subscribeToAllAuctions((list) => {
-      if (list && list.length > 0) {
-        setInventory(list);
-      }
+      setInventory(list || []);
     });
     return () => unsub();
   }, []);
@@ -360,6 +363,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setCreatingListing(true);
     try {
       const newLot = await createNewListing(cleanTitle);
+      // Optimistic state hydration for 0-lot baseline
+      setInventory(prev => [...prev, newLot]);
       setMessage({
         type: 'success',
         text: `Created new vehicle lot: "${newLot.title}". Initialized with clean specs and Canadian CAD financials.`
@@ -526,6 +531,15 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     return () => unsub();
   }, [isOpen]);
 
+  // Subscribe to consignment applications
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = subscribeToConsignments((data) => {
+      setConsignments(data);
+    });
+    return () => unsub();
+  }, [isOpen]);
+
   // Dynamic YouTube Metadata Auto-Fetch Handler
   const handleFetchChapterMetadata = async (index: number) => {
     const targetChapter = videoChapters[index];
@@ -636,8 +650,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     }
 
     const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+    reader.onload = async () => {
+      const rawResult = reader.result as string;
+      const compressed = await compressImageDataUrl(rawResult);
+      const result = await uploadImageToStorage(auction.id, compressed, 'branding');
       setSiteLogo(result);
       setMessage({
         type: 'success',
@@ -655,12 +671,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setSaving(true);
     setMessage(null);
     try {
+      const targetAuctionId = auction.id?.trim() || MAIN_AUCTION_ID;
       const startMs = new Date(startTimeInput).getTime() || auction.startTime;
       const endMs = new Date(endTimeInput).getTime() || auction.endTime;
       const isReserveMet = auction.currentBid >= Number(reserveAmount);
 
       // 1. Update Auction Parameters in Firestore
-      await updateAuctionConfig(auction.id, {
+      await updateAuctionConfig(targetAuctionId, {
         title,
         subtitle,
         headline,
@@ -780,9 +797,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         validFiles.map(file => {
           return new Promise<{ dataUrl: string; name: string; cleanedName: string }>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (event) => {
-              const dataUrl = event.target?.result as string;
-              if (dataUrl) {
+            reader.onload = async (event) => {
+              const rawDataUrl = event.target?.result as string;
+              if (rawDataUrl) {
+                const compressed = await compressImageDataUrl(rawDataUrl);
+                const dataUrl = await uploadImageToStorage(auction.id, compressed, activeUploadTarget?.type || 'gallery');
                 const cleanedName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
                 resolve({ dataUrl, name: file.name, cleanedName });
               } else {
@@ -1080,6 +1099,18 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             >
               <Trophy className="w-4 h-4" />
               <span>Winner & Settlement</span>
+            </button>
+
+            <button
+              onClick={() => setMainView('consignments')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                mainView === 'consignments'
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'text-zinc-600 hover:bg-zinc-100'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>Consignment Requests ({consignments.length})</span>
             </button>
 
             <button
@@ -1425,9 +1456,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteLot(lot)}
-                              disabled={inventory.length <= 1}
-                              className="p-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                              title={inventory.length <= 1 ? "Cannot delete the sole listing" : "Delete vehicle listing lot"}
+                              className="p-1.5 rounded-lg text-xs font-semibold text-zinc-400 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
+                              title="Delete vehicle listing lot"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -3299,6 +3329,98 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
             </div>
           )}
 
+          {/* VIEW: CONSIGNMENT APPLICATIONS REVIEW */}
+          {mainView === 'consignments' && (
+            <div className="space-y-6 max-w-5xl mx-auto">
+              <div className="bg-white rounded-xl border border-zinc-200 p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-zinc-200">
+                  <div>
+                    <h3 className="text-base font-bold text-zinc-900 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-emerald-600" />
+                      <span>Consignment Applications Review ({consignments.length})</span>
+                    </h3>
+                    <p className="text-xs text-zinc-500">
+                      Review seller applications, promote consignors to 'seller' role, and provision blank assigned auction lots.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-zinc-200 max-h-[600px] overflow-y-auto">
+                  {consignments.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-zinc-500">
+                      No consignment applications submitted yet.
+                    </div>
+                  ) : (
+                    consignments.map((app) => (
+                      <div key={app.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-zinc-900">
+                              {app.year} {app.make} {app.model}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              app.status === 'approved' 
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                                : app.status === 'declined'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800 border border-amber-300'
+                            }`}>
+                              {app.status}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 text-xs">
+                            <span>Consignor: <strong>{app.sellerName}</strong> ({app.sellerEmail})</span>
+                            {app.sellerPhone && <span>Phone: <strong>{app.sellerPhone}</strong></span>}
+                            {app.location && <span>Location: <strong>{app.location}</strong></span>}
+                            {app.reserveExpectation && <span>Expectation: <strong>{app.reserveExpectation}</strong></span>}
+                          </div>
+
+                          {app.notes && (
+                            <p className="text-zinc-500 italic text-[11px] bg-zinc-50 p-2 rounded-lg border border-zinc-100">
+                              "{app.notes}"
+                            </p>
+                          )}
+                        </div>
+
+                        {app.status !== 'approved' && (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  // Find matching user by email in bidders registry if available
+                                  const matchingUser = bidders.find(b => b.email.toLowerCase() === app.sellerEmail.toLowerCase());
+                                  const newLot = await approveConsignmentAndPromoteSeller(
+                                    app.id!, 
+                                    matchingUser?.uid, 
+                                    `${app.year} ${app.make} ${app.model}`
+                                  );
+                                  setInventory(prev => [...prev, newLot]);
+                                  setMessage({
+                                    type: 'success',
+                                    text: `Approved consignment for ${app.sellerName}! Created new lot "${newLot.title}" and promoted seller.`
+                                  });
+                                  setTimeout(() => setMessage(null), 5000);
+                                } catch (err: any) {
+                                  setMessage({ type: 'error', text: `Approval failed: ${err.message}` });
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span>Approve & Promote Seller</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* VIEW 5: SITE BRANDING & GLOBAL SETTINGS */}
           {mainView === 'branding' && (
             <div className="space-y-6 max-w-5xl mx-auto">
@@ -3493,6 +3615,25 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (confirm('Permanently purge all catalog listings, media configurations, and local cache? This cannot be undone.')) {
+                        try {
+                          await purgeAllListings();
+                          setMessage({ type: 'success', text: 'All catalog listings and media data have been purged.' });
+                          setTimeout(() => setMessage(null), 5000);
+                        } catch (err: any) {
+                          setMessage({ type: 'error', text: `Purge failed: ${err.message}` });
+                        }
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg text-xs font-bold bg-zinc-700 hover:bg-red-900 text-zinc-300 hover:text-white border border-zinc-600 hover:border-red-700 transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Purge All Catalog Listings (0 Lots)</span>
+                    <span className="sm:hidden">Purge All</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleSaveAll}

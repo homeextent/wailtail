@@ -13,6 +13,8 @@ import {
   setAuctionEndingSoon,
   createNewListing,
   subscribeToAllAuctions,
+  compressImageDataUrl,
+  uploadImageToStorage,
   MAIN_AUCTION_ID
 } from '../services/auctionService';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
@@ -194,40 +196,40 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   // SECTION 1: VEHICLE IDENTITY
   const isMainLot = auction.id === MAIN_AUCTION_ID;
 
-  const [title, setTitle] = useState(auction.title || '');
-  const [subtitle, setSubtitle] = useState(auction.subtitle || '');
-  const [headline, setHeadline] = useState(auction.headline || (isMainLot ? auction.title : ''));
-  const [make, setMake] = useState(auction.make || (isMainLot ? 'Porsche' : ''));
-  const [model, setModel] = useState(auction.model || (isMainLot ? '911 Turbo-Look' : ''));
+  const [title, setTitle] = useState(auction.title ?? '');
+  const [subtitle, setSubtitle] = useState(auction.subtitle ?? '');
+  const [headline, setHeadline] = useState(auction.headline ?? (isMainLot ? (auction.title ?? '') : ''));
+  const [make, setMake] = useState(auction.make ?? (isMainLot ? 'Porsche' : ''));
+  const [model, setModel] = useState(auction.model ?? (isMainLot ? '911 Turbo-Look' : ''));
   const [year, setYear] = useState<number | string>(auction.year ? Number(auction.year) : (isMainLot ? 1978 : ''));
-  const [vin, setVin] = useState(auction.vin || '');
-  const [mileage, setMileage] = useState(auction.mileage || '');
-  const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>(auction.distanceUnit || 'km');
-  const [highlightsBadge, setHighlightsBadge] = useState(auction.highlightsBadge || (isMainLot ? (mediaConfig.highlightsBadge || '1978 911 SC') : ''));
-  const [engine, setEngine] = useState(auction.engine || (isMainLot ? '3.0L Flat-Six CIS' : ''));
-  const [drivetrain, setDrivetrain] = useState(auction.drivetrain || (isMainLot ? '5-Speed Manual (915)' : ''));
+  const [vin, setVin] = useState(auction.vin ?? '');
+  const [mileage, setMileage] = useState(auction.mileage ?? '');
+  const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>(auction.distanceUnit ?? 'km');
+  const [highlightsBadge, setHighlightsBadge] = useState(auction.highlightsBadge ?? (isMainLot ? (mediaConfig.highlightsBadge ?? '1978 911 SC') : ''));
+  const [engine, setEngine] = useState(auction.engine ?? (isMainLot ? '3.0L Flat-Six CIS' : ''));
+  const [drivetrain, setDrivetrain] = useState(auction.drivetrain ?? (isMainLot ? '5-Speed Manual (915)' : ''));
   const [customDrivetrain, setCustomDrivetrain] = useState('');
-  const [exteriorColor, setExteriorColor] = useState(auction.exteriorColor || (isMainLot ? 'Guards Red (027)' : ''));
-  const [interior, setInterior] = useState(auction.interior || (isMainLot ? 'Black Leather / Houndstooth' : ''));
-  const [titleStatus, setTitleStatus] = useState(auction.titleStatus || 'Clean Registration');
+  const [exteriorColor, setExteriorColor] = useState(auction.exteriorColor ?? (isMainLot ? 'Guards Red (027)' : ''));
+  const [interior, setInterior] = useState(auction.interior ?? (isMainLot ? 'Black Leather / Houndstooth' : ''));
+  const [titleStatus, setTitleStatus] = useState(auction.titleStatus ?? 'Clean Registration');
   const [customTitleStatus, setCustomTitleStatus] = useState('');
-  const [sellerName, setSellerName] = useState(auction.sellerName || (isMainLot ? 'Private Consignor' : ''));
+  const [sellerName, setSellerName] = useState(auction.sellerName ?? (isMainLot ? 'Private Consignor' : ''));
 
   // Structured Location state (City, Province/State, Country)
   const [locationCity, setLocationCity] = useState(() => {
     if (!auction.location && !isMainLot) return '';
-    const parts = (auction.location || (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
-    return parts[0] || (isMainLot ? 'Vancouver' : '');
+    const parts = (auction.location ?? (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
+    return parts[0] ?? (isMainLot ? 'Vancouver' : '');
   });
   const [locationRegion, setLocationRegion] = useState(() => {
     if (!auction.location && !isMainLot) return '';
-    const parts = (auction.location || (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
-    return parts[1] || (isMainLot ? 'BC' : '');
+    const parts = (auction.location ?? (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
+    return parts[1] ?? (isMainLot ? 'BC' : '');
   });
   const [locationCountry, setLocationCountry] = useState(() => {
     if (!auction.location && !isMainLot) return '';
-    const parts = (auction.location || (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
-    return parts[2] || (isMainLot ? 'Canada' : '');
+    const parts = (auction.location ?? (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
+    return parts[2] ?? (isMainLot ? 'Canada' : '');
   });
 
   const formattedLocation = useMemo(() => {
@@ -235,7 +237,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   }, [locationCity, locationRegion, locationCountry]);
 
   // SECTION 2: OVERVIEW NARRATIVE
-  const [overviewHeading, setOverviewHeading] = useState(mediaConfig.overviewHeading || 'Vehicle Overview & Provenance');
+  const [overviewHeading, setOverviewHeading] = useState(mediaConfig.overviewHeading ?? (isMainLot ? 'Vehicle Overview & Provenance' : ''));
   const [overviewParagraphsText, setOverviewParagraphsText] = useState(() => {
     if (mediaConfig.overviewParagraphs && mediaConfig.overviewParagraphs.length > 0) {
       return mediaConfig.overviewParagraphs.join('\n\n');
@@ -245,7 +247,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     }
     return '';
   });
-  const [overviewImage, setOverviewImage] = useState(mediaConfig.overviewImage || { url: '', caption: '', alt: '' });
+  const [overviewImage, setOverviewImage] = useState(mediaConfig.overviewImage ?? { url: '', caption: '', alt: '' });
 
   // SECTION 3: TECHNICAL SPECIFICATIONS (Single Source Mirror + Custom Rows)
   const isPrimarySpecLabel = (label: string) => {
@@ -303,18 +305,18 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   });
 
   // SECTION 5: HERO CAROUSEL & FULL PHOTO GALLERY
-  const [heroImages, setHeroImages] = useState<string[]>(mediaConfig.heroImages || []);
-  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(mediaConfig.fullGallery || []);
+  const [heroImages, setHeroImages] = useState<string[]>(mediaConfig.heroImages ?? []);
+  const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(mediaConfig.fullGallery ?? []);
   const [newHeroUrl, setNewHeroUrl] = useState('');
   const [newGalleryUrl, setNewGalleryUrl] = useState('');
   const [newGalleryTitle, setNewGalleryTitle] = useState('');
   const [newGalleryCategory, setNewGalleryCategory] = useState<GalleryImage['category']>('exterior');
 
   // SECTION 6: VIDEOS & DRIVING CHAPTERS
-  const [youtubeUrl, setYoutubeUrl] = useState(mediaConfig.youtubePlaylistUrl || '');
-  const [videoTitle, setVideoTitle] = useState(mediaConfig.videoTitle || 'Driving Footage & Dynamic Audio');
-  const [videoSubtitle, setVideoSubtitle] = useState(mediaConfig.videoSubtitle || 'Experience the responsive 3.0L CIS flat-six');
-  const [videoChapters, setVideoChapters] = useState<VideoChapter[]>(mediaConfig.videoChapters || []);
+  const [youtubeUrl, setYoutubeUrl] = useState(mediaConfig.youtubePlaylistUrl ?? '');
+  const [videoTitle, setVideoTitle] = useState(mediaConfig.videoTitle ?? (isMainLot ? 'Driving Footage & Dynamic Audio' : ''));
+  const [videoSubtitle, setVideoSubtitle] = useState(mediaConfig.videoSubtitle ?? (isMainLot ? 'Experience the responsive 3.0L CIS flat-six' : ''));
+  const [videoChapters, setVideoChapters] = useState<VideoChapter[]>(mediaConfig.videoChapters ?? []);
   const [fetchingMetadataIdx, setFetchingMetadataIdx] = useState<number | null>(null);
 
   // SECTION 7: AUCTION FINANCIALS & RULES (CAD)
@@ -324,52 +326,52 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     return d.toISOString().slice(0, 16);
   };
 
-  const [startingBid, setStartingBid] = useState(auction.startingBid || 1000);
-  const [minimumIncrement, setMinimumIncrement] = useState(auction.minimumIncrement || 250);
-  const [reserveAmount, setReserveAmount] = useState(auction.reserveAmount || 0);
-  const [status, setStatus] = useState(auction.status || 'upcoming');
-  const [startTimeInput, setStartTimeInput] = useState(formatForInput(auction.startTime || Date.now()));
-  const [endTimeInput, setEndTimeInput] = useState(formatForInput(auction.endTime || Date.now() + 7 * 86400000));
+  const [startingBid, setStartingBid] = useState(auction.startingBid ?? 0);
+  const [minimumIncrement, setMinimumIncrement] = useState(auction.minimumIncrement ?? 0);
+  const [reserveAmount, setReserveAmount] = useState(auction.reserveAmount ?? 0);
+  const [status, setStatus] = useState(auction.status ?? 'upcoming');
+  const [startTimeInput, setStartTimeInput] = useState(formatForInput(auction.startTime ?? Date.now()));
+  const [endTimeInput, setEndTimeInput] = useState(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
 
   // Synchronize internal state when active vehicle auction changes
   useEffect(() => {
     const isMain = auction.id === MAIN_AUCTION_ID;
-    setTitle(auction.title || '');
-    setSubtitle(auction.subtitle || '');
-    setHeadline(auction.headline || (isMain ? auction.title : ''));
-    setMake(auction.make || (isMain ? 'Porsche' : ''));
-    setModel(auction.model || (isMain ? '911 Turbo-Look' : ''));
+    setTitle(auction.title ?? '');
+    setSubtitle(auction.subtitle ?? '');
+    setHeadline(auction.headline ?? (isMain ? (auction.title ?? '') : ''));
+    setMake(auction.make ?? (isMain ? 'Porsche' : ''));
+    setModel(auction.model ?? (isMain ? '911 Turbo-Look' : ''));
     setYear(auction.year ? Number(auction.year) : (isMain ? 1978 : ''));
-    setVin(auction.vin || '');
-    setMileage(auction.mileage || '');
-    setDistanceUnit(auction.distanceUnit || 'km');
-    setHighlightsBadge(auction.highlightsBadge || (isMain ? (mediaConfig.highlightsBadge || '1978 911 SC') : ''));
-    setEngine(auction.engine || (isMain ? '3.0L Flat-Six CIS' : ''));
-    setDrivetrain(auction.drivetrain || (isMain ? '5-Speed Manual (915)' : ''));
+    setVin(auction.vin ?? '');
+    setMileage(auction.mileage ?? '');
+    setDistanceUnit(auction.distanceUnit ?? 'km');
+    setHighlightsBadge(auction.highlightsBadge ?? (isMain ? (mediaConfig.highlightsBadge ?? '1978 911 SC') : ''));
+    setEngine(auction.engine ?? (isMain ? '3.0L Flat-Six CIS' : ''));
+    setDrivetrain(auction.drivetrain ?? (isMain ? '5-Speed Manual (915)' : ''));
     setCustomDrivetrain('');
-    setExteriorColor(auction.exteriorColor || (isMain ? 'Guards Red (027)' : ''));
-    setInterior(auction.interior || (isMain ? 'Black Leather / Houndstooth' : ''));
-    setTitleStatus(auction.titleStatus || 'Clean Registration');
+    setExteriorColor(auction.exteriorColor ?? (isMain ? 'Guards Red (027)' : ''));
+    setInterior(auction.interior ?? (isMain ? 'Black Leather / Houndstooth' : ''));
+    setTitleStatus(auction.titleStatus ?? 'Clean Registration');
     setCustomTitleStatus('');
-    setSellerName(auction.sellerName || (isMain ? 'Private Consignor' : ''));
+    setSellerName(auction.sellerName ?? (isMain ? 'Private Consignor' : ''));
 
-    const parts = (auction.location || (isMain ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
-    setLocationCity(parts[0] || (isMain ? 'Vancouver' : ''));
-    setLocationRegion(parts[1] || (isMain ? 'BC' : ''));
-    setLocationCountry(parts[2] || (isMain ? 'Canada' : ''));
+    const parts = (auction.location ?? (isMain ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
+    setLocationCity(parts[0] ?? (isMain ? 'Vancouver' : ''));
+    setLocationRegion(parts[1] ?? (isMain ? 'BC' : ''));
+    setLocationCountry(parts[2] ?? (isMain ? 'Canada' : ''));
 
-    setStartingBid(auction.startingBid ?? 1000);
-    setMinimumIncrement(auction.minimumIncrement ?? 250);
+    setStartingBid(auction.startingBid ?? (isMain ? 15000 : 0));
+    setMinimumIncrement(auction.minimumIncrement ?? (isMain ? 250 : 0));
     setReserveAmount(auction.reserveAmount ?? 0);
-    setStatus(auction.status || 'upcoming');
-    setStartTimeInput(formatForInput(auction.startTime || Date.now()));
-    setEndTimeInput(formatForInput(auction.endTime || Date.now() + 7 * 86400000));
+    setStatus(auction.status ?? 'upcoming');
+    setStartTimeInput(formatForInput(auction.startTime ?? Date.now()));
+    setEndTimeInput(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
   }, [auction.id]);
 
   // Synchronize media config state when mediaConfig or auction changes
   useEffect(() => {
     const isMain = auction.id === MAIN_AUCTION_ID;
-    setOverviewHeading(mediaConfig.overviewHeading || 'Vehicle Overview & Provenance');
+    setOverviewHeading(mediaConfig.overviewHeading ?? (isMain ? 'Vehicle Overview & Provenance' : ''));
     if (mediaConfig.overviewParagraphs && mediaConfig.overviewParagraphs.length > 0) {
       setOverviewParagraphsText(mediaConfig.overviewParagraphs.join('\n\n'));
     } else if (isMain) {
@@ -377,7 +379,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     } else {
       setOverviewParagraphsText('');
     }
-    setOverviewImage(mediaConfig.overviewImage || { url: '', caption: '', alt: '' });
+    setOverviewImage(mediaConfig.overviewImage ?? { url: '', caption: '', alt: '' });
     if (mediaConfig.showcaseChapters && mediaConfig.showcaseChapters.length > 0) {
       setShowcaseChapters(mediaConfig.showcaseChapters.map((ch, idx) => normalizeSectionToChapter(ch, idx)));
     } else if (mediaConfig.inlineShowcase && mediaConfig.inlineShowcase.length > 0) {
@@ -385,12 +387,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     } else {
       setShowcaseChapters([]);
     }
-    setHeroImages(mediaConfig.heroImages || []);
-    setGalleryImages(mediaConfig.fullGallery || []);
-    setYoutubeUrl(mediaConfig.youtubePlaylistUrl || '');
-    setVideoTitle(mediaConfig.videoTitle || (isMain ? 'Cold Start, Driving Footage & 360 Walkaround' : ''));
-    setVideoSubtitle(mediaConfig.videoSubtitle || (isMain ? 'Complete high-definition video playlist.' : ''));
-    setVideoChapters(mediaConfig.videoChapters || []);
+    setHeroImages(mediaConfig.heroImages ?? []);
+    setGalleryImages(mediaConfig.fullGallery ?? []);
+    setYoutubeUrl(mediaConfig.youtubePlaylistUrl ?? '');
+    setVideoTitle(mediaConfig.videoTitle ?? (isMain ? 'Cold Start, Driving Footage & 360 Walkaround' : ''));
+    setVideoSubtitle(mediaConfig.videoSubtitle ?? (isMain ? 'Complete high-definition video playlist.' : ''));
+    setVideoChapters(mediaConfig.videoChapters ?? []);
     if (mediaConfig.overviewSpecs && mediaConfig.overviewSpecs.length > 0) {
       setCustomSpecs(mediaConfig.overviewSpecs.filter(s => !isPrimarySpecLabel(s.label)));
     } else if (isMain) {
@@ -717,9 +719,11 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         validFiles.map(file => {
           return new Promise<{ dataUrl: string; name: string; cleanedName: string }>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (event) => {
-              const dataUrl = event.target?.result as string;
-              if (dataUrl) {
+            reader.onload = async (event) => {
+              const rawDataUrl = event.target?.result as string;
+              if (rawDataUrl) {
+                const compressed = await compressImageDataUrl(rawDataUrl);
+                const dataUrl = await uploadImageToStorage(auction.id, compressed, activeUploadTarget?.type || 'gallery');
                 const cleanedName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
                 resolve({ dataUrl, name: file.name, cleanedName });
               } else {

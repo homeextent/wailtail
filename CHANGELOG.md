@@ -9,6 +9,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased] - 2026-09-07
 
 ### Added
+- **Firebase Cloud Storage Integration (`uploadImageToStorage`)**:
+  - Exported initialized `storage` instance (`getStorage(app)`) in `src/firebase.ts` and `src/services/firebase.ts`.
+  - Implemented `uploadImageToStorage(auctionId, dataUrl, folder)` in `src/services/auctionService.ts` to stream uploaded Base64 image payloads directly to Firebase Cloud Storage buckets (`auctions/${targetId}/${folder}/${filename}`).
+  - Integrated `uploadImageToStorage` into ingestion pipelines in `AdminPanelModal.tsx` and `ListingEditorWorkspace.tsx`.
+  - Replaced multi-megabyte Base64 image strings in Firestore document payloads with lightweight HTTPS download URLs (~120 bytes), reducing `settings/media-${id}` document sizes by 99.3% and permanently solving the 1MB (`1,048,576 bytes`) document size limit error.
+- **Root Auction Lead Hero Syncing**:
+  - Updated `saveMediaConfig()` and `handleUpdateMediaConfig()` to mirror `leadHeroImage` directly to the root `auctions/{id}` document during master save operations, guaranteeing instant catalog thumbnail resolution across snapshot listeners.
+- **Production Firestore & Cloud Storage Security Rules**:
+  - Updated `firestore.rules` allowing authenticated write/delete access across `/auctions`, `/settings`, `/bids`, `/comments`, `/consignments`, and `/users`.
+  - Configured production Cloud Storage security rules (`service firebase.storage`) providing public read access for vehicle media while restricting write/delete operations to authenticated user sessions (`request.auth != null`).
+- **Firestore Recursive Subcollection Security Rules**:
+  - Implemented recursive subcollection matching (`match /media/{document=**}`) under `match /auctions/{auctionId}` in `firestore.rules` to support batch writes, reads, and deletions for media configurations.
+- **Bulk Purge Engine & Local Cache Sanitization**:
+  - Added `purgeAllListings()` in `auctionService.ts` to perform atomic batch deletions across all auctions and media subcollections, clearing localized cache keys (`wailtail_custom_media_${auctionId}`).
+  - Integrated "Purge All Catalog Listings (0 Lots)" button in `AdminPanelModal.tsx`.
+- **Role-Based Access Controls (RBAC) & Consignment Flow**:
+  - Added route protections for `/dashboard/listings/*`, redirecting non-seller and non-admin users to `/` with an error notification.
+  - Restricted "Draft Listing Directly →" action in `ConsignmentModal.tsx` strictly to users with `'seller'` or `'admin'` roles.
+  - Added consignment review panel in `AdminPanelModal.tsx` with `approveConsignmentAndPromoteSeller()` to promote applicants to `'seller'` role and provision assigned blank draft lots.
+- **Neutral Placeholder & Ghost Media Purge**:
+  - Purged all hardcoded Unsplash fallback URLs in `HeroMediaCarousel.tsx`. Rendered neutral dark placeholder container (`bg-zinc-900 border border-zinc-800 rounded-xl`) with camera icon and "Media Pending" messaging when `images.length === 0`.
+  - Enforced nullish coalescing (`?? ""`, `?? 0`) across all initializers and `useEffect` fallbacks in `ListingEditorWorkspace.tsx`, guaranteeing clean $0 CAD No Reserve defaults on new listings.
+- **YouTube Thumbnail URL Sanitization**:
+  - Wrapped YouTube video ID extraction with regex validation (`/^[a-zA-Z0-9_-]{11}$/`) in `YouTubePlaylistSection.tsx`. Thumbnails are strictly constructed when valid, avoiding 404 console errors.
+
+### Changed
+- **Zero-Lot State Subscription Repair**:
+  - Replaced length guards (`if (list && list.length > 0)`) with direct assignment (`setAllAuctions(list || [])` and `setInventory(list || [])`) in `App.tsx` and `AdminPanelModal.tsx`.
+  - Updated `VehicleCatalogGrid` props in `App.tsx` to `auctions={allAuctions}` instead of injecting fallback arrays.
+- **Optimistic State Hydration**:
+  - Implemented optimistic appending (`setAllAuctions(prev => [...prev, newLot])` and `setInventory(prev => [...prev, newLot])`) when creating new lots.
 - **Refactor: Predefined Showcase Chapter Schema (Task 4)**:
   - Migrated showcase chapter architecture to a predefined taxonomy (`EXTERIOR`, `POWERTRAIN`, `INTERIOR`, `CHASSIS`, `CUSTOM`) adhering to the strict `ShowcaseChapter` schema in `src/types.ts`.
   - Implemented locked title rules: `EXTERIOR` ("Exterior Highlights"), `POWERTRAIN` ("Powertrain"), `INTERIOR` ("Cabin & Cockpit"), and `CHASSIS` ("Chassis & Suspension") display read-only badges and locked labels; `CUSTOM` provides an editable free-text input.
@@ -36,6 +67,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Strict Fresh Listing Isolation & Empty Placeholder Enforcement**:
   - Updated `createNewListing` in `auctionService.ts` and `ListingEditorWorkspace.tsx` to strictly initialize all text inputs to empty strings (`""`) and media arrays to empty lists (`[]`) for non-main lots.
   - Completely eliminated previous listing text/images (such as 1978 Porsche 911 specs) from leaking into newly created lots, letting grey HTML placeholder text guide the user.
+
+### Fixed
+- **0-Lot Baseline & Auto-Seeding Eradication**:
+  - Defined and exported `BLANK_MEDIA_CONFIG` in `src/mediaConfig.ts`.
+  - Disabled auto-seeding `setDoc` writes in `initializeMediaConfigIfNotExists()`, preventing deleted or missing sample listings (`wailtail-1978-porsche-911`) from auto-recreating sample data in Firestore on page refresh.
+  - Resolved `App.tsx` state initializers and listeners to return clean `BLANK_AUCTION` and `BLANK_MEDIA_CONFIG` when `allAuctions` is empty (`[]`).
+- **Single-Segment Document Reference Guard**:
+  - Added string trimming and fallback guards (`targetAuctionId = auctionId?.trim() || MAIN_AUCTION_ID`) across `updateAuctionConfig()`, `saveMediaConfig()`, and `deleteListing()`, eliminating `FirebaseError: Invalid document reference` path errors on empty auction IDs.
+- **Iframe & Attribute Cleanup**:
+  - Removed deprecated `web-share;` feature flag from the YouTube player `<iframe>` in `YouTubePlaylistSection.tsx`, suppressing browser console warnings.
 
 ## [1.2.0] - 2026-09-04
 

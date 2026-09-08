@@ -12,8 +12,9 @@ import {
   Send,
   AlertCircle
 } from 'lucide-react';
-import { ConsignmentApplication } from '../types';
+import { ConsignmentApplication, UserProfile } from '../types';
 import { submitConsignmentApplication } from '../services/auctionService';
+import { useAuth } from '../context/AuthContext';
 
 interface ConsignmentModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   onClose,
   onLaunchDirectListing
 }) => {
+  const { user } = useAuth();
   const [year, setYear] = useState('');
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
@@ -400,7 +402,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               </div>
 
               {/* Direct Workspace Option Banner */}
-              {onLaunchDirectListing && (
+              {(onLaunchDirectListing && (user?.role === 'seller' || user?.role === 'admin')) && (
                 <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 text-xs text-emerald-950">
                   <div>
                     <div className="font-bold flex items-center gap-1.5">

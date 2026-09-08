@@ -24,10 +24,28 @@ export const HeroMediaCarousel: React.FC<HeroMediaCarouselProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const validImages = (images || []).filter(img => Boolean(img && typeof img === 'string' && img.trim() !== ''));
-  const safeImages = validImages.length > 0 ? validImages : [
-    'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85'
-  ];
 
+  if (validImages.length === 0) {
+    return (
+      <section className="bg-zinc-950 text-white border-b border-zinc-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+          <div className="relative aspect-[16/10] sm:aspect-[16/9] lg:aspect-[21/10] w-full rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 flex flex-col items-center justify-center p-6 text-center select-none">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-800/80 border border-zinc-700/80 flex items-center justify-center mb-4 text-zinc-400">
+              <Camera className="w-8 h-8 text-zinc-400" />
+            </div>
+            <h3 className="text-xl font-bold text-zinc-200 mb-1 font-serif tracking-wide">
+              Media Pending
+            </h3>
+            <p className="text-sm text-zinc-400 max-w-sm">
+              Photo gallery currently being curated
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const safeImages = validImages;
   const safeIndex = currentIndex >= safeImages.length ? 0 : currentIndex;
   const currentImage = safeImages[safeIndex];
 

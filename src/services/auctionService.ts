@@ -16,10 +16,12 @@ import {
   arrayUnion,
   arrayRemove
 } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase';
+import { storage } from './firebase';
 import { Auction, Bid, Comment, UserProfile, MediaConfiguration, SellerInquiry, ConsignmentApplication } from '../types';
-import { mediaConfig as DEFAULT_MEDIA_CONFIG } from '../mediaConfig';
-export { DEFAULT_MEDIA_CONFIG };
+import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from '../mediaConfig';
+export { DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG };
 import { sendBidPlacedEmail, sendOutbidAlertEmail, sendSellerInquiryEmail } from './emailService';
 
 export const MAIN_AUCTION_ID = 'wailtail-1978-porsche-911';
@@ -40,6 +42,67 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
 }
 
 /**
+ * Compresses heavy Base64 data URLs via HTML5 Canvas to prevent exceeding Firestore's 1MB document limit.
+ */
+export function compressImageDataUrl(dataUrl: string, maxDim = 1200, quality = 0.75): Promise<string> {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/') || dataUrl.startsWith('data:image/svg')) {
+      resolve(dataUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } else {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Uploads a Base64 data URL to Firebase Cloud Storage and returns its public HTTPS download URL.
+ */
+export async function uploadImageToStorage(
+  auctionId: string,
+  dataUrl: string,
+  folder = 'gallery'
+): Promise<string> {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    return dataUrl; // Return existing HTTPS URLs as-is
+  }
+  try {
+    const targetId = auctionId?.trim() || 'common';
+    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
+    const storageRef = ref(storage, `auctions/${targetId}/${folder}/${filename}`);
+    await uploadString(storageRef, dataUrl, 'data_url');
+    return await getDownloadURL(storageRef);
+  } catch (err) {
+    console.warn('Cloud Storage upload fallback to compressed data URL:', err);
+    return dataUrl;
+  }
+}
+
+/**
  * Remove undefined values to prevent Firestore serialization crashes
  */
 function sanitizePayload(obj: any): any {
@@ -53,6 +116,44 @@ function sanitizePayload(obj: any): any {
   }
   return clean;
 }
+
+export const BLANK_AUCTION: Auction = {
+  id: '',
+  title: '',
+  subtitle: '',
+  headline: '',
+  make: '',
+  model: '',
+  year: '' as any,
+  vin: '',
+  mileage: '',
+  distanceUnit: 'km',
+  highlightsBadge: '',
+  watchCount: 0,
+  location: '',
+  sellerName: '',
+  engine: '',
+  drivetrain: '',
+  exteriorColor: '',
+  titleStatus: '',
+  currency: 'CAD',
+  leadHeroImage: '',
+  heroImages: [],
+  startTime: Date.now(),
+  endTime: Date.now() + 7 * 24 * 60 * 60 * 1000,
+  startingBid: 1000,
+  minimumIncrement: 250,
+  currentBid: 0,
+  reserveAmount: 0,
+  isReserveMet: true,
+  bidCount: 0,
+  highBidderId: '',
+  highBidderName: '',
+  highBidderEmail: '',
+  status: 'upcoming',
+  createdAt: Date.now(),
+  updatedAt: Date.now()
+};
 
 export const DEFAULT_AUCTION: Auction = {
   id: MAIN_AUCTION_ID,
@@ -186,7 +287,7 @@ export const INITIAL_COMMENTS: Omit<Comment, 'id'>[] = [
 /**
  * Initializes auction in Firestore if it doesn't exist yet
  */
-export async function initializeAuctionIfNotExists(): Promise<Auction> {
+export async function initializeAuctionIfNotExists(): Promise<Auction | null> {
   try {
     const auctionRef = doc(db, 'auctions', MAIN_AUCTION_ID);
     const snap = await getDoc(auctionRef);
@@ -196,25 +297,10 @@ export async function initializeAuctionIfNotExists(): Promise<Auction> {
       return data;
     }
 
-    // Set default initial auction
-    await setDoc(auctionRef, DEFAULT_AUCTION);
-
-    // Seed initial bids
-    const bidsCol = collection(db, 'bids');
-    for (const bid of INITIAL_BIDS) {
-      await addDoc(bidsCol, bid);
-    }
-
-    // Seed initial comments
-    const commentsCol = collection(db, 'comments');
-    for (const comm of INITIAL_COMMENTS) {
-      await addDoc(commentsCol, comm);
-    }
-
-    return DEFAULT_AUCTION;
+    return null;
   } catch (error) {
     console.warn('Auction initialized in local/offline fallback mode:', error);
-    return DEFAULT_AUCTION;
+    return null;
   }
 }
 
@@ -225,7 +311,8 @@ export function subscribeToAuction(
   auctionId: string,
   callback: (auction: Auction | null) => void
 ) {
-  const auctionRef = doc(db, 'auctions', auctionId);
+  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const auctionRef = doc(db, 'auctions', targetId);
   return onSnapshot(auctionRef, (snap) => {
     if (snap.exists()) {
       callback(snap.data() as Auction);
@@ -246,7 +333,7 @@ export function subscribeToAllAuctions(
   const auctionsCol = collection(db, 'auctions');
   return onSnapshot(auctionsCol, (snapshot) => {
     if (snapshot.empty) {
-      callback([DEFAULT_AUCTION]);
+      callback([]);
       return;
     }
     const list: Auction[] = snapshot.docs.map((d) => {
@@ -279,14 +366,10 @@ export function subscribeToAllAuctions(
       };
     });
 
-    // Ensure default auction is included if not in Firestore yet
-    if (!list.some(a => a.id === MAIN_AUCTION_ID)) {
-      list.unshift(DEFAULT_AUCTION);
-    }
     callback(list);
   }, (err) => {
     console.warn('Error fetching all auctions:', err);
-    callback([DEFAULT_AUCTION]);
+    callback([]);
   });
 }
 
@@ -397,27 +480,76 @@ export async function submitConsignmentApplication(
 }
 
 /**
+ * Admin: Subscribe to consignment applications
+ */
+export function subscribeToConsignments(
+  callback: (apps: ConsignmentApplication[]) => void
+) {
+  const colRef = collection(db, 'consignments');
+  const q = query(colRef, orderBy('submittedAt', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const list: ConsignmentApplication[] = snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    })) as ConsignmentApplication[];
+    callback(list);
+  }, (err) => {
+    console.warn('Error fetching consignments:', err);
+  });
+}
+
+/**
+ * Admin: Approve a consignment application, promote user to 'seller', and provision a blank assigned lot.
+ */
+export async function approveConsignmentAndPromoteSeller(
+  applicationId: string,
+  userUid?: string,
+  vehicleTitle?: string
+): Promise<Auction> {
+  // 1. Update consignment application status
+  try {
+    const appRef = doc(db, 'consignments', applicationId);
+    await updateDoc(appRef, {
+      status: 'approved',
+      reviewedAt: Date.now()
+    });
+  } catch (err) {
+    console.warn('Could not update consignment doc status:', err);
+  }
+
+  // 2. Promote user to 'seller' role if userUid exists
+  if (userUid) {
+    try {
+      const userRef = doc(db, 'users', userUid);
+      await updateDoc(userRef, {
+        role: 'seller'
+      });
+    } catch (err) {
+      console.warn('Could not promote user to seller in users col:', err);
+    }
+  }
+
+  // 3. Provision a blank assigned lot
+  const lotTitle = vehicleTitle || 'Consigned Vehicle Lot';
+  const newLot = await createNewListing(lotTitle);
+  return newLot;
+}
+
+/**
  * Permanently delete a vehicle lot document and its media configuration from Firestore.
  */
 export async function deleteListing(auctionId: string): Promise<void> {
-  try {
-    const docRef = doc(db, 'auctions', auctionId);
-    await deleteDoc(docRef);
+  const targetId = auctionId?.trim();
+  if (!targetId) return;
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'auctions', targetId));
+  batch.delete(doc(db, 'settings', `media-${targetId}`));
+  batch.delete(doc(db, 'auctions', targetId, 'media', 'config'));
+  await batch.commit();
 
-    // Delete associated media settings
-    const mediaRef = doc(db, 'settings', `media-${auctionId}`);
-    await deleteDoc(mediaRef);
-
-    // Clean up local cache if present
-    try {
-      localStorage.removeItem(`wailtail_custom_media_${auctionId}`);
-    } catch (e) {
-      // ignore
-    }
-  } catch (err) {
-    console.error('Error deleting listing document:', err);
-    throw err;
-  }
+  localStorage.removeItem(`wailtail_custom_media_${targetId}`);
+  localStorage.removeItem('wailtail_custom_media');
+  localStorage.removeItem('wailtail_active_lot');
 }
 
 /**
@@ -435,10 +567,10 @@ export async function duplicateListing(
       if (snap.exists()) {
         sourceAuction = snap.data() as Auction;
       } else {
-        sourceAuction = { ...DEFAULT_AUCTION, id: sourceAuctionOrId };
+        sourceAuction = { ...BLANK_AUCTION, id: sourceAuctionOrId };
       }
     } catch {
-      sourceAuction = { ...DEFAULT_AUCTION, id: sourceAuctionOrId };
+      sourceAuction = { ...BLANK_AUCTION, id: sourceAuctionOrId };
     }
   } else {
     sourceAuction = sourceAuctionOrId;
@@ -956,7 +1088,8 @@ export async function updateAuctionConfig(
   auctionId: string,
   updates: Partial<Auction>
 ): Promise<void> {
-  const auctionRef = doc(db, 'auctions', auctionId);
+  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const auctionRef = doc(db, 'auctions', targetId);
   const cleanUpdates = sanitizePayload({
     ...updates,
     updatedAt: Date.now()
@@ -972,10 +1105,28 @@ export async function updateAuctionConfig(
  * Admin: Save media configuration to Firestore (keyed by auctionId if provided)
  */
 export async function saveMediaConfig(config: MediaConfiguration, auctionId?: string): Promise<void> {
-  const docId = (auctionId && auctionId !== MAIN_AUCTION_ID) ? `media-${auctionId}` : MEDIA_CONFIG_DOC_ID;
+  const targetAuctionId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const docId = (targetAuctionId !== MAIN_AUCTION_ID) ? `media-${targetAuctionId}` : MEDIA_CONFIG_DOC_ID;
   const mediaRef = doc(db, 'settings', docId);
+
+  // Compress and upload any high-res Base64 images in hero and gallery arrays to Firebase Storage before persisting
+  const compressedHero = await Promise.all((config.heroImages || []).map(async img => {
+    const comp = await compressImageDataUrl(img);
+    return await uploadImageToStorage(targetAuctionId, comp, 'hero');
+  }));
+  const compressedGallery = await Promise.all((config.fullGallery || []).map(async item => {
+    const comp = await compressImageDataUrl(item.url);
+    const url = await uploadImageToStorage(targetAuctionId, comp, item.category || 'gallery');
+    return {
+      ...item,
+      url
+    };
+  }));
+
   const cleanConfig = sanitizePayload({
     ...config,
+    heroImages: compressedHero,
+    fullGallery: compressedGallery,
     updatedAt: Date.now()
   });
 
@@ -983,6 +1134,20 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
     setDoc(mediaRef, cleanConfig, { merge: true }),
     8000
   );
+
+  if (config.heroImages && Array.isArray(config.heroImages)) {
+    try {
+      const auctionRef = doc(db, 'auctions', targetAuctionId);
+      const leadHero = config.heroImages[0] || '';
+      // Only write leadHeroImage to root auction doc to prevent exceeding Firestore's 1MB document limit
+      await setDoc(auctionRef, sanitizePayload({
+        leadHeroImage: leadHero,
+        updatedAt: Date.now()
+      }), { merge: true });
+    } catch (err) {
+      console.warn('Could not sync lead hero image to root auction doc:', err);
+    }
+  }
 }
 
 /**
@@ -992,7 +1157,8 @@ export function subscribeToMediaConfig(
   callback: (config: MediaConfiguration | null) => void,
   auctionId?: string
 ) {
-  const docId = (auctionId && auctionId !== MAIN_AUCTION_ID) ? `media-${auctionId}` : MEDIA_CONFIG_DOC_ID;
+  const targetAuctionId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const docId = (targetAuctionId !== MAIN_AUCTION_ID) ? `media-${targetAuctionId}` : MEDIA_CONFIG_DOC_ID;
   const mediaRef = doc(db, 'settings', docId);
   return onSnapshot(mediaRef, (snap) => {
     if (snap.exists()) {
@@ -1009,33 +1175,19 @@ export function subscribeToMediaConfig(
  * Initialize Media Config in Firestore if not present
  */
 export async function initializeMediaConfigIfNotExists(auctionId?: string): Promise<MediaConfiguration> {
-  const docId = (auctionId && auctionId !== MAIN_AUCTION_ID) ? `media-${auctionId}` : MEDIA_CONFIG_DOC_ID;
+  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const docId = (targetId !== MAIN_AUCTION_ID) ? `media-${targetId}` : MEDIA_CONFIG_DOC_ID;
   try {
     const mediaRef = doc(db, 'settings', docId);
     const snap = await getDoc(mediaRef);
     if (snap.exists()) {
       return snap.data() as MediaConfiguration;
     }
-    const initialConfig: MediaConfiguration = (auctionId && auctionId !== MAIN_AUCTION_ID)
-      ? {
-          vehicleName: 'New Vehicle Lot',
-          heroImages: [],
-          overviewHeading: 'Vehicle Overview & Provenance',
-          overviewParagraphs: ['Clean vehicle lot draft.'],
-          overviewImage: { url: '', caption: '', alt: '' },
-          overviewSpecs: [],
-          inlineShowcase: [],
-          fullGallery: [],
-          youtubePlaylistUrl: '',
-          videoChapters: []
-        }
-      : DEFAULT_MEDIA_CONFIG;
-
-    await setDoc(mediaRef, sanitizePayload(initialConfig));
-    return initialConfig;
+    // Return blank or default in memory without writing sample data to Firestore
+    return (targetId !== MAIN_AUCTION_ID) ? BLANK_MEDIA_CONFIG : DEFAULT_MEDIA_CONFIG;
   } catch (err) {
     console.warn('Using local fallback media configuration:', err);
-    return DEFAULT_MEDIA_CONFIG;
+    return (targetId !== MAIN_AUCTION_ID) ? BLANK_MEDIA_CONFIG : DEFAULT_MEDIA_CONFIG;
   }
 }
 
@@ -1055,6 +1207,39 @@ export function subscribeToAllBidders(
   }, (err) => {
     console.error('Error fetching registered bidders:', err);
   });
+}
+
+/**
+ * Admin: Bulk purge all listings, media configurations, and local cache.
+ * Executes batch deletions across all auctions documents and media/config subcollections.
+ */
+export async function purgeAllListings(): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    
+    // 1. Fetch and purge all auctions
+    const auctionsSnap = await getDocs(collection(db, 'auctions'));
+    auctionsSnap.docs.forEach(d => batch.delete(d.ref));
+    
+    // 2. Fetch and purge all media settings
+    const settingsSnap = await getDocs(collection(db, 'settings'));
+    settingsSnap.docs.forEach(d => batch.delete(d.ref));
+
+    // 3. Purge all media subcollections (recursive)
+    for (const auctionDoc of auctionsSnap.docs) {
+      batch.delete(doc(db, 'auctions', auctionDoc.id, 'media', 'config'));
+      const mediaSubColSnap = await getDocs(collection(db, 'auctions', auctionDoc.id, 'media'));
+      mediaSubColSnap.docs.forEach(d => batch.delete(d.ref));
+    }
+    
+    await batch.commit();
+
+    // 4. Clear localStorage
+    localStorage.clear();
+  } catch (err) {
+    console.error('Error during bulk purge:', err);
+    throw err;
+  }
 }
 
 /**

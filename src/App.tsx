@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Auction, Bid, Comment, MediaConfiguration } from './types';
-import { mediaConfig as DEFAULT_MEDIA_CONFIG } from './mediaConfig';
+import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from './mediaConfig';
 import { 
   initializeAuctionIfNotExists, 
   initializeMediaConfigIfNotExists,
@@ -14,7 +14,7 @@ import {
   toggleWatchAuction,
   createNewListing,
   MAIN_AUCTION_ID, 
-  DEFAULT_AUCTION 
+  BLANK_AUCTION 
 } from './services/auctionService';
 import { updateAuctionConfig } from './services/auctionService';
 
@@ -55,21 +55,13 @@ import {
 const AuctionAppContent: React.FC = () => {
   const { user, isAdmin } = useAuth();
 
-  const [auction, setAuction] = useState<Auction>(DEFAULT_AUCTION);
+  const [auction, setAuction] = useState<Auction>(BLANK_AUCTION);
   const [bids, setBids] = useState<Bid[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Dynamic Media Configuration
-  const [currentMedia, setCurrentMedia] = useState<MediaConfiguration>(() => {
-    try {
-      const saved = localStorage.getItem('wailtail_custom_media');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn('Could not load saved media config:', e);
-    }
-    return DEFAULT_MEDIA_CONFIG;
-  });
+  const [currentMedia, setCurrentMedia] = useState<MediaConfiguration>(BLANK_MEDIA_CONFIG);
 
   // Modals & Navigation state
   const [isBidModalOpen, setIsBidModalOpen] = useState(false);
@@ -132,7 +124,7 @@ const AuctionAppContent: React.FC = () => {
   // Extract active vehicle listing ID from route if on editor or public auction detail
   const editorMatch = currentPath.match(/\/dashboard\/listings\/([^/?#]+)\/edit/);
   const publicAuctionMatch = currentPath.match(/\/auctions\/([^/?#]+)/);
-  const routeAuctionId = editorMatch ? editorMatch[1] : publicAuctionMatch ? publicAuctionMatch[1] : MAIN_AUCTION_ID;
+  const routeAuctionId = editorMatch ? editorMatch[1] : publicAuctionMatch ? publicAuctionMatch[1] : '';
 
   const [activeAuctionId, setActiveAuctionId] = useState<string>(routeAuctionId);
   const [allAuctions, setAllAuctions] = useState<Auction[]>([]);
@@ -142,6 +134,8 @@ const AuctionAppContent: React.FC = () => {
     setIsConsignmentModalOpen(false);
     try {
       const newLot = await createNewListing('New Vehicle Listing');
+      // Optimistic state hydration for 0-lot baseline
+      setAllAuctions(prev => [...prev, newLot]);
       setActiveAuctionId(newLot.id);
       navigateTo(`/dashboard/listings/${newLot.id}/edit`);
     } catch (e) {
@@ -150,11 +144,26 @@ const AuctionAppContent: React.FC = () => {
     }
   };
 
+  const [routeToast, setRouteToast] = useState<string | null>(null);
+
   // Auto-create and redirect if user directly lands on /dashboard/listings/new
   useEffect(() => {
+    // RBAC Protection for /dashboard/listings/*
+    const isProtectedListingRoute = currentPath.startsWith('/dashboard/listings') || currentPath.includes('#/dashboard/listings');
+    if (isProtectedListingRoute) {
+      const isAuthorized = user && (user.role === 'seller' || user.role === 'admin' || isAdmin);
+      if (!isAuthorized) {
+        setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
+        navigateTo('/');
+        return;
+      }
+    }
+
     if (isNewListingRoute) {
       createNewListing('New Vehicle Listing')
         .then((newLot) => {
+          // Optimistic state hydration for 0-lot baseline
+          setAllAuctions(prev => [...prev, newLot]);
           setActiveAuctionId(newLot.id);
           window.history.replaceState({}, '', `/dashboard/listings/${newLot.id}/edit`);
           setCurrentPath(`/dashboard/listings/${newLot.id}/edit`);
@@ -163,7 +172,7 @@ const AuctionAppContent: React.FC = () => {
           console.error('Error auto-creating new listing:', err);
         });
     }
-  }, [currentPath, isNewListingRoute]);
+  }, [currentPath, isNewListingRoute, user, isAdmin]);
 
   useEffect(() => {
     if (editorMatch && editorMatch[1] && editorMatch[1] !== activeAuctionId) {
@@ -176,9 +185,7 @@ const AuctionAppContent: React.FC = () => {
   // Subscribe to all auctions catalog
   useEffect(() => {
     const unsub = subscribeToAllAuctions((list) => {
-      if (list && list.length > 0) {
-        setAllAuctions(list);
-      }
+      setAllAuctions(list || []);
     });
     return () => unsub();
   }, []);
@@ -190,7 +197,14 @@ const AuctionAppContent: React.FC = () => {
     let unsubComments = () => {};
     let unsubMedia = () => {};
 
-    const targetAuctionId = activeAuctionId || MAIN_AUCTION_ID;
+    if (!activeAuctionId && allAuctions.length === 0) {
+      setAuction(BLANK_AUCTION);
+      setCurrentMedia(BLANK_MEDIA_CONFIG);
+      setLoading(false);
+      return;
+    }
+
+    const targetAuctionId = activeAuctionId || (allAuctions.length > 0 ? allAuctions[0].id : MAIN_AUCTION_ID);
 
     const setupFirestore = async () => {
       try {
@@ -198,7 +212,7 @@ const AuctionAppContent: React.FC = () => {
         await initializeMediaConfigIfNotExists(targetAuctionId);
         
         unsubAuction = subscribeToAuction(targetAuctionId, (data) => {
-          if (data) setAuction(data);
+          setAuction(data || BLANK_AUCTION);
           setLoading(false);
         });
 
@@ -218,6 +232,8 @@ const AuctionAppContent: React.FC = () => {
             } catch (e) {
               // ignore
             }
+          } else {
+            setCurrentMedia(targetAuctionId === MAIN_AUCTION_ID ? DEFAULT_MEDIA_CONFIG : BLANK_MEDIA_CONFIG);
           }
         }, targetAuctionId);
       } catch (err) {
@@ -234,7 +250,7 @@ const AuctionAppContent: React.FC = () => {
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute]);
+  }, [activeAuctionId, isEditorRoute, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
@@ -250,9 +266,17 @@ const AuctionAppContent: React.FC = () => {
 
   const handleUpdateMediaConfig = async (newConfig: MediaConfiguration) => {
     setCurrentMedia(newConfig);
+    const targetAuctionId = auction.id?.trim() || MAIN_AUCTION_ID;
+    if (newConfig.heroImages) {
+      setAuction(prev => ({
+        ...prev,
+        heroImages: newConfig.heroImages,
+        leadHeroImage: newConfig.heroImages[0] || ''
+      }));
+    }
     try {
-      localStorage.setItem(`wailtail_custom_media_${auction.id}`, JSON.stringify(newConfig));
-      await saveMediaConfig(newConfig, auction.id);
+      localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(newConfig));
+      await saveMediaConfig(newConfig, targetAuctionId);
     } catch (e) {
       console.warn('Media configuration saved locally:', e);
     }
@@ -303,6 +327,17 @@ const AuctionAppContent: React.FC = () => {
   if (isCatalogRoute) {
     return (
       <div className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex flex-col font-sans selection:bg-red-700 selection:text-white">
+        {routeToast && (
+          <div className="fixed top-4 right-4 z-50 max-w-md bg-red-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-red-700 flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+            <span>{routeToast}</span>
+            <button
+              onClick={() => setRouteToast(null)}
+              className="text-red-200 hover:text-white p-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <Navbar
           onOpenAuth={() => setIsAuthModalOpen(true)}
           onOpenAdmin={() => setIsAdminModalOpen(true)}
@@ -325,7 +360,7 @@ const AuctionAppContent: React.FC = () => {
 
         <main className="flex-1">
           <VehicleCatalogGrid
-            auctions={allAuctions.length > 0 ? allAuctions : [auction]}
+            auctions={allAuctions}
             activeAuctionId={activeAuctionId}
             onSelectAuction={(selectedId) => {
               setActiveAuctionId(selectedId);
@@ -419,7 +454,7 @@ const AuctionAppContent: React.FC = () => {
       {/* Sticky Public Section Jump Navigation */}
       <ListingSubNav
         photoCount={currentMedia.fullGallery?.length || 0}
-        videoCount={currentMedia.videoChapters?.length || 6}
+        videoCount={currentMedia.videoChapters?.length || 0}
         commentCount={comments.length}
       />
 
@@ -474,17 +509,9 @@ const AuctionAppContent: React.FC = () => {
                     <p key={pIdx}>{p}</p>
                   ))
                 ) : (
-                  <>
-                    <p>
-                      This 1978 Porsche 911 coupe was modified in Turbo-look widebody style with steel front and rear fender flares and is finished in Guards Red over black upholstery with classic houndstooth seat inserts.
-                    </p>
-                    <p>
-                      Power comes from an air-cooled 3.0-liter flat-six mated to a Type 915 five-speed manual transaxle. Additional features include an iconic rubber-lipped Whale Tail spoiler, 16″ staggered Fuchs alloy wheels, Euro H4 headlights, Carrera hydraulic timing chain tensioners, Bilstein sport shocks, Turbo tie rods, Dansk stainless sport exhaust, and a Porsche Classic audio unit with Apple CarPlay.
-                    </p>
-                    <p>
-                      Offered with comprehensive service records, Certificate of Authenticity documentation, owner’s manuals, and clean registration in British Columbia / Alberta.
-                    </p>
-                  </>
+                  <p className="italic text-zinc-400">
+                    Detailed vehicle overview and provenance description pending.
+                  </p>
                 )}
               </div>
             </div>

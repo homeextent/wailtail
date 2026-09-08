@@ -8,25 +8,22 @@ export function extractYouTubeVideoId(urlOrId?: string): string {
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
     return trimmed;
   }
+  let extracted = '';
   if (trimmed.includes('watch?v=')) {
-    return trimmed.split('watch?v=')[1]?.split('&')[0] || '';
-  }
-  if (trimmed.includes('youtu.be/')) {
-    return trimmed.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0] || '';
-  }
-  if (trimmed.includes('/embed/')) {
+    extracted = trimmed.split('watch?v=')[1]?.split('&')[0] || '';
+  } else if (trimmed.includes('youtu.be/')) {
+    extracted = trimmed.split('youtu.be/')[1]?.split('?')[0]?.split('&')[0] || '';
+  } else if (trimmed.includes('/embed/')) {
     const after = trimmed.split('/embed/')[1] || '';
     if (!after.startsWith('videoseries')) {
-      return after.split('?')[0]?.split('&')[0] || '';
+      extracted = after.split('?')[0]?.split('&')[0] || '';
     }
+  } else if (trimmed.includes('/v/')) {
+    extracted = trimmed.split('/v/')[1]?.split('?')[0]?.split('&')[0] || '';
+  } else if (trimmed.includes('/shorts/')) {
+    extracted = trimmed.split('/shorts/')[1]?.split('?')[0]?.split('&')[0] || '';
   }
-  if (trimmed.includes('/v/')) {
-    return trimmed.split('/v/')[1]?.split('?')[0]?.split('&')[0] || '';
-  }
-  if (trimmed.includes('/shorts/')) {
-    return trimmed.split('/shorts/')[1]?.split('?')[0]?.split('&')[0] || '';
-  }
-  return '';
+  return /^[a-zA-Z0-9_-]{11}$/.test(extracted) ? extracted : '';
 }
 
 export function extractYouTubePlaylistId(url?: string): string {
@@ -51,52 +48,7 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
   videoSubtitle = "Complete high-definition video playlist showcasing the air-cooled flat-six acoustics, 915 gearbox operation, and exterior walkaround.",
   chapters
 }) => {
-  const defaultChapters: VideoChapter[] = [
-    {
-      id: "vid-1",
-      title: "1. Cold Start & 3.0L CIS Idle",
-      description: "Cold engine start showing immediate oil pressure rise, smooth CIS idle warm-up, and Dansk exhaust note.",
-      videoUrl: "https://www.youtube.com/watch?v=v9qF5yQfW9g",
-      duration: "03:45"
-    },
-    {
-      id: "vid-2",
-      title: "2. In-Cabin Driving & 915 Shifts",
-      description: "Spirited road run demonstrating crisp 1st-through-5th gear shifts, Bilstein damping, and brake firmness.",
-      videoUrl: "https://www.youtube.com/watch?v=eXb28X4vFv4",
-      duration: "06:12"
-    },
-    {
-      id: "vid-3",
-      title: "3. 360° Exterior Walkaround & Gaps",
-      description: "Detailed 360-degree exterior walkaround highlighting Whale Tail aerodynamics, paint depth, and panel gaps.",
-      videoUrl: "https://www.youtube.com/watch?v=7VvQO2s9K30",
-      duration: "04:30"
-    },
-    {
-      id: "vid-4",
-      title: "4. Underside & Chassis Lift Inspection",
-      description: "Underbody hoist inspection displaying rust-free floor pans, SSI heat exchangers, and leak-free transaxle case.",
-      videoUrl: "https://www.youtube.com/watch?v=8A8c_N7jMvY",
-      duration: "05:18"
-    },
-    {
-      id: "vid-5",
-      title: "5. Acceleration Acoustics & Flybys",
-      description: "External drive-by acoustic capture illustrating the mechanical rasp of the air-cooled flat-six under full throttle.",
-      videoUrl: "https://www.youtube.com/watch?v=yq4J1vV8v3E",
-      duration: "02:50"
-    },
-    {
-      id: "vid-6",
-      title: "6. Cabin Switchgear & Sunroof Demo",
-      description: "Full demonstration of electric sunroof, VDO gauges, PCCM audio, power windows, and heating controls.",
-      videoUrl: "https://www.youtube.com/watch?v=kYjXk8P3i4c",
-      duration: "03:15"
-    }
-  ];
-
-  const activeChapters = chapters && chapters.length > 0 ? chapters : defaultChapters;
+  const activeChapters = chapters || [];
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [hasUserInteracted, setHasUserInteracted] = useState<boolean>(false);
 
@@ -134,20 +86,24 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
       return playlistUrl;
     }
 
-    return 'https://www.youtube.com/embed/v9qF5yQfW9g?autoplay=0&rel=0';
+    return '';
   };
 
   const [activeIframeSrc, setActiveIframeSrc] = useState<string>(() => {
-    const initialChapter = (chapters && chapters.length > 0) ? chapters[0] : defaultChapters[0];
+    const initialChapter = activeChapters[0];
     return formatEmbedUrl(initialChapter, 0, false);
   });
 
   // Synchronize player when component mounts or active chapter changes
   useEffect(() => {
+    if (activeChapters.length === 0) {
+      setActiveIframeSrc('');
+      return;
+    }
     const targetChap = activeChapters[selectedIndex] || activeChapters[0];
     const src = formatEmbedUrl(targetChap, selectedIndex, hasUserInteracted);
     setActiveIframeSrc(src);
-  }, [selectedIndex, playlistUrl, chapters]);
+  }, [selectedIndex, playlistUrl, chapters, activeChapters.length]);
 
   const handleSelectVideo = (idx: number) => {
     setSelectedIndex(idx);
@@ -158,6 +114,36 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
   };
 
   const selectedChapter = activeChapters[selectedIndex] || activeChapters[0];
+
+  if (activeChapters.length === 0) {
+    return (
+      <section id="videos" className="bg-white rounded-xl border border-zinc-200/90 shadow-sm overflow-hidden scroll-mt-24">
+        <div className="p-6 sm:p-8 border-b border-zinc-100 bg-zinc-50/50 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-widest font-bold text-red-700 mb-1 flex items-center gap-1.5">
+              <Film className="w-3.5 h-3.5" />
+              <span>Video Documentation Series</span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight font-serif">
+              {videoTitle}
+            </h2>
+            {videoSubtitle && (
+              <p className="text-sm text-zinc-600 mt-1">
+                {videoSubtitle}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="p-12 text-center text-zinc-500">
+          <ListVideo className="w-10 h-10 mx-auto mb-3 text-zinc-300 stroke-[1.5]" />
+          <p className="text-sm font-medium text-zinc-500">
+            No video documentation chapters configured yet.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="videos" className="bg-white rounded-xl border border-zinc-200/90 shadow-sm overflow-hidden scroll-mt-24">
@@ -203,7 +189,7 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
               src={activeIframeSrc}
               title={selectedChapter?.title || "Vehicle Video Series"}
               className="w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
           ) : null}
@@ -242,7 +228,8 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
             {activeChapters.map((ch, idx) => {
               const isSelected = selectedIndex === idx;
               const videoId = extractYouTubeVideoId(ch.videoUrl);
-              const thumb = ch.thumbnailUrl || (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null);
+              const isValidId = /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+              const thumb = (ch.thumbnailUrl && ch.thumbnailUrl.trim()) ? ch.thumbnailUrl : (isValidId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : undefined);
 
               return (
                 <button

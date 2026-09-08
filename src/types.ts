@@ -35,6 +35,7 @@ export interface Auction {
   highBidderId?: string;
   highBidderName?: string;
   highBidderEmail?: string;
+  watchlist?: string[];
   status: 'upcoming' | 'active' | 'ended' | 'sold' | 'reserve_not_met';
   createdAt: number;
   updatedAt: number;
