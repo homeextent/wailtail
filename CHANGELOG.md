@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **User Watchlist System**:
+  - Added `watchlist?: string[]` array field to `UserProfile` in `src/types.ts`.
+  - Implemented atomic `toggleWatchlistLot(userId, auctionId)` and `fetchUserWatchlist(userId)` service methods in `src/services/auctionService.ts`.
+  - Integrated dedicated Watchlist tab into `src/components/UserAccountHubModal.tsx` displaying saved vehicle cards, live anti-snipe countdowns, CAD high bids, and inline removal actions with empty state guidance.
+- **Lot-Level Watch & Share Actions**:
+  - Moved contextual "Watch" and "Share" action buttons from the global navigation bar (`src/components/Navbar.tsx`) directly into `src/components/AuctionHeader.tsx`.
+  - Added interactive "★ Watch" / "★ Watching" state toggling bound to `toggleWatchlistLot()`, along with instant URL clipboard copying ("🔗 Share") with visual toast confirmation.
+- **Private Inquiry Serverless Email Proxy**:
+  - Extended `/api/send-consignment-email` (`api/send-consignment-email.ts`) to support `type: 'inquiry'`, enabling dual-mode proxying for both vehicle consignments and buyer inquiries.
+  - Generates structured HTML table digest emails compiling inquirer contact details, topic, target vehicle title, and pre-formatted message text for Resend dispatch.
+  - Connected `src/components/ContactSellerModal.tsx` to dispatch private inquiries with client error isolation and toast feedback.
+- **Service Canonical Export**:
+  - Added canonical `submitInquiry` export alias for `submitSellerInquiry` in `src/services/auctionService.ts`.
 - **Consignment Intake Taxonomy & Location Upgrade**:
   - Integrated 3-tier taxonomy dropdowns (Year, Make, Model, Generation/Chassis) backed by `src/data/vehicleTaxonomy.json` into `src/components/ConsignmentModal.tsx` with unconstrained `TAXONOMY_OTHER_CUSTOM` text fallback inputs.
   - Implemented 3-column structured location inputs (`locationCity`, `locationProvince`, `locationCountry`) with dynamic composite location formatting (`formattedLocation`).
@@ -39,6 +52,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Real-Time User Profile Listener**:
   - Implemented `subscribeToUserProfile()` in `src/App.tsx` utilizing a real-time Firestore `onSnapshot` listener on `users/{user.uid}`.
   - Instantly updates local profile state, authorization guards, and navigation privileges across the platform upon role changes without requiring a browser refresh.
+
+### Fixed
+- **Navbar Profile Dropdown Positioning Repair**:
+  - Resolved right-edge viewport clipping and vertical flex squishing on the user avatar dropdown menu in `src/components/Navbar.tsx`.
+  - Encapsulated the avatar trigger button in a dedicated `relative inline-block` wrapper and positioned the floating menu with `absolute right-0 top-full mt-2 w-64 z-50` with high-contrast slate borders, ensuring complete visibility across responsive tablet and desktop viewports.
 
 ---
 

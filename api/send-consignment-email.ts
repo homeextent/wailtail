@@ -1,6 +1,7 @@
 /**
  * Vercel Serverless Function: /api/send-consignment-email
- * Proxies new consignment applications to the platform admin inbox.
+ * Proxies new consignment applications and private vehicle inquiries
+ * to the platform admin inbox.
  */
 
 function sendJson(res: any, status: number, data: any) {
@@ -48,6 +49,85 @@ async function parseRequestBody(req: any): Promise<any> {
   });
 }
 
+async function sendEmailNotification({
+  to,
+  subject,
+  html
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}) {
+  const from = process.env.RESEND_FROM_EMAIL || 'Wailtail Curation <consignments@wailtail.com>';
+
+  // Dispatch via Resend (SDK if available or direct Resend HTTP API)
+  if (process.env.RESEND_API_KEY) {
+    try {
+      // @ts-ignore
+      const { Resend } = await import('resend').catch(() => ({ Resend: null }));
+      if (Resend) {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        if (resend?.emails?.send) {
+          const resendData = await resend.emails.send({
+            from,
+            to: [to],
+            subject,
+            html
+          });
+          return { success: true, provider: 'resend-sdk', data: resendData };
+        }
+      }
+    } catch (sdkErr) {
+      console.warn('[send-email] Resend SDK error, falling back to HTTP API:', sdkErr);
+    }
+
+    const resendRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        subject,
+        html
+      })
+    });
+
+    if (!resendRes.ok) {
+      const errorText = await resendRes.text();
+      console.warn('[send-email] Resend HTTP delivery returned non-ok:', errorText);
+    }
+    return { success: resendRes.ok, provider: 'resend-http' };
+  } else if (process.env.SENDGRID_API_KEY) {
+    // Dispatch via SendGrid if API key is present
+    const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: process.env.SENDGRID_FROM_EMAIL || 'consignments@wailtail.com', name: 'Wailtail Curation' },
+        subject,
+        content: [{ type: 'text/html', value: html }]
+      })
+    });
+
+    if (!sgRes.ok) {
+      const errorText = await sgRes.text();
+      console.warn('[send-email] SendGrid delivery returned non-ok:', errorText);
+    }
+    return { success: sgRes.ok, provider: 'sendgrid' };
+  } else {
+    // Development or unconfigured mail provider: record mock delivery
+    console.log(`[send-email] Simulated email dispatch to ${to} for "${subject}"`);
+    return { success: true, provider: 'simulated' };
+  }
+}
+
 export default async function handler(req: any, res: any) {
   // Handle CORS Preflight
   if (req.method === 'OPTIONS') {
@@ -69,6 +149,130 @@ export default async function handler(req: any, res: any) {
 
   try {
     const payload = await parseRequestBody(req);
+    const type = payload?.type || 'consignment';
+
+    const adminEmail =
+      process.env.ADMIN_NOTIFICATION_EMAIL ||
+      process.env.ADMIN_EMAIL ||
+      process.env.WAILTAIL_ADMIN_EMAIL ||
+      'contact@wailtail.com';
+
+    // Handle Private Vehicle Inquiries
+    if (type === 'inquiry') {
+      const {
+        name,
+        email,
+        phone,
+        topic,
+        message,
+        vehicleTitle,
+        auctionTitle
+      } = payload || {};
+
+      if (!email || !message) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required inquiry parameters: email and message are required.'
+        });
+      }
+
+      const inquiryName = name || 'Registered Member';
+      const inquiryEmail = email;
+      const inquiryPhone = phone || 'Not provided';
+      const inquiryTopic = topic || 'General Vehicle Question';
+      const targetVehicleTitle = vehicleTitle || auctionTitle || 'Wailtail Auction Lot';
+      const inquiryMessage = message || '';
+
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>New Private Inquiry Received — Wailtail Auctions</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #181f25; }
+    .container { max-width: 620px; margin: 24px auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .header { background-color: #121619; padding: 24px; text-align: center; border-bottom: 3px solid #b91c1c; }
+    .brand { font-size: 24px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-top: 4px; }
+    .body { padding: 32px 28px; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; background-color: #fef3c7; color: #92400e; }
+    .h1 { font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 16px 0; }
+    .inquiry-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .inquiry-table th, .inquiry-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    .inquiry-table tr:last-child th, .inquiry-table tr:last-child td { border-bottom: none; }
+    .inquiry-table th { width: 35%; color: #64748b; font-weight: 600; background-color: #f1f5f9; }
+    .inquiry-table td { color: #0f172a; font-weight: 700; }
+    .footer { background-color: #f8fafc; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">New Private Inquiry Received — Wailtail Auctions</div>
+    </div>
+    <div class="body">
+      <div class="badge">PRIVATE BUYER INQUIRY</div>
+      <h1 class="h1">New Private Inquiry Received — Wailtail Auctions</h1>
+      <p style="font-size: 14px; color: #475569; margin-top: 0;">
+        A prospective buyer has submitted a private inquiry regarding an active vehicle listing on Wailtail.
+      </p>
+
+      <table class="inquiry-table">
+        <tbody>
+          <tr>
+            <th>Inquirer Name</th>
+            <td>${inquiryName}</td>
+          </tr>
+          <tr>
+            <th>Email</th>
+            <td><a href="mailto:${inquiryEmail}">${inquiryEmail}</a></td>
+          </tr>
+          <tr>
+            <th>Phone</th>
+            <td>${inquiryPhone}</td>
+          </tr>
+          <tr>
+            <th>Inquiry Topic</th>
+            <td>${inquiryTopic}</td>
+          </tr>
+          <tr>
+            <th>Target Vehicle Title</th>
+            <td>${targetVehicleTitle}</td>
+          </tr>
+          <tr>
+            <th>Inquiry Message</th>
+            <td style="font-weight: 400; line-height: 1.5; white-space: pre-wrap;">${inquiryMessage}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="footer">
+      <p>Wailtail Auction Platform • Private Buyer Inquiries</p>
+      <p>Submitted at: ${new Date().toUTCString()}</p>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      const subject = `[Private Inquiry] ${inquiryTopic} — ${targetVehicleTitle} (${inquiryName})`;
+      await sendEmailNotification({
+        to: adminEmail,
+        subject,
+        html: htmlContent
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Inquiry email notification processed successfully.',
+        recipient: adminEmail,
+        vehicleTitle: targetVehicleTitle
+      });
+    }
+
+    // Handle Consignment Applications (type === 'consignment')
     const {
       year,
       make,
@@ -98,11 +302,6 @@ export default async function handler(req: any, res: any) {
         error: 'Missing required consignment parameters: sellerEmail, make, model are required.'
       });
     }
-
-    const adminEmail =
-      process.env.ADMIN_EMAIL ||
-      process.env.WAILTAIL_ADMIN_EMAIL ||
-      'contact@wailtail.com';
 
     const vehicleTitle = [year, make, model, generation ? `(${generation})` : '']
       .filter(Boolean)
@@ -200,50 +399,12 @@ export default async function handler(req: any, res: any) {
 </html>
     `.trim();
 
-    // Dispatch via Resend if API key is present
-    if (process.env.RESEND_API_KEY) {
-      const resendRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: process.env.RESEND_FROM_EMAIL || 'Wailtail Curation <consignments@wailtail.com>',
-          to: [adminEmail],
-          subject: `[Consignment Intake] ${vehicleTitle} - ${sellerName}`,
-          html: htmlContent
-        })
-      });
-
-      if (!resendRes.ok) {
-        const errorText = await resendRes.text();
-        console.warn('[send-consignment-email] Resend delivery returned non-ok:', errorText);
-      }
-    } else if (process.env.SENDGRID_API_KEY) {
-      // Dispatch via SendGrid if API key is present
-      const sgRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          personalizations: [{ to: [{ email: adminEmail }] }],
-          from: { email: process.env.SENDGRID_FROM_EMAIL || 'consignments@wailtail.com', name: 'Wailtail Curation' },
-          subject: `[Consignment Intake] ${vehicleTitle} - ${sellerName}`,
-          content: [{ type: 'text/html', value: htmlContent }]
-        })
-      });
-
-      if (!sgRes.ok) {
-        const errorText = await sgRes.text();
-        console.warn('[send-consignment-email] SendGrid delivery returned non-ok:', errorText);
-      }
-    } else {
-      // Development or unconfigured mail provider: record mock delivery
-      console.log(`[send-consignment-email] Simulated email dispatch to ${adminEmail} for ${vehicleTitle}`);
-    }
+    const subject = `[Consignment Intake] ${vehicleTitle} - ${sellerName}`;
+    await sendEmailNotification({
+      to: adminEmail,
+      subject,
+      html: htmlContent
+    });
 
     return sendJson(res, 200, {
       success: true,
@@ -252,10 +413,11 @@ export default async function handler(req: any, res: any) {
       vehicleTitle
     });
   } catch (err: any) {
-    console.error('[send-consignment-email] Error handling consignment email:', err);
+    console.error('[send-consignment-email] Error handling email notification:', err);
     return sendJson(res, 500, {
       success: false,
-      error: err?.message || 'Failed to process consignment email notification.'
+      error: err?.message || 'Failed to process email notification.'
     });
   }
 }
+

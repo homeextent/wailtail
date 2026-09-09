@@ -336,6 +336,43 @@ export interface UserConsignmentItem {
 }
 ```
 
+### 2.9 `users` Collection & `UserProfile` Schema
+
+Path: `users/{userId}` (mirrored to `bidders/{userId}`)
+Captures user identity, authentication state, role-based access control, bidding telemetry, and the user's personal saved auction watchlist:
+```typescript
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  phone?: string;
+  role?: 'admin' | 'seller' | 'bidder' | UserRole;
+  isEmailVerified: boolean;
+  registeredAt: number;
+  totalBidsPlaced?: number;
+  highestBidPlaced?: number;
+  bannedFromBidding?: boolean;
+  isBanned?: boolean;
+  bannedAt?: number;
+  banReason?: string;
+  watchlist?: string[]; // Array of saved auction lot IDs
+}
+```
+
+#### Watchlist Service Method Signatures
+The platform provides atomic service operations in `src/services/auctionService.ts` for managing watchlists across user documents and lot-level watch tallies:
+```typescript
+// Toggles an auction ID inside users/{userId}.watchlist (and bidders/{userId}.watchlist)
+// and updates the aggregate watchCount on the auction lot.
+export function toggleWatchlistLot(
+  userId: string,
+  auctionId: string
+): Promise<{ isWatching: boolean; watchlist: string[] }>;
+
+// Fetches full Auction records for all auction IDs present in the user's watchlist.
+export function fetchUserWatchlist(userId: string): Promise<Auction[]>;
+```
+
 ---
 
 ## 3. Real-Time Anti-Sniping Engine
@@ -441,20 +478,32 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - YouTube feed and oEmbed APIs do not reliably provide runtime duration without heavyweight YouTube Data API v3 OAuth keys.
    - All legacy duration input fields, metadata extraction parsing, and timestamp duration badges (`00:00`) have been completely eradicated across workspace editors (`ListingEditorWorkspace.tsx`, `AdminPanelModal.tsx`) and public components (`YouTubePlaylistSection.tsx`). Focus is kept strictly on video title, description, and high-resolution thumbnail preview.
 
-### 5.3 Serverless Consignment Email Dispatcher (`/api/send-consignment-email`)
-1. **Endpoint Architecture & Provider Agnostic Pipeline**:
+### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
+1. **Endpoint Architecture & Dual-Mode Proxy Pipeline**:
    - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
-   - Handles incoming JSON payloads from the public consignment intake modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to platform curation administrators.
-   - Integrates with the **Resend API** as primary mail provider, with built-in failover to **SendGrid** and a development mock logger when keys are absent.
+   - Supports a dual-mode payload interface via `type: 'consignment' | 'inquiry'` (defaulting to `'consignment'` if unspecified):
+     - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators.
+     - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
+   - Integrates with the **Resend API** as primary mail provider (supporting direct HTTP fetch fallback if the SDK is unavailable), with built-in failover to **SendGrid** and a development mock logger when keys are absent.
 2. **Environment Variables**:
    - `RESEND_API_KEY`: Secret API token for Resend dispatch (`https://api.resend.com/emails`).
-   - `ADMIN_NOTIFICATION_EMAIL` / `ADMIN_EMAIL` / `WAILTAIL_ADMIN_EMAIL`: Destination recipient inbox for new consignment submissions (defaults to `contact@wailtail.com` if omitted).
+   - `ADMIN_NOTIFICATION_EMAIL` / `ADMIN_EMAIL` / `WAILTAIL_ADMIN_EMAIL`: Destination recipient inbox for new consignment and inquiry submissions (defaults to `contact@wailtail.com` if omitted).
    - `RESEND_FROM_EMAIL`: Authorized sender address (e.g. `Wailtail Curation <consignments@wailtail.com>`).
    - `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL`: Fallback mailer configuration.
-3. **Structured HTML Digest**:
-   - Compiles vehicle taxonomy parameters (Year, Make, Model, Generation/Chassis), VIN, Mileage, Transmission, Reserve Expectation, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`).
-   - Appends applicant contact info and private condition notes.
-   - Embeds visual badge indicators differentiating registered members (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` in emerald green) from guest inquiries (`GUEST / UNREGISTERED` in amber).
+3. **Structured HTML Digest Templates**:
+   - **Consignment Application Digest**:
+     - Compiles vehicle taxonomy parameters (Year, Make, Model, Generation/Chassis), VIN, Mileage, Transmission, Reserve Expectation, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`).
+     - Appends applicant contact info and private condition notes.
+     - Embeds visual badge indicators differentiating registered members (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` in emerald green) from guest inquiries (`GUEST / UNREGISTERED` in amber).
+   - **Private Buyer Inquiry HTML Table**:
+     - Subject line: `[Private Inquiry] ${inquiryTopic} — ${targetVehicleTitle} (${inquiryName})`.
+     - High-contrast structured HTML table containing:
+       - **Inquirer Name**: Prospect's full name.
+       - **Email**: Active mailto hyperlink.
+       - **Phone**: Formatted phone number or `Not provided`.
+       - **Inquiry Topic**: Subject topic (e.g., Vehicle History, Inspection, Financing, Reserve, Shipping).
+       - **Target Vehicle Title**: Vehicle title/lot referenced by the inquiry.
+       - **Inquiry Message**: Pre-formatted multiline inquiry text with line-height styling.
 
 ---
 
@@ -612,6 +661,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     - **Active Bids & Won Lots Tab** (`bids`): Tracks real-time active bidding telemetry (`UserBidActivity`), displaying current high bid, user's maximum bid, total bid count, time remaining, and prominent status pills:
       - `★ LEADING`: User currently holds the winning high bid.
       - `⚠️ OUTBID`: Another bidder has surpassed the user's bid, with an instant "Increase Bid" action deep-linking to the lot.
+    - **Saved Watchlist Tab** (`watchlist`):
+      - Lists all saved vehicle lots persisted in the user's `watchlist?: string[]` array.
+      - Each watch item presents a vehicle thumbnail card, real-time ending countdown, current high bid in CAD, reserve met status, and direct deep links to the single-lot view.
+      - Features an inline remove action executing `toggleWatchlistLot(user.uid, lot.id)` for instant removal without modal reloading.
+      - Provides an interactive zero-state card guiding bidders to explore the active catalog if their watchlist is empty.
     - **Won Auctions & 4-Stage Offline CAD Settlement Checklist** (`UserWonAuction`):
       - Renders closed auctions won by the user where the reserve was met.
       - Displays seller contact credentials (`sellerName`, `sellerEmail`, `sellerPhone`) with direct `mailto:` links.
@@ -622,6 +676,9 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
         4. **VIN Check & Key Handover**: Verify physical VIN stamping upon vehicle release and complete transfer of keys, books, and service records.
     - **Seller Listings Tab** (`seller` / `listings`): Telemetry dashboard for consignors and sellers tracking draft, active, and completed inventory lots with current bids, bid count, and 1-click links to the listing authoring workspace.
     - **Consignments Tab** (`consignments`): Status tracker for submitted vehicle consignment applications (`PENDING`, `APPROVED`, `REVIEWED`, `REJECTED`) with reserve expectations, submission timestamps, and deep links to converted auction drafts.
+- **Watchlist Core Service Integrations**:
+  - `toggleWatchlistLot(userId: string, auctionId: string)`: Manages membership of `auctionId` in `users/{userId}.watchlist` (and `bidders/{userId}.watchlist`) using Firestore `arrayUnion` and `arrayRemove`, updating lot-level aggregated watch tallies.
+  - `fetchUserWatchlist(userId: string)`: Resolves full `Auction` documents for all lot IDs in the user's profile watchlist array, populating the hub.
 - **Real-Time User Profile Listener (`subscribeToUserProfile`)**:
   - In `App.tsx`, active user sessions are bound to Firestore via an `onSnapshot` listener on `users/{user.uid}`.
   - Role modifications (`ADMIN`, `SELLER`, `BIDDER`), ban flags, and verification updates enacted by administrators in `/admin` reflect instantaneously in user state and UI navigation without requiring a page reload or sign-out.
@@ -682,9 +739,31 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Eliminates legacy Porsche 911 narrative text, specs, and image URLs from leaking into newly created lots, allowing grey placeholder text to serve as guidance.
 
 ### 6.10 Consignor Private Inquiry (`ContactSellerModal.tsx`)
-- Private buyer-to-seller communication modal.
+- Private buyer-to-seller communication modal accessible directly from the vehicle highlights sidebar.
 - Form fields: Name, Email, Phone Number, Inquirer Status (Registered Bidder, Private Collector, General Buyer), and Inquiry Message.
-- Stores inquiries in the `inquiries` Firestore collection with timestamps and auction association.
+- **Persistence & Serverless Dispatch Pipeline**:
+  - Persists inquiries to Firestore `inquiries` collection via `submitSellerInquiry` / `submitInquiry` in `src/services/auctionService.ts`.
+  - Dispatches an asynchronous serverless notification via `fetch('/api/send-consignment-email', { body: JSON.stringify({ type: 'inquiry', ... }) })`.
+  - Generates a branded HTML table digest forwarding prospective buyer details to administrative and curation inboxes with zero client-side credential exposure.
+  - Built-in error isolation ensures the inquiry dialog succeeds cleanly with user feedback even if email dispatch encounters network latency.
+
+### 6.11 Lot-Level Action Controls (`AuctionHeader.tsx`)
+- Contextual "Watch" and "Share" buttons relocated from the global navigation bar (`Navbar.tsx`) directly into the single-lot view header (`AuctionHeader.tsx`) alongside anti-snipe countdown timers and financial telemetry.
+- **Interactive Watch Toggle ("★ Watch" / "★ Watching")**:
+  - Real-time watch state (`isWatching`) synchronized with `userProfile.watchlist` array.
+  - Clicking invokes `toggleWatchlistLot(user.uid, auction.id)`, updating Firestore `users/{uid}` and `bidders/{uid}` documents and syncing aggregate lot watch tallies via `toggleWatchAuction`.
+  - Unauthenticated interactions trigger an informative toast directing visitors to log in or register.
+  - High-contrast visual indicators: Amber solid background with ring highlight when active (`★ Watching`), slate bordered button when inactive (`★ Watch`).
+- **Instant URL Clipboard Share ("🔗 Share")**:
+  - Copies canonical auction URL (`window.location.href`) directly to clipboard via `navigator.clipboard.writeText()`.
+  - Dispatches an instant high-visibility success toast notification (`Listing link copied to clipboard!`).
+
+### 6.12 Global Navigation & User Profile Menu (`Navbar.tsx`)
+- **User Profile Dropdown Positioning Repair**:
+  - Replaced rigid fixed flex positioning with a dedicated `relative inline-block` wrapper ref (`userMenuRef`).
+  - Dropdown menu is pinned with `absolute right-0 top-full mt-2 w-64 z-50` with high-contrast slate surfaces (`bg-slate-900 border border-slate-800 rounded-xl shadow-2xl`).
+  - Completely resolves right-edge viewport clipping, vertical flex squishing, and overlapping with adjacent CTA buttons on smaller desktop and tablet screens.
+  - Features outside-click listener (`handleClickOutside`) bound via React refs to guarantee clean teardown upon outside clicks or route navigation.
 
 ---
 

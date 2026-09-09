@@ -93,6 +93,7 @@ export interface UserProfile {
   isBanned?: boolean;
   bannedAt?: number;
   banReason?: string;
+  watchlist?: string[];
 }
 
 export interface BidderProfile extends UserProfile {

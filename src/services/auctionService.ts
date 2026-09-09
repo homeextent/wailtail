@@ -1560,6 +1560,143 @@ export async function toggleWatchAuction(auctionId: string, isWatching: boolean)
 }
 
 /**
+ * Toggle a lot in the user's personal saved watchlist array in Firestore (users/{uid}).
+ */
+export async function toggleWatchlistLot(
+  userId: string,
+  auctionId: string
+): Promise<{ isWatching: boolean; watchlist: string[] }> {
+  const cleanUid = userId?.trim();
+  const cleanAuctionId = auctionId?.trim();
+  if (!cleanUid || !cleanAuctionId) {
+    throw new Error('User ID and Auction ID are required to toggle watchlist.');
+  }
+
+  const userRef = doc(db, 'users', cleanUid);
+  const snap = await getDoc(userRef);
+  let currentList: string[] = [];
+
+  if (snap.exists()) {
+    const data = snap.data() as UserProfile;
+    currentList = Array.isArray(data.watchlist) ? data.watchlist : [];
+  }
+
+  const isCurrentlyWatching = currentList.includes(cleanAuctionId);
+  const nextIsWatching = !isCurrentlyWatching;
+
+  if (isCurrentlyWatching) {
+    try {
+      await updateDoc(userRef, {
+        watchlist: arrayRemove(cleanAuctionId)
+      });
+    } catch {
+      await setDoc(userRef, { watchlist: currentList.filter(id => id !== cleanAuctionId) }, { merge: true });
+    }
+
+    try {
+      const bidderRef = doc(db, 'bidders', cleanUid);
+      const bSnap = await getDoc(bidderRef);
+      if (bSnap.exists()) {
+        await updateDoc(bidderRef, { watchlist: arrayRemove(cleanAuctionId) });
+      }
+    } catch {
+      // ignore
+    }
+  } else {
+    try {
+      await updateDoc(userRef, {
+        watchlist: arrayUnion(cleanAuctionId)
+      });
+    } catch {
+      await setDoc(userRef, { watchlist: [...currentList, cleanAuctionId] }, { merge: true });
+    }
+
+    try {
+      const bidderRef = doc(db, 'bidders', cleanUid);
+      const bSnap = await getDoc(bidderRef);
+      if (bSnap.exists()) {
+        await updateDoc(bidderRef, { watchlist: arrayUnion(cleanAuctionId) });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Synchronize auction aggregate watchCount
+  try {
+    await toggleWatchAuction(cleanAuctionId, nextIsWatching);
+  } catch (err) {
+    console.warn('Failed to sync auction watchCount:', err);
+  }
+
+  const updatedWatchlist = nextIsWatching
+    ? [...currentList.filter(id => id !== cleanAuctionId), cleanAuctionId]
+    : currentList.filter(id => id !== cleanAuctionId);
+
+  return { isWatching: nextIsWatching, watchlist: updatedWatchlist };
+}
+
+/**
+ * Fetch all saved vehicle auctions in a user's watchlist array.
+ */
+export async function fetchUserWatchlist(userId: string): Promise<Auction[]> {
+  const cleanUid = userId?.trim();
+  if (!cleanUid) return [];
+
+  try {
+    const userRef = doc(db, 'users', cleanUid);
+    const snap = await getDoc(userRef);
+    let watchlistIds: string[] = [];
+
+    if (snap.exists()) {
+      const data = snap.data() as UserProfile;
+      watchlistIds = Array.isArray(data.watchlist) ? data.watchlist : [];
+    } else {
+      const bidderRef = doc(db, 'bidders', cleanUid);
+      const bSnap = await getDoc(bidderRef);
+      if (bSnap.exists()) {
+        const bData = bSnap.data() as UserProfile;
+        watchlistIds = Array.isArray(bData.watchlist) ? bData.watchlist : [];
+      }
+    }
+
+    if (!watchlistIds || watchlistIds.length === 0) {
+      return [];
+    }
+
+    const auctionPromises = watchlistIds.map(async (lotId) => {
+      try {
+        const lotRef = doc(db, 'auctions', lotId);
+        const lotSnap = await getDoc(lotRef);
+        if (lotSnap.exists()) {
+          const data = lotSnap.data() as Auction;
+          let heroImgs: string[] = Array.isArray(data.heroImages) ? data.heroImages : [];
+          if (heroImgs.length === 0 && lotId === MAIN_AUCTION_ID) {
+            heroImgs = DEFAULT_MEDIA_CONFIG.heroImages;
+          }
+          const leadHero = data.leadHeroImage || heroImgs[0] || '';
+          return {
+            ...data,
+            id: lotSnap.id,
+            heroImages: heroImgs,
+            leadHeroImage: leadHero
+          } as Auction;
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch watchlisted auction "${lotId}":`, err);
+      }
+      return null;
+    });
+
+    const results = await Promise.all(auctionPromises);
+    return results.filter((a): a is Auction => a !== null);
+  } catch (err) {
+    console.error('Error fetching user watchlist:', err);
+    return [];
+  }
+}
+
+/**
  * Submit Seller Inquiry (Contact Seller)
  */
 export async function submitSellerInquiry(inquiry: {
@@ -1602,6 +1739,8 @@ export async function submitSellerInquiry(inquiry: {
     vehicleTitle: inquiry.vehicleTitle
   }).catch(err => console.warn('Inquiry email notice:', err));
 }
+
+export const submitInquiry = submitSellerInquiry;
 
 
 /**

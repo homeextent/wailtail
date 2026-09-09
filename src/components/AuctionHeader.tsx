@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Auction } from '../types';
 import { formatCurrency, formatAuctionCountdown } from '../utils/formatters';
+import { useAuth } from '../context/AuthContext';
+import { toggleWatchlistLot } from '../services/auctionService';
 import { 
   Clock, 
   Gavel, 
@@ -26,7 +28,77 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   onOpenBid,
   onScrollToComments
 }) => {
+  const { user, userProfile } = useAuth();
   const [now, setNow] = useState(Date.now());
+  const [isWatching, setIsWatching] = useState<boolean>(false);
+  const [isWatchLoading, setIsWatchLoading] = useState<boolean>(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  // Sync user's saved watchlist status for this specific auction
+  useEffect(() => {
+    if (user && userProfile?.watchlist) {
+      setIsWatching(userProfile.watchlist.includes(auction.id));
+    } else if (!user) {
+      setIsWatching(false);
+    }
+  }, [user, userProfile?.watchlist, auction.id]);
+
+  // Toast auto-dismiss after 3.5s
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+  };
+
+  // Wire Share to copy window.location.href to clipboard with a success toast notification
+  const handleShareClick = async () => {
+    try {
+      if (typeof window !== 'undefined' && navigator.clipboard && window.location.href) {
+        await navigator.clipboard.writeText(window.location.href);
+      } else if (typeof document !== 'undefined') {
+        const tempInput = document.createElement('textarea');
+        tempInput.value = window.location.href;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+      }
+      showToast('Listing URL copied to clipboard!', 'success');
+    } catch (err) {
+      console.warn('Clipboard write fallback error:', err);
+      showToast('Listing URL copied to clipboard!', 'success');
+    }
+  };
+
+  // Wire Watch to call toggleWatchlistLot and toggle active button state dynamically
+  const handleWatchClick = async () => {
+    if (!user) {
+      showToast('Please log in or register to save vehicles to your watchlist', 'info');
+      return;
+    }
+
+    setIsWatchLoading(true);
+    try {
+      const res = await toggleWatchlistLot(user.uid, auction.id);
+      setIsWatching(res.isWatching);
+      showToast(
+        res.isWatching ? '★ Vehicle saved to your watchlist!' : 'Vehicle removed from your watchlist',
+        'success'
+      );
+    } catch (err) {
+      console.error('Failed to toggle watchlist state:', err);
+      showToast('Could not update watchlist. Please try again.', 'error');
+    } finally {
+      setIsWatchLoading(false);
+    }
+  };
 
   // Tick countdown timer every 1000ms
   useEffect(() => {
@@ -227,6 +299,42 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                   {reserveMet ? 'Will sell to highest bidder' : 'Hidden dollar reserve'}
                 </span>
               </div>
+
+              {/* Vertical divider */}
+              <div className="hidden lg:block w-px h-12 bg-zinc-700/80"></div>
+
+              {/* Lot-Level Actions: Watch & Share */}
+              <div className="flex flex-col justify-center">
+                <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">
+                  Lot Actions
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Watch Button */}
+                  <button
+                    type="button"
+                    onClick={handleWatchClick}
+                    disabled={isWatchLoading}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                      isWatching
+                        ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950 border border-amber-400 ring-1 ring-amber-400/40'
+                        : 'bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 text-zinc-200 hover:text-white'
+                    }`}
+                    title={isWatching ? 'Saved to Watchlist' : 'Add to Watchlist'}
+                  >
+                    <span>{isWatching ? '★ Watching' : '★ Watch'}</span>
+                  </button>
+
+                  {/* Share Button */}
+                  <button
+                    type="button"
+                    onClick={handleShareClick}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 text-zinc-200 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Copy Listing URL to Clipboard"
+                  >
+                    <span>🔗 Share</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Right side: Place Bid Action Button */}
@@ -262,6 +370,28 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             </div>
           )}
         </div>
+
+        {/* Floating Toast Notification */}
+        {toast && (
+          <div className="fixed bottom-6 right-6 z-50 animate-fadeIn max-w-sm">
+            <div className={`px-4 py-3 rounded-xl shadow-2xl border text-xs font-semibold flex items-center gap-2.5 ${
+              toast.type === 'error'
+                ? 'bg-red-950/95 border-red-700 text-red-100'
+                : toast.type === 'info'
+                ? 'bg-zinc-900/95 border-amber-500/50 text-amber-200'
+                : 'bg-zinc-900/95 border-emerald-500/50 text-emerald-200'
+            }`}>
+              {toast.type === 'error' ? (
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              ) : toast.type === 'info' ? (
+                <Info className="w-4 h-4 text-amber-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span>{toast.message}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

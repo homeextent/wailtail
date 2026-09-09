@@ -102,9 +102,9 @@ const AuctionAppContent: React.FC = () => {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
   const [isAccountHubOpen, setIsAccountHubOpen] = useState(false);
-  const [accountHubActiveTab, setAccountHubActiveTab] = useState<'bids' | 'listings' | 'consignments'>('bids');
+  const [accountHubActiveTab, setAccountHubActiveTab] = useState<'bids' | 'listings' | 'consignments' | 'watchlist'>('bids');
 
-  const handleOpenAccountHub = (tab: 'bids' | 'listings' | 'consignments' = 'bids') => {
+  const handleOpenAccountHub = (tab: 'bids' | 'listings' | 'consignments' | 'watchlist' = 'bids') => {
     setIsAccountHubOpen(true);
     setAccountHubActiveTab(tab);
   };
