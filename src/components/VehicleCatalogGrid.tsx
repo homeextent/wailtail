@@ -28,6 +28,15 @@ interface VehicleCatalogGridProps {
   isAdmin?: boolean;
 }
 
+export const isLive = (status?: string | null): boolean =>
+  status === 'live' || status === 'ending_soon' || status === 'active';
+
+export const isUpcoming = (status?: string | null): boolean =>
+  status === 'upcoming' || status === 'preview' || status === 'draft' || !status;
+
+export const isEnded = (status?: string | null): boolean =>
+  status === 'ended' || status === 'sold' || status === 'reserve_not_met';
+
 export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   auctions,
   activeAuctionId,
@@ -41,9 +50,9 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'live' | 'upcoming' | 'ended'>('all');
 
   const filteredAuctions = auctions.filter((lot) => {
-    if (filterStatus === 'live' && lot.status !== 'live') return false;
-    if (filterStatus === 'upcoming' && (lot.status && lot.status !== 'upcoming')) return false;
-    if (filterStatus === 'ended' && lot.status !== 'ended') return false;
+    if (filterStatus === 'live' && !isLive(lot.status)) return false;
+    if (filterStatus === 'upcoming' && !isUpcoming(lot.status)) return false;
+    if (filterStatus === 'ended' && !isEnded(lot.status)) return false;
 
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
@@ -144,7 +153,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live ({auctions.filter((a) => a.status === 'live').length})
+                Live ({auctions.filter((a) => isLive(a.status)).length})
               </button>
               <button
                 type="button"
@@ -155,7 +164,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Upcoming ({auctions.filter((a) => a.status === 'upcoming' || !a.status).length})
+                Upcoming ({auctions.filter((a) => isUpcoming(a.status)).length})
               </button>
               <button
                 type="button"
@@ -166,7 +175,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Ended ({auctions.filter((a) => a.status === 'ended').length})
+                Ended ({auctions.filter((a) => isEnded(a.status)).length})
               </button>
             </div>
           </div>

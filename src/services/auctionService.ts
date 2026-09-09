@@ -41,8 +41,45 @@ import { sendBidPlacedEmail, sendOutbidAlertEmail, sendSellerInquiryEmail } from
 
 export const MAIN_AUCTION_ID = 'wailtail-1978-porsche-911';
 export const MEDIA_CONFIG_DOC_ID = 'main-media-config';
+export const GLOBAL_BRANDING_STORAGE_KEY = 'wailtail_global_branding';
 export const ANTI_SNIPING_WINDOW_MS = 2 * 60 * 1000; // 2 minutes in ms
 export const ANTI_SNIPING_EXTENSION_MS = 2 * 60 * 1000; // 2 minutes extension
+
+export interface GlobalBrandingSettings {
+  siteLogo?: string;
+  siteName?: string;
+  siteTagline?: string;
+  defaultStartingBid?: number;
+  defaultMinIncrement?: number;
+  currency?: string;
+  updatedAt?: number;
+}
+
+/**
+ * Synchronously retrieves stored global branding from localStorage with robust try/catch fallback.
+ */
+export function getStoredGlobalBranding(): { siteLogo: string; siteName: string; siteTagline: string } {
+  try {
+    const raw = localStorage.getItem(GLOBAL_BRANDING_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          siteLogo: typeof parsed.siteLogo === 'string' ? parsed.siteLogo : '',
+          siteName: typeof parsed.siteName === 'string' && parsed.siteName.trim() !== '' ? parsed.siteName : 'wailtail',
+          siteTagline: typeof parsed.siteTagline === 'string' && parsed.siteTagline.trim() !== '' ? parsed.siteTagline : 'Single-Car Auctions'
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to parse cached global branding from localStorage:', err);
+  }
+  return {
+    siteLogo: '',
+    siteName: 'wailtail',
+    siteTagline: 'Single-Car Auctions'
+  };
+}
 
 /**
  * Helper to prevent mutations from hanging indefinitely
@@ -330,7 +367,20 @@ export function subscribeToAuction(
   const auctionRef = doc(db, 'auctions', targetId);
   return onSnapshot(auctionRef, (snap) => {
     if (snap.exists()) {
-      callback(snap.data() as Auction);
+      const data = snap.data() as Auction;
+      if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
+        try {
+          const cached = getStoredGlobalBranding();
+          localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify({
+            siteLogo: data.siteLogo !== undefined ? data.siteLogo : cached.siteLogo,
+            siteName: data.siteName || cached.siteName,
+            siteTagline: data.siteTagline || cached.siteTagline
+          }));
+        } catch {
+          // ignore
+        }
+      }
+      callback(data);
     } else {
       callback(null);
     }
@@ -1028,20 +1078,315 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
 }
 
 /**
+ * Admin: Update status of a consignment application in consignment_applications.
+ */
+export async function updateConsignmentStatus(
+  appId: string,
+  status: 'pending' | 'approved' | 'rejected' | 'reviewed'
+): Promise<void> {
+  const cleanId = appId?.trim();
+  if (!cleanId) {
+    throw new Error('Consignment application ID is required.');
+  }
+
+  const updateData: Record<string, any> = {
+    status,
+    updatedAt: Date.now()
+  };
+  if (status === 'reviewed' || status === 'approved' || status === 'rejected') {
+    updateData.reviewedAt = Date.now();
+  }
+
+  const appRef = doc(db, 'consignment_applications', cleanId);
+  try {
+    await updateDoc(appRef, updateData);
+  } catch (err) {
+    // If consignment_applications doc fails, fallback to legacy
+    const legacyRef = doc(db, 'consignments', cleanId);
+    try {
+      await updateDoc(legacyRef, updateData);
+      return;
+    } catch {
+      throw err;
+    }
+  }
+
+  // Dual-update legacy 'consignments' collection if present
+  try {
+    const legacyRef = doc(db, 'consignments', cleanId);
+    await updateDoc(legacyRef, updateData);
+  } catch {
+    // Ignore legacy doc error
+  }
+}
+
+/**
+ * Admin: Atomically delete a target consignment application document from consignment_applications.
+ */
+export async function deleteConsignmentApplication(appId: string, cascadeDeleteAuction = false): Promise<void> {
+  const cleanId = appId?.trim();
+  if (!cleanId) {
+    throw new Error('Consignment application ID is required for deletion.');
+  }
+
+  let convertedAuctionId: string | undefined;
+  if (cascadeDeleteAuction) {
+    try {
+      const appSnap = await getDoc(doc(db, 'consignment_applications', cleanId));
+      if (appSnap.exists()) {
+        convertedAuctionId = appSnap.data()?.convertedAuctionId;
+      } else {
+        const legacySnap = await getDoc(doc(db, 'consignments', cleanId));
+        if (legacySnap.exists()) {
+          convertedAuctionId = legacySnap.data()?.convertedAuctionId;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read convertedAuctionId for cascade deletion:', e);
+    }
+  }
+
+  const appRef = doc(db, 'consignment_applications', cleanId);
+  await deleteDoc(appRef);
+
+  // Dual-delete from legacy 'consignments' collection if present
+  try {
+    const legacyRef = doc(db, 'consignments', cleanId);
+    await deleteDoc(legacyRef);
+  } catch {
+    // Ignore legacy doc error
+  }
+
+  if (cascadeDeleteAuction && convertedAuctionId) {
+    await deleteListing(convertedAuctionId, false);
+  }
+}
+
+/**
+ * Admin: Batch delete consignment applications using Firestore writeBatch with chunking (500 ops max).
+ */
+export async function batchDeleteConsignments(
+  appIds: string[],
+  cascadeDeleteAuctions = false
+): Promise<number> {
+  const validIds = appIds.map(id => id?.trim()).filter(Boolean) as string[];
+  if (validIds.length === 0) return 0;
+
+  const auctionIdsToDelete: string[] = [];
+  if (cascadeDeleteAuctions) {
+    try {
+      for (let i = 0; i < validIds.length; i += 30) {
+        const chunk = validIds.slice(i, i + 30);
+        const promises = chunk.map(async id => {
+          const snap = await getDoc(doc(db, 'consignment_applications', id));
+          if (snap.exists() && snap.data()?.convertedAuctionId) {
+            return snap.data().convertedAuctionId as string;
+          }
+          return null;
+        });
+        const results = await Promise.all(promises);
+        results.forEach(id => {
+          if (id) auctionIdsToDelete.push(id);
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to resolve convertedAuctionIds during batchDeleteConsignments:', err);
+    }
+  }
+
+  const CHUNK_SIZE = 150;
+  for (let i = 0; i < validIds.length; i += CHUNK_SIZE) {
+    const chunk = validIds.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      batch.delete(doc(db, 'consignment_applications', id));
+      batch.delete(doc(db, 'consignments', id));
+    }
+    await batch.commit();
+  }
+
+  if (cascadeDeleteAuctions && auctionIdsToDelete.length > 0) {
+    await batchDeleteAuctions(auctionIdsToDelete, false);
+  }
+
+  return validIds.length;
+}
+
+/**
+ * Admin: Batch update consignment application statuses using writeBatch with chunking (500 max).
+ */
+export async function batchUpdateConsignmentStatus(
+  appIds: string[],
+  status: ConsignmentApplication['status']
+): Promise<number> {
+  const validIds = appIds.map(id => id?.trim()).filter(Boolean) as string[];
+  if (validIds.length === 0) return 0;
+
+  const now = Date.now();
+  const updateData: Record<string, any> = {
+    status,
+    updatedAt: now
+  };
+  if (status === 'reviewed' || status === 'approved' || status === 'rejected') {
+    updateData.reviewedAt = now;
+  }
+
+  const CHUNK_SIZE = 200;
+  for (let i = 0; i < validIds.length; i += CHUNK_SIZE) {
+    const chunk = validIds.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      batch.set(doc(db, 'consignment_applications', id), updateData, { merge: true });
+      batch.set(doc(db, 'consignments', id), updateData, { merge: true });
+    }
+    await batch.commit();
+  }
+  return validIds.length;
+}
+
+/**
+ * Fetch a single consignment application by ID with legacy fallback.
+ */
+export async function getConsignmentApplication(appId: string): Promise<ConsignmentApplication | null> {
+  const cleanId = appId?.trim();
+  if (!cleanId) return null;
+  try {
+    const appRef = doc(db, 'consignment_applications', cleanId);
+    let appSnap = await getDoc(appRef);
+    if (!appSnap.exists()) {
+      const legacyRef = doc(db, 'consignments', cleanId);
+      appSnap = await getDoc(legacyRef);
+    }
+    if (appSnap.exists()) {
+      return { id: appSnap.id, ...appSnap.data() } as ConsignmentApplication;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Could not fetch consignment application by ID:', err);
+    return null;
+  }
+}
+
+/**
  * Permanently delete a vehicle lot document and its media configuration from Firestore.
  */
-export async function deleteListing(auctionId: string): Promise<void> {
+export async function deleteListing(auctionId: string, cascadeDeleteConsignment = false): Promise<void> {
   const targetId = auctionId?.trim();
   if (!targetId) return;
   const batch = writeBatch(db);
   batch.delete(doc(db, 'auctions', targetId));
   batch.delete(doc(db, 'settings', `media-${targetId}`));
   batch.delete(doc(db, 'auctions', targetId, 'media', 'config'));
+
+  if (cascadeDeleteConsignment) {
+    try {
+      const q = query(collection(db, 'consignment_applications'), where('convertedAuctionId', '==', targetId));
+      const snap = await getDocs(q);
+      snap.forEach(d => {
+        batch.delete(doc(db, 'consignment_applications', d.id));
+        batch.delete(doc(db, 'consignments', d.id));
+      });
+    } catch (e) {
+      console.warn('Could not cascade delete consignment for listing:', e);
+    }
+  }
+
   await batch.commit();
 
   localStorage.removeItem(`wailtail_custom_media_${targetId}`);
   localStorage.removeItem('wailtail_custom_media');
   localStorage.removeItem('wailtail_active_lot');
+}
+
+/**
+ * Admin: Batch delete auctions and optionally cascade delete or clear associated consignment applications.
+ */
+export async function batchDeleteAuctions(
+  auctionIds: string[],
+  cascadeDeleteConsignments = false
+): Promise<number> {
+  const validIds = auctionIds.map(id => id?.trim()).filter(Boolean) as string[];
+  if (validIds.length === 0) return 0;
+
+  const associatedConsignments: { id: string; convertedAuctionId: string }[] = [];
+  try {
+    for (let i = 0; i < validIds.length; i += 30) {
+      const chunk = validIds.slice(i, i + 30);
+      const q = query(
+        collection(db, 'consignment_applications'),
+        where('convertedAuctionId', 'in', chunk)
+      );
+      const snap = await getDocs(q);
+      snap.forEach(d => {
+        associatedConsignments.push({
+          id: d.id,
+          convertedAuctionId: d.data().convertedAuctionId
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to query associated consignments during batchDeleteAuctions:', err);
+  }
+
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < validIds.length; i += CHUNK_SIZE) {
+    const chunk = validIds.slice(i, i + CHUNK_SIZE);
+    const chunkSet = new Set(chunk);
+    const batch = writeBatch(db);
+
+    for (const auctionId of chunk) {
+      batch.delete(doc(db, 'auctions', auctionId));
+      batch.delete(doc(db, 'settings', `media-${auctionId}`));
+      batch.delete(doc(db, 'auctions', auctionId, 'media', 'config'));
+      localStorage.removeItem(`wailtail_custom_media_${auctionId}`);
+    }
+
+    const matchingConsignments = associatedConsignments.filter(c => chunkSet.has(c.convertedAuctionId));
+    for (const c of matchingConsignments) {
+      if (cascadeDeleteConsignments) {
+        batch.delete(doc(db, 'consignment_applications', c.id));
+        batch.delete(doc(db, 'consignments', c.id));
+      } else {
+        batch.set(doc(db, 'consignment_applications', c.id), { convertedAuctionId: null }, { merge: true });
+        batch.set(doc(db, 'consignments', c.id), { convertedAuctionId: null }, { merge: true });
+      }
+    }
+
+    await batch.commit();
+  }
+
+  localStorage.removeItem('wailtail_custom_media');
+  localStorage.removeItem('wailtail_active_lot');
+
+  return validIds.length;
+}
+
+/**
+ * Admin: Batch update auction lot statuses using writeBatch with chunking (500 max).
+ */
+export async function batchUpdateAuctionStatus(
+  auctionIds: string[],
+  status: Auction['status']
+): Promise<number> {
+  const validIds = auctionIds.map(id => id?.trim()).filter(Boolean) as string[];
+  if (validIds.length === 0) return 0;
+
+  const now = Date.now();
+  const updateData: Record<string, any> = {
+    status,
+    updatedAt: now
+  };
+
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < validIds.length; i += CHUNK_SIZE) {
+    const chunk = validIds.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      batch.set(doc(db, 'auctions', id), updateData, { merge: true });
+    }
+    await batch.commit();
+  }
+  return validIds.length;
 }
 
 /**
@@ -1920,6 +2265,20 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
     8000
   );
 
+  // Synchronize branding properties to localStorage if configured
+  if (config.siteLogo !== undefined || config.siteName || config.siteTagline) {
+    try {
+      const cached = getStoredGlobalBranding();
+      localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify({
+        siteLogo: config.siteLogo !== undefined ? config.siteLogo : cached.siteLogo,
+        siteName: config.siteName || cached.siteName,
+        siteTagline: config.siteTagline || cached.siteTagline
+      }));
+    } catch {
+      // ignore
+    }
+  }
+
   if (config.heroImages && Array.isArray(config.heroImages)) {
     try {
       const auctionRef = doc(db, 'auctions', targetAuctionId);
@@ -1936,6 +2295,68 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
 }
 
 /**
+ * Persists global branding settings both to Firestore /settings/global and synchronously to localStorage.
+ */
+export async function saveGlobalBranding(branding: Partial<GlobalBrandingSettings>): Promise<void> {
+  const current = getStoredGlobalBranding();
+  const brandingData = {
+    siteLogo: branding.siteLogo !== undefined ? branding.siteLogo : current.siteLogo,
+    siteName: branding.siteName !== undefined ? branding.siteName : current.siteName,
+    siteTagline: branding.siteTagline !== undefined ? branding.siteTagline : current.siteTagline,
+    ...(branding.defaultStartingBid !== undefined ? { defaultStartingBid: branding.defaultStartingBid } : {}),
+    ...(branding.defaultMinIncrement !== undefined ? { defaultMinIncrement: branding.defaultMinIncrement } : {}),
+    ...(branding.currency ? { currency: branding.currency } : {}),
+    updatedAt: Date.now()
+  };
+
+  try {
+    localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify({
+      siteLogo: brandingData.siteLogo,
+      siteName: brandingData.siteName,
+      siteTagline: brandingData.siteTagline
+    }));
+  } catch (err) {
+    console.warn('Failed to save global branding to localStorage:', err);
+  }
+
+  try {
+    const globalRef = doc(db, 'settings', 'global');
+    await withTimeout(setDoc(globalRef, sanitizePayload(brandingData), { merge: true }), 8000);
+  } catch (err) {
+    console.warn('Failed to save global branding to Firestore:', err);
+  }
+}
+
+/**
+ * Subscribe to real-time updates on /settings/global and synchronize with localStorage.
+ */
+export function subscribeToGlobalBranding(
+  callback: (branding: GlobalBrandingSettings | null) => void
+) {
+  const globalRef = doc(db, 'settings', 'global');
+  return onSnapshot(globalRef, (snap) => {
+    if (snap.exists()) {
+      const data = snap.data() as GlobalBrandingSettings;
+      try {
+        const brandingToStore = {
+          siteLogo: data.siteLogo ?? '',
+          siteName: data.siteName || 'wailtail',
+          siteTagline: data.siteTagline || 'Single-Car Auctions'
+        };
+        localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(brandingToStore));
+      } catch (e) {
+        console.warn('Could not sync global branding to localStorage:', e);
+      }
+      callback(data);
+    } else {
+      callback(null);
+    }
+  }, (err) => {
+    console.warn('Error listening to global branding settings:', err);
+  });
+}
+
+/**
  * Subscribe to real-time media configuration
  */
 export function subscribeToMediaConfig(
@@ -1947,7 +2368,20 @@ export function subscribeToMediaConfig(
   const mediaRef = doc(db, 'settings', docId);
   return onSnapshot(mediaRef, (snap) => {
     if (snap.exists()) {
-      callback(snap.data() as MediaConfiguration);
+      const data = snap.data() as MediaConfiguration;
+      if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
+        try {
+          const cached = getStoredGlobalBranding();
+          localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify({
+            siteLogo: data.siteLogo !== undefined ? data.siteLogo : cached.siteLogo,
+            siteName: data.siteName || cached.siteName,
+            siteTagline: data.siteTagline || cached.siteTagline
+          }));
+        } catch {
+          // ignore
+        }
+      }
+      callback(data);
     } else {
       callback(null);
     }
@@ -2273,7 +2707,9 @@ export async function fetchPaginatedConsignments({
         const name = (app.sellerName || '').toLowerCase();
         const generation = (app.generation || '').toLowerCase();
         const year = String(app.year || '').toLowerCase();
+        const appId = (app.id || '').toLowerCase();
         return (
+          appId.includes(cleanSearch) ||
           make.includes(cleanSearch) ||
           model.includes(cleanSearch) ||
           vin.includes(cleanSearch) ||
@@ -2286,7 +2722,7 @@ export async function fetchPaginatedConsignments({
     }
 
     // Filter by status
-    if (statusFilter && statusFilter !== 'ALL') {
+    if (statusFilter && statusFilter.toUpperCase() !== 'ALL') {
       const targetStatus = statusFilter.toUpperCase();
       list = list.filter((app) => {
         const appStatus = (app.status || 'pending').toUpperCase();

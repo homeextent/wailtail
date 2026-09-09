@@ -10,15 +10,19 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Framework**: React 19 + TypeScript + Vite
 - **Routing & Navigation**: Client-side full-page routing supporting multi-car catalog (`/` & `/catalog`), single-car lot details (`/auctions/[id]`), full-page admin portal (`/admin`), and dedicated split-screen authoring workspace (`/dashboard/listings/[id]/edit`)
 - **Tri-Role Access Control**: 3-way role hierarchy (`ADMIN`, `SELLER`, `BIDDER`) governing access privileges across administration, authoring, and bidding surfaces
+- **5-Tab Admin Command Portal**: Dedicated operations suite (`AdminPortalPage.tsx`) covering Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding
+- **Multi-Select Bulk Action Engine**: Checkbox selection system with floating action toolbar and safe 150-item batch chunking for status mutations and bulk deletions
+- **Catalog Status Predicate Normalization**: Exported pure predicates (`isLive`, `isUpcoming`, `isEnded`) ensuring all draft, preview, and scheduled lots are counted cleanly
 - **Styling**: Tailwind CSS with custom editorial typography and layout scales
 - **Icons**: Lucide React
 - **Taxonomy Engine**: Curated 80+ collector vehicle dataset (`src/data/vehicleTaxonomy.json`) powering a reactive 3-tier dependent selection pipeline (Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code)
 - **State & Synchronization**: Real-time Firestore snapshot listeners (`onSnapshot`) with dynamic user profile synchronization (`subscribeToUserProfile`) and optimistic UI state hydration
 
 ### Serverless & Cloud Infrastructure
-- **Serverless Email Proxy (`api/send-consignment-email.ts`)**: Dual-mode Vercel serverless function dispatching structured HTML notifications for both vehicle consignments (`type: 'consignment'`) and private buyer inquiries (`type: 'inquiry'`) via Resend API (with SendGrid fallback) directly to platform curation administrators and sellers.
+- **Serverless Email Proxy (`api/send-consignment-email.ts`)**: Dual-mode Vercel serverless function dispatching structured HTML notifications for both vehicle consignments (`type: 'consignment'`) and private buyer inquiries (`type: 'inquiry'`) via Resend API (with SendGrid fallback) directly to platform curation administrators and sellers. Equipped with actionable 1-click triage deep links (`/admin?tab=consignments&id=${appId}&action=approve|reject`).
 - **Serverless YouTube Ingestion (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
 - **Firebase Cloud Storage Asset Pipeline**: Direct Storage URL streaming (`uploadImageToStorage`) with client-side canvas micro-compression (`compressImageDataUrl`) and a 900KB serialized payload size cap in `saveMediaConfig()`.
+- **Firebase CLI Deployment Infrastructure**: `firebase.json` mapping, `.firebaserc` project binding (`studio-apps-483721`), and terminal deployment pipeline (`npm run deploy:rules`) executing direct rules deployment via `firebase-tools`.
 
 ### Firebase Backend Services
 - **Cloud Firestore**:
@@ -26,8 +30,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `auctions/{auctionId}/media/{document=**}`: Recursive wildcard subcollection matching for media configurations, images, chapters, and assets.
   - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification.
   - `comments`: Community Q&A feed with verified seller and administrator official nested replies.
-  - `users`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, and personal saved vehicle lot arrays (`watchlist`).
-  - `consignment_applications`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, and conversion statuses.
+  - `users` / `bidders`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, and personal saved vehicle lot arrays (`watchlist`).
+  - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
 - **Firebase Authentication**: Email/password and Google OAuth authentication with email verification flags.
@@ -36,6 +40,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 ### Repository Directory Structure
 ```
 .
+├── .firebaserc                         # Firebase CLI default project binding (studio-apps-483721)
+├── firebase.json                       # Firebase CLI configuration mapping firestore.rules
 ├── api/
 │   ├── send-consignment-email.ts       # Serverless dual-mode email dispatcher (consignments & inquiries) via Resend API
 │   └── youtube-playlist.ts             # Serverless CORS proxy for YouTube RSS playlist ingestion
@@ -106,13 +112,17 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 5. **Multi-Car Auction Architecture & Catalog Grid (`/`)**:
    - The multi-car Vehicle Auction Catalog is the default homepage view (`/` and `/catalog`).
    - Clean 0-lot baseline support: snapshot listeners dynamically handle empty databases without forced fallbacks.
+   - **Catalog Status Predicate Normalization**: Exported helper predicates (`isLive`, `isUpcoming`, `isEnded`) in `VehicleCatalogGrid.tsx` ensuring draft, preview, and scheduled lots count cleanly under the Upcoming filter, guaranteeing zero uncounted or dropped inventory lots.
 6. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)**:
    - Split-screen workspace with live public preview pane (desktop and mobile viewports).
    - 7 listing sections: Vehicle Identity, Editorial Narrative, Single-Source Technical Specifications, Showcase Chapters (01-04), Hero & Categorized Photo Gallery, YouTube Driving Videos, and CAD Financial Rules.
    - 100% blank draft isolation with nullish coalescing defaults (`$0 CAD` No Reserve).
 7. **Full-Page Admin Operations Portal (`/admin`)**:
-   - Role-gated full-screen dashboard (`AdminPortalPage.tsx`) for `ADMIN` accounts.
-   - Server-assisted paginated search across the Bidder Registry (`fetchPaginatedBidders`) and Consignment Applications (`fetchPaginatedConsignments`).
+   - Role-gated full-screen dashboard (`AdminPortalPage.tsx`) featuring 5 administrative command tabs: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding.
+   - **5th Admin Tab (Vehicle Inventory & Lots)**: Full-width inventory management suite with live CAD high bid tracking, status filter tabs (`All`, `Draft`, `Preview`, `Upcoming`, `Live`, `Ended`), real-time search, row-level workspace launch links, and lot deletion triggers.
+   - **Multi-Select Bulk Action Engine**: Checkbox selection engine with floating action toolbar supporting batch status changes, bulk approvals/rejections, and batch deletions chunked safely into 150-item sets for Firestore batch write reliability.
+   - **Cascading Deletion Controls**: Atomic service methods in `auctionService.ts` (`batchDeleteAuctions`, `batchDeleteConsignments`, `deleteListing`, `deleteConsignmentApplication`) preventing orphaned records across auctions and consignment submissions.
+   - **1-Click Email Triage Deep-Links**: Actionable email CTAs (`/admin?tab=consignments&id=${appId}&action=approve|reject`) in `api/send-consignment-email.ts` with auto-filtering, modal surfacing, and history cleanup in `AdminPortalPage.tsx`.
    - Atomic moderation controls: 3-way role switching (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`), ban/unban toggling, email verification override, and permanent user deletion (`deleteUserRecord`).
    - 1-click consignment intake approval & draft conversion (`convertConsignmentToDraftListing`) promoting consignors to `SELLER` and auto-generating vehicle listings.
 8. **Unified User Account Activity Hub & Watchlist System (`UserAccountHubModal.tsx`)**:
@@ -130,13 +140,16 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - Dual-mode serverless proxy handling both vehicle consignment submissions (`type: 'consignment'`) and private buyer inquiries (`type: 'inquiry'`) via Resend API (with SendGrid fallback).
     - Consignment applications compile 3-tier taxonomy, VIN, mileage, transmission, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking.
     - Private buyer inquiries generate structured HTML digest tables compiling inquirer contact details, inquiry topic, target lot title, and message text, dispatched with client error isolation.
-11. **Hero Media Carousel & Media Pending Placeholder**:
+11. **Terminal Firebase Security Rule Deployment Infrastructure**:
+    - Direct rules deployment via `firebase.json` mapping, `.firebaserc` project binding (`studio-apps-483721`), and `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json`.
+    - Allows developers to deploy synchronized production `firestore.rules` directly from the terminal via `npm run deploy:rules`.
+12. **Hero Media Carousel & Media Pending Placeholder**:
     - Purged of hardcoded external fallback URLs.
     - When no images are configured, renders a neutral dark placeholder (`bg-zinc-900 border border-zinc-800 rounded-xl`) with a camera icon and "Media Pending" message.
-12. **YouTube Video Series & Thumbnail URL Sanitization**:
+13. **YouTube Video Series & Thumbnail URL Sanitization**:
     - Validates 11-character video IDs using regex (`/^[a-zA-Z0-9_-]{11}$/`).
     - Prevents 404 network errors in DevTools by only generating `mqdefault.jpg` URLs for validated IDs.
-13. **Bulk Purge & Cache Sanitization**:
+14. **Bulk Purge & Cache Sanitization**:
     - `purgeAllListings()` atomic deletion engine cleanses Firestore documents, media subcollections, and `localStorage` cache.
 
 ---

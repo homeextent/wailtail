@@ -11,6 +11,9 @@ import {
   subscribeToComments, 
   subscribeToMediaConfig,
   subscribeToUserProfile,
+  subscribeToGlobalBranding,
+  getStoredGlobalBranding,
+  GLOBAL_BRANDING_STORAGE_KEY,
   saveMediaConfig,
   toggleWatchAuction,
   createNewListing,
@@ -86,13 +89,78 @@ const AuctionAppContent: React.FC = () => {
     (user as any)?.role === 'ADMIN'
   );
 
-  const [auction, setAuction] = useState<Auction>(BLANK_AUCTION);
+  // Synchronous localStorage Branding Hydration to eliminate initial loading flash
+  const [globalBranding, setGlobalBranding] = useState(() => {
+    try {
+      const raw = localStorage.getItem(GLOBAL_BRANDING_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            siteLogo: typeof parsed.siteLogo === 'string' ? parsed.siteLogo : '',
+            siteName: typeof parsed.siteName === 'string' && parsed.siteName.trim() !== '' ? parsed.siteName : 'wailtail',
+            siteTagline: typeof parsed.siteTagline === 'string' && parsed.siteTagline.trim() !== '' ? parsed.siteTagline : 'Single-Car Auctions'
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse cached global branding in App:', err);
+    }
+    return {
+      siteLogo: '',
+      siteName: 'wailtail',
+      siteTagline: 'Single-Car Auctions'
+    };
+  });
+
+  const [auction, setAuction] = useState<Auction>(() => ({
+    ...BLANK_AUCTION,
+    siteLogo: globalBranding.siteLogo,
+    siteName: globalBranding.siteName,
+    siteTagline: globalBranding.siteTagline
+  }));
   const [bids, setBids] = useState<Bid[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Dynamic Media Configuration
-  const [currentMedia, setCurrentMedia] = useState<MediaConfiguration>(BLANK_MEDIA_CONFIG);
+  const [currentMedia, setCurrentMedia] = useState<MediaConfiguration>(() => ({
+    ...BLANK_MEDIA_CONFIG,
+    siteLogo: globalBranding.siteLogo,
+    siteName: globalBranding.siteName,
+    siteTagline: globalBranding.siteTagline
+  }));
+
+  // Real-time Firestore synchronization for global branding (/settings/global)
+  useEffect(() => {
+    const unsubBranding = subscribeToGlobalBranding((cloudBranding) => {
+      if (cloudBranding) {
+        const next = {
+          siteLogo: cloudBranding.siteLogo !== undefined ? cloudBranding.siteLogo : globalBranding.siteLogo,
+          siteName: cloudBranding.siteName || globalBranding.siteName,
+          siteTagline: cloudBranding.siteTagline || globalBranding.siteTagline
+        };
+        setGlobalBranding(next);
+        try {
+          localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        if (cloudBranding.siteLogo !== undefined || cloudBranding.siteName || cloudBranding.siteTagline) {
+          setCurrentMedia((prev) => ({
+            ...prev,
+            ...(cloudBranding.siteLogo !== undefined ? { siteLogo: cloudBranding.siteLogo } : {}),
+            ...(cloudBranding.siteName ? { siteName: cloudBranding.siteName } : {}),
+            ...(cloudBranding.siteTagline ? { siteTagline: cloudBranding.siteTagline } : {})
+          }));
+        }
+      }
+    });
+
+    return () => {
+      unsubBranding();
+    };
+  }, []);
 
   // Modals & Navigation state
   const [isBidModalOpen, setIsBidModalOpen] = useState(false);
@@ -274,7 +342,26 @@ const AuctionAppContent: React.FC = () => {
         await initializeMediaConfigIfNotExists(targetAuctionId);
         
         unsubAuction = subscribeToAuction(targetAuctionId, (data) => {
-          setAuction(data || BLANK_AUCTION);
+          if (data) {
+            setAuction(data);
+            if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
+              setGlobalBranding((prev) => {
+                const next = {
+                  siteLogo: data.siteLogo !== undefined ? data.siteLogo : prev.siteLogo,
+                  siteName: data.siteName || prev.siteName,
+                  siteTagline: data.siteTagline || prev.siteTagline
+                };
+                try {
+                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }
+          } else {
+            setAuction(BLANK_AUCTION);
+          }
           setLoading(false);
         });
 
@@ -289,6 +376,21 @@ const AuctionAppContent: React.FC = () => {
         unsubMedia = subscribeToMediaConfig((cloudMedia) => {
           if (cloudMedia) {
             setCurrentMedia(cloudMedia);
+            if (cloudMedia.siteLogo !== undefined || cloudMedia.siteName || cloudMedia.siteTagline) {
+              setGlobalBranding((prev) => {
+                const next = {
+                  siteLogo: cloudMedia.siteLogo !== undefined ? cloudMedia.siteLogo : prev.siteLogo,
+                  siteName: cloudMedia.siteName || prev.siteName,
+                  siteTagline: cloudMedia.siteTagline || prev.siteTagline
+                };
+                try {
+                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }
             try {
               localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
             } catch (e) {
@@ -450,6 +552,10 @@ const AuctionAppContent: React.FC = () => {
   }
 
   // Dedicated Full-Page Public Vehicle Catalog Route (/catalog)
+  const effectiveSiteLogo = currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
+  const effectiveSiteName = currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
+  const effectiveSiteTagline = currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
+
   if (isCatalogRoute) {
     return (
       <div className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex flex-col font-sans selection:bg-red-700 selection:text-white">
@@ -476,9 +582,9 @@ const AuctionAppContent: React.FC = () => {
           watchCount={auction.watchCount ?? 18}
           auctionHeadline="Vehicle Inventory & Auctions"
           auctionTitle="Wailtail Classic & Collector Auctions"
-          siteLogo={currentMedia.siteLogo || auction.siteLogo}
-          siteName={currentMedia.siteName || auction.siteName}
-          siteTagline={currentMedia.siteTagline || auction.siteTagline}
+          siteLogo={effectiveSiteLogo}
+          siteName={effectiveSiteName}
+          siteTagline={effectiveSiteTagline}
           onNavigateHome={() => navigateTo('/')}
           onToggleCatalog={() => navigateTo('/')}
           onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
@@ -506,9 +612,9 @@ const AuctionAppContent: React.FC = () => {
 
         <Footer 
           vehicleTitle="Wailtail Classic & Collector Auctions"
-          siteLogo={currentMedia.siteLogo || auction.siteLogo}
-          siteName={currentMedia.siteName || auction.siteName}
-          siteTagline={currentMedia.siteTagline || auction.siteTagline}
+          siteLogo={effectiveSiteLogo}
+          siteName={effectiveSiteName}
+          siteTagline={effectiveSiteTagline}
         />
 
         {/* Modals */}
@@ -575,9 +681,9 @@ const AuctionAppContent: React.FC = () => {
         watchCount={auction.watchCount ?? 18}
         auctionHeadline={auction.headline}
         auctionTitle={auction.title}
-        siteLogo={currentMedia.siteLogo || auction.siteLogo}
-        siteName={currentMedia.siteName || auction.siteName}
-        siteTagline={currentMedia.siteTagline || auction.siteTagline}
+        siteLogo={effectiveSiteLogo}
+        siteName={effectiveSiteName}
+        siteTagline={effectiveSiteTagline}
         onNavigateHome={() => navigateTo('/')}
         onToggleCatalog={() => navigateTo('/')}
         onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
@@ -818,9 +924,9 @@ const AuctionAppContent: React.FC = () => {
       {/* Footer */}
       <Footer 
         vehicleTitle={auction.title}
-        siteLogo={currentMedia.siteLogo || auction.siteLogo}
-        siteName={currentMedia.siteName || auction.siteName}
-        siteTagline={currentMedia.siteTagline || auction.siteTagline}
+        siteLogo={effectiveSiteLogo}
+        siteName={effectiveSiteName}
+        siteTagline={effectiveSiteTagline}
       />
 
       {/* Modals */}

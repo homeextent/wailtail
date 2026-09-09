@@ -43,7 +43,7 @@ export interface Auction {
   highBidderName?: string;
   highBidderEmail?: string;
   watchlist?: string[];
-  status: 'upcoming' | 'active' | 'ended' | 'sold' | 'reserve_not_met' | 'preview';
+  status: 'upcoming' | 'active' | 'live' | 'draft' | 'ended' | 'sold' | 'reserve_not_met' | 'preview';
   createdAt: number;
   updatedAt: number;
 }

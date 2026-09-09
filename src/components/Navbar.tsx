@@ -73,6 +73,51 @@ export const Navbar: React.FC<NavbarProps> = ({
   const userMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
+  // Synchronous localStorage Branding Hydration to eliminate initial loading flash
+  const [cachedBranding, setCachedBranding] = useState(() => {
+    try {
+      const raw = localStorage.getItem('wailtail_global_branding');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            siteLogo: typeof parsed.siteLogo === 'string' ? parsed.siteLogo : '',
+            siteName: typeof parsed.siteName === 'string' && parsed.siteName.trim() !== '' ? parsed.siteName : 'wailtail',
+            siteTagline: typeof parsed.siteTagline === 'string' && parsed.siteTagline.trim() !== '' ? parsed.siteTagline : 'Single-Car Auctions'
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse cached global branding in Navbar:', err);
+    }
+    return {
+      siteLogo: '',
+      siteName: 'wailtail',
+      siteTagline: 'Single-Car Auctions'
+    };
+  });
+
+  // Sync props to cached branding and localStorage when updated props arrive
+  useEffect(() => {
+    if (siteLogo !== undefined || siteName || siteTagline) {
+      const nextBranding = {
+        siteLogo: siteLogo !== undefined ? siteLogo : cachedBranding.siteLogo,
+        siteName: siteName || cachedBranding.siteName,
+        siteTagline: siteTagline || cachedBranding.siteTagline
+      };
+      setCachedBranding(nextBranding);
+      try {
+        localStorage.setItem('wailtail_global_branding', JSON.stringify(nextBranding));
+      } catch {
+        // ignore
+      }
+    }
+  }, [siteLogo, siteName, siteTagline]);
+
+  const effectiveLogo = (siteLogo !== undefined && siteLogo.trim() !== '') ? siteLogo : cachedBranding.siteLogo;
+  const effectiveName = siteName || cachedBranding.siteName || 'wailtail';
+  const effectiveTagline = siteTagline || cachedBranding.siteTagline || 'Single-Car Auctions';
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
@@ -149,10 +194,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2.5 sm:gap-3 group transition-opacity hover:opacity-90 max-h-11 cursor-pointer"
               title="Wailtail - Vehicle Auction Catalog"
             >
-              {siteLogo && siteLogo.trim() !== '' ? (
+              {effectiveLogo && effectiveLogo.trim() !== '' ? (
                 <img
-                  src={siteLogo}
-                  alt={siteName || "Wailtail Logo"}
+                  src={effectiveLogo}
+                  alt={effectiveName || "Wailtail Logo"}
                   className="h-9 sm:h-10 max-h-10 w-auto object-contain flex-shrink-0"
                   referrerPolicy="no-referrer"
                   onError={(e) => {
@@ -166,10 +211,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               {/* Dynamic Brand Name & Tagline */}
               <div className="flex flex-col justify-center min-w-0">
                 <span className="font-black italic tracking-tight text-lg sm:text-2xl leading-none text-white font-sans whitespace-nowrap uppercase">
-                  {siteName || 'wailtail'}
+                  {effectiveName}
                 </span>
                 <span className="text-[8px] sm:text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-400 mt-0.5 whitespace-nowrap">
-                  {siteTagline || 'Single-Car Auctions'}
+                  {effectiveTagline}
                 </span>
               </div>
             </a>

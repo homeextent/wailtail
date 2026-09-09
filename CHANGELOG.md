@@ -9,6 +9,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **5th Admin Tab — Vehicle Inventory & Lots**:
+  - Implemented dedicated full-width vehicle inventory management suite (`activeTab === 'inventory'`) in `src/components/AdminPortalPage.tsx`.
+  - Added status filtering tabs (`All`, `Draft`, `Preview`, `Upcoming`, `Live`, `Ended`) with live lot counters and text search across title, make, model, and VIN.
+  - Added table pagination with customizable page sizing and responsive page navigation controls.
+  - Implemented row-level controls including direct editor launch buttons (`/dashboard/listings/${id}/edit`), quick status dropdown switchers, live CAD high bid tracking, reserve met tags, and lot deletion modals.
+- **Multi-Select Bulk Action Engine**:
+  - Engineered multi-checkbox selection engine across Consignment Applications and Vehicle Inventory tabs with "Select Page" / "Select All" controls.
+  - Added fixed floating bulk action toolbar dock displaying selection counts and contextual batch operations:
+    - Consignments: Batch Mark Reviewed, Batch Mark Approved, Batch Mark Rejected, Batch Delete.
+    - Inventory Lots: Batch Set Live, Batch Set Upcoming, Batch Set Ended, Batch Delete Lots.
+  - Enforced safe 150-item batch chunking across Firestore batch operations (`batchUpdateConsignmentStatus`, `batchDeleteConsignments`, `batchUpdateAuctionStatus`, `batchDeleteAuctions`) ensuring atomic execution without exceeding Firestore's 500-operation ceiling.
+- **Cascading Deletion Controls**:
+  - Added atomic deletion methods in `src/services/auctionService.ts` (`deleteListing`, `deleteConsignmentApplication`, `batchDeleteAuctions`, `batchDeleteConsignments`) preventing orphaned records across Firestore collections.
+  - Supported optional bi-directional cascading: deleting an approved consignment application can cascade-delete its converted auction lot, and deleting an auction lot can cascade-delete its linked consignment intake document.
+  - Flushed corresponding localized `localStorage` media cache keys upon single and batch lot deletions.
+- **Catalog Status Predicate Normalization**:
+  - Exported reusable, normalized status predicates (`isLive`, `isUpcoming`, `isEnded`) in `src/components/VehicleCatalogGrid.tsx`.
+  - Normalized transitional states so `draft`, `preview`, and scheduled lots cleanly resolve under the `Upcoming` filter tab and live counter badge.
+  - Standardized live lot resolution across `live`, `ending_soon`, and `active` states, guaranteeing zero uncounted or dropped inventory lots.
+- **Consignment Intake Email Deep-Links & Triage**:
+  - Added actionable high-visibility email CTA buttons in `api/send-consignment-email.ts` linking directly to `/admin?tab=consignments&id=${appId}&action=approve|reject`.
+  - Implemented URL query parameter parsing (`tab`, `id`, `action`) in `src/components/AdminPortalPage.tsx` automatically focusing, highlighting, and surfacing the target consignment confirmation modal.
+  - Added URL history cleansing (`window.history.replaceState`) via `clearUrlParams()` to eliminate redundant modal triggers upon page reload.
+- **Terminal Firebase Security Rule Deployment Workflow**:
+  - Added `firebase.json` mapping Firestore security rules to `firestore.rules`.
+  - Added `.firebaserc` configuring default project binding to `studio-apps-483721`.
+  - Added `firebase-tools` local devDependency and standardized `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json` for rapid, zero-drift terminal deployments (`npm run deploy:rules`).
+  - Synchronized production `firestore.rules` containing fine-grained helper functions (`isAuthenticated()`, `isAdmin()`, `isOwner()`), collection ACLs, and recursive media subcollection rules.
 - **User Watchlist System**:
   - Added `watchlist?: string[]` array field to `UserProfile` in `src/types.ts`.
   - Implemented atomic `toggleWatchlistLot(userId, auctionId)` and `fetchUserWatchlist(userId)` service methods in `src/services/auctionService.ts`.

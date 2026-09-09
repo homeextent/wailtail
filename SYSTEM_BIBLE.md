@@ -12,14 +12,15 @@
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
 * **Host & Infrastructure**: Cloud Run containerized deployment, reverse proxied on port 3000
 * **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`)
+* **Firebase Infrastructure & CLI Deployment**: `firebase.json` configuration, `.firebaserc` project binding (`studio-apps-483721`), synchronized production `firestore.rules`, and terminal deployment pipeline via `npm run deploy:rules` (`firebase deploy --only firestore:rules`)
 
 ### 1.1 Platform Architecture & Routing Map
 
 | Route / Surface | Component / Handler | Access Level | Description |
 | :--- | :--- | :--- | :--- |
-| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, and category filters (`All Lots`, `Live`, `Upcoming`, `Ended`). |
+| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, and category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`). |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
-| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring paginated search across Bidder Registry and Consignment Applications, atomic tri-role switching, user moderation, and 1-click draft conversion. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding. Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, and consignment status. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators. |
@@ -495,6 +496,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - Compiles vehicle taxonomy parameters (Year, Make, Model, Generation/Chassis), VIN, Mileage, Transmission, Reserve Expectation, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`).
      - Appends applicant contact info and private condition notes.
      - Embeds visual badge indicators differentiating registered members (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` in emerald green) from guest inquiries (`GUEST / UNREGISTERED` in amber).
+     - **Actionable 1-Click Triage Deep-Links**:
+       - Integrates styled, email-safe CTA table buttons linking directly to the administrative portal with query parameters:
+         - **Approve CTA**: `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=approve`
+         - **Reject CTA**: `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=reject`
+       - Enables platform administrators to triage incoming consignments straight from their inbox on mobile or desktop devices.
    - **Private Buyer Inquiry HTML Table**:
      - Subject line: `[Private Inquiry] ${inquiryTopic} — ${targetVehicleTitle} (${inquiryName})`.
      - High-contrast structured HTML table containing:
@@ -634,9 +640,38 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Full-screen administrative command center gated strictly to authenticated accounts holding the `ADMIN` role (`userProfile?.role?.toUpperCase() === 'ADMIN'`).
   - Unauthorized visitors and non-admin users are automatically redirected to the root catalog route (`/`) with an alert notification.
   - Implements session authentication loading guards in `App.tsx` (`authLoading`) to prevent accidental redirect flashes during browser refreshes.
-- **Paginated Search Architecture**:
-  - **Bidder Registry Tab**: Features server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls.
-  - **Consignment Applications Tab**: Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
+- **5 Command Suites & Management Tabs**:
+  - **1. Bidder Registry Tab** (`bidders`): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls.
+  - **2. Consignment Applications Tab** (`consignments`): Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
+  - **3. Vehicle Inventory & Lots Tab** (`inventory` — 5th Admin Tab): Comprehensive full-width vehicle inventory management suite displaying active catalog lots, editable vehicle specifications, and status lifecycles.
+    - Status filtering pills: `All`, `Draft`, `Preview`, `Upcoming`, `Live`, and `Ended`.
+    - Real-time lot search filtering across make, model, VIN, and title.
+    - Server-assisted client pagination (configurable page size with previous/next navigation).
+    - Row-level controls: quick status dropdown switcher, live CAD high bid tracking, direct authoring workspace launch links (`/dashboard/listings/${id}/edit`), and single-lot deletion triggers.
+  - **4. Live Bids Telemetry Ledger Tab** (`ledger`): Real-time streaming audit trail of all placed bids with bidder handles, lot titles, timestamps, and currency amounts.
+  - **5. Platform Branding Tab** (`branding`): Global platform identity configuration for site logo, name, and tagline with Firestore persistence and local storage fallback.
+- **Consignment Intake Email Deep-Links & 1-Click Triage (`useEffect`)**:
+  - `AdminPortalPage.tsx` listens for URL query parameters on initial mount:
+    `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=approve|reject`
+  - When detected, the component automatically:
+    1. Switches `activeTab` to `'consignments'`.
+    2. Fetches the target consignment application via `getConsignmentApplication(targetId)`.
+    3. Resets status filters to `ALL`, sets the search query to `targetId`, and scrolls/highlights the target record.
+    4. Prepends the fetched application to local state if missing from the paginated page.
+    5. Automatically opens the respective confirmation dialog modal (`confirmApproveApp` or `confirmRejectApp`).
+    6. Cleanses URL query parameters (`clearUrlParams()`) via `window.history.replaceState` to prevent repeated triggers on page refresh.
+- **Multi-Select Bulk Action Engine**:
+  - Checkbox selection engine implemented across Consignments and Vehicle Inventory tabs with "Select Page" / "Select All" toggles.
+  - Floating action toolbar (`aside` fixed bottom dock) displaying total selected items and contextual batch triggers:
+    - **Consignments Toolbar**: Batch Mark Reviewed, Batch Mark Approved, Batch Mark Rejected, Batch Delete Applications.
+    - **Inventory Lots Toolbar**: Batch Set Live, Batch Set Upcoming, Batch Set Ended, Batch Delete Lots.
+  - All bulk mutations are chunked safely into 150-item batches (safely below Firestore's 500 operations batch limit) to ensure transactional reliability and prevent payload limit errors (`batchUpdateConsignmentStatus`, `batchDeleteConsignments`, `batchUpdateAuctionStatus`, `batchDeleteAuctions`).
+- **Cascading Deletion Controls (`auctionService.ts`)**:
+  - Prevents orphaned records across dual collections (`auctions` and `consignment_applications` / `consignments`):
+    - `deleteListing(auctionId, cascadeDeleteConsignment)`: Atomically deletes the vehicle lot from `auctions`, its settings document (`settings/media-${id}`), and media configuration subcollection. When `cascadeDeleteConsignment` is enabled, queries and removes any associated consignment applications where `convertedAuctionId == auctionId`. Also flushes localized media cache keys from `localStorage`.
+    - `deleteConsignmentApplication(appId, cascadeDeleteAuction)`: Deletes the record from `consignment_applications` and legacy `consignments`. When `cascadeDeleteAuction` is enabled, resolves `convertedAuctionId` and cascades deletion to the generated vehicle lot via `deleteListing(convertedAuctionId, false)`.
+    - `batchDeleteConsignments(appIds, cascadeDeleteAuctions)`: Chunks application deletions in 150-item Firestore batches, resolving linked vehicle lots in 30-item batches for optional cascading lot purging.
+    - `batchDeleteAuctions(auctionIds, cascadeDeleteConsignments)`: Chunks vehicle lot deletions in 100-item Firestore batches, resolving linked consignment applications for optional cascading cleanup.
 - **Atomic Moderation Services Across Dual Collections**:
   - `resolveUserAndBidderDocuments(userId)`: Resolves document references across both `users/{userId}` and `bidders/{userId}` collections to guarantee atomic synchronization.
   - **3-Way Role Switching (`updateUserRole`)**: Allows administrators to toggle user accounts between `ADMIN`, `SELLER`, and `BIDDER` via an atomic Firestore `writeBatch`.
@@ -708,9 +743,15 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     `leadHeroImage` → `heroImages[0]` → `DEFAULT_MEDIA_CONFIG.heroImages[0]` → `localStorage` cache.
   - Prevents fallback to "Photo Gallery Pending" when hero images are present in Firestore or media configurations.
   - Features admin quick-edit button for immediate deep-linking to the authoring workspace.
+- **Catalog Status Bucket Normalization (`isLive`, `isUpcoming`, `isEnded`)**:
+  - Exported pure predicate helpers prevent lots with transitional or non-standard status tags from falling through the cracks:
+    - `isLive(status)`: Evaluates to `true` for `'live'`, `'ending_soon'`, or `'active'`.
+    - `isUpcoming(status)`: Evaluates to `true` for `'upcoming'`, `'preview'`, `'draft'`, or missing/null/undefined status tags (`!status`).
+    - `isEnded(status)`: Evaluates to `true` for `'ended'`, `'sold'`, or `'reserve_not_met'`.
+  - Guarantees 100% catalog lot accounting: newly created drafts, staged previews, and scheduled upcoming lots are cleanly bucketed under the "Upcoming" filter tab, ensuring zero lots are omitted from catalog counts or search indexing.
 - **Dynamic Search & Filtering**:
   - Real-time search filtering across make, model, VIN, and location.
-  - Category filter pills (`All Lots`, `Live`, `Upcoming`, `Ended`) with live lot counters.
+  - Category filter pills (`All Lots`, `Live`, `Upcoming`, `Ended`) with live lot counters synchronized with normalization predicates.
   - Rich vehicle cards featuring hero photo thumbnail, current/starting bid in CAD, reserve status pill, odometer, location, and deep link navigation to `/auctions/[id]`.
 
 ### 6.8 Seller Onboarding Flow & Consignment Intake (`ConsignmentModal.tsx`)
@@ -792,17 +833,17 @@ Wailtail implements a tri-role access control model defined in `src/types.ts` vi
 | 1-Click Convert Consignment to Draft Listing | ❌ | ❌ | ❌ | ✅ |
 | Purge All Listings / Bulk Reset Catalog | ❌ | ❌ | ❌ | ✅ |
 
-### 7.2 Firestore Security Rules (`firestore.rules`)
+### 7.2 Production Firestore Security Rules (`firestore.rules`)
 ```rules
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
+
+    // Helper Functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
       return isAuthenticated() && 
         request.auth.token.email != null && 
@@ -810,44 +851,89 @@ service cloud.firestore {
          request.auth.token.email.lower() == 'jeremy@theinnovativegroup.ca');
     }
 
-    // Allow full read and write access for auctions, settings, bids, comments, and consignments
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Auctions & Media Subcollections
     match /auctions/{auctionId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isAuthenticated();
 
       match /{document=**} {
-        allow read, write, create, update, delete: if true;
+        allow read: if true;
+        allow create, update, delete: if isAuthenticated();
       }
     }
 
-    match /settings/{settingId} {
-      allow read, write, create, update, delete: if true;
-    }
-
-    // Bids collection
+    // Bids & Bidding Telemetry
     match /bids/{bidId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // Comments collection
+    // Comments & Community Q&A
     match /comments/{commentId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // Users / Bidders collection
+    // User Accounts & Moderation Registry
     match /users/{userId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwner(userId) || isAdmin();
     }
 
-    match /consignments/{appId} {
-      allow read, write, create, update, delete: if true;
+    match /bidders/{bidderId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwner(bidderId) || isAdmin();
     }
 
+    // Platform Settings & Media Configuration
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    match /mediaConfig/{configId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    match /media/{docId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    // Intake Forms & Direct Communications
     match /consignment_applications/{appId} {
-      allow read, write, create, update, delete: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    match /consignments/{consignmentId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
     }
 
     match /inquiries/{inquiryId} {
-      allow read, write, create, update, delete: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // Outbox Queues
+    match /mail/{mailId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    match /emails/{emailId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
     }
   }
 }
@@ -863,3 +949,35 @@ service firebase.storage {
   }
 }
 ```
+
+### 7.4 Firebase CLI Deployment Workflow & Infrastructure
+To ensure reproducible, zero-drift rule synchronization directly from developer terminals without console copy-pasting, the repository integrates native Firebase CLI deployment bindings:
+
+1. **`firebase.json` Configuration**:
+   Maps the Firestore rules target directly to the root source rules file:
+   ```json
+   {
+     "firestore": {
+       "rules": "firestore.rules"
+     }
+   }
+   ```
+
+2. **`.firebaserc` Project Binding**:
+   Binds the local repository to the production Firebase project ID:
+   ```json
+   {
+     "projects": {
+       "default": "studio-apps-483721"
+     }
+   }
+   ```
+
+3. **Terminal Deployment Pipeline (`npm run deploy:rules`)**:
+   - `firebase-tools` is installed as a development dependency.
+   - Standardized deployment script defined in `package.json`:
+     ```bash
+     npm run deploy:rules
+     # Executes: firebase deploy --only firestore:rules
+     ```
+   - Automatically compiles, validates, and deploys `firestore.rules` to Google Cloud Firestore with real-time CLI status verification.

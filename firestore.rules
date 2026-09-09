@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
+
+    // Helper Functions
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
       return isAuthenticated() && 
         request.auth.token.email != null && 
@@ -14,44 +14,89 @@ service cloud.firestore {
          request.auth.token.email.lower() == 'jeremy@theinnovativegroup.ca');
     }
 
-    // Allow full read and write access for auctions, settings, bids, comments, and consignments
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Auctions & Media Subcollections
     match /auctions/{auctionId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isAuthenticated();
 
       match /{document=**} {
-        allow read, write, create, update, delete: if true;
+        allow read: if true;
+        allow create, update, delete: if isAuthenticated();
       }
     }
 
-    match /settings/{settingId} {
-      allow read, write, create, update, delete: if true;
-    }
-
-    // Bids collection
+    // Bids & Bidding Telemetry
     match /bids/{bidId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // Comments collection
+    // Comments & Community Q&A
     match /comments/{commentId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
-    // Users / Bidders collection
+    // User Accounts & Moderation Registry
     match /users/{userId} {
-      allow read, write, create, update, delete: if true;
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwner(userId) || isAdmin();
     }
 
-    match /consignments/{appId} {
-      allow read, write, create, update, delete: if true;
+    match /bidders/{bidderId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwner(bidderId) || isAdmin();
     }
 
+    // Platform Settings & Media Configuration
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    match /mediaConfig/{configId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    match /media/{docId} {
+      allow read: if true;
+      allow write, create, update, delete: if isAuthenticated();
+    }
+
+    // Intake Forms & Direct Communications
     match /consignment_applications/{appId} {
-      allow read, write, create, update, delete: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    match /consignments/{consignmentId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
     }
 
     match /inquiries/{inquiryId} {
-      allow read, write, create, update, delete: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    // Outbox Queues
+    match /mail/{mailId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    match /emails/{emailId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
     }
   }
 }

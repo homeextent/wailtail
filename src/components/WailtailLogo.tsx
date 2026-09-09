@@ -8,73 +8,28 @@ interface WailtailLogoProps {
 
 export const WailtailLogo: React.FC<WailtailLogoProps> = ({
   className = 'h-10 max-h-10 w-auto',
-  variant = 'full',
   theme = 'dark'
 }) => {
-  // Colors based on theme
-  const markColor = theme === 'dark' ? '#ffffff' : theme === 'color' ? '#42327d' : '#18181b';
-  const textColor = theme === 'dark' ? '#ffffff' : theme === 'color' ? '#3c2b78' : '#18181b';
-  const accentLine = theme === 'dark' ? 'rgba(255,255,255,0.45)' : 'rgba(60,43,120,0.45)';
-
-  if (variant === 'icon-only') {
-    return (
-      <svg
-        viewBox="0 0 100 100"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className={`max-h-10 w-auto aspect-square flex-shrink-0 object-contain ${className}`}
-      >
-        {/* Flukes & Curved Body */}
-        <path
-          d="M18 12C28 12 40 22 45 32C50 22 62 12 72 12C78 12 84 15 84 22C84 34 68 45 54 46C53 58 60 67 71 67C79 67 85 61 86 54C88 54 90 56 90 59C88 72 78 82 65 82C48 82 40 68 42 50C43 41 46 34 49 28C43 23 34 18 24 18C18 18 12 21 12 25C12 32 20 40 30 44C28 47 24 51 20 54C11 47 4 37 4 27C4 18 10 12 18 12Z"
-          fill={markColor}
-        />
-        {/* Lower Concentric Ring */}
-        <circle cx="66" cy="67" r="14" stroke={markColor} strokeWidth="6" fill="none" />
-        <circle cx="66" cy="67" r="6" fill={markColor} />
-      </svg>
-    );
-  }
+  // Resolve fill color dynamically based on theme prop
+  const markColor =
+    theme === 'dark'
+      ? '#ffffff'
+      : theme === 'color'
+      ? '#3d2e73'
+      : '#18181b';
 
   return (
-    <div className={`flex items-center gap-2.5 select-none max-h-10 flex-shrink-0 ${className}`}>
-      {/* Whale Tail Icon Emblem */}
-      <svg
-        viewBox="0 0 100 100"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-9 sm:h-10 max-h-10 w-auto aspect-square flex-shrink-0 object-contain"
-      >
-        {/* Fluke Tail */}
-        <path
-          d="M16 10C27 10 39 20 45 30C51 20 63 10 74 10C81 10 87 14 87 21C87 33 71 43 56 45C55 56 61 66 73 66C81 66 87 60 88 53C91 53 92 56 92 59C90 73 79 84 65 84C48 84 39 70 41 51C42 41 46 33 49 27C43 22 34 17 23 17C17 17 11 20 11 24C11 31 18 39 28 43C26 46 22 50 18 53C9 46 3 36 3 26C3 17 9 10 16 10Z"
-          fill={markColor}
-        />
-        {/* Inner Hub/Wheel Ring */}
-        <circle cx="67" cy="68" r="15" stroke={markColor} strokeWidth="6.5" fill="none" />
-        <circle cx="67" cy="68" r="6" fill={markColor} />
-      </svg>
-
-      {/* Horizontal Speedline Connector & Wordmark */}
-      <div className="flex flex-col justify-center flex-shrink-0">
-        <div className="flex items-center relative">
-          <span 
-            className="font-black italic tracking-tight text-xl sm:text-2xl leading-none font-sans whitespace-nowrap"
-            style={{ 
-              color: textColor,
-              letterSpacing: '-0.04em'
-            }}
-          >
-            wailtail
-          </span>
-        </div>
-        <span 
-          className="text-[9px] uppercase tracking-[0.22em] font-semibold -mt-0.5 whitespace-nowrap"
-          style={{ color: theme === 'dark' ? '#a1a1aa' : '#71717a' }}
-        >
-          Single-Car Auctions
-        </span>
-      </div>
-    </div>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="3.460259288243668 4.165012744504619 29.079480711756332 27.66994725549538"
+      className={`max-h-10 w-auto aspect-square flex-shrink-0 object-contain ${className}`}
+    >
+      <g fill={markColor}>
+        {/* Main Whale Tail & Fluke Graphic */}
+        <path d="M32.54 24.688a7.155 7.155 0 0 0-7.147-7.147c-0.04 0-0.079 0.005-0.119 0.006-2.995-0.044-5.002-0.687-5.795-1.879a2.593 2.593 0 0 1-0.309-2.052c9.13-0.245 9.452-8.8 9.455-8.888a0.549 0.549 0 0 0-0.544-0.563c-0.346-0.001-7.934-0.02-12.038 3.662C11.94 4.148 4.354 4.167 4.004 4.165a0.549 0.549 0 0 0-0.544 0.563c0.002 0.087 0.318 8.478 9.191 8.878-0.394 2.192-1.288 9.271 2.452 13.979 2.178 2.743 5.548 4.159 10.001 4.235 0.097 0.004 0.192 0.015 0.289 0.015 0.012 0 0.023-0.002 0.035-0.002 0.015 0 0.029 0.002 0.045 0.002 0.009 0 0.017-0.005 0.026-0.005A7.152 7.152 0 0 0 32.54 24.688ZM15.965 26.905c-4.047-5.091-2.132-13.624-2.112-13.709a0.549 0.549 0 0 0-0.536-0.673c-7.176 0-8.475-5.426-8.708-7.247 1.883 0.072 7.762 0.544 10.884 3.529v1.337a0.549 0.549 0 0 0 1.099 0V8.805c3.119-2.982 9.001-3.456 10.884-3.528-0.234 1.821-1.533 7.246-8.708 7.246a0.549 0.549 0 0 0-0.504 0.332 3.82 3.82 0 0 0 0.291 3.407 5.438 5.438 0 0 0 3.586 2.07 7.126 7.126 0 0 0-1.458 11.717A9.575 9.575 0 0 1 15.965 26.905Zm9.463 3.83c-0.1 0-0.193-0.01-0.293-0.012a6.042 6.042 0 0 1 0.149-12.078c0.105 0.001 0.2 0.009 0.307 0.009 0.006 0 0.011-0.003 0.018-0.003a6.044 6.044 0 0 1-0.181 12.084Z" />
+        {/* Hub Ring Detail */}
+        <path d="M25.393 20.541a4.147 4.147 0 1 0 4.148 4.147A4.152 4.152 0 0 0 25.393 20.541Zm0 7.196a3.049 3.049 0 1 1 3.049-3.049A3.052 3.052 0 0 1 25.393 27.737Z" />
+      </g>
+    </svg>
   );
 };

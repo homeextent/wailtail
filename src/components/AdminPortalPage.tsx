@@ -15,9 +15,19 @@ import {
   setUserEmailVerified,
   deleteUserRecord,
   convertConsignmentToDraftListing,
+  updateConsignmentStatus,
+  deleteConsignmentApplication,
+  batchDeleteConsignments,
+  batchUpdateConsignmentStatus,
+  batchDeleteAuctions,
+  batchUpdateAuctionStatus,
+  deleteListing,
+  getConsignmentApplication,
   createNewListing,
   purgeAllListings,
   updateAuctionConfig,
+  saveGlobalBranding,
+  getStoredGlobalBranding,
   compressImageDataUrl,
   uploadImageToStorage,
   MAIN_AUCTION_ID
@@ -33,7 +43,8 @@ import {
   Search, 
   Plus, 
   Car, 
-  ArrowLeft, 
+  ArrowLeft,
+  ArrowRight,
   ExternalLink, 
   ShieldCheck, 
   CheckCircle, 
@@ -84,8 +95,12 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 }) => {
   const { user: authUser, userProfile: authUserProfile } = useAuth();
 
-  // Active Management Tab: 'bidders' | 'consignments' | 'ledger' | 'branding'
-  const [activeTab, setActiveTab] = useState<'bidders' | 'consignments' | 'ledger' | 'branding'>('bidders');
+  // Active Management Tab: 'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'
+  const [activeTab, setActiveTab] = useState<'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'>('bidders');
+
+  // Multi-Select Engine Selection States
+  const [selectedConsignmentIds, setSelectedConsignmentIds] = useState<string[]>([]);
+  const [selectedAuctionIds, setSelectedAuctionIds] = useState<string[]>([]);
 
   // Notification Toast
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -240,12 +255,81 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const [consignmentPage, setConsignmentPage] = useState<number>(1);
   const [consignmentPageSize, setConsignmentPageSize] = useState<number>(8);
   const [consignmentSearch, setConsignmentSearch] = useState<string>('');
-  const [consignmentStatusFilter, setConsignmentStatusFilter] = useState<string>('ALL');
+  const [consignmentStatusFilter, setConsignmentStatusFilter] = useState<string>('pending');
   const [consignmentsList, setConsignmentsList] = useState<ConsignmentApplication[]>([]);
   const [consignmentsTotal, setConsignmentsTotal] = useState<number>(0);
   const [consignmentsTotalPages, setConsignmentsTotalPages] = useState<number>(1);
   const [loadingConsignments, setLoadingConsignments] = useState<boolean>(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
+
+  // Consignment Pipeline Confirmation Modals & Action States
+  const [confirmApproveApp, setConfirmApproveApp] = useState<ConsignmentApplication | null>(null);
+  const [confirmRejectApp, setConfirmRejectApp] = useState<ConsignmentApplication | null>(null);
+  const [confirmReopenApp, setConfirmReopenApp] = useState<ConsignmentApplication | null>(null);
+  const [confirmDeleteConsignment, setConfirmDeleteConsignment] = useState<ConsignmentApplication | null>(null);
+  const [processingConsignmentAction, setProcessingConsignmentAction] = useState<boolean>(false);
+  const [highlightedConsignmentId, setHighlightedConsignmentId] = useState<string | null>(null);
+  const deepLinkProcessedRef = useRef<boolean>(false);
+
+  // Helper to clear URL parameters after processing or dismissing action modals
+  const clearUrlParams = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history && window.location) {
+      const url = new URL(window.location.href);
+      if (url.search) {
+        url.search = '';
+        window.history.replaceState({}, '', url.pathname + (url.hash || ''));
+      }
+    }
+  }, []);
+
+  // URL Parameter Handler for 1-click email triage deep links
+  useEffect(() => {
+    if (deepLinkProcessedRef.current) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const tabParam = searchParams.get('tab');
+    const idParam = searchParams.get('id');
+    const actionParam = searchParams.get('action');
+
+    if (tabParam === 'consignments') {
+      setActiveTab('consignments');
+
+      if (idParam) {
+        deepLinkProcessedRef.current = true;
+        const targetId = idParam.trim();
+        (async () => {
+          try {
+            const targetApp = await getConsignmentApplication(targetId);
+            if (!targetApp || !targetApp.id) {
+              showToast('Consignment application not found or already processed', 'error');
+              clearUrlParams();
+              return;
+            }
+
+            // Auto-filter and focus the target application record
+            setConsignmentStatusFilter('ALL');
+            setConsignmentSearch(targetId);
+            setHighlightedConsignmentId(targetId);
+
+            // Ensure the target application is included in current list
+            setConsignmentsList((prev) => {
+              if (prev.some((c) => c.id === targetApp.id)) return prev;
+              return [targetApp, ...prev];
+            });
+
+            // Trigger corresponding confirmation modal
+            if (actionParam === 'approve') {
+              setConfirmApproveApp(targetApp);
+            } else if (actionParam === 'reject') {
+              setConfirmRejectApp(targetApp);
+            }
+          } catch (err) {
+            showToast('Consignment application not found or already processed', 'error');
+            clearUrlParams();
+          }
+        })();
+      }
+    }
+  }, [clearUrlParams]);
 
   // Load paginated consignments
   const loadConsignments = useCallback(async () => {
@@ -284,7 +368,180 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       showToast(`Conversion failed: ${err.message || 'Unknown error'}`, 'error');
     } finally {
       setConvertingId(null);
+      clearUrlParams();
     }
+  };
+
+  // Reject consignment application
+  const handleRejectConsignment = async (app: ConsignmentApplication) => {
+    if (!app.id) return;
+    setProcessingConsignmentAction(true);
+    try {
+      await updateConsignmentStatus(app.id, 'rejected');
+      setConsignmentsList(prev => prev.map(c => c.id === app.id ? { ...c, status: 'rejected' } : c));
+      showToast(`Consignment application for ${app.year} ${app.make} ${app.model} has been rejected.`);
+      if (consignmentStatusFilter.toLowerCase() === 'pending') {
+        setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
+        setConsignmentsTotal(prev => Math.max(0, prev - 1));
+      }
+    } catch (err: any) {
+      showToast(`Failed to reject consignment: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setProcessingConsignmentAction(false);
+      clearUrlParams();
+    }
+  };
+
+  // Re-open consignment application
+  const handleReopenConsignment = async (app: ConsignmentApplication) => {
+    if (!app.id) return;
+    setProcessingConsignmentAction(true);
+    try {
+      await updateConsignmentStatus(app.id, 'pending');
+      setConsignmentsList(prev => prev.map(c => c.id === app.id ? { ...c, status: 'pending' } : c));
+      showToast(`Consignment application for ${app.year} ${app.make} ${app.model} re-opened as pending.`);
+      if (consignmentStatusFilter.toLowerCase() === 'rejected' || consignmentStatusFilter.toLowerCase() === 'declined') {
+        setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
+        setConsignmentsTotal(prev => Math.max(0, prev - 1));
+      }
+    } catch (err: any) {
+      showToast(`Failed to re-open consignment: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setProcessingConsignmentAction(false);
+      clearUrlParams();
+    }
+  };
+
+  // Delete consignment record permanently
+  const handleDeleteConsignment = async (app: ConsignmentApplication, cascade = false) => {
+    if (!app.id) return;
+    setProcessingConsignmentAction(true);
+    try {
+      await deleteConsignmentApplication(app.id, cascade);
+      setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
+      setConsignmentsTotal(prev => Math.max(0, prev - 1));
+      showToast(`Permanently deleted consignment record for ${app.year} ${app.make} ${app.model}${cascade ? ' and associated vehicle listing' : ''}.`);
+    } catch (err: any) {
+      showToast(`Failed to delete consignment: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setProcessingConsignmentAction(false);
+      clearUrlParams();
+    }
+  };
+
+  // -------------------------------------------------------------
+  // TAB 5: VEHICLE INVENTORY & LOTS STATE (PAGINATED & FILTERED)
+  // -------------------------------------------------------------
+  const [inventoryPage, setInventoryPage] = useState<number>(1);
+  const [inventoryPageSize, setInventoryPageSize] = useState<number>(8);
+  const [inventorySearch, setInventorySearch] = useState<string>('');
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState<'all' | 'draft' | 'preview' | 'upcoming' | 'live' | 'ended'>('all');
+
+  // Inventory & Bulk Deletion Modals & Cascading State
+  const [confirmDeleteLot, setConfirmDeleteLot] = useState<Auction | null>(null);
+  const [cascadeDeleteConsignmentOnLot, setCascadeDeleteConsignmentOnLot] = useState<boolean>(true);
+  const [cascadeDeleteAuctionOnConsignment, setCascadeDeleteAuctionOnConsignment] = useState<boolean>(true);
+  const [confirmBulkDeleteConsignments, setConfirmBulkDeleteConsignments] = useState<boolean>(false);
+  const [bulkCascadeDeleteAuction, setBulkCascadeDeleteAuction] = useState<boolean>(true);
+  const [confirmBulkDeleteAuctions, setConfirmBulkDeleteAuctions] = useState<boolean>(false);
+  const [bulkCascadeDeleteConsignment, setBulkCascadeDeleteConsignment] = useState<boolean>(true);
+
+  // Reset selection arrays upon changing tabs, changing pagination pages, or executing search queries
+  useEffect(() => {
+    setSelectedConsignmentIds([]);
+    setSelectedAuctionIds([]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    setSelectedConsignmentIds([]);
+  }, [consignmentPage, consignmentSearch, consignmentStatusFilter]);
+
+  useEffect(() => {
+    setSelectedAuctionIds([]);
+  }, [inventoryPage, inventorySearch, inventoryStatusFilter]);
+
+  // Master Select All for Consignments
+  const areAllCurrentConsignmentsSelected = useMemo(() => {
+    if (consignmentsList.length === 0) return false;
+    return consignmentsList.every(c => c.id && selectedConsignmentIds.includes(c.id));
+  }, [consignmentsList, selectedConsignmentIds]);
+
+  const handleToggleSelectAllConsignments = () => {
+    const validPageIds = consignmentsList.map(c => c.id).filter(Boolean) as string[];
+    if (validPageIds.length === 0) return;
+    if (areAllCurrentConsignmentsSelected) {
+      setSelectedConsignmentIds(prev => prev.filter(id => !validPageIds.includes(id)));
+    } else {
+      setSelectedConsignmentIds(prev => Array.from(new Set([...prev, ...validPageIds])));
+    }
+  };
+
+  const handleToggleConsignmentSelection = (id: string) => {
+    setSelectedConsignmentIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // Inventory Filtering & Pagination
+  const filteredInventory = useMemo(() => {
+    return allAuctions.filter(lot => {
+      if (inventoryStatusFilter !== 'all') {
+        const s = (lot.status || 'draft').toLowerCase();
+        if (inventoryStatusFilter === 'live') {
+          if (s !== 'live' && s !== 'active') return false;
+        } else if (inventoryStatusFilter === 'upcoming') {
+          if (s !== 'upcoming') return false;
+        } else if (inventoryStatusFilter === 'preview') {
+          if (s !== 'preview') return false;
+        } else if (inventoryStatusFilter === 'draft') {
+          if (s !== 'draft') return false;
+        } else if (inventoryStatusFilter === 'ended') {
+          if (s !== 'ended' && s !== 'sold' && s !== 'reserve_not_met') return false;
+        }
+      }
+      if (inventorySearch.trim()) {
+        const q = inventorySearch.toLowerCase();
+        const match =
+          (lot.title || '').toLowerCase().includes(q) ||
+          (lot.subtitle || '').toLowerCase().includes(q) ||
+          (lot.vin || '').toLowerCase().includes(q) ||
+          (lot.make || '').toLowerCase().includes(q) ||
+          (lot.model || '').toLowerCase().includes(q) ||
+          String(lot.year || '').toLowerCase().includes(q) ||
+          (lot.id || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [allAuctions, inventoryStatusFilter, inventorySearch]);
+
+  const inventoryTotal = filteredInventory.length;
+  const inventoryTotalPages = Math.max(1, Math.ceil(inventoryTotal / inventoryPageSize));
+  const paginatedInventory = useMemo(() => {
+    const start = (inventoryPage - 1) * inventoryPageSize;
+    return filteredInventory.slice(start, start + inventoryPageSize);
+  }, [filteredInventory, inventoryPage, inventoryPageSize]);
+
+  // Master Select All for Auctions
+  const areAllCurrentAuctionsSelected = useMemo(() => {
+    if (paginatedInventory.length === 0) return false;
+    return paginatedInventory.every(lot => selectedAuctionIds.includes(lot.id));
+  }, [paginatedInventory, selectedAuctionIds]);
+
+  const handleToggleSelectAllAuctions = () => {
+    const validPageIds = paginatedInventory.map(lot => lot.id);
+    if (validPageIds.length === 0) return;
+    if (areAllCurrentAuctionsSelected) {
+      setSelectedAuctionIds(prev => prev.filter(id => !validPageIds.includes(id)));
+    } else {
+      setSelectedAuctionIds(prev => Array.from(new Set([...prev, ...validPageIds])));
+    }
+  };
+
+  const handleToggleAuctionSelection = (id: string) => {
+    setSelectedAuctionIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
   };
 
   // -------------------------------------------------------------
@@ -298,9 +555,10 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   // -------------------------------------------------------------
   // TAB 4: SITE BRANDING & GLOBAL SETTINGS STATE
   // -------------------------------------------------------------
-  const [siteLogo, setSiteLogo] = useState(mediaConfig.siteLogo || auction.siteLogo || '');
-  const [siteName, setSiteName] = useState(mediaConfig.siteName || auction.siteName || 'wailtail');
-  const [siteTagline, setSiteTagline] = useState(mediaConfig.siteTagline || auction.siteTagline || 'Single-Car Auctions');
+  const storedBranding = getStoredGlobalBranding();
+  const [siteLogo, setSiteLogo] = useState(mediaConfig.siteLogo || auction.siteLogo || storedBranding.siteLogo || '');
+  const [siteName, setSiteName] = useState(mediaConfig.siteName || auction.siteName || storedBranding.siteName || 'wailtail');
+  const [siteTagline, setSiteTagline] = useState(mediaConfig.siteTagline || auction.siteTagline || storedBranding.siteTagline || 'Single-Car Auctions');
   const [defaultStartingBid, setDefaultStartingBid] = useState<number>(auction.startingBid || 1000);
   const [defaultMinIncrement, setDefaultMinIncrement] = useState<number>(auction.minimumIncrement || 250);
   const [savingBranding, setSavingBranding] = useState<boolean>(false);
@@ -340,6 +598,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     setSavingBranding(true);
     try {
       const targetAuctionId = auction.id?.trim() || MAIN_AUCTION_ID;
+      await saveGlobalBranding({
+        siteLogo,
+        siteName,
+        siteTagline,
+        defaultStartingBid: Number(defaultStartingBid),
+        defaultMinIncrement: Number(defaultMinIncrement),
+        currency: 'CAD'
+      });
+
       await updateAuctionConfig(targetAuctionId, {
         siteLogo,
         siteName,
@@ -583,6 +850,23 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 activeTab === 'consignments' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
                 {consignmentsTotal}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('inventory')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                activeTab === 'inventory'
+                  ? 'bg-red-700 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70'
+              }`}
+            >
+              <Car className="w-4 h-4" />
+              <span>Vehicle Inventory &amp; Lots</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                activeTab === 'inventory' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
+              }`}>
+                {allAuctions.length}
               </span>
             </button>
 
@@ -984,25 +1268,41 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   )}
                 </div>
 
-                {/* Status Filter Tabs (ALL, PENDING, APPROVED, REJECTED) */}
-                <div className="flex items-center gap-1.5 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
-                  {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => {
-                        setConsignmentStatusFilter(st);
-                        setConsignmentPage(1);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                        consignmentStatusFilter === st
-                          ? 'bg-zinc-800 text-white shadow-xs font-bold border border-zinc-700'
-                          : 'text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      {st}
-                    </button>
-                  ))}
+                {/* Master Select All and Status Filter Tabs */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 text-xs text-zinc-300">
+                    <input
+                      type="checkbox"
+                      id="select-all-consignments-checkbox"
+                      checked={areAllCurrentConsignmentsSelected}
+                      onChange={handleToggleSelectAllConsignments}
+                      className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+                    />
+                    <label htmlFor="select-all-consignments-checkbox" className="cursor-pointer select-none text-[11px] font-semibold">
+                      Select Page {selectedConsignmentIds.length > 0 && `(${selectedConsignmentIds.length})`}
+                    </label>
+                  </div>
+
+                  {/* Status Filter Tabs (ALL, PENDING, APPROVED, REJECTED) */}
+                  <div className="flex items-center gap-1.5 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
+                    {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map((st) => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => {
+                          setConsignmentStatusFilter(st.toLowerCase());
+                          setConsignmentPage(1);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                          consignmentStatusFilter.toLowerCase() === st.toLowerCase()
+                            ? 'bg-zinc-800 text-white shadow-xs font-bold border border-zinc-700'
+                            : 'text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1022,14 +1322,14 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <p className="text-xs text-zinc-500 max-w-sm mx-auto">
                   No submissions match your active filter and search terms.
                 </p>
-                {(consignmentSearch || consignmentStatusFilter !== 'ALL') && (
+                {(consignmentSearch || consignmentStatusFilter.toLowerCase() !== 'all') && (
                   <button
                     onClick={() => {
                       setConsignmentSearch('');
-                      setConsignmentStatusFilter('ALL');
+                      setConsignmentStatusFilter('pending');
                       setConsignmentPage(1);
                     }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 cursor-pointer"
                   >
                     Clear Filter Criteria
                   </button>
@@ -1039,7 +1339,9 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               <div className="space-y-4">
                 {consignmentsList.map((app) => {
                   const structuredLocation = [app.locationCity, app.locationProvince, app.locationCountry].filter(Boolean).join(', ') || app.location;
-                  const isConverted = Boolean(app.convertedAuctionId || app.status === 'approved');
+                  const appStatus = (app.status || 'pending').toLowerCase();
+                  const isApproved = appStatus === 'approved' || Boolean(app.convertedAuctionId);
+                  const isRejected = appStatus === 'rejected' || appStatus === 'declined';
                   const convertedAuctionId = app.convertedAuctionId;
 
                   // Member Auto-Link Badge (ADMIN / BIDDER / GUEST)
@@ -1049,13 +1351,32 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     ? 'BIDDER' 
                     : 'GUEST';
 
+                  const isConsignmentSelected = Boolean(app.id && selectedConsignmentIds.includes(app.id));
+
                   return (
                     <div
                       key={app.id}
-                      className="bg-[#151a1e] rounded-2xl border border-zinc-800 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5 hover:border-zinc-700 transition-all"
+                      id={`consignment-${app.id}`}
+                      className={`bg-[#151a1e] rounded-2xl border p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5 transition-all ${
+                        highlightedConsignmentId === app.id
+                          ? 'border-emerald-500/80 ring-2 ring-emerald-500/30'
+                          : isConsignmentSelected
+                          ? 'border-red-600/80 bg-red-950/10'
+                          : 'border-zinc-800 hover:border-zinc-700'
+                      }`}
                     >
-                      {/* Vehicle & Consignor Info */}
-                      <div className="space-y-3 flex-1 min-w-0">
+                      {/* Checkbox & Vehicle Info */}
+                      <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                        {app.id && (
+                          <input
+                            type="checkbox"
+                            checked={isConsignmentSelected}
+                            onChange={() => handleToggleConsignmentSelection(app.id!)}
+                            className="mt-1 rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer w-4 h-4 flex-shrink-0"
+                            aria-label={`Select consignment for ${app.year} ${app.make} ${app.model}`}
+                          />
+                        )}
+                        <div className="space-y-3 flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h4 className="text-base sm:text-lg font-bold text-white tracking-tight">
                             {app.year} {app.make} {app.model}
@@ -1081,9 +1402,9 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
                           {/* Status Badge */}
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                            app.status === 'approved'
+                            isApproved
                               ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                              : app.status === 'declined' || app.status === 'rejected'
+                              : isRejected
                               ? 'bg-red-950 text-red-300 border border-red-800'
                               : 'bg-amber-950 text-amber-300 border border-amber-800'
                           }`}>
@@ -1135,36 +1456,79 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                           </div>
                         )}
                       </div>
+                    </div>
 
-                      {/* Direct Conversion Action Buttons */}
-                      <div className="flex items-center gap-2.5 md:flex-col md:items-end shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-800">
-                        {!isConverted ? (
-                          <button
-                            type="button"
-                            disabled={convertingId === app.id}
-                            onClick={() => handleConvertConsignment(app)}
-                            className="px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer disabled:opacity-50"
-                          >
-                            <Zap className="w-4 h-4 fill-current" />
-                            <span>{convertingId === app.id ? 'Converting...' : '⚡ Convert to Draft Listing'}</span>
-                          </button>
-                        ) : (
-                          <div className="space-y-2 text-right">
+                      {/* Contextual Action Buttons */}
+                      <div className="flex flex-wrap items-center gap-2.5 md:flex-col md:items-end shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-800">
+                        {isApproved ? (
+                          <div className="flex items-center gap-2">
                             {convertedAuctionId ? (
                               <button
                                 type="button"
                                 onClick={() => onOpenListingEditor(convertedAuctionId)}
-                                className="px-4 py-2.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-white text-zinc-950 flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
                               >
                                 <span>Open in Listing Editor</span>
                                 <span>→</span>
                               </button>
                             ) : (
-                              <span className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
-                                <CheckCircle className="w-3.5 h-3.5" />
-                                <span>Approved</span>
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmApproveApp(app)}
+                                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+                              >
+                                <span>Convert to Draft</span>
+                                <span>→</span>
+                              </button>
                             )}
+                            <button
+                              type="button"
+                              title="Delete Record"
+                              onClick={() => setConfirmDeleteConsignment(app)}
+                              className="p-2 rounded-xl bg-zinc-800/80 hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-800 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : isRejected ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmReopenApp(app)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Re-Open Application</span>
+                            </button>
+                            <button
+                              type="button"
+                              title="Delete Record"
+                              onClick={() => setConfirmDeleteConsignment(app)}
+                              className="p-2 rounded-xl bg-zinc-800/80 hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-800 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          /* PENDING */
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmApproveApp(app)}
+                              disabled={convertingId === app.id}
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Approve &amp; Convert</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRejectApp(app)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold border border-rose-500/60 hover:border-rose-500 text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                              <span>Reject Application</span>
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1213,6 +1577,333 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* =================================================================== */}
+        {/* TAB 5: VEHICLE INVENTORY & LOTS */}
+        {/* =================================================================== */}
+        {activeTab === 'inventory' && (
+          <div className="space-y-6">
+            <div className="bg-[#151a1e] rounded-2xl border border-zinc-800 p-5 sm:p-6 shadow-sm space-y-4">
+              {/* Header & New Lot Trigger */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Car className="w-5 h-5 text-red-500" />
+                    <span>Vehicle Inventory &amp; Lots</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Manage active catalog lots, edit vehicle specifications, toggle status lifecycles, and perform bulk operations.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowNewListingModal(true)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-2 shadow-md transition-all active:scale-95 cursor-pointer self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ New Vehicle Lot</span>
+                </button>
+              </div>
+
+              {/* Status Filter Tabs and Search */}
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-3 border-t border-zinc-800/80">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Master Select All Checkbox */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 text-xs text-zinc-300">
+                    <input
+                      type="checkbox"
+                      id="select-all-inventory-checkbox"
+                      checked={areAllCurrentAuctionsSelected}
+                      onChange={handleToggleSelectAllAuctions}
+                      className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+                    />
+                    <label htmlFor="select-all-inventory-checkbox" className="cursor-pointer select-none text-[11px] font-semibold">
+                      Select Page {selectedAuctionIds.length > 0 && `(${selectedAuctionIds.length})`}
+                    </label>
+                  </div>
+
+                  {/* Status Filters */}
+                  <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
+                    {(['all', 'draft', 'preview', 'upcoming', 'live', 'ended'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => {
+                          setInventoryStatusFilter(filter);
+                          setInventoryPage(1);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg capitalize transition-all cursor-pointer whitespace-nowrap ${
+                          inventoryStatusFilter === filter
+                            ? 'bg-zinc-800 text-white font-bold shadow-xs border border-zinc-700'
+                            : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {filter === 'all' ? `All (${allAuctions.length})` : filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative min-w-[260px]">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by make, model, VIN, title..."
+                    value={inventorySearch}
+                    onChange={(e) => {
+                      setInventorySearch(e.target.value);
+                      setInventoryPage(1);
+                    }}
+                    className="w-full pl-9 pr-8 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+                  />
+                  {inventorySearch && (
+                    <button
+                      onClick={() => {
+                        setInventorySearch('');
+                        setInventoryPage(1);
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Inventory Lots Table */}
+            <div className="bg-[#151a1e] rounded-2xl border border-zinc-800 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-zinc-900/60 text-zinc-400 uppercase tracking-wider font-semibold text-[10px]">
+                      <th className="p-4 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={areAllCurrentAuctionsSelected}
+                          onChange={handleToggleSelectAllAuctions}
+                          className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-4">Vehicle Lot</th>
+                      <th className="p-4">Specifications</th>
+                      <th className="p-4">Current High Bid</th>
+                      <th className="p-4">Reserve Met</th>
+                      <th className="p-4">Status Badge</th>
+                      <th className="p-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/80 text-zinc-300">
+                    {paginatedInventory.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-12 text-center text-zinc-500">
+                          <Car className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                          <p className="font-semibold text-zinc-300">No vehicle lots found</p>
+                          <p className="text-xs mt-1">No catalog entries match your active status or search query.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedInventory.map((lot) => {
+                        const isSelected = selectedAuctionIds.includes(lot.id);
+                        const heroImg = lot.leadHeroImage || lot.heroImages?.[0];
+                        const highBid = lot.currentBid || lot.startingBid || 0;
+                        const hasReserve = (lot.reserveAmount || 0) > 0;
+                        const lotStatus = lot.status || 'draft';
+
+                        return (
+                          <tr
+                            key={lot.id}
+                            className={`hover:bg-zinc-800/40 transition-colors ${
+                              isSelected ? 'bg-red-950/20' : ''
+                            }`}
+                          >
+                            <td className="p-4 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleAuctionSelection(lot.id)}
+                                className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center gap-3 min-w-[200px]">
+                                {heroImg ? (
+                                  <img
+                                    src={heroImg}
+                                    alt={lot.title}
+                                    className="w-14 h-10 object-cover rounded-lg border border-zinc-700 flex-shrink-0 bg-zinc-900"
+                                  />
+                                ) : (
+                                  <div className="w-14 h-10 rounded-lg border border-zinc-800 bg-zinc-900 flex items-center justify-center text-zinc-600 flex-shrink-0">
+                                    <Car className="w-5 h-5" />
+                                  </div>
+                                )}
+                                <div className="space-y-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenListingEditor(lot.id)}
+                                    className="font-bold text-white block hover:text-red-400 transition-colors text-left cursor-pointer"
+                                  >
+                                    {lot.title}
+                                  </button>
+                                  <span className="font-mono text-[10px] text-zinc-500 block truncate max-w-[180px]">
+                                    {lot.id}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <div className="space-y-0.5">
+                                <span className="text-zinc-200 font-medium block">
+                                  {lot.year || '—'} {lot.make || ''} {lot.model || ''}
+                                </span>
+                                <span className="font-mono text-[10px] text-zinc-400 block truncate max-w-[160px]">
+                                  VIN: {lot.vin || '—'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className="font-mono font-bold text-emerald-400 text-sm block">
+                                {formatCurrency(highBid)} CAD
+                              </span>
+                              {lot.bidCount !== undefined && (
+                                <span className="text-[10px] text-zinc-500 block">
+                                  {lot.bidCount} bid{lot.bidCount === 1 ? '' : 's'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              {hasReserve ? (
+                                lot.isReserveMet ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800">
+                                    Reserve Met
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-800">
+                                    Reserve Not Met
+                                  </span>
+                                )
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  No Reserve
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
+                                (lotStatus === 'live' || lotStatus === 'active')
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : lotStatus === 'upcoming'
+                                  ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                  : lotStatus === 'preview'
+                                  ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                                  : (lotStatus === 'ended' || lotStatus === 'sold' || lotStatus === 'reserve_not_met')
+                                  ? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                                  : 'bg-amber-950 text-amber-300 border border-amber-800'
+                              }`}>
+                                {lotStatus}
+                              </span>
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {/* Open in Listing Editor */}
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenListingEditor(lot.id)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+                                  title={`Open in Listing Editor (/dashboard/listings/${lot.id}/edit)`}
+                                >
+                                  <span>Open in Listing Editor</span>
+                                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                                </button>
+
+                                {/* Status Dropdown */}
+                                <select
+                                  value={lotStatus}
+                                  onChange={async (e) => {
+                                    const nextSt = e.target.value as Auction['status'];
+                                    try {
+                                      await batchUpdateAuctionStatus([lot.id], nextSt);
+                                      showToast(`Successfully updated status for 1 vehicle lot to ${nextSt.toUpperCase()}.`);
+                                    } catch (err: any) {
+                                      showToast(`Failed to update status: ${err.message}`, 'error');
+                                    }
+                                  }}
+                                  className="px-2 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 border border-zinc-700 text-zinc-200 cursor-pointer focus:ring-1 focus:ring-red-500"
+                                >
+                                  <option value="draft">Draft</option>
+                                  <option value="preview">Preview</option>
+                                  <option value="upcoming">Upcoming</option>
+                                  <option value="live">Live</option>
+                                  <option value="ended">Ended</option>
+                                </select>
+
+                                {/* Delete Lot */}
+                                <button
+                                  type="button"
+                                  title="Delete Lot"
+                                  onClick={() => {
+                                    setConfirmDeleteLot(lot);
+                                    setCascadeDeleteConsignmentOnLot(true);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-950/60 text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-800 transition-all cursor-pointer active:scale-95"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {inventoryTotal > 0 && (
+                <div className="p-4 bg-[#151a1e] border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400">
+                  <div className="flex items-center gap-2">
+                    <span>Showing</span>
+                    <span className="font-bold text-white font-mono">
+                      {Math.min((inventoryPage - 1) * inventoryPageSize + 1, inventoryTotal)}–
+                      {Math.min(inventoryPage * inventoryPageSize, inventoryTotal)}
+                    </span>
+                    <span>of</span>
+                    <span className="font-bold text-white font-mono">{inventoryTotal}</span>
+                    <span>lots</span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setInventoryPage(prev => Math.max(1, prev - 1))}
+                      disabled={inventoryPage <= 1}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-700 flex items-center gap-1 font-semibold cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Previous</span>
+                    </button>
+
+                    <span className="px-3 py-1.5 rounded-lg bg-zinc-900 font-mono font-bold text-zinc-200 border border-zinc-800">
+                      {inventoryPage} / {inventoryTotalPages}
+                    </span>
+
+                    <button
+                      onClick={() => setInventoryPage(prev => Math.min(inventoryTotalPages, prev + 1))}
+                      disabled={inventoryPage >= inventoryTotalPages}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed border border-zinc-700 flex items-center gap-1 font-semibold cursor-pointer"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1432,59 +2123,37 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </button>
               </div>
 
-              {/* Header Emblem Previews */}
+              {/* Header Emblem Preview */}
               <div className="space-y-3">
                 <label className="block font-bold text-zinc-200 text-xs uppercase tracking-wider">
-                  Live Header Navbar Contrast Previews (40px Height Constraint)
+                  LIVE DARK HEADER NAVBAR PREVIEW (40PX HEIGHT CONSTRAINT)
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Dark Mode Preview */}
-                  <div className="p-4 rounded-xl bg-[#121619] border border-zinc-800 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {siteLogo && siteLogo.trim() !== '' ? (
-                        <img
-                          src={siteLogo}
-                          alt="Site Emblem"
-                          className="h-10 max-h-10 w-auto object-contain"
-                        />
-                      ) : (
-                        <WailtailLogo className="h-10" />
-                      )}
-                      <div className="border-l border-zinc-700 pl-3">
-                        <div className="text-base font-black tracking-tight text-white uppercase font-sans">
-                          {siteName || 'wailtail'}
-                        </div>
-                        <div className="text-[10px] text-zinc-400 font-semibold tracking-widest uppercase">
-                          {siteTagline || 'Single-Car Auctions'}
-                        </div>
-                      </div>
+                <div className="w-full px-4 rounded-xl bg-slate-900 border border-slate-800 h-10 flex items-center justify-between shadow-inner">
+                  <div className="flex items-center gap-3 h-full">
+                    {siteLogo && siteLogo.trim() !== '' ? (
+                      <img
+                        src={siteLogo}
+                        alt={siteName || "Site Logo"}
+                        className="max-h-8 w-auto object-contain flex-shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <WailtailLogo theme="dark" className="max-h-8 w-auto object-contain flex-shrink-0" />
+                    )}
+                    <div className="flex flex-col justify-center min-w-0 border-l border-slate-800 pl-3">
+                      <span className="font-black italic tracking-tight text-base sm:text-lg leading-none text-white font-sans whitespace-nowrap uppercase">
+                        {siteName || 'wailtail'}
+                      </span>
+                      <span className="text-[8px] sm:text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-400 mt-0.5 whitespace-nowrap">
+                        {siteTagline || 'Single-Car Auctions'}
+                      </span>
                     </div>
-                    <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase">Dark Theme</span>
                   </div>
-
-                  {/* Light Mode Preview */}
-                  <div className="p-4 rounded-xl bg-[#f7f8fa] border border-zinc-300 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {siteLogo && siteLogo.trim() !== '' ? (
-                        <img
-                          src={siteLogo}
-                          alt="Site Emblem"
-                          className="h-10 max-h-10 w-auto object-contain"
-                        />
-                      ) : (
-                        <WailtailLogo className="h-10" />
-                      )}
-                      <div className="border-l border-zinc-300 pl-3">
-                        <div className="text-base font-black tracking-tight text-zinc-900 uppercase font-sans">
-                          {siteName || 'wailtail'}
-                        </div>
-                        <div className="text-[10px] text-zinc-600 font-semibold tracking-widest uppercase">
-                          {siteTagline || 'Single-Car Auctions'}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase">Light Theme</span>
-                  </div>
+                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider hidden sm:inline">
+                    Live Header Preview
+                  </span>
                 </div>
               </div>
 
@@ -1751,6 +2420,567 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL: APPROVE & CONVERT CONSIGNMENT CONFIRMATION */}
+      {confirmApproveApp && (
+        <div
+          onClick={() => { setConfirmApproveApp(null); clearUrlParams(); }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-emerald-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800 flex-shrink-0">
+                <CheckCircle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">Approve &amp; Convert Consignment?</h3>
+                <p className="text-xs text-zinc-300">
+                  Ready to approve <strong className="text-white">{confirmApproveApp.year} {confirmApproveApp.make} {confirmApproveApp.model}</strong> submitted by <span className="text-zinc-200 font-semibold">{confirmApproveApp.sellerName}</span> ({confirmApproveApp.sellerEmail})?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  This converts the submission directly into a pre-populated vehicle listing draft and promotes the consignor to seller role.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => { setConfirmApproveApp(null); clearUrlParams(); }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = confirmApproveApp;
+                  setConfirmApproveApp(null);
+                  await handleConvertConsignment(target);
+                }}
+                disabled={convertingId === confirmApproveApp.id}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>{convertingId === confirmApproveApp.id ? 'Converting...' : 'Approve & Create Draft'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REJECT CONSIGNMENT CONFIRMATION */}
+      {confirmRejectApp && (
+        <div
+          onClick={() => { setConfirmRejectApp(null); clearUrlParams(); }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-rose-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-rose-950 text-rose-400 border border-rose-800 flex-shrink-0">
+                <Ban className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">Reject Consignment Application?</h3>
+                <p className="text-xs text-zinc-300">
+                  Are you sure you want to reject the application for <strong className="text-white">{confirmRejectApp.year} {confirmRejectApp.make} {confirmRejectApp.model}</strong> from <span className="text-zinc-200 font-semibold">{confirmRejectApp.sellerName}</span>?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  The application status will be marked as rejected. It remains accessible in the consignment pipeline and can be re-opened at any time.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => { setConfirmRejectApp(null); clearUrlParams(); }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = confirmRejectApp;
+                  setConfirmRejectApp(null);
+                  await handleRejectConsignment(target);
+                }}
+                disabled={processingConsignmentAction}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <X className="w-4 h-4 stroke-[2.5]" />
+                <span>{processingConsignmentAction ? 'Rejecting...' : 'Reject Application'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RE-OPEN CONSIGNMENT CONFIRMATION */}
+      {confirmReopenApp && (
+        <div
+          onClick={() => { setConfirmReopenApp(null); clearUrlParams(); }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-amber-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-amber-950 text-amber-400 border border-amber-800 flex-shrink-0">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">Re-Open Consignment Application?</h3>
+                <p className="text-xs text-zinc-300">
+                  Restore <strong className="text-white">{confirmReopenApp.year} {confirmReopenApp.make} {confirmReopenApp.model}</strong> back to pending triage status?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  This returns the consignment back to the active pending review pipeline.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => { setConfirmReopenApp(null); clearUrlParams(); }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = confirmReopenApp;
+                  setConfirmReopenApp(null);
+                  await handleReopenConsignment(target);
+                }}
+                disabled={processingConsignmentAction}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{processingConsignmentAction ? 'Re-Opening...' : 'Re-Open as Pending'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DELETE CONSIGNMENT RECORD CONFIRMATION */}
+      {confirmDeleteConsignment && (
+        <div
+          onClick={() => { setConfirmDeleteConsignment(null); clearUrlParams(); }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-red-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-red-950 text-red-400 border border-red-800 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">Permanently Delete Consignment Record?</h3>
+                <p className="text-xs text-zinc-300">
+                  Are you sure you want to permanently delete submission for{' '}
+                  <strong className="text-white">{confirmDeleteConsignment.year} {confirmDeleteConsignment.make} {confirmDeleteConsignment.model}</strong> ({confirmDeleteConsignment.sellerName})?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  This document will be permanently deleted from consignment_applications in Firestore. This action cannot be reversed.
+                </p>
+              </div>
+            </div>
+
+            {/* Cascading Deletion Checkbox for Approved Consignment */}
+            {Boolean(confirmDeleteConsignment.convertedAuctionId || confirmDeleteConsignment.status === 'approved') && (
+              <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="cascade-delete-auction-on-consignment"
+                  checked={cascadeDeleteAuctionOnConsignment}
+                  onChange={(e) => setCascadeDeleteAuctionOnConsignment(e.target.checked)}
+                  className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+                />
+                <label htmlFor="cascade-delete-auction-on-consignment" className="text-xs text-zinc-300 cursor-pointer select-none">
+                  Also delete associated vehicle listing from auctions catalog?
+                </label>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => { setConfirmDeleteConsignment(null); clearUrlParams(); }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = confirmDeleteConsignment;
+                  setConfirmDeleteConsignment(null);
+                  await handleDeleteConsignment(target, cascadeDeleteAuctionOnConsignment);
+                }}
+                disabled={processingConsignmentAction}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{processingConsignmentAction ? 'Deleting...' : 'Yes, Delete Record'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DELETE VEHICLE LOT CONFIRMATION */}
+      {confirmDeleteLot && (
+        <div
+          onClick={() => setConfirmDeleteLot(null)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-red-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-red-950 text-red-400 border border-red-800 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">Permanently Delete Vehicle Lot?</h3>
+                <p className="text-xs text-zinc-300">
+                  Are you sure you want to permanently delete listing <strong className="text-white">{confirmDeleteLot.title}</strong> (ID: <span className="font-mono text-zinc-400">{confirmDeleteLot.id}</span>)?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  This document and its media configurations will be permanently deleted from Firestore.
+                </p>
+              </div>
+            </div>
+
+            {/* Cascading Deletion Checkbox for Linked Consignment */}
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="cascade-delete-consignment-on-lot"
+                checked={cascadeDeleteConsignmentOnLot}
+                onChange={(e) => setCascadeDeleteConsignmentOnLot(e.target.checked)}
+                className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+              />
+              <label htmlFor="cascade-delete-consignment-on-lot" className="text-xs text-zinc-300 cursor-pointer select-none">
+                Also delete associated vehicle listing from auctions catalog?
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteLot(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const target = confirmDeleteLot;
+                  setConfirmDeleteLot(null);
+                  try {
+                    await deleteListing(target.id, cascadeDeleteConsignmentOnLot);
+                    showToast(`Successfully deleted vehicle lot "${target.title}".`);
+                  } catch (err: any) {
+                    showToast(`Failed to delete lot: ${err.message || 'Error'}`, 'error');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Yes, Delete Lot</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: BULK DELETE CONSIGNMENTS CONFIRMATION */}
+      {confirmBulkDeleteConsignments && (
+        <div
+          onClick={() => setConfirmBulkDeleteConsignments(false)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-red-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-red-950 text-red-400 border border-red-800 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">
+                  Delete {selectedConsignmentIds.length} Consignment{selectedConsignmentIds.length > 1 ? 's' : ''}?
+                </h3>
+                <p className="text-xs text-zinc-300">
+                  Are you sure you want to permanently delete {selectedConsignmentIds.length} selected consignment application record{selectedConsignmentIds.length > 1 ? 's' : ''}?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  This action commits a Firestore atomic batch deletion and cannot be reversed.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="bulk-cascade-delete-auction-checkbox"
+                checked={bulkCascadeDeleteAuction}
+                onChange={(e) => setBulkCascadeDeleteAuction(e.target.checked)}
+                className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+              />
+              <label htmlFor="bulk-cascade-delete-auction-checkbox" className="text-xs text-zinc-300 cursor-pointer select-none">
+                Also delete associated vehicle listing from auctions catalog?
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setConfirmBulkDeleteConsignments(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setConfirmBulkDeleteConsignments(false);
+                  const count = selectedConsignmentIds.length;
+                  try {
+                    await batchDeleteConsignments(selectedConsignmentIds, bulkCascadeDeleteAuction);
+                    setSelectedConsignmentIds([]);
+                    showToast(`Successfully deleted ${count} consignment application${count > 1 ? 's' : ''}.`);
+                    loadConsignments();
+                  } catch (err: any) {
+                    showToast(`Batch deletion failed: ${err.message || 'Error'}`, 'error');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete {selectedConsignmentIds.length} Consignments</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: BULK DELETE AUCTIONS CONFIRMATION */}
+      {confirmBulkDeleteAuctions && (
+        <div
+          onClick={() => setConfirmBulkDeleteAuctions(false)}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-[#151a1e] rounded-2xl shadow-2xl border border-red-800 p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-red-950 text-red-400 border border-red-800 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-base font-bold text-white">
+                  Delete {selectedAuctionIds.length} Vehicle Lot{selectedAuctionIds.length > 1 ? 's' : ''}?
+                </h3>
+                <p className="text-xs text-zinc-300">
+                  Are you sure you want to permanently delete {selectedAuctionIds.length} selected vehicle lot{selectedAuctionIds.length > 1 ? 's' : ''}?
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  Target auctions and their media configuration documents will be deleted atomically.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="bulk-cascade-delete-consignment-checkbox"
+                checked={bulkCascadeDeleteConsignment}
+                onChange={(e) => setBulkCascadeDeleteConsignment(e.target.checked)}
+                className="rounded border-zinc-700 text-red-600 focus:ring-red-600 cursor-pointer"
+              />
+              <label htmlFor="bulk-cascade-delete-consignment-checkbox" className="text-xs text-zinc-300 cursor-pointer select-none">
+                Also delete associated vehicle consignment applications?
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setConfirmBulkDeleteAuctions(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setConfirmBulkDeleteAuctions(false);
+                  const count = selectedAuctionIds.length;
+                  try {
+                    await batchDeleteAuctions(selectedAuctionIds, bulkCascadeDeleteConsignment);
+                    setSelectedAuctionIds([]);
+                    showToast(`Successfully deleted ${count} vehicle lot${count > 1 ? 's' : ''}.`);
+                  } catch (err: any) {
+                    showToast(`Batch lot deletion failed: ${err.message || 'Error'}`, 'error');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete {selectedAuctionIds.length} Lots</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING BULK ACTION TOOLBAR */}
+      {((activeTab === 'consignments' && selectedConsignmentIds.length > 0) ||
+        (activeTab === 'inventory' && selectedAuctionIds.length > 0)) && (
+        <aside
+          aria-label="Bulk action toolbar"
+          className="fixed bottom-6 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 z-40 bg-[#151a1e]/95 backdrop-blur-md border border-zinc-700/80 shadow-2xl rounded-2xl px-5 py-3 flex flex-wrap items-center justify-between sm:justify-center gap-3 animate-in slide-in-from-bottom-5"
+        >
+          {/* Selection Counter */}
+          <div className="flex items-center gap-2 pr-3 border-r border-zinc-700 text-xs font-semibold text-zinc-200">
+            <span className="px-2 py-0.5 rounded-full bg-red-950 text-red-300 font-mono font-bold text-[11px] border border-red-800">
+              {activeTab === 'consignments' ? selectedConsignmentIds.length : selectedAuctionIds.length}
+            </span>
+            <span>
+              {activeTab === 'consignments'
+                ? `${selectedConsignmentIds.length} item${selectedConsignmentIds.length > 1 ? 's' : ''} selected`
+                : `${selectedAuctionIds.length} lot${selectedAuctionIds.length > 1 ? 's' : ''} selected`}
+            </span>
+          </div>
+
+          {/* Consignment Bulk Actions */}
+          {activeTab === 'consignments' && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={selectedConsignmentIds.length === 0}
+                onClick={async () => {
+                  const count = selectedConsignmentIds.length;
+                  try {
+                    await batchUpdateConsignmentStatus(selectedConsignmentIds, 'approved');
+                    showToast(`Successfully updated status for ${count} consignment applications.`);
+                    setSelectedConsignmentIds([]);
+                    loadConsignments();
+                  } catch (err: any) {
+                    showToast(`Batch approval failed: ${err.message || 'Error'}`, 'error');
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Approve Selected</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={selectedConsignmentIds.length === 0}
+                onClick={async () => {
+                  const count = selectedConsignmentIds.length;
+                  try {
+                    await batchUpdateConsignmentStatus(selectedConsignmentIds, 'rejected');
+                    showToast(`Successfully updated status for ${count} consignment applications.`);
+                    setSelectedConsignmentIds([]);
+                    loadConsignments();
+                  } catch (err: any) {
+                    showToast(`Batch rejection failed: ${err.message || 'Error'}`, 'error');
+                  }
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-500/60 hover:border-rose-500 text-rose-400 hover:bg-rose-500/10 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Reject Selected</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={selectedConsignmentIds.length === 0}
+                onClick={() => setConfirmBulkDeleteConsignments(true)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-red-700/80 hover:bg-red-700 text-white flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected</span>
+              </button>
+            </div>
+          )}
+
+          {/* Vehicle Inventory Lots Bulk Actions */}
+          {activeTab === 'inventory' && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-zinc-400 hidden md:inline">Set Status:</span>
+                {(['draft', 'upcoming', 'live', 'ended'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    disabled={selectedAuctionIds.length === 0}
+                    onClick={async () => {
+                      const count = selectedAuctionIds.length;
+                      try {
+                        await batchUpdateAuctionStatus(selectedAuctionIds, st);
+                        showToast(`Successfully updated status for ${count} vehicle lot${count > 1 ? 's' : ''}.`);
+                        setSelectedAuctionIds([]);
+                      } catch (err: any) {
+                        showToast(`Batch status update failed: ${err.message || 'Error'}`, 'error');
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 disabled:opacity-40 cursor-pointer transition-all active:scale-95"
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                disabled={selectedAuctionIds.length === 0}
+                onClick={() => setConfirmBulkDeleteAuctions(true)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-red-700/80 hover:bg-red-700 text-white flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected</span>
+              </button>
+            </div>
+          )}
+
+          {/* Clear Selection Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedConsignmentIds([]);
+              setSelectedAuctionIds([]);
+            }}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Clear selection"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </aside>
       )}
     </div>
   );

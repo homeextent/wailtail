@@ -296,6 +296,8 @@ export default async function handler(req: any, res: any) {
       applicationId
     } = payload || {};
 
+    const appId = applicationId || payload?.appId || payload?.id || '';
+
     if (!sellerEmail || !make || !model) {
       return sendJson(res, 400, {
         success: false,
@@ -389,10 +391,31 @@ export default async function handler(req: any, res: any) {
         <div class="section-title">4. Notes & Vehicle Highlights</div>
         <div class="card" style="font-size: 13px; line-height: 1.5; color: #334155; white-space: pre-wrap;">${notes}</div>
       ` : ''}
+
+      <div class="section-title">Consignment Pipeline Actions</div>
+      <div style="margin: 24px 0 12px 0; text-align: center;">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto; width: 100%;">
+          <tr>
+            <td align="center" style="padding: 6px 0;">
+              <a href="https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=approve" 
+                 style="display: inline-block; background-color: #059669; color: #ffffff; padding: 12px 20px; border-radius: 8px; font-weight: 700; font-size: 13px; text-decoration: none; margin: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                ✔ Review &amp; Approve Submission
+              </a>
+              <a href="https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=reject" 
+                 style="display: inline-block; background-color: #ffffff; color: #dc2626; border: 1.5px solid #dc2626; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; text-decoration: none; margin: 4px;">
+                ✖ Reject Consignment
+              </a>
+            </td>
+          </tr>
+        </table>
+        <p style="font-size: 11px; color: #64748b; margin: 8px 0 0 0;">
+          Direct 1-click triage links to canonical admin portal.
+        </p>
+      </div>
     </div>
     <div class="footer">
       <p>Wailtail Auction Platform • Single-Car Live Auctions</p>
-      <p>Application ID: ${applicationId || 'N/A'} • Submitted at: ${new Date().toUTCString()}</p>
+      <p>Application ID: ${appId || 'N/A'} • Submitted at: ${new Date().toUTCString()}</p>
     </div>
   </div>
 </body>
