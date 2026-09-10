@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { 
   fetchUserActivitySummary, 
   fetchUserWatchlist,
@@ -38,14 +39,18 @@ import {
   Award, 
   DollarSign, 
   ClipboardList,
-  Bookmark
+  Bookmark,
+  Bell,
+  Info,
+  Loader2
 } from 'lucide-react';
 
 export interface UserAccountHubModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'bids' | 'seller' | 'consignments' | 'listings' | 'watchlist';
+  initialTab?: 'bids' | 'seller' | 'consignments' | 'listings' | 'watchlist' | 'notifications' | string;
   userProfile?: UserProfile | null;
+  allAuctions?: Auction[];
   onNavigateToAuction?: (auctionId: string) => void;
   onOpenListingEditor?: (auctionId: string) => void;
   onOpenBidModal?: (auctionId: string) => void;
@@ -58,6 +63,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   onClose,
   initialTab = 'bids',
   userProfile: userProfileProp,
+  allAuctions = [] as Auction[],
   onNavigateToAuction,
   onOpenListingEditor,
   onOpenBidModal,
@@ -68,9 +74,39 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
   const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
   const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
-  const [activeTab, setActiveTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments'>(
-    initialTab === 'listings' ? 'seller' : (initialTab as any)
+  
+  const resolveValidTab = (tab?: string): 'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications' => {
+    const validTabs = ['bids', 'watchlist', 'seller', 'consignments', 'notifications'];
+    const normalized = tab === 'listings' ? 'seller' : tab;
+    return normalized && validTabs.includes(normalized) ? (normalized as any) : 'bids';
+  };
+
+  const [activeTab, setActiveTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'>(
+    resolveValidTab(initialTab)
   );
+  const {
+    permission,
+    token,
+    loading: pushLoading,
+    error: pushError,
+    isSupported,
+    requestPushPermission,
+    removePushPermission
+  } = usePushNotifications();
+
+  const isPushEnabled = Boolean(permission === 'granted' && token);
+
+  const handleTogglePush = async () => {
+    try {
+      if (isPushEnabled) {
+        await removePushPermission();
+      } else {
+        await requestPushPermission();
+      }
+    } catch (err) {
+      console.warn('[UserAccountHubModal] Push notification toggle error:', err);
+    }
+  };
   const [summary, setSummary] = useState<UserActivitySummary>({
     activeBids: [],
     wonAuctions: [],
@@ -83,14 +119,22 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 
   // Sync tab when initialTab prop changes
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab === 'listings' ? 'seller' : (initialTab as any));
-    }
+    setActiveTab(resolveValidTab(initialTab));
   }, [initialTab, isOpen]);
+
+  // Auto-close if modal is opened when user is unauthenticated
+  useEffect(() => {
+    if (isOpen && !user) {
+      onClose();
+    }
+  }, [isOpen, user, onClose]);
 
   // Load activity summary and saved watchlist from service
   const loadActivity = async (isManualRefresh = false) => {
-    if (!user) return;
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
     if (isManualRefresh) setRefreshing(true);
     else setLoading(true);
 
@@ -100,7 +144,23 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
         fetchUserWatchlist(user.uid)
       ]);
       setSummary(data);
-      setWatchlistItems(watchlistData);
+
+      if (watchlistData && watchlistData.length > 0) {
+        if (allAuctions && allAuctions.length > 0) {
+          const hydrated = watchlistData.map((item) => {
+            const matched = allAuctions.find((a) => a.id === item.id);
+            return matched ? { ...matched, ...item } : item;
+          });
+          setWatchlistItems(hydrated);
+        } else {
+          setWatchlistItems(watchlistData);
+        }
+      } else if (allAuctions && allAuctions.length > 0 && userProfile?.watchlist && userProfile.watchlist.length > 0) {
+        const fallbackList = allAuctions.filter((a) => userProfile.watchlist?.includes(a.id));
+        setWatchlistItems(fallbackList);
+      } else {
+        setWatchlistItems([]);
+      }
     } catch (err) {
       console.error('Failed to load user activity summary:', err);
     } finally {
@@ -175,7 +235,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
     userProfile?.role?.toUpperCase() === 'SELLER'
   );
 
-  if (!isOpen) return null;
+  if (!isOpen || !user) return null;
 
   const displayName = userProfile?.displayName || user?.displayName || (user?.email ? user.email.split('@')[0] : 'Member');
   const userEmail = userProfile?.email || user?.email || '';
@@ -308,6 +368,18 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                 )}
               </button>
             )}
+
+            <button
+              onClick={() => setActiveTab('notifications')}
+              className={`min-h-[44px] pb-3 px-3 sm:px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap cursor-pointer flex-shrink-0 ${
+                activeTab === 'notifications'
+                  ? 'border-amber-400 text-amber-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Bell className="w-4 h-4" />
+              <span>Notification Settings</span>
+            </button>
           </div>
         </div>
 
@@ -1060,6 +1132,168 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                       })}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* TAB 4: NOTIFICATION SETTINGS */}
+              {activeTab === 'notifications' && (
+                <div className="space-y-6">
+                  {/* Panel Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-amber-400" />
+                      <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+                        Browser Push Notifications
+                      </h3>
+                    </div>
+                    <span className="text-xs text-slate-500 font-mono">
+                      Real-time Auction Alerts
+                    </span>
+                  </div>
+
+                  {/* Unsupported / Incognito Notice */}
+                  {!isSupported && (
+                    <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 text-xs text-slate-300 flex items-start gap-3">
+                      <Info className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h5 className="font-bold text-white text-sm">Push Notifications Unsupported</h5>
+                        <p className="text-slate-400 leading-relaxed">
+                          This browser environment does not support Service Worker push notifications (common in incognito/private browsing mode or in-app webviews). On iOS Safari, tap <strong className="text-white">Share ➔ Add to Home Screen</strong> to install the app and enable native Web Push.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Browser Blocked Warning */}
+                  {permission === 'denied' && (
+                    <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h5 className="font-bold text-amber-300 text-sm">Blocked in Browser Settings</h5>
+                        <p className="text-amber-200/90 leading-relaxed">
+                          Notifications are blocked in your browser settings. To re-enable live outbid alerts, click the tune or lock icon next to the address bar, change <strong className="text-white">Notifications</strong> to <strong className="text-white">Allow</strong>, and refresh the page.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error banner if unexpected error occurred */}
+                  {pushError && (
+                    <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <span>{pushError}</span>
+                    </div>
+                  )}
+
+                  {/* Control Card */}
+                  <div className="p-5 sm:p-6 rounded-xl bg-slate-800/50 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+                    <div className="space-y-2 max-w-xl">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h4 className="text-base font-bold text-white">Enable Live Outbid Alerts</h4>
+                        {/* Status Badges */}
+                        {permission === 'granted' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/50">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            Active (Web Push Enabled)
+                          </span>
+                        )}
+                        {permission === 'denied' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-500/50">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                            Blocked in Browser Settings
+                          </span>
+                        )}
+                        {permission === 'default' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            Disabled (Tap toggle to enable)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Stay ahead of competing bids in real time. Wailtail sends native browser notifications when you are outbid or when monitored lots reach critical closing moments.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 flex-shrink-0 self-end sm:self-center">
+                      {pushLoading && (
+                        <Loader2 className="w-4 h-4 text-amber-400 animate-spin flex-shrink-0" />
+                      )}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isPushEnabled}
+                        disabled={!isSupported || pushLoading || permission === 'denied'}
+                        onClick={handleTogglePush}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          isPushEnabled ? 'bg-amber-500' : 'bg-slate-700'
+                        }`}
+                        title={
+                          permission === 'denied'
+                            ? 'Blocked in Browser Settings'
+                            : !isSupported
+                            ? 'Push notifications unsupported'
+                            : isPushEnabled
+                            ? 'Disable live notifications'
+                            : 'Enable live notifications'
+                        }
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            isPushEnabled ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Feature Breakdown Cards */}
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                      Included Real-Time Notifications
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* Card 1: Instant Outbid Alerts */}
+                      <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0">
+                          <TrendingUp className="w-4 h-4" />
+                        </div>
+                        <div className="space-y-1">
+                          <h6 className="text-xs font-bold text-white">Instant Outbid Alerts</h6>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Immediate push notifications the second another bidder places a higher bid on lots you are actively competing in.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Card 2: Reserve Met Alerts */}
+                      <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <div className="space-y-1">
+                          <h6 className="text-xs font-bold text-white">Reserve Met Alerts</h6>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Instant notification as soon as a seller's reserve is cleared, confirming the vehicle will be sold to the high bidder.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Card 3: Anti-Snipe & Closing */}
+                      <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 flex-shrink-0">
+                          <Clock className="w-4 h-4" />
+                        </div>
+                        <div className="space-y-1">
+                          <h6 className="text-xs font-bold text-white">Anti-Snipe & Closing</h6>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Timely alerts when auctions enter 2-minute soft-close overtime extensions so you never miss the final hammer drop.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </>

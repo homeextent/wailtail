@@ -170,11 +170,23 @@ const AuctionAppContent: React.FC = () => {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
   const [isAccountHubOpen, setIsAccountHubOpen] = useState(false);
-  const [accountHubActiveTab, setAccountHubActiveTab] = useState<'bids' | 'listings' | 'consignments' | 'watchlist'>('bids');
+  const [accountHubTab, setAccountHubTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'>('bids');
 
-  const handleOpenAccountHub = (tab: 'bids' | 'listings' | 'consignments' | 'watchlist' = 'bids') => {
+  const handleOpenAccountHub = (tab?: string) => {
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+    const validTabs: Array<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'> = [
+      'bids', 'watchlist', 'seller', 'consignments', 'notifications'
+    ];
+    const normalizedTab = tab === 'listings' ? 'seller' : tab;
+    if (normalizedTab && (validTabs as string[]).includes(normalizedTab)) {
+      setAccountHubTab(normalizedTab as any);
+    } else {
+      setAccountHubTab('bids');
+    }
     setIsAccountHubOpen(true);
-    setAccountHubActiveTab(tab);
   };
   const [selectedLightboxIndex, setSelectedLightboxIndex] = useState<number | null>(null);
   const [isWatching, setIsWatching] = useState(() => {
@@ -462,9 +474,10 @@ const AuctionAppContent: React.FC = () => {
     }
   };
 
-  // Session Loading State for /admin to prevent flash redirects on page refresh
-  if (isAdminRoute && authLoading) {
-    return (
+  const renderRouteContent = () => {
+    // Session Loading State for /admin to prevent flash redirects on page refresh
+    if (isAdminRoute && authLoading) {
+      return (
       <div className="min-h-screen bg-[#0d1114] text-white flex flex-col font-sans animate-pulse">
         {/* Top Header Skeleton */}
         <div className="h-16 bg-[#121619] border-b border-zinc-800 flex items-center justify-between px-6">
@@ -615,41 +628,6 @@ const AuctionAppContent: React.FC = () => {
           siteLogo={effectiveSiteLogo}
           siteName={effectiveSiteName}
           siteTagline={effectiveSiteTagline}
-        />
-
-        {/* Modals */}
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-        />
-
-        <ConsignmentModal
-          isOpen={isConsignmentModalOpen}
-          onClose={() => setIsConsignmentModalOpen(false)}
-          onLaunchDirectListing={handleLaunchListingWorkspace}
-        />
-
-        {isAdmin && (
-          <AdminPanelModal
-            isOpen={isAdminModalOpen}
-            onClose={() => setIsAdminModalOpen(false)}
-            auction={auction}
-            bids={bids}
-            mediaConfig={currentMedia}
-            onUpdateMediaConfig={handleUpdateMediaConfig}
-            onOpenWorkspace={() => navigateTo(`/dashboard/listings/${activeAuctionId}/edit`)}
-            allAuctions={allAuctions}
-            onSelectAuction={(newAuctionId) => {
-              setActiveAuctionId(newAuctionId);
-              navigateTo(`/dashboard/listings/${newAuctionId}/edit`);
-            }}
-          />
-        )}
-
-        <ShareModal
-          isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
-          title="Wailtail Single-Car Auctions Catalog"
         />
       </div>
     );
@@ -940,22 +918,26 @@ const AuctionAppContent: React.FC = () => {
         }}
       />
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+      <ContactSellerModal
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
+        auction={auction}
       />
+    </div>
+  );
+};
 
-      <ConsignmentModal
-        isOpen={isConsignmentModalOpen}
-        onClose={() => setIsConsignmentModalOpen(false)}
-        onLaunchDirectListing={handleLaunchListingWorkspace}
-      />
+  return (
+    <>
+      {renderRouteContent()}
 
+      {/* Root Layout Hoisted Modals - Mounted Unconditionally Across All Views */}
       <UserAccountHubModal
         isOpen={isAccountHubOpen}
         onClose={() => setIsAccountHubOpen(false)}
-        initialTab={accountHubActiveTab}
+        initialTab={accountHubTab}
         userProfile={userProfile}
+        allAuctions={allAuctions}
         onNavigateToAuction={(targetId: string) => {
           setActiveAuctionId(targetId);
           navigateTo(`/auctions/${targetId}`);
@@ -975,6 +957,17 @@ const AuctionAppContent: React.FC = () => {
         onBrowseCatalog={() => navigateTo('/')}
       />
 
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      <ConsignmentModal
+        isOpen={isConsignmentModalOpen}
+        onClose={() => setIsConsignmentModalOpen(false)}
+        onLaunchDirectListing={handleLaunchListingWorkspace}
+      />
+
       {isAdmin && (
         <AdminPanelModal
           isOpen={isAdminModalOpen}
@@ -983,9 +976,9 @@ const AuctionAppContent: React.FC = () => {
           bids={bids}
           mediaConfig={currentMedia}
           onUpdateMediaConfig={handleUpdateMediaConfig}
-          onOpenWorkspace={() => navigateTo(`/dashboard/listings/${auction.id}/edit`)}
+          onOpenWorkspace={() => navigateTo(`/dashboard/listings/${activeAuctionId || auction.id}/edit`)}
           allAuctions={allAuctions}
-          onSelectAuction={(newAuctionId) => {
+          onSelectAuction={(newAuctionId: string) => {
             setActiveAuctionId(newAuctionId);
             navigateTo(`/dashboard/listings/${newAuctionId}/edit`);
           }}
@@ -995,15 +988,9 @@ const AuctionAppContent: React.FC = () => {
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
-        title={auction.title}
+        title={auction.title || "Wailtail Single-Car Auctions"}
       />
-
-      <ContactSellerModal
-        isOpen={isContactModalOpen}
-        onClose={() => setIsContactModalOpen(false)}
-        auction={auction}
-      />
-    </div>
+    </>
   );
 };
 

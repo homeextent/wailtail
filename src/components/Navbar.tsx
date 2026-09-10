@@ -17,6 +17,7 @@ import {
   Gavel,
   ClipboardList,
   Bookmark,
+  Bell,
   Menu,
   X
 } from 'lucide-react';
@@ -24,7 +25,7 @@ import {
 interface NavbarProps {
   onOpenAuth: () => void;
   onOpenAdmin: () => void;
-  onOpenAccountHub?: (initialTab?: 'bids' | 'listings' | 'seller' | 'consignments' | 'watchlist') => void;
+  onOpenAccountHub?: (tab?: string) => void;
   userProfile?: UserProfile | null;
   onOpenListingEditor?: () => void;
   onOpenShare?: () => void;
@@ -392,6 +393,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <ClipboardList className="w-4 h-4 text-sky-400" />
                           <span>Consignment Requests</span>
                         </button>
+
+                        <button
+                          onClick={() => {
+                            setIsUserMenuOpen(false);
+                            onOpenAccountHub?.('notifications');
+                          }}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                        >
+                          <Bell className="w-4 h-4 text-amber-400" />
+                          <span>Notification Settings</span>
+                        </button>
                       </div>
 
                       {/* Divider and Sign Out */}
@@ -553,6 +565,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <ClipboardList className="w-4 h-4 text-sky-400 flex-shrink-0" />
                     <span>Consignment Requests</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      onOpenAccountHub?.('notifications');
+                    }}
+                    className="min-h-[44px] w-full px-3 py-2 rounded-lg text-xs font-semibold text-slate-200 hover:text-white hover:bg-slate-800/80 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
+                  >
+                    <Bell className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span>Notification Settings</span>
                   </button>
 
                   <button
