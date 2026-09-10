@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig, type Plugin} from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 function localApiPlugin(): Plugin {
   return {
@@ -44,7 +45,73 @@ function localApiPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), localApiPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      localApiPlugin(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'icons/*.png'],
+        manifest: {
+          name: 'Wailtail Auctions',
+          short_name: 'Wailtail',
+          description: 'Curated Collector Car Auctions',
+          theme_color: '#0f172a',
+          background_color: '#020617',
+          display: 'standalone',
+          icons: [
+            {
+              src: '/icons/icon-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any maskable'
+            },
+            {
+              src: '/icons/icon-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable'
+            }
+          ]
+        },
+        workbox: {
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) =>
+                request.destination === 'style' ||
+                request.destination === 'script' ||
+                request.destination === 'worker',
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'static-resources',
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+                },
+              },
+            },
+            {
+              urlPattern: ({ url, request }) =>
+                request.destination === 'image' ||
+                url.origin === 'https://firebasestorage.googleapis.com' ||
+                url.hostname.includes('firebasestorage.googleapis.com'),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'images-and-storage',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 150,
+                  maxAgeSeconds: 7 * 24 * 60 * 60, // 7 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

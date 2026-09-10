@@ -5,7 +5,9 @@
 **Wailtail** is an enterprise-grade, multi-car private auction platform modeled after Bring-a-Trailer, engineered specifically for high-value collector automobiles. The platform supports multiple concurrent active and upcoming vehicle listings simultaneously, combining real-time bidding synchronization with editorial-grade vehicle storytelling, per-lot media configuration, multi-category gallery management, and a dedicated multi-listing authoring workspace.
 
 ### Technology Stack
-* **Frontend Framework**: React 18 with TypeScript and Vite
+* **Frontend Framework**: React 19 with TypeScript and Vite
+* **Progressive Web App (PWA) & Offline Engine**: `vite-plugin-pwa` with Workbox runtime caching (`StaleWhileRevalidate` for scripts/styles, `NetworkFirst` for media/queries) and standalone Web Manifest (`name: "Wailtail Auctions"`, `short_name: "Wailtail"`, `#0f172a` theme)
+* **Background Push Service Worker & FCM**: Native background Service Worker (`public/firebase-messaging-sw.js`) utilizing Firebase compat SDKs and Firebase Cloud Messaging (`firebase/messaging`) Web Push API with VAPID key token exchange
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
@@ -22,7 +24,8 @@
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
 | `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding. Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
-| User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, and consignment status. |
+| User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
+| Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators. |
 | `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
 
@@ -364,6 +367,7 @@ export interface UserProfile {
   bannedAt?: number;
   banReason?: string;
   watchlist?: string[]; // Array of saved auction lot IDs
+  fcmTokens?: string[]; // Registered FCM device tokens for Web Push outbid & auction alerts
 }
 ```
 
@@ -517,6 +521,24 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
        - **Inquiry Topic**: Subject topic (e.g., Vehicle History, Inspection, Financing, Reserve, Shipping).
        - **Target Vehicle Title**: Vehicle title/lot referenced by the inquiry.
        - **Inquiry Message**: Pre-formatted multiline inquiry text with line-height styling.
+
+### 5.4 Mobile Viewport Hero & Gallery Architecture
+
+#### 1. Hero Lightbox Dataset Isolation (`HeroMediaCarousel.tsx`)
+* **Strict Scoping to `heroImages`**: Scoped hero lightbox state strictly to `heroImages` (`validImages` / `safeImages`), fixing index mismatch bugs where clicking hero carousel slides triggered items from the master categorized photo archive.
+* **Independent Lightbox State Machine**: Hero lightbox interactions are encapsulated within `HeroMediaCarousel.tsx` using dedicated local state (`isLightboxOpen`, `lightboxIndex`, `isLightboxZoomed`). The carousel operates solely over non-empty hero photos, completely isolating hero presentation from the categorized catalog archive.
+* **Mobile Gesture & Keyboard Controls**: Includes touch swipe listener hooks (`onTouchStart`, `onTouchEnd`) with 50px delta thresholds, keyboard event listeners (`Escape` for dismiss, `ArrowLeft` / `ArrowRight` for cycling), and double-tap zoom toggles (`ZoomIn` / `ZoomOut`).
+
+#### 2. Mobile Hero Overlay Cleanup & CTA Relocation
+* **Unobstructed Viewport**: Cleared mobile hero overlays that previously obscured vehicle photography on compact screens:
+  * "Fullscreen Lightbox" button hidden on mobile via `hidden sm:flex`.
+  * Bottom photo count indicator bar suppressed on mobile via `hidden sm:block`.
+* **Ergonomic CTA Placement**: The mobile "Watch Video Playlist" CTA button is relocated beneath the horizontal hero thumbnail strip (`sm:hidden flex items-center justify-center`), ensuring clean thumb-reach ergonomics and preventing tap collisions with hero navigation arrows.
+
+#### 3. Mobile Photo Gallery Truncation & Lightbox Swiping (`PhotoGalleryGrid.tsx`)
+* **8-Photo Initial Grid (2x4)**: To eliminate mobile scroll fatigue and optimize rendering performance for lots with 100+ images, mobile viewports truncate the thumbnail display to an initial 8 items (`filteredImages.slice(0, 8)`).
+* **`isMobileExpanded` Toggle Engine**: Controlled via `isMobileExpanded` state. Renders a full-width high-contrast toggle button ("Show All [X] Photos" with grid icon / "Collapse Gallery") below the grid on mobile (`sm:hidden`).
+* **Unbroken Full-Archive Lightbox Navigation**: Truncation applies strictly to the initial grid view. When any thumbnail is clicked, the full lightbox modal launches with access to the complete filtered image array (`validImages.length`). Mobile users can swipe through all vehicle photos in full resolution without needing to expand the thumbnail grid first.
 
 ---
 
@@ -995,3 +1017,96 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
      # Executes: firebase deploy --only firestore:rules
      ```
    - Automatically compiles, validates, and deploys `firestore.rules` to Google Cloud Firestore with real-time CLI status verification.
+
+---
+
+## 8. Progressive Web App (PWA) & Firebase Cloud Messaging (FCM) Architecture
+
+### 8.1 Vite PWA Integration & Web App Manifest (`vite.config.ts`)
+The platform leverages `vite-plugin-pwa` to deliver a native app-like experience across desktop and mobile devices:
+* **Registration Mode**: `registerType: 'autoUpdate'` ensures service worker scripts update silently in the background when revisions are deployed.
+* **Manifest Configuration**:
+  ```typescript
+  manifest: {
+    name: 'Wailtail Auctions',
+    short_name: 'Wailtail',
+    description: 'Curated Collector Car Auctions',
+    theme_color: '#0f172a',
+    background_color: '#020617',
+    display: 'standalone',
+    icons: [
+      {
+        src: '/icons/icon-192x192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any maskable'
+      },
+      {
+        src: '/icons/icon-512x512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any maskable'
+      }
+    ]
+  }
+  ```
+* **HTML Head Metadata**: `index.html` injects matching `<meta name="theme-color" content="#0f172a" />` and `<link rel="apple-touch-icon" href="/icons/icon-192x192.png" />` tags for iOS Safari home screen bookmarking.
+
+### 8.2 Workbox Runtime Caching Strategy
+Workbox manages fine-grained offline runtime caching to minimize bandwidth and accelerate repeat visits:
+1. **Static App Shell Resources**:
+   - Matches: `style`, `script`, and `worker` requests.
+   - Strategy: `StaleWhileRevalidate` with `cacheName: 'static-resources'`, capped at 100 entries with a 30-day expiration (`30 * 24 * 60 * 60` seconds).
+2. **Firebase Cloud Storage & Remote Images**:
+   - Matches: Image assets and `https://firebasestorage.googleapis.com` URL patterns.
+   - Strategy: `NetworkFirst` with a 3-second network timeout fallback (`networkTimeoutSeconds: 3`), cached under `cacheName: 'images-and-storage'`, capped at 150 entries with a 7-day expiration (`7 * 24 * 60 * 60` seconds).
+   - Guarantees instant photo hydration on intermittent network conditions while prioritizing fresh vehicle images.
+
+### 8.3 Background Push Service Worker (`public/firebase-messaging-sw.js`)
+To receive live push alerts when browser tabs are closed or operating in the background, a dedicated service worker runs independently of the main React application thread:
+* **Compat SDK Architecture**: Utilizes modular compat scripts (`firebase-app-compat.js` and `firebase-messaging-compat.js` v10.13.2) to maintain service worker compatibility without complex worker bundlers.
+* **Background Handler (`messaging.onBackgroundMessage`)**:
+  - Captures incoming FCM remote push payloads.
+  - Extracts alert title and body (`payload.notification` or `payload.data`), defaulting to `"Wailtail Auction Alert"`.
+  - Dispatches native system notifications with `/icons/icon-192x192.png` application icon, badge, custom tags (`tag: payload.data?.tag || 'wailtail-outbid-alert'`), and arbitrary lot metadata.
+* **Notification Click Navigation (`notificationclick`)**:
+  - Automatically closes the clicked notification banner.
+  - Extracts the target URL (`payload.data.url` or `payload.data.click_action`, defaulting to `/`).
+  - Matches existing open browser client windows and transfers focus (`client.focus()`), or opens a new browser window (`clients.openWindow(targetUrl)`) if none exist.
+
+### 8.4 FCM Web Push Hook (`src/hooks/usePushNotifications.ts`)
+The `usePushNotifications` hook provides a reactive interface for component consumption:
+* **Interface**:
+  ```typescript
+  export interface UsePushNotificationsReturn {
+    isSupported: boolean;
+    permission: NotificationPermission; // 'default' | 'granted' | 'denied'
+    token: string | null;
+    loading: boolean;
+    error: string | null;
+    isEnabled: boolean;
+    requestPushPermission: () => Promise<string | null>;
+    removePushPermission: () => Promise<void>;
+  }
+  ```
+* **Capability & Environment Detection**:
+  - Validates `window.Notification` and `navigator.serviceWorker` availability.
+  - Queries `isSupported()` from `firebase/messaging`.
+  - Accurately identifies iOS Safari environments requiring PWA standalone installation for APNs push capabilities.
+* **VAPID Public Key Exchange**:
+  - Invokes `getToken(messaging, { vapidKey, serviceWorkerRegistration })` using the platform's public Web Push VAPID key.
+  - Ensures the service worker registration for `firebase-messaging-sw.js` is active before acquiring the token.
+* **Multi-Device Token Synchronization**:
+  - Upon token acquisition, atomically updates the user's Firestore profile at `users/{uid}` using `arrayUnion(currentToken)` into `UserProfile.fcmTokens`.
+  - Caches the active token in `localStorage` under `wailtail_fcm_token`.
+  - Upon permission revocation or manual opt-out, deletes the token via `deleteToken(msg)` and atomically purges it from `users/{uid}.fcmTokens` using `arrayRemove(currentToken)`.
+
+### 8.5 Notification Control Panel (`UserAccountHubModal.tsx`)
+Provides users with granular control over live outbid and closing notifications:
+* **Live Outbid Alerts Switch**: Toggle bound to `requestPushPermission` and `removePushPermission`.
+* **Dynamic Permission Status Badges**:
+  - `Active` (Emerald): Push notifications enabled with valid FCM token.
+  - `Blocked` (Rose): Browser notifications blocked in device or browser preferences.
+  - `Disabled` (Slate): Notifications supported but not currently opted-in.
+* **iOS Safari Guidance Callout**: When running in mobile Safari outside of standalone mode, renders a guided instruction card prompting users to tap Share $\rightarrow$ "Add to Home Screen" to enable Apple Push Notification service (APNs) Web Push support.
+

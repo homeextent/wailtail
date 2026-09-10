@@ -8,6 +8,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 
 ### Frontend & Application Stack
 - **Framework**: React 19 + TypeScript + Vite
+- **Progressive Web App (PWA) & Offline Caching**: `vite-plugin-pwa` with standalone Web Manifest (`#0f172a` theme), Workbox `StaleWhileRevalidate` caching for scripts/styles, and `NetworkFirst` runtime caching for Firebase Storage assets
+- **Push Notification Infrastructure**: Firebase Cloud Messaging (FCM) Web Push with background service worker (`firebase-messaging-sw.js`), VAPID token exchange, and custom hook lifecycle (`usePushNotifications.ts`)
 - **Routing & Navigation**: Client-side full-page routing supporting multi-car catalog (`/` & `/catalog`), single-car lot details (`/auctions/[id]`), full-page admin portal (`/admin`), and dedicated split-screen authoring workspace (`/dashboard/listings/[id]/edit`)
 - **Tri-Role Access Control**: 3-way role hierarchy (`ADMIN`, `SELLER`, `BIDDER`) governing access privileges across administration, authoring, and bidding surfaces
 - **5-Tab Admin Command Portal**: Dedicated operations suite (`AdminPortalPage.tsx`) covering Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding
@@ -30,10 +32,11 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `auctions/{auctionId}/media/{document=**}`: Recursive wildcard subcollection matching for media configurations, images, chapters, and assets.
   - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification and Option B soft retraction audit fields (`status`, `retractedAt`, `retractionReason`, `retractedBy`, `retractedByName`).
   - `comments`: Community Q&A feed with verified seller and administrator official nested replies.
-  - `users` / `bidders`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, and personal saved vehicle lot arrays (`watchlist`).
+  - `users` / `bidders`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, personal saved vehicle lot arrays (`watchlist`), and registered FCM Web Push notification tokens (`fcmTokens`).
   - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
+- **Firebase Cloud Messaging (FCM)**: Native Web Push notification dispatching live outbid alerts and auction events to subscribers via service worker.
 - **Firebase Authentication**: Email/password and Google OAuth authentication with email verification flags.
 - **Firebase Security Rules**: Role-based access control protecting administrative actions and auction modifications (`firestore.rules`).
 
@@ -46,6 +49,9 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   ├── send-consignment-email.ts       # Serverless dual-mode email dispatcher (consignments & inquiries) via Resend API
 │   └── youtube-playlist.ts             # Serverless CORS proxy for YouTube RSS playlist ingestion
 ├── firestore.rules                     # Production Firestore security rules & RBAC helper functions
+├── public/
+│   ├── firebase-messaging-sw.js        # Background Service Worker for FCM Web Push outbid alerts
+│   └── icons/                          # PWA maskable application icons (192x192 & 512x512)
 ├── src/
 │   ├── components/
 │   │   ├── AdminPanelModal.tsx         # Secondary host operations drawer
@@ -58,17 +64,17 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   │   ├── ConsignmentModal.tsx        # 3-tier taxonomy consignment intake & member auto-link
 │   │   ├── ContactSellerModal.tsx      # Private buyer-to-consignor direct communication
 │   │   ├── Footer.tsx                  # Platform legal and footer navigational elements
-│   │   ├── HeroMediaCarousel.tsx       # Draggable hero photo carousel with lightbox view
+│   │   ├── HeroMediaCarousel.tsx       # Scoped hero photo carousel with isolated lightbox viewer
 │   │   ├── InlineShowcaseSection.tsx   # Editorial showcase narrative chapters and specs
 │   │   ├── ListingEditorWorkspace.tsx  # Split-screen authoring workspace (/dashboard/listings/[id]/edit)
 │   │   ├── ListingSubNav.tsx           # In-page listing section anchor sub-navigation
 │   │   ├── Navbar.tsx                  # Header navigation, brand logo, non-clipping user profile dropdown, and auth triggers
-│   │   ├── PhotoGalleryGrid.tsx        # Categorized photo gallery with PDF inspection viewer
+│   │   ├── PhotoGalleryGrid.tsx        # Categorized photo gallery with 8-photo mobile truncation & PDF viewer
 │   │   ├── ShareModal.tsx              # Social share dialog with instant link copying
 │   │   ├── ShowcaseChaptersEditor.tsx  # Curated editorial chapter management workspace
 │   │   ├── SpecCardCombobox.tsx        # Context-aware searchable hybrid attribute combobox
 │   │   ├── StickyBidBar.tsx            # Floating mobile/desktop bid CTA with live high bid
-│   │   ├── UserAccountHubModal.tsx     # Unified role-aware activity hub, saved Watchlist tab, & CAD settlement checklist
+│   │   ├── UserAccountHubModal.tsx     # Unified role-aware activity hub, Watchlist, & Outbid Notification panel
 │   │   ├── VehicleCatalogGrid.tsx      # Primary multi-car inventory catalog homepage (/)
 │   │   ├── WailtailLogo.tsx            # SVG brand asset rendering
 │   │   └── YouTubePlaylistSection.tsx  # Driving chapters video embed & playlist timeline
@@ -76,10 +82,12 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   │   └── AuthContext.tsx             # Firebase auth provider & role management
 │   ├── data/
 │   │   └── vehicleTaxonomy.json        # Curated 80+ collector vehicle make/model/chassis dataset
+│   ├── hooks/
+│   │   └── usePushNotifications.ts     # FCM Web Push subscription, VAPID token exchange, & permission hook
 │   ├── services/
 │   │   ├── auctionService.ts           # Core Firestore transactions, moderation, & bidding engine
 │   │   ├── emailService.ts             # Consignment email client dispatcher
-│   │   └── firebase.ts                 # Firebase app, db, auth, and storage initialization
+│   │   └── firebase.ts                 # Firebase app, db, auth, storage, and messaging initialization
 │   ├── utils/
 │   │   ├── formatters.ts               # Currency, date, and countdown formatting utilities
 │   │   ├── showcaseConverter.ts        # Bi-directional chapter schema conversion helpers
@@ -125,13 +133,14 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
    - **1-Click Email Triage Deep-Links**: Actionable email CTAs (`/admin?tab=consignments&id=${appId}&action=approve|reject`) in `api/send-consignment-email.ts` with auto-filtering, modal surfacing, and history cleanup in `AdminPortalPage.tsx`.
    - Atomic moderation controls: 3-way role switching (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`), ban/unban toggling, email verification override, and permanent user deletion (`deleteUserRecord`).
    - 1-click consignment intake approval & draft conversion (`convertConsignmentToDraftListing`) promoting consignors to `SELLER` and auto-generating vehicle listings.
-8. **Unified User Account Activity Hub & Watchlist System (`UserAccountHubModal.tsx`)**:
+8. **Unified User Account Activity Hub & Notification Center (`UserAccountHubModal.tsx`)**:
    - Global activity hub accessible to registered users directly from the navigation bar.
    - Dedicated **Saved Watchlist Tab** displaying user-saved vehicle lots (`UserProfile.watchlist`) with live anti-snipe countdown timers, CAD current high bids, reserve status badges, and inline removal (`toggleWatchlistLot()`).
+   - **Notification Control Panel**: Provides an "Enable Live Outbid Alerts" toggle switch, real-time browser permission badges (`Active`, `Blocked`, `Disabled`), and iOS Safari PWA installation instructions.
    - Real-time bid telemetry with `★ LEADING` and `⚠️ OUTBID` indicators and quick bid prompts.
    - 4-stage Canadian offline CAD settlement checklist for won auctions (Wire/Draft, Title Transfer, Transport/Collection, VIN Handover) with direct seller contact credentials.
    - Seller lot inventory telemetry and consignment submission status tracking.
-   - Real-time Firestore user profile listener (`subscribeToUserProfile`) synchronizing role modifications and watchlist state instantly across the UI.
+   - Real-time Firestore user profile listener (`subscribeToUserProfile`) synchronizing role modifications, watchlist state, and FCM push tokens instantly across the UI.
 9. **Lot-Level Watch & Share Controls (`AuctionHeader.tsx`)**:
    - Contextual "Watch" and "Share" action controls relocated from the global navigation bar directly into the auction lot header.
    - Interactive "★ Watch" / "★ Watching" button dynamically bound to `toggleWatchlistLot()`, toggling saved status across Firestore user profiles and syncing aggregate watch counts.
@@ -143,15 +152,27 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 11. **Terminal Firebase Security Rule Deployment Infrastructure**:
     - Direct rules deployment via `firebase.json` mapping, `.firebaserc` project binding (`studio-apps-483721`), and `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json`.
     - Allows developers to deploy synchronized production `firestore.rules` directly from the terminal via `npm run deploy:rules`.
-12. **Hero Media Carousel & Media Pending Placeholder**:
-    - Purged of hardcoded external fallback URLs.
-    - When no images are configured, renders a neutral dark placeholder (`bg-zinc-900 border border-zinc-800 rounded-xl`) with a camera icon and "Media Pending" message.
-13. **YouTube Video Series & Thumbnail URL Sanitization**:
+12. **Hero Media Carousel & Scoped Lightbox Viewer (`HeroMediaCarousel.tsx`)**:
+    - **Lightbox Dataset Isolation**: Hero lightbox modal state is scoped strictly to `heroImages`, resolving index mismatch bugs with the full categorized photo gallery archive.
+    - **Mobile Viewport Optimization**: Removed cluttering overlays on mobile screens (`hidden sm:flex` for "Fullscreen Lightbox", `hidden sm:block` for bottom photo count bar).
+    - **Ergonomic CTA Layout**: Relocated "Watch Video Playlist" button directly beneath the hero thumbnail strip on mobile (`sm:hidden`).
+    - **Gestures & Zoom**: Supports touch swipe cycling (`onTouchStart`, `onTouchEnd`), full keyboard navigation (`Escape`, `ArrowLeft`, `ArrowRight`), and toggleable image zooming.
+    - **Media Pending Fallback**: Neutral dark placeholder (`bg-zinc-900 border border-zinc-800 rounded-xl`) with a camera icon when no imagery is configured.
+13. **Mobile Photo Gallery Truncation & Lightbox Swiping (`PhotoGalleryGrid.tsx`)**:
+    - **8-Photo Initial Grid**: Capped initial mobile thumbnail display to an 8-photo grid (2x4) governed by `isMobileExpanded` state to prevent mobile DOM bloat and scroll fatigue.
+    - **Expansion Controls**: High-contrast "Show All [X] Photos" and "Collapse Gallery" toggle button on mobile.
+    - **Unbroken Lightbox Swiping**: Opening the lightbox modal from any truncated thumbnail grants access to all categorized vehicle images (`validImages.length`) with smooth touch swipe gestures.
+14. **Progressive Web App (PWA) & FCM Web Push Architecture**:
+    - **Vite PWA Plugin (`vite.config.ts`)**: Built with `vite-plugin-pwa` supporting `registerType: 'autoUpdate'`, standalone web manifest ("Wailtail Auctions", short name "Wailtail", Slate-900 `#0f172a` theme, `#020617` background), and 192x192 / 512x512 maskable PWA icons.
+    - **Workbox Offline Caching**: Dual-strategy caching with `StaleWhileRevalidate` for app scripts, styles, and workers (30-day ceiling) and `NetworkFirst` (3s timeout, 7-day ceiling) for Firebase Storage vehicle imagery and Firestore data.
+    - **Background Service Worker (`public/firebase-messaging-sw.js`)**: Standalone push worker using Firebase v10 compat SDKs to receive and display background outbid, closing, and status notifications with application badge and deep-link click handling.
+    - **Push Notification Hook (`src/hooks/usePushNotifications.ts`)**: Manages VAPID token exchange (`getToken`), browser permission status detection (`granted`, `denied`, `default`), iOS Safari PWA standalone verification, and atomic Firestore token synchronization in `users/{uid}.fcmTokens` via `arrayUnion` / `arrayRemove`.
+15. **YouTube Video Series & Thumbnail URL Sanitization**:
     - Validates 11-character video IDs using regex (`/^[a-zA-Z0-9_-]{11}$/`).
     - Prevents 404 network errors in DevTools by only generating `mqdefault.jpg` URLs for validated IDs.
-14. **Bulk Purge & Cache Sanitization**:
+16. **Bulk Purge & Cache Sanitization**:
     - `purgeAllListings()` atomic deletion engine cleanses Firestore documents, media subcollections, and `localStorage` cache.
-15. **Option B Administrative Soft Bid Retraction & Cascading Deletion Engine**:
+17. **Option B Administrative Soft Bid Retraction & Cascading Deletion Engine**:
     - **Soft Bid Retraction Audit Trail (`retractBid` in `auctionService.ts`)**: Retracted bids are never deleted from Firestore. Records are preserved with `status: 'retracted'`, `retractedAt`, `retractionReason`, `retractedBy`, and `retractedByName` to maintain an immutable, legally defensible audit trail.
     - **Atomic Telemetry Recalculation**: Executed within a Firestore transaction, `retractBid()` recalculates `currentBid`, `bidCount`, `highBidder`, and reserve met status across remaining active bids in real time.
     - **Moderation Dialog & Member Bid Ledger (`AdminPortalPage.tsx`)**: Interactive modal requiring explicit administrative justification before retraction, expandable member bid history accordions in the Bidder Registry, and visual strike-through styling with hoverable audit popovers in the Live Bids Telemetry Ledger.

@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Phase 1 Progressive Web App (PWA) & Offline Workbox Caching**:
+  - Integrated `vite-plugin-pwa` in `vite.config.ts` with `registerType: 'autoUpdate'`, standalone web app manifest (`name: 'Wailtail Auctions'`, `short_name: 'Wailtail'`, Slate-900 `#0f172a` theme color, `#020617` background color, 192x192 and 512x512 maskable PWA icons).
+  - Configured Workbox runtime caching strategies: `StaleWhileRevalidate` for application scripts, styles, and web workers (30-day cache ceiling, 100 entries); `NetworkFirst` for Firebase Cloud Storage assets, vehicle imagery, and Firestore data queries (3-second network timeout, 7-day cache ceiling, 150 entries).
+  - Added native PWA viewport theme tags (`<meta name="theme-color" content="#0f172a" />`) and Apple touch icons (`<link rel="apple-touch-icon" href="/icons/icon-192x192.png" />`) in `index.html`.
+- **Firebase Cloud Messaging (FCM) Web Push Infrastructure**:
+  - Built background service worker (`public/firebase-messaging-sw.js`) utilizing Firebase v10 compat SDKs (`firebase-app-compat.js`, `firebase-messaging-compat.js`) to listen for `onBackgroundMessage` events.
+  - Generates rich native push notifications for live outbid alerts, closing countdown warnings, and auction status changes when the web application is inactive or in the background, with app icon badge (`/icons/icon-192x192.png`), lot tags, and window focus/open navigation handling on `notificationclick`.
+  - Engineered `usePushNotifications` custom React hook (`src/hooks/usePushNotifications.ts`) encapsulating VAPID public key token exchange (`getToken`), browser permission status tracking (`NotificationPermission`: `'granted'`, `'denied'`, `'default'`), service worker registration verification, and iOS Safari PWA standalone mode detection (`window.navigator.standalone`).
+  - Added atomic Firestore FCM token persistence: synchronizes device push tokens into `users/{uid}.fcmTokens` via `arrayUnion` on permission grant and `arrayRemove` on unsubscription or token deletion.
+- **User Account Notification Control Panel**:
+  - Integrated dedicated notification preferences panel in `src/components/UserAccountHubModal.tsx`.
+  - Added "Enable Live Outbid Alerts" toggle switch with real-time browser permission status badges (`Active`, `Blocked`, `Disabled`).
+  - Embedded context-aware installation instructions guiding iOS Safari users to install the PWA via "Add to Home Screen" to unlock Apple Push Notification service (APNs) Web Push capabilities.
+- **Mobile Photo Gallery 8-Photo Truncation**:
+  - Implemented responsive mobile gallery truncation in `src/components/PhotoGalleryGrid.tsx`: capped initial mobile thumbnail display to an 8-photo grid (2x4) controlled via `isMobileExpanded` state.
+  - Added interactive "Show All [X] Photos" / "Collapse Gallery" expansion button for mobile viewports, dramatically reducing mobile DOM weight and scroll fatigue while preserving uninterrupted full-gallery swiping and keyboard/touch navigation within the lightbox modal from any thumbnail.
 - **5th Admin Tab — Vehicle Inventory & Lots**:
   - Implemented dedicated full-width vehicle inventory management suite (`activeTab === 'inventory'`) in `src/components/AdminPortalPage.tsx`.
   - Added status filtering tabs (`All`, `Draft`, `Preview`, `Upcoming`, `Live`, `Ended`) with live lot counters and text search across title, make, model, and VIN.
@@ -92,6 +108,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Fixed
+- **Hero Lightbox Dataset Isolation & Index Alignment**:
+  - Scoped hero lightbox state in `src/components/HeroMediaCarousel.tsx` strictly to `heroImages` (`validImages` / `safeImages`), resolving critical index mismatch bugs where clicking hero carousel slides triggered the full categorized photo gallery lightbox modal instead of the focused hero sequence.
+  - Added self-contained keyboard navigation (`Escape`, `ArrowLeft`, `ArrowRight`), touch swipe gesture support (`onTouchStart`, `onTouchEnd`), and modal zoom toggling directly inside `HeroMediaCarousel.tsx`.
+- **Mobile Hero Viewport Overlay Cleanup & CTA Relocation**:
+  - Cleared obtrusive mobile hero overlays on `src/components/HeroMediaCarousel.tsx`: hidden the "Fullscreen Lightbox" button (`hidden sm:flex`) and bottom photo count indicator bar (`hidden sm:block`) on mobile viewports.
+  - Relocated mobile "Watch Video Playlist" CTA button directly beneath the horizontal hero thumbnail strip (`sm:hidden`), eliminating viewport clutter and thumb-tap obstruction on compact screens.
 - **Canonical ListingDraftSchema JSON Export**:
   - Standardized JSON export formatting in `src/components/ListingEditorWorkspace.tsx` (`handleExportJson`) to adhere strictly to the canonical `ListingDraftSchema`.
   - Stripped deprecated legacy keys (`featureBullets`, `bottomAttributeCards`) from exported showcase chapters in favor of canonical keys (`category`, `narrative`, `highlights`, `specCards`), ensuring full round-trip import/export compatibility and eliminating schema mismatch errors.

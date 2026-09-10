@@ -29,6 +29,8 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
 }) => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const isPdfDocument = (img: GalleryImage) => {
     return (
@@ -63,6 +65,22 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedImageIndex, validImages.length, onCloseLightbox, onOpenLightbox]);
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (diff > 50 && validImages.length > 0 && selectedImageIndex !== null) {
+      onOpenLightbox((selectedImageIndex + 1) % validImages.length);
+    } else if (diff < -50 && validImages.length > 0 && selectedImageIndex !== null) {
+      onOpenLightbox((selectedImageIndex - 1 + validImages.length) % validImages.length);
+    }
+    setTouchStartX(null);
+  };
+
   const categories = [
     { id: 'all', label: 'All Photos', count: validImages.length },
     { id: 'exterior', label: 'Exterior & Aero', count: validImages.filter(i => i.category === 'exterior').length },
@@ -89,7 +107,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
             <span>Complete Image Archive</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight font-serif">
-            Full High-Resolution Photo Gallery ({images.length} Photos)
+            Full High-Resolution Photo Gallery ({validImages.length} Photos)
           </h2>
           <p className="text-sm text-zinc-600 mt-1">
             Click any photo to open full-screen lightbox with high-resolution inspection.
@@ -106,7 +124,10 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
         {categories.map(cat => (
           <button
             key={cat.id}
-            onClick={() => setActiveCategory(cat.id)}
+            onClick={() => {
+              setActiveCategory(cat.id);
+              setIsMobileExpanded(false);
+            }}
             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
               activeCategory === cat.id
                 ? 'bg-zinc-900 text-white shadow-sm'
@@ -121,16 +142,19 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
 
       {/* Photo Grid */}
       <div className="p-4 sm:p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-        {filteredImages.map((img) => {
-          const globalIndex = images.findIndex(i => i.id === img.id);
+        {filteredImages.map((img, index) => {
+          const targetIndex = validImages.findIndex(i => i.id === img.id);
           const isPdf = isPdfDocument(img);
+          const isHiddenOnMobile = !isMobileExpanded && index >= 8;
 
           if (isPdf) {
             return (
               <div
                 key={img.id}
-                onClick={() => onOpenLightbox(globalIndex >= 0 ? globalIndex : 0)}
-                className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-gradient-to-b from-zinc-50 to-zinc-100 border-2 border-red-200/80 hover:border-red-500 cursor-pointer shadow-sm hover:shadow-md transition-all p-3.5 flex flex-col justify-between"
+                onClick={() => onOpenLightbox(targetIndex >= 0 ? targetIndex : 0)}
+                className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-gradient-to-b from-zinc-50 to-zinc-100 border-2 border-red-200/80 hover:border-red-500 cursor-pointer shadow-sm hover:shadow-md transition-all p-3.5 flex-col justify-between ${
+                  isHiddenOnMobile ? 'hidden sm:flex' : 'flex'
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border border-red-200">
@@ -176,8 +200,10 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
           return (
             <div
               key={img.id}
-              onClick={() => onOpenLightbox(globalIndex >= 0 ? globalIndex : 0)}
-              className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200 cursor-pointer shadow-sm hover:shadow-md transition-all"
+              onClick={() => onOpenLightbox(targetIndex >= 0 ? targetIndex : 0)}
+              className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200 cursor-pointer shadow-sm hover:shadow-md transition-all ${
+                isHiddenOnMobile ? 'hidden sm:block' : 'block'
+              }`}
             >
               {img.url && img.url.trim() !== '' ? (
                 <img
@@ -209,17 +235,40 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
         })}
       </div>
 
+      {/* Mobile Gallery Expansion CTA */}
+      {filteredImages.length > 8 && (
+        <div className="p-4 pt-0 sm:hidden flex justify-center">
+          {!isMobileExpanded ? (
+            <button
+              onClick={() => setIsMobileExpanded(true)}
+              className="w-full py-3 px-4 rounded-xl bg-zinc-900 hover:bg-black text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99]"
+            >
+              <Grid className="w-4 h-4 text-zinc-400" />
+              <span>Show All {filteredImages.length} Photos</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsMobileExpanded(false)}
+              className="w-full py-3 px-4 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold border border-zinc-300 flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99]"
+            >
+              <Grid className="w-4 h-4 text-zinc-500" />
+              <span>Collapse Gallery</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Lightbox Modal */}
       {selectedImageIndex !== null && activeImage && (
         <div 
           onClick={onCloseLightbox}
-          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-200 select-none"
         >
           {/* Top Bar */}
           <div className="flex items-center justify-between text-white z-10">
             <div className="flex items-center gap-3">
               <span className="px-3 py-1 rounded-full bg-zinc-800 text-xs font-bold border border-zinc-700">
-                Photo {selectedImageIndex + 1} of {images.length}
+                Photo {selectedImageIndex + 1} of {validImages.length}
               </span>
               <span className="text-sm font-semibold text-zinc-300 hidden sm:inline">
                 {activeImage.title}
@@ -251,12 +300,14 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
           {/* Main Image Container */}
           <div 
             onClick={(e) => e.stopPropagation()} 
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             className="relative flex-1 flex items-center justify-center overflow-hidden my-2"
           >
             {/* Prev Arrow */}
             <button
               onClick={() => {
-                const prev = (selectedImageIndex - 1 + images.length) % images.length;
+                const prev = (selectedImageIndex - 1 + validImages.length) % validImages.length;
                 onOpenLightbox(prev);
               }}
               className="absolute left-2 sm:left-6 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all hover:scale-110 shadow-lg"
@@ -268,7 +319,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
             {/* Next Arrow */}
             <button
               onClick={() => {
-                const next = (selectedImageIndex + 1) % images.length;
+                const next = (selectedImageIndex + 1) % validImages.length;
                 onOpenLightbox(next);
               }}
               className="absolute right-2 sm:right-6 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all hover:scale-110 shadow-lg"

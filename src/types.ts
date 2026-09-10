@@ -99,6 +99,7 @@ export interface UserProfile {
   bannedAt?: number;
   banReason?: string;
   watchlist?: string[];
+  fcmTokens?: string[];
 }
 
 export interface BidderProfile extends UserProfile {
