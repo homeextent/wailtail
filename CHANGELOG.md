@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **FCM Web Push Notification Subsystem**: Integrated `usePushNotifications.ts` hook with VAPID key configuration (`VITE_FIREBASE_VAPID_KEY`) and interactive outbid alert toggles in `UserAccountHubModal.tsx`.
+- **Diagnostic FCM Error State Reporting**: Implemented structured `[FCM Setup]` console tracing and high-visibility monospace diagnostic callout cards in `UserAccountHubModal.tsx` for surfacing raw FCM error codes.
+- **Root-Scoped Service Worker (`firebase-messaging-sw.js`)**: Aligned Service Worker registration to root scope (`/`) with explicit `self.registration.showNotification()` handlers for background OS desktop toasts and window focus (`clients.openWindow('/')`).
 - **Phase 1 Progressive Web App (PWA) & Offline Workbox Caching**:
   - Integrated `vite-plugin-pwa` in `vite.config.ts` with `registerType: 'autoUpdate'`, standalone web app manifest (`name: 'Wailtail Auctions'`, `short_name: 'Wailtail'`, Slate-900 `#0f172a` theme color, `#020617` background color, 192x192 and 512x512 maskable PWA icons).
   - Configured Workbox runtime caching strategies: `StaleWhileRevalidate` for application scripts, styles, and web workers (30-day cache ceiling, 100 entries); `NetworkFirst` for Firebase Cloud Storage assets, vehicle imagery, and Firestore data queries (3-second network timeout, 7-day cache ceiling, 150 entries).
@@ -108,6 +111,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Fixed
+- **Firestore FCM Token Persistence Failure**: Replaced `updateDoc` with `setDoc(..., { merge: true })` in `usePushNotifications.ts` to prevent document-missing exceptions when saving tokens.
+- **Service Worker Subscription Race Condition**: Added `await navigator.serviceWorker.ready` prior to `getToken()` execution, ensuring the worker is fully active before push subscription attempts.
 - **Hero Lightbox Dataset Isolation & Index Alignment**:
   - Scoped hero lightbox state in `src/components/HeroMediaCarousel.tsx` strictly to `heroImages` (`validImages` / `safeImages`), resolving critical index mismatch bugs where clicking hero carousel slides triggered the full categorized photo gallery lightbox modal instead of the focused hero sequence.
   - Added self-contained keyboard navigation (`Escape`, `ArrowLeft`, `ArrowRight`), touch swipe gesture support (`onTouchStart`, `onTouchEnd`), and modal zoom toggling directly inside `HeroMediaCarousel.tsx`.

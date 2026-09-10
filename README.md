@@ -9,7 +9,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 ### Frontend & Application Stack
 - **Framework**: React 19 + TypeScript + Vite
 - **Progressive Web App (PWA) & Offline Caching**: `vite-plugin-pwa` with standalone Web Manifest (`#0f172a` theme), Workbox `StaleWhileRevalidate` caching for scripts/styles, and `NetworkFirst` runtime caching for Firebase Storage assets
-- **Push Notification Infrastructure**: Firebase Cloud Messaging (FCM) Web Push with background service worker (`firebase-messaging-sw.js`), VAPID token exchange, and custom hook lifecycle (`usePushNotifications.ts`)
+- **FCM Web Push Notification Engine**: Firebase Cloud Messaging (FCM) Web Push with root-scoped background service worker (`/firebase-messaging-sw.js`), VAPID key token exchange (`VITE_FIREBASE_VAPID_KEY`), race-condition safe hook lifecycle (`usePushNotifications.ts`), safe Firestore token merge persistence (`users/{uid}` and `bidders/{uid}` via `setDoc` with `{ merge: true }`), and diagnostic error state reporting
 - **Routing & Navigation**: Client-side full-page routing supporting multi-car catalog (`/` & `/catalog`), single-car lot details (`/auctions/[id]`), full-page admin portal (`/admin`), and dedicated split-screen authoring workspace (`/dashboard/listings/[id]/edit`)
 - **Tri-Role Access Control**: 3-way role hierarchy (`ADMIN`, `SELLER`, `BIDDER`) governing access privileges across administration, authoring, and bidding surfaces
 - **5-Tab Admin Command Portal**: Dedicated operations suite (`AdminPortalPage.tsx`) covering Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding
@@ -36,7 +36,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
-- **Firebase Cloud Messaging (FCM)**: Native Web Push notification dispatching live outbid alerts and auction events to subscribers via service worker.
+- **Firebase Cloud Messaging (FCM)**: Native Web Push notification engine dispatching live outbid alerts and auction lifecycle events via root-scoped background service worker (`/firebase-messaging-sw.js`) with VAPID token exchange (`VITE_FIREBASE_VAPID_KEY`) and multi-device Firestore token merge synchronization.
 - **Firebase Authentication**: Email/password and Google OAuth authentication with email verification flags.
 - **Firebase Security Rules**: Role-based access control protecting administrative actions and auction modifications (`firestore.rules`).
 
@@ -162,11 +162,13 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **8-Photo Initial Grid**: Capped initial mobile thumbnail display to an 8-photo grid (2x4) governed by `isMobileExpanded` state to prevent mobile DOM bloat and scroll fatigue.
     - **Expansion Controls**: High-contrast "Show All [X] Photos" and "Collapse Gallery" toggle button on mobile.
     - **Unbroken Lightbox Swiping**: Opening the lightbox modal from any truncated thumbnail grants access to all categorized vehicle images (`validImages.length`) with smooth touch swipe gestures.
-14. **Progressive Web App (PWA) & FCM Web Push Architecture**:
+14. **Progressive Web App (PWA) & FCM Web Push Notification Engine**:
     - **Vite PWA Plugin (`vite.config.ts`)**: Built with `vite-plugin-pwa` supporting `registerType: 'autoUpdate'`, standalone web manifest ("Wailtail Auctions", short name "Wailtail", Slate-900 `#0f172a` theme, `#020617` background), and 192x192 / 512x512 maskable PWA icons.
     - **Workbox Offline Caching**: Dual-strategy caching with `StaleWhileRevalidate` for app scripts, styles, and workers (30-day ceiling) and `NetworkFirst` (3s timeout, 7-day ceiling) for Firebase Storage vehicle imagery and Firestore data.
-    - **Background Service Worker (`public/firebase-messaging-sw.js`)**: Standalone push worker using Firebase v10 compat SDKs to receive and display background outbid, closing, and status notifications with application badge and deep-link click handling.
-    - **Push Notification Hook (`src/hooks/usePushNotifications.ts`)**: Manages VAPID token exchange (`getToken`), browser permission status detection (`granted`, `denied`, `default`), iOS Safari PWA standalone verification, and atomic Firestore token synchronization in `users/{uid}.fcmTokens` via `arrayUnion` / `arrayRemove`.
+    - **Root-Scoped Background Service Worker (`public/firebase-messaging-sw.js`)**: Registered at root scope (`/`) with explicit `self.registration.showNotification()` handlers listening for `onBackgroundMessage` and native `push` events to trigger background OS desktop toasts and mobile notifications. Handles `notificationclick` client matching and active window focus/navigation (`clients.openWindow('/')`).
+    - **Race-Condition Safe Hook Lifecycle (`src/hooks/usePushNotifications.ts`)**: Explicitly awaits `navigator.serviceWorker.ready` before push subscription and `getToken()` execution, guaranteeing the worker is active. Coordinates VAPID token exchange (`VITE_FIREBASE_VAPID_KEY`), browser permission tracking (`NotificationPermission`), and iOS Safari PWA standalone installation checks.
+    - **Safe Firestore Token Merge Persistence**: Utilizes `setDoc(doc(db, 'users', user.uid), { fcmTokens: arrayUnion(token) }, { merge: true })` (and synchronized `bidders/{uid}.fcmTokens`) to prevent document-missing exceptions when saving or deleting tokens.
+    - **Diagnostic FCM Error State Reporting**: Employs structured `[FCM Setup]` console tracing and high-visibility monospace diagnostic callout cards in `UserAccountHubModal.tsx` for surfacing raw FCM error codes and missing environment configuration.
 15. **YouTube Video Series & Thumbnail URL Sanitization**:
     - Validates 11-character video IDs using regex (`/^[a-zA-Z0-9_-]{11}$/`).
     - Prevents 404 network errors in DevTools by only generating `mqdefault.jpg` URLs for validated IDs.
@@ -202,6 +204,17 @@ cp .env.example .env.local
 # Start development server
 npm run dev
 ```
+
+### Environment Configuration Requirements
+
+The application relies on the following environment variables (configured in `.env.local` or host dashboard):
+
+| Environment Variable | Requirement | Description |
+| :--- | :--- | :--- |
+| `VITE_FIREBASE_VAPID_KEY` | **Required** (Web Push) | Public Web Push VAPID key used by `getToken()` in `src/hooks/usePushNotifications.ts` to register FCM push notification subscriptions. |
+| `GEMINI_API_KEY` | Optional | API secret for Gemini AI narrative assistance. |
+| `APP_URL` | Optional | Deployment host URL used for self-referential links, OAuth callbacks, and API routing. |
+
 
 ---
 

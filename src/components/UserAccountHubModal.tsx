@@ -89,6 +89,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
     token,
     loading: pushLoading,
     error: pushError,
+    fcmErrorDetails,
     isSupported,
     requestPushPermission,
     removePushPermission
@@ -1179,10 +1180,15 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 
                   {/* Error banner if unexpected error occurred */}
                   {pushError && (
-                    <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2.5">
-                      <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                      <span>{pushError}</span>
-                    </div>
+                    <>
+                      <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                        <span>{pushError}</span>
+                      </div>
+                      <div className="font-mono text-xs text-rose-300 bg-rose-950/40 border border-rose-800/60 p-2 rounded-md">
+                        Diagnostic Output: {fcmErrorDetails || pushError}
+                      </div>
+                    </>
                   )}
 
                   {/* Control Card */}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getToken, deleteToken } from 'firebase/messaging';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { getToken, deleteToken, isSupported } from 'firebase/messaging';
+import { doc, setDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db, getMessagingInstance } from '../services/firebase';
 import { useAuth } from '../context/AuthContext';
 
@@ -12,6 +12,7 @@ export interface UsePushNotificationsReturn {
   token: string | null;
   loading: boolean;
   error: string | null;
+  fcmErrorDetails: string | null;
   isEnabled: boolean;
   requestPushPermission: () => Promise<string | null>;
   removePushPermission: () => Promise<void>;
@@ -34,30 +35,75 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [fcmErrorDetails, setFcmErrorDetails] = useState<string | null>(null);
 
   // Check support on mount
   useEffect(() => {
     const checkSupport = async () => {
-      const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
-      const hasServiceWorker = typeof window !== 'undefined' && 'serviceWorker' in window;
+      try {
+        const hasNavigator = typeof navigator !== 'undefined';
+        const hasServiceWorker = typeof window !== 'undefined' && 'serviceWorker' in navigator;
+        console.log('[FCM Setup] Navigator availability:', hasNavigator);
+        console.log('[FCM Setup] ServiceWorker availability:', hasServiceWorker);
 
-      if (!hasNotification || !hasServiceWorker) {
+        const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+
+        let messagingSupported = false;
+        if (typeof window !== 'undefined') {
+          try {
+            messagingSupported = await isSupported();
+          } catch (suppErr: any) {
+            console.error('[FCM Error Details]:', suppErr);
+          }
+        }
+        console.log('[FCM Setup] isSupported() check:', messagingSupported);
+
+        const rawVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        const hasVapidKey = Boolean(rawVapidKey && rawVapidKey.trim() !== '');
+        console.log('[FCM Setup] VAPID Key status:', hasVapidKey ? 'Present' : 'Undefined/Missing');
+
+        if (!hasVapidKey) {
+          console.warn('[FCM Setup] VITE_FIREBASE_VAPID_KEY is missing or empty');
+          const missingKeyMsg = 'Missing VITE_FIREBASE_VAPID_KEY environment variable';
+          setError(missingKeyMsg);
+          setFcmErrorDetails(missingKeyMsg);
+        }
+
+        if (!hasNotification || !hasServiceWorker || !messagingSupported) {
+          setIsSupportedState(false);
+          return;
+        }
+
+        if ('serviceWorker' in navigator) {
+          try {
+            await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+            await navigator.serviceWorker.ready;
+          } catch (swErr: any) {
+            console.error('[FCM Error Details]:', swErr);
+          }
+        }
+
+        const msg = await getMessagingInstance();
+        setIsSupportedState(Boolean(msg));
+
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          setPermission(Notification.permission);
+        }
+
+        // Verify token matching user profile
+        const storedToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
+        if (storedToken) {
+          setToken(storedToken);
+        } else if (userProfile?.fcmTokens && userProfile.fcmTokens.length > 0) {
+          // Fallback: If user has a token registered, check if active
+          setToken(userProfile.fcmTokens[0]);
+        }
+      } catch (err: any) {
+        console.error('[FCM Error Details]:', err);
+        const codeOrMsg = err?.code || err?.message || 'Failed to initialize push notifications';
+        setError(err?.message || codeOrMsg);
+        setFcmErrorDetails(codeOrMsg);
         setIsSupportedState(false);
-        return;
-      }
-
-      const msg = await getMessagingInstance();
-      setIsSupportedState(Boolean(msg));
-
-      setPermission(Notification.permission);
-
-      // Verify token matching user profile
-      const storedToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
-      if (storedToken) {
-        setToken(storedToken);
-      } else if (userProfile?.fcmTokens && userProfile.fcmTokens.length > 0) {
-        // Fallback: If user has a token registered, check if active
-        setToken(userProfile.fcmTokens[0]);
       }
     };
 
@@ -66,11 +112,21 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
   const requestPushPermission = useCallback(async (): Promise<string | null> => {
     setError(null);
+    setFcmErrorDetails(null);
     setLoading(true);
 
     try {
       if (typeof window === 'undefined' || !('Notification' in window)) {
         throw new Error('Push notifications are not supported by this browser.');
+      }
+
+      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+      if (!vapidKey || vapidKey.trim() === '') {
+        console.warn('[FCM Setup] VITE_FIREBASE_VAPID_KEY is missing or empty');
+        const missingKeyMsg = 'Missing VITE_FIREBASE_VAPID_KEY environment variable';
+        setError(missingKeyMsg);
+        setFcmErrorDetails(missingKeyMsg);
+        return null;
       }
 
       // Request native notification permission
@@ -79,78 +135,80 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
       if (result !== 'granted') {
         if (result === 'denied') {
-          setError('Notification permissions were denied in browser settings.');
+          const deniedMsg = 'Notification permissions were denied in browser settings.';
+          setError(deniedMsg);
+          setFcmErrorDetails(deniedMsg);
         }
-        setLoading(false);
         return null;
       }
 
       // Acquire FCM messaging instance
       const msg = await getMessagingInstance();
       if (!msg) {
-        throw new Error('Firebase Cloud Messaging is unavailable or unsupported on this platform.');
+        const noMsgErr = new Error('Firebase Cloud Messaging is unavailable or unsupported on this platform.');
+        (noMsgErr as any).code = 'messaging/unsupported-browser';
+        throw noMsgErr;
       }
 
-      // Ensure service worker registration (critical for iOS Safari PWA)
-      let swRegistration: ServiceWorkerRegistration | undefined;
+      // Ensure service worker registration at root scope and retrieve active registration
+      let registration: ServiceWorkerRegistration | undefined;
       if ('serviceWorker' in navigator) {
         try {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          swRegistration = registrations.find(r => r.active && r.active.scriptURL && r.active.scriptURL.includes('firebase-messaging-sw.js'));
-          
-          if (!swRegistration) {
-            swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-              scope: '/'
-            });
-          }
-        } catch (swErr) {
+          await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+            scope: '/'
+          });
+          registration = await navigator.serviceWorker.ready;
+        } catch (swErr: any) {
+          console.error('[FCM Error Details]:', swErr);
           console.warn('[usePushNotifications] Service worker registration notice:', swErr);
-          swRegistration = await navigator.serviceWorker.ready.catch(() => undefined);
         }
       }
 
-      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || undefined;
-      const tokenOptions: { vapidKey?: string; serviceWorkerRegistration?: ServiceWorkerRegistration } = {};
-      if (vapidKey) {
-        tokenOptions.vapidKey = vapidKey;
-      }
-      if (swRegistration) {
-        tokenOptions.serviceWorkerRegistration = swRegistration;
-      }
+      const token = await getToken(msg, {
+        vapidKey,
+        serviceWorkerRegistration: registration
+      });
 
-      const currentToken = await getToken(msg, tokenOptions);
-
-      if (currentToken) {
-        setToken(currentToken);
-        localStorage.setItem(FCM_TOKEN_STORAGE_KEY, currentToken);
+      if (token) {
+        console.log('[FCM Token for Testing]:', token);
+        setToken(token);
+        localStorage.setItem(FCM_TOKEN_STORAGE_KEY, token);
+        setError(null);
+        setFcmErrorDetails(null);
 
         // Append token to user's Firestore document
         if (user?.uid) {
           try {
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-              fcmTokens: arrayUnion(currentToken)
-            });
-          } catch (dbErr) {
+            await setDoc(userRef, {
+              fcmTokens: arrayUnion(token)
+            }, { merge: true });
+          } catch (dbErr: any) {
+            console.error('[FCM Error Details]:', dbErr);
             console.warn('[usePushNotifications] Failed to sync FCM token to Firestore:', dbErr);
           }
         }
 
-        setLoading(false);
-        return currentToken;
+        return token;
       } else {
         throw new Error('No registration token available. Request permission to generate one.');
       }
     } catch (err: any) {
+      console.error('[FCM Error Details]:', err);
       console.error('[usePushNotifications] Error registering push notification:', err);
-      setError(err?.message || 'Failed to enable push notifications');
-      setLoading(false);
+      const code = err?.code;
+      const message = err?.message || 'Failed to enable push notifications';
+      setError(message);
+      setFcmErrorDetails(code || message);
       return null;
+    } finally {
+      setLoading(false);
     }
   }, [user?.uid]);
 
   const removePushPermission = useCallback(async (): Promise<void> => {
     setError(null);
+    setFcmErrorDetails(null);
     setLoading(true);
 
     try {
@@ -160,7 +218,8 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (msg && currentToken) {
         try {
           await deleteToken(msg);
-        } catch (delErr) {
+        } catch (delErr: any) {
+          console.error('[FCM Error Details]:', delErr);
           console.warn('[usePushNotifications] deleteToken warning:', delErr);
         }
       }
@@ -169,20 +228,27 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (user?.uid && currentToken) {
         try {
           const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, {
+          await setDoc(userRef, {
             fcmTokens: arrayRemove(currentToken)
-          });
-        } catch (dbErr) {
+          }, { merge: true });
+        } catch (dbErr: any) {
+          console.error('[FCM Error Details]:', dbErr);
           console.warn('[usePushNotifications] Failed to remove FCM token from Firestore:', dbErr);
         }
       }
 
       localStorage.removeItem(FCM_TOKEN_STORAGE_KEY);
       setToken(null);
-      setLoading(false);
+      setError(null);
+      setFcmErrorDetails(null);
     } catch (err: any) {
+      console.error('[FCM Error Details]:', err);
       console.error('[usePushNotifications] Error removing push permission:', err);
-      setError(err?.message || 'Failed to disable push notifications');
+      const code = err?.code;
+      const message = err?.message || 'Failed to disable push notifications';
+      setError(message);
+      setFcmErrorDetails(code || message);
+    } finally {
       setLoading(false);
     }
   }, [token, user?.uid]);
@@ -195,6 +261,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     token,
     loading,
     error,
+    fcmErrorDetails,
     isEnabled,
     requestPushPermission,
     removePushPermission

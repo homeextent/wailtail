@@ -1084,6 +1084,7 @@ The `usePushNotifications` hook provides a reactive interface for component cons
     token: string | null;
     loading: boolean;
     error: string | null;
+    fcmErrorDetails: string | null;
     isEnabled: boolean;
     requestPushPermission: () => Promise<string | null>;
     removePushPermission: () => Promise<void>;
@@ -1094,12 +1095,12 @@ The `usePushNotifications` hook provides a reactive interface for component cons
   - Queries `isSupported()` from `firebase/messaging`.
   - Accurately identifies iOS Safari environments requiring PWA standalone installation for APNs push capabilities.
 * **VAPID Public Key Exchange**:
-  - Invokes `getToken(messaging, { vapidKey, serviceWorkerRegistration })` using the platform's public Web Push VAPID key.
-  - Ensures the service worker registration for `firebase-messaging-sw.js` is active before acquiring the token.
+  - Invokes `getToken(messaging, { vapidKey, serviceWorkerRegistration })` using the platform's public Web Push VAPID key (`VITE_FIREBASE_VAPID_KEY`).
+  - Ensures the service worker registration for `firebase-messaging-sw.js` is active by awaiting `navigator.serviceWorker.ready` before acquiring the token.
 * **Multi-Device Token Synchronization**:
-  - Upon token acquisition, atomically updates the user's Firestore profile at `users/{uid}` using `arrayUnion(currentToken)` into `UserProfile.fcmTokens`.
+  - Upon token acquisition, atomically updates the user's Firestore profile at `users/{uid}` (and synchronized bidder profile records at `bidders/{uid}`) using `setDoc(docRef, { fcmTokens: arrayUnion(token) }, { merge: true })`.
   - Caches the active token in `localStorage` under `wailtail_fcm_token`.
-  - Upon permission revocation or manual opt-out, deletes the token via `deleteToken(msg)` and atomically purges it from `users/{uid}.fcmTokens` using `arrayRemove(currentToken)`.
+  - Upon permission revocation or manual opt-out, deletes the token via `deleteToken(msg)` and atomically purges it using `setDoc(docRef, { fcmTokens: arrayRemove(currentToken) }, { merge: true })`.
 
 ### 8.5 Notification Control Panel (`UserAccountHubModal.tsx`)
 Provides users with granular control over live outbid and closing notifications:
@@ -1109,4 +1110,30 @@ Provides users with granular control over live outbid and closing notifications:
   - `Blocked` (Rose): Browser notifications blocked in device or browser preferences.
   - `Disabled` (Slate): Notifications supported but not currently opted-in.
 * **iOS Safari Guidance Callout**: When running in mobile Safari outside of standalone mode, renders a guided instruction card prompting users to tap Share $\rightarrow$ "Add to Home Screen" to enable Apple Push Notification service (APNs) Web Push support.
+* **Diagnostic FCM Error State Reporting**: Renders high-visibility monospace diagnostic callout cards surfacing raw FCM error codes and descriptions (`fcmErrorDetails || pushError`) to simplify troubleshooting across development, staging, and restricted browser environments.
+
+### 8.6 Web Push Notification Engine & Service Worker Architecture
+The platform features an end-to-end Web Push notification engine linking Firebase Cloud Messaging (FCM), browser service workers, and Firestore user registries:
+
+1. **Root-Scoped Service Worker (`/firebase-messaging-sw.js`)**:
+   - Explicitly registered with root scope (`{ scope: '/' }`) ensuring push event handling across all URL paths and sub-routes.
+   - Background payload handling listens via both Firebase Compat `messaging.onBackgroundMessage()` and native browser `self.addEventListener('push', ...)` event listeners.
+   - Dispatches system desktop and mobile OS notifications via `self.registration.showNotification(title, notificationOptions)` with custom lot badges (`/icons/icon-192x192.png`), alert tags (`tag: payload.data?.tag || 'wailtail-auction-alert'`), and deep link metadata.
+   - Implements `self.addEventListener('notificationclick', ...)` to close the toast, inspect existing browser clients via `clients.matchAll({ type: 'window', includeUncontrolled: true })`, and either focus an existing tab or launch a target lot URL with fallback (`clients.openWindow(targetUrl)`).
+
+2. **Hook Lifecycle & Race-Condition Prevention (`src/hooks/usePushNotifications.ts`)**:
+   - Pre-registration check guarantees `navigator.serviceWorker` and `Notification` APIs exist and verifies Firebase Messaging support with `await isSupported()`.
+   - Prevents registration race conditions by explicitly waiting for `await navigator.serviceWorker.ready` before invoking `getToken()`.
+   - Implements structured diagnostic tracing with `[FCM Setup]` prefix logging navigator availability, service worker readiness, VAPID key presence, and registration error details.
+   - Token acquisition handles VAPID key injection via `getToken(msg, { vapidKey, serviceWorkerRegistration: registration })`.
+
+3. **Safe Firestore Token Merge Persistence**:
+   - Replaces fragile update operations with safe merge semantics: `setDoc(doc(db, 'users', user.uid), { fcmTokens: arrayUnion(token) }, { merge: true })` (and complementary `bidders/{uid}.fcmTokens` persistence).
+   - Guarantees token saving never throws missing document exceptions if the user document has not yet been provisioned or is hydrating.
+   - Unsubscription atomically executes `setDoc(..., { fcmTokens: arrayRemove(token) }, { merge: true })` alongside client-side token deletion (`deleteToken(msg)`).
+
+4. **Environment Configuration & PWA Installation Constraints**:
+   - **VAPID Public Key**: Requires `VITE_FIREBASE_VAPID_KEY` to be configured in application environment variables. If missing or empty, `[FCM Setup]` issues console warnings and marks the hook state as disabled with diagnostic error messaging.
+   - **iOS Safari PWA Installation Constraint**: Mobile Safari on iOS 16.4+ requires web applications to be added to the iOS Home Screen via PWA standalone mode (`window.navigator.standalone === true`) before Apple Push Notification service (APNs) grants push subscription permissions. The UI detects non-standalone Safari instances and renders step-by-step installation instructions.
+
 
