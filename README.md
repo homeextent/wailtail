@@ -28,7 +28,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Cloud Firestore**:
   - `auctions`: Core vehicle documents containing specs, financials, taxonomy generations, and lifecycle status.
   - `auctions/{auctionId}/media/{document=**}`: Recursive wildcard subcollection matching for media configurations, images, chapters, and assets.
-  - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification.
+  - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification and Option B soft retraction audit fields (`status`, `retractedAt`, `retractionReason`, `retractedBy`, `retractedByName`).
   - `comments`: Community Q&A feed with verified seller and administrator official nested replies.
   - `users` / `bidders`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, and personal saved vehicle lot arrays (`watchlist`).
   - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
@@ -151,6 +151,12 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - Prevents 404 network errors in DevTools by only generating `mqdefault.jpg` URLs for validated IDs.
 14. **Bulk Purge & Cache Sanitization**:
     - `purgeAllListings()` atomic deletion engine cleanses Firestore documents, media subcollections, and `localStorage` cache.
+15. **Option B Administrative Soft Bid Retraction & Cascading Deletion Engine**:
+    - **Soft Bid Retraction Audit Trail (`retractBid` in `auctionService.ts`)**: Retracted bids are never deleted from Firestore. Records are preserved with `status: 'retracted'`, `retractedAt`, `retractionReason`, `retractedBy`, and `retractedByName` to maintain an immutable, legally defensible audit trail.
+    - **Atomic Telemetry Recalculation**: Executed within a Firestore transaction, `retractBid()` recalculates `currentBid`, `bidCount`, `highBidder`, and reserve met status across remaining active bids in real time.
+    - **Moderation Dialog & Member Bid Ledger (`AdminPortalPage.tsx`)**: Interactive modal requiring explicit administrative justification before retraction, expandable member bid history accordions in the Bidder Registry, and visual strike-through styling with hoverable audit popovers in the Live Bids Telemetry Ledger.
+    - **Human-Readable Moderator Resolution (`getAdminIdentifier()`)**: Automatically resolves raw administrator UIDs to human-readable identities across staff rosters and active sessions.
+    - **Cascading Lot Deletions & Orphaned Bid Moderation**: 400-item chunked batch writes in `deleteListing()` and `batchDeleteAuctions()` eradicate parent listings, child media subcollections, settings documents, and bid records below Firestore's 500-operation ceiling. Orphaned bids from legacy lots surface an amber `ORPHANED BID (LOT DELETED)` fallback badge and remain safely retractable without missing document errors.
 
 ---
 

@@ -90,6 +90,13 @@ interface Bid {
   isVerifiedBidder: boolean;
   timestamp: number; // Unix timestamp
   antiSnipeTriggered?: boolean;
+
+  // Option B Administrative Soft Retraction & Audit Fields
+  status?: 'active' | 'retracted';
+  retractedAt?: number;
+  retractionReason?: string;
+  retractedBy?: string; // UID of retracting admin
+  retractedByName?: string; // Display name or human-readable identifier of retracting admin
 }
 ```
 
@@ -642,14 +649,21 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Implements session authentication loading guards in `App.tsx` (`authLoading`) to prevent accidental redirect flashes during browser refreshes.
 - **5 Command Suites & Management Tabs**:
   - **1. Bidder Registry Tab** (`bidders`): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls.
+    - **Expandable Member Bid Ledger**: Click-to-expand bid history accordion displaying all historical bids placed by the user, breakdown counters for active vs. retracted bids, and an inline administrative "Retract" moderation button.
   - **2. Consignment Applications Tab** (`consignments`): Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
   - **3. Vehicle Inventory & Lots Tab** (`inventory` — 5th Admin Tab): Comprehensive full-width vehicle inventory management suite displaying active catalog lots, editable vehicle specifications, and status lifecycles.
     - Status filtering pills: `All`, `Draft`, `Preview`, `Upcoming`, `Live`, and `Ended`.
     - Real-time lot search filtering across make, model, VIN, and title.
     - Server-assisted client pagination (configurable page size with previous/next navigation).
     - Row-level controls: quick status dropdown switcher, live CAD high bid tracking, direct authoring workspace launch links (`/dashboard/listings/${id}/edit`), and single-lot deletion triggers.
-  - **4. Live Bids Telemetry Ledger Tab** (`ledger`): Real-time streaming audit trail of all placed bids with bidder handles, lot titles, timestamps, and currency amounts.
+  - **4. Live Bids Telemetry Ledger Tab** (`ledger`): Real-time streaming audit trail of all placed bids with bidder handles, lot titles, timestamps, and currency amounts. Includes active/retracted summary pill counts, strike-through formatting on retracted bids, hoverable audit popovers displaying retraction reasons/timestamps/moderators, and administrative retraction actions.
   - **5. Platform Branding Tab** (`branding`): Global platform identity configuration for site logo, name, and tagline with Firestore persistence and local storage fallback.
+- **Option B Administrative Soft Bid Retractions (`retractBid` in `auctionService.ts`)**:
+  - **Permanent Audit Trail Preservation**: Bids are never hard-deleted from Firestore. Retracted bids are marked with `status: 'retracted'`, `retractedAt: timestamp`, `retractionReason: string`, `retractedBy: adminUid`, and `retractedByName: string`.
+  - **Atomic Telemetry Recalculation**: Executed within a Firestore transaction, `retractBid()` re-evaluates all remaining active bids on the auction (filtering out both the target bid and prior retracted bids), recalculating `currentBid`, `bidCount`, `highBidder`, and reserve met status in a single atomic transaction.
+  - **Mandatory Reason Prompt & Modal Workflow**: Administrative retraction modal requires curation staff to submit an explicit justification (e.g., bidder typo, unverified funds, seller mutual agreement) before executing the transaction, with immediate state reflection across the portal.
+  - **Human-Readable Admin Identity Resolution**: Moderator display names (`retractedByName`) are captured during retraction. Dynamic fallback resolution via `getAdminIdentifier()` in `AdminPortalPage.tsx` maps raw UIDs to human-readable names using loaded user rosters or active session state for transparent audit presentation.
+  - **Orphaned Bid Moderation Fallback**: In scenarios where a bid's parent vehicle lot was previously deleted or unlinked, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely soft-retract the orphaned bid document without throwing missing parent lot errors.
 - **Consignment Intake Email Deep-Links & 1-Click Triage (`useEffect`)**:
   - `AdminPortalPage.tsx` listens for URL query parameters on initial mount:
     `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=approve|reject`
@@ -668,10 +682,10 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - All bulk mutations are chunked safely into 150-item batches (safely below Firestore's 500 operations batch limit) to ensure transactional reliability and prevent payload limit errors (`batchUpdateConsignmentStatus`, `batchDeleteConsignments`, `batchUpdateAuctionStatus`, `batchDeleteAuctions`).
 - **Cascading Deletion Controls (`auctionService.ts`)**:
   - Prevents orphaned records across dual collections (`auctions` and `consignment_applications` / `consignments`):
-    - `deleteListing(auctionId, cascadeDeleteConsignment)`: Atomically deletes the vehicle lot from `auctions`, its settings document (`settings/media-${id}`), and media configuration subcollection. When `cascadeDeleteConsignment` is enabled, queries and removes any associated consignment applications where `convertedAuctionId == auctionId`. Also flushes localized media cache keys from `localStorage`.
+    - `deleteListing(auctionId, cascadeDeleteConsignment)`: Permanently deletes the vehicle lot from `auctions`, its settings document (`settings/media-${id}`), child media subcollection (`auctions/{id}/media`), and all child/root bid documents using safe 400-item chunked batch writes. When `cascadeDeleteConsignment` is enabled, queries and removes any associated consignment applications where `convertedAuctionId == auctionId`. Also flushes localized media cache keys from `localStorage`.
     - `deleteConsignmentApplication(appId, cascadeDeleteAuction)`: Deletes the record from `consignment_applications` and legacy `consignments`. When `cascadeDeleteAuction` is enabled, resolves `convertedAuctionId` and cascades deletion to the generated vehicle lot via `deleteListing(convertedAuctionId, false)`.
     - `batchDeleteConsignments(appIds, cascadeDeleteAuctions)`: Chunks application deletions in 150-item Firestore batches, resolving linked vehicle lots in 30-item batches for optional cascading lot purging.
-    - `batchDeleteAuctions(auctionIds, cascadeDeleteConsignments)`: Chunks vehicle lot deletions in 100-item Firestore batches, resolving linked consignment applications for optional cascading cleanup.
+    - `batchDeleteAuctions(auctionIds, cascadeDeleteConsignments)`: Chunks vehicle lot deletions in 400-item Firestore batches, resolving linked consignment applications for optional cascading cleanup.
 - **Atomic Moderation Services Across Dual Collections**:
   - `resolveUserAndBidderDocuments(userId)`: Resolves document references across both `users/{userId}` and `bidders/{userId}` collections to guarantee atomic synchronization.
   - **3-Way Role Switching (`updateUserRole`)**: Allows administrators to toggle user accounts between `ADMIN`, `SELLER`, and `BIDDER` via an atomic Firestore `writeBatch`.

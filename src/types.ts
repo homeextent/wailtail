@@ -57,6 +57,11 @@ export interface Bid {
   bidderEmail: string;
   timestamp: number;
   antiSniped?: boolean;
+  status?: 'active' | 'retracted';
+  retractedAt?: number;
+  retractionReason?: string;
+  retractedBy?: string;
+  retractedByName?: string;
 }
 
 export interface Comment {
@@ -265,11 +270,21 @@ export interface ListingDraftSchema {
 
   // Section 4: Showcase Chapters 01–04
   showcaseChapters: Array<{
-    chapterNumber: string;
+    category: ShowcaseChapterCategory | string;
     title: string;
     subtitle: string;
-    featureBullets: string[];
-    bottomAttributeCards: Array<{
+    narrative: string;
+    photoUrl: string;
+    photoCaption: string;
+    highlights: string[];
+    specCards: Array<{
+      key: string;
+      value: string;
+      isCustomKey: boolean;
+    }>;
+    chapterNumber?: string;
+    featureBullets?: string[];
+    bottomAttributeCards?: Array<{
       label: string;
       value: string;
     }>;

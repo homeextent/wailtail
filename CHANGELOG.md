@@ -80,8 +80,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Real-Time User Profile Listener**:
   - Implemented `subscribeToUserProfile()` in `src/App.tsx` utilizing a real-time Firestore `onSnapshot` listener on `users/{user.uid}`.
   - Instantly updates local profile state, authorization guards, and navigation privileges across the platform upon role changes without requiring a browser refresh.
+- **Option B Administrative Soft Bid Retraction Engine**:
+  - Extended the core `Bid` schema (`src/types.ts`) with audit metadata fields: `status?: 'active' | 'retracted'`, `retractedAt?: number`, `retractionReason?: string`, `retractedBy?: string`, and `retractedByName?: string`.
+  - Implemented atomic `retractBid(auctionId, bidId, reason, adminUserId, adminDisplayName)` in `src/services/auctionService.ts` executing inside a Firestore transaction to preserve historical bid records for complete legal audit trails while atomically re-evaluating remaining active bids to recalculate `currentBid`, `bidCount`, `highBidder`, and reserve met status.
+  - Added expandable member bid history ledger in `src/components/AdminPortalPage.tsx` under the Bidder Registry tab, enabling administrators to inspect all bids placed by a user, distinguish active vs. retracted bids, and initiate administrative soft retractions with mandatory reason prompts.
+- **Human-Readable Admin Identity Resolution**:
+  - Added persistence of moderator display names (`retractedByName`) directly onto retracted bid documents alongside `retractedBy` UIDs during retraction transactions.
+  - Implemented dynamic fallback resolution via `getAdminIdentifier()` in `src/components/AdminPortalPage.tsx` to resolve raw UIDs to human-readable identities against loaded users and active sessions, rendering transparent moderation attribution across the ledger and retraction modals.
+- **Cascading Lot Deletion & Orphaned Bid Moderation Fallback**:
+  - Enhanced `deleteListing()` and `batchDeleteAuctions()` in `src/services/auctionService.ts` to perform 400-item chunked batch deletions across auction root documents, child media subcollections, settings, and bid documents, staying well below Firestore's 500-operation ceiling while guaranteeing zero orphaned subcollection records.
+  - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Fixed
+- **Canonical ListingDraftSchema JSON Export**:
+  - Standardized JSON export formatting in `src/components/ListingEditorWorkspace.tsx` (`handleExportJson`) to adhere strictly to the canonical `ListingDraftSchema`.
+  - Stripped deprecated legacy keys (`featureBullets`, `bottomAttributeCards`) from exported showcase chapters in favor of canonical keys (`category`, `narrative`, `highlights`, `specCards`), ensuring full round-trip import/export compatibility and eliminating schema mismatch errors.
 - **Navbar Profile Dropdown Positioning Repair**:
   - Resolved right-edge viewport clipping and vertical flex squishing on the user avatar dropdown menu in `src/components/Navbar.tsx`.
   - Encapsulated the avatar trigger button in a dedicated `relative inline-block` wrapper and positioned the floating menu with `absolute right-0 top-full mt-2 w-64 z-50` with high-contrast slate borders, ensuring complete visibility across responsive tablet and desktop viewports.

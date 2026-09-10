@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db } from '../firebase';
 import { 
   Auction, 
   Bid, 
@@ -30,6 +32,7 @@ import {
   getStoredGlobalBranding,
   compressImageDataUrl,
   uploadImageToStorage,
+  retractBid,
   MAIN_AUCTION_ID
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
@@ -54,6 +57,8 @@ import {
   Trash2, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Zap, 
   MapPin, 
   Upload, 
@@ -110,6 +115,53 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   };
 
   // -------------------------------------------------------------
+  // BID MODERATION & RETRACTION STATE (OPTION B SOFT RETRACTION)
+  // -------------------------------------------------------------
+  const [allLiveBids, setAllLiveBids] = useState<Bid[]>(bids || []);
+  const [expandedBidderId, setExpandedBidderId] = useState<string | null>(null);
+  const [retractingBid, setRetractingBid] = useState<Bid | null>(null);
+  const [retractionReason, setRetractionReason] = useState<string>('');
+  const [retractionSubmitting, setRetractionSubmitting] = useState<boolean>(false);
+  const [retractionError, setRetractionError] = useState<string | null>(null);
+
+  // Sync real-time bids collection across all auctions
+  useEffect(() => {
+    try {
+      const q = query(collection(db, 'bids'), orderBy('timestamp', 'desc'));
+      const unsub = onSnapshot(q, (snap) => {
+        const fetchedBids: Bid[] = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        } as Bid));
+        setAllLiveBids(fetchedBids);
+      }, (err) => {
+        console.warn('AdminPortalPage: Live bids listener fallback to props.bids:', err);
+        setAllLiveBids(bids || []);
+      });
+      return () => unsub();
+    } catch {
+      setAllLiveBids(bids || []);
+    }
+  }, [bids]);
+
+  const getMemberBids = useCallback((userItem: UserProfile): Bid[] => {
+    return allLiveBids
+      .filter(b => {
+        const matchUid = Boolean(b.bidderId && userItem.uid && b.bidderId === userItem.uid);
+        const matchEmail = Boolean(
+          b.bidderEmail && userItem.email &&
+          b.bidderEmail.trim().toLowerCase() === userItem.email.trim().toLowerCase()
+        );
+        return matchUid || matchEmail;
+      })
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  }, [allLiveBids]);
+
+  const toggleBidderLedger = (uid: string) => {
+    setExpandedBidderId(prev => (prev === uid ? null : uid));
+  };
+
+  // -------------------------------------------------------------
   // TAB 1: BIDDER REGISTRY STATE (PAGINATED & FILTERED)
   // -------------------------------------------------------------
   const [bidderPage, setBidderPage] = useState<number>(1);
@@ -150,6 +202,257 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   useEffect(() => {
     loadBidders();
   }, [loadBidders]);
+
+  const handleOpenRetractModal = (bid: Bid) => {
+    setRetractingBid(bid);
+    setRetractionReason('');
+    setRetractionError(null);
+  };
+
+  const handleConfirmRetraction = async () => {
+    if (!retractionReason.trim()) {
+      setRetractionError('A valid reason for retraction is required.');
+      return;
+    }
+    if (!retractingBid) return;
+
+    setRetractionSubmitting(true);
+    setRetractionError(null);
+
+    const isOrphaned = !allAuctions.some(a => a.id === retractingBid.auctionId) && retractingBid.auctionId !== auction.id;
+
+    try {
+      const adminId = authUser?.uid || authUserProfile?.uid || 'admin';
+      const activeAdminName = authUserProfile?.displayName?.trim() || authUser?.displayName?.trim();
+      const activeAdminEmail = authUserProfile?.email?.trim() || authUser?.email?.trim();
+      const adminDisplayName = (activeAdminName && activeAdminEmail && activeAdminName.toLowerCase() !== activeAdminEmail.toLowerCase())
+        ? `${activeAdminName} (${activeAdminEmail})`
+        : (activeAdminName || activeAdminEmail || 'Administrator');
+
+      const targetAuctionId = retractingBid.auctionId || auction.id;
+      await retractBid(targetAuctionId, retractingBid.id, retractionReason.trim(), adminId, adminDisplayName);
+
+      // Optimistic update
+      setAllLiveBids(prev => prev.map(b => {
+        if (b.id === retractingBid.id) {
+          return {
+            ...b,
+            status: 'retracted',
+            retractedAt: Date.now(),
+            retractionReason: retractionReason.trim(),
+            retractedBy: adminId,
+            retractedByName: adminDisplayName
+          };
+        }
+        return b;
+      }));
+
+      if (isOrphaned) {
+        showToast(`Orphaned bid of ${formatCurrency(retractingBid.amount)} CAD successfully retracted (parent lot was deleted).`, 'success');
+      } else {
+        showToast(`Bid of ${formatCurrency(retractingBid.amount)} CAD successfully retracted.`, 'success');
+      }
+      setRetractingBid(null);
+      setRetractionReason('');
+    } catch (err: any) {
+      console.error('Error retracting bid:', err);
+      setRetractionError(err.message || 'Failed to retract bid. Please try again.');
+    } finally {
+      setRetractionSubmitting(false);
+    }
+  };
+
+  /**
+   * UID Resolver Helper:
+   * Resolves raw Firebase UIDs or admin identifiers into human-readable administrator
+   * display names and email addresses using member registry state, active user profile,
+   * or graceful truncation fallbacks.
+   */
+  const getAdminIdentifier = useCallback((uidOrName?: string | null): string => {
+    if (!uidOrName || !uidOrName.trim()) {
+      return 'Administrator';
+    }
+    const val = uidOrName.trim();
+
+    // 1. Check if it matches the active logged-in admin user or profile
+    if (
+      (authUser?.uid && authUser.uid === val) ||
+      (authUserProfile?.uid && authUserProfile.uid === val) ||
+      (authUser?.email && authUser.email.toLowerCase() === val.toLowerCase()) ||
+      (authUserProfile?.email && authUserProfile.email.toLowerCase() === val.toLowerCase())
+    ) {
+      const name = authUserProfile?.displayName?.trim() || authUser?.displayName?.trim();
+      const email = authUserProfile?.email?.trim() || authUser?.email?.trim();
+      if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+        return `${name} (${email})`;
+      }
+      return name || email || 'Administrator';
+    }
+
+    // 2. Check if a matching user profile exists in member registry state
+    const matchedProfile = biddersList.find(
+      u => (u.uid && u.uid === val) ||
+           (u.email && u.email.toLowerCase() === val.toLowerCase()) ||
+           (u.displayName && u.displayName.toLowerCase() === val.toLowerCase())
+    );
+    if (matchedProfile) {
+      const name = matchedProfile.displayName?.trim();
+      const email = matchedProfile.email?.trim();
+      if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+        return `${name} (${email})`;
+      }
+      return name || email || 'Administrator';
+    }
+
+    // 3. Backward compatibility check against active bids stream
+    const matchedBid = allLiveBids.find(
+      b => (b.bidderId && b.bidderId === val) ||
+           (b.bidderEmail && b.bidderEmail.toLowerCase() === val.toLowerCase()) ||
+           (b.bidderName && b.bidderName.toLowerCase() === val.toLowerCase())
+    );
+    if (matchedBid) {
+      const name = matchedBid.bidderName?.trim();
+      const email = matchedBid.bidderEmail?.trim();
+      if (name && email && name.toLowerCase() !== email.toLowerCase()) {
+        return `${name} (${email})`;
+      }
+      if (name || email) return (name || email)!;
+    }
+
+    // 4. Check if the string matches a raw Firebase UID pattern (20-36 alphanumeric characters without spaces or @)
+    const isRawUid = /^[a-zA-Z0-9_-]{20,36}$/.test(val) && !val.includes('@') && !val.includes(' ');
+    if (isRawUid) {
+      return `Admin (${val.slice(0, 6)}...${val.slice(-4)})`;
+    }
+
+    // 5. Default formatting: if already human-readable, preserve it
+    if (val.toLowerCase() === 'admin') {
+      return 'Administrator';
+    }
+
+    return val;
+  }, [authUser, authUserProfile, biddersList, allLiveBids]);
+
+  const renderBidItem = (bid: Bid, showLotInfo = true) => {
+    const isRetracted = bid.status === 'retracted';
+    const targetLot = allAuctions.find(a => a.id === bid.auctionId) || (bid.auctionId === auction.id ? auction : null);
+    const isOrphaned = !targetLot;
+    const lotTitle = targetLot?.title || (bid.auctionId ? `Lot: ${bid.auctionId} (Deleted)` : 'Vehicle Lot (Deleted)');
+
+    // Resolve human-readable retraction moderator identity
+    const isRetractedByNameRawUid = bid.retractedByName
+      ? (/^[a-zA-Z0-9_-]{20,36}$/.test(bid.retractedByName.trim()) && !bid.retractedByName.includes('@') && !bid.retractedByName.includes(' '))
+      : false;
+    const retractionModerator = (bid.retractedByName && !isRetractedByNameRawUid)
+      ? bid.retractedByName
+      : getAdminIdentifier(bid.retractedByName || bid.retractedBy);
+
+    return (
+      <div
+        key={bid.id}
+        className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          isRetracted
+            ? 'bg-amber-950/15 border-amber-900/40 text-zinc-400'
+            : 'bg-zinc-900/90 border-zinc-800 hover:border-zinc-700 text-zinc-200'
+        }`}
+      >
+        <div className="min-w-0 space-y-1 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Bid Amount (strikethrough when retracted) */}
+            <span
+              className={`font-mono text-sm font-bold ${
+                isRetracted
+                  ? 'line-through text-zinc-500 decoration-amber-500/80 decoration-2'
+                  : 'text-emerald-400 font-extrabold'
+              }`}
+            >
+              {formatCurrency(bid.amount)} CAD
+            </span>
+
+            {/* Status / Retraction Badge with Hoverable Tooltip */}
+            {isRetracted ? (
+              <div className="relative group/tooltip inline-flex items-center">
+                <span
+                  className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-950/90 text-amber-300 border border-amber-800 shadow-sm inline-flex items-center gap-1 cursor-help"
+                  title={`Retracted: ${bid.retractionReason || 'No reason provided'}${retractionModerator ? ` by ${retractionModerator}` : ''}${bid.retractedAt ? ` on ${formatDateTime(bid.retractedAt)}` : ''}`}
+                >
+                  <AlertTriangle className="w-3 h-3 text-amber-400" />
+                  <span>RETRACTED</span>
+                </span>
+
+                {/* Hoverable reason tooltip */}
+                <div className="absolute left-0 bottom-full mb-2 hidden group-hover/tooltip:block z-50 w-72 p-3 rounded-xl bg-zinc-950 text-zinc-200 text-xs border border-amber-600/70 shadow-2xl pointer-events-none">
+                  <div className="font-bold text-amber-300 text-[11px] mb-1 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Retraction Audit Reason:</span>
+                  </div>
+                  <p className="text-zinc-200 italic text-[11px] leading-relaxed bg-zinc-900/90 p-2 rounded-lg border border-zinc-800 break-words">
+                    "{bid.retractionReason || 'Administrative retraction'}"
+                  </p>
+                  <div className="mt-2 pt-1.5 border-t border-zinc-800/80 flex flex-col gap-0.5 text-[10px] text-zinc-400 font-mono">
+                    {bid.retractedAt && <span>Date: {formatDateTime(bid.retractedAt)}</span>}
+                    {retractionModerator && <span>Retracted By: {retractionModerator}</span>}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-950/70 text-emerald-300 border border-emerald-800">
+                Active
+              </span>
+            )}
+
+            {/* Orphaned Bid Badge when parent lot no longer exists */}
+            {isOrphaned && (
+              <span
+                className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-950/90 text-amber-300 border border-amber-800 shadow-sm inline-flex items-center gap-1 cursor-help"
+                title="Referenced auction lot was deleted from the system"
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span>ORPHANED BID (LOT DELETED)</span>
+              </span>
+            )}
+
+            {bid.antiSniped && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-950/80 text-red-300 border border-red-800">
+                +2m Anti-Snipe
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+            {showLotInfo && (
+              <span className="text-zinc-300 font-medium truncate max-w-xs" title={lotTitle}>
+                {lotTitle}
+              </span>
+            )}
+            <span>Placed: <strong className="text-zinc-400 font-mono text-[11px]">{formatDateTime(bid.timestamp)}</strong></span>
+            {bid.bidderName && !showLotInfo && (
+              <span>Bidder: <strong className="text-zinc-300">{bid.bidderName}</strong> ({bid.bidderEmail})</span>
+            )}
+          </div>
+        </div>
+
+        {/* High-visibility Retract Bid action trigger */}
+        <div className="shrink-0 flex items-center gap-2">
+          {!isRetracted ? (
+            <button
+              type="button"
+              onClick={() => handleOpenRetractModal(bid)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 border border-amber-500/40 hover:border-amber-500 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+              title="Administratively retract this bid (Option B soft retraction)"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>Retract Bid</span>
+            </button>
+          ) : (
+            <span className="text-[11px] text-zinc-500 font-mono italic">
+              Archived
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // Handle Role Change
   const handleRoleChange = async (targetUser: UserProfile, newRole: UserRole) => {
@@ -1031,12 +1334,12 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     const isUserAdmin = userItem.role?.toUpperCase() === 'ADMIN';
                     const isUserSeller = userItem.role?.toUpperCase() === 'SELLER';
                     const currentRoleUpper: UserRole = isUserAdmin ? 'ADMIN' : isUserSeller ? 'SELLER' : 'BIDDER';
+                    const userBids = getMemberBids(userItem);
+                    const isExpanded = expandedBidderId === userItem.uid;
 
                     return (
-                      <div
-                        key={userItem.uid}
-                        className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/40 transition-colors"
-                      >
+                      <div key={userItem.uid} className="transition-colors">
+                        <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/40 transition-colors">
                         {/* Member Identity Details */}
                         <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
                           <div className={`w-10 h-10 rounded-xl font-black flex items-center justify-center uppercase shrink-0 text-sm border ${
@@ -1154,6 +1457,28 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                             )}
                           </button>
 
+                          {/* Expandable Active Bids Ledger Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => toggleBidderLedger(userItem.uid)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isExpanded
+                                ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm'
+                                : userBids.length > 0
+                                ? 'bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border-amber-800/80'
+                                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border-zinc-700'
+                            }`}
+                            title="View and moderate bids placed by this member"
+                          >
+                            <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Bids ({userBids.length})</span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                            )}
+                          </button>
+
                           {/* Delete User Action */}
                           <button
                             type="button"
@@ -1166,7 +1491,40 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                           </button>
                         </div>
                       </div>
-                    );
+
+                      {/* Member Active Bids Ledger (Expandable) */}
+                      {isExpanded && (
+                        <div className="px-5 py-4 bg-black/40 border-t border-zinc-800/80 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <DollarSign className="w-4 h-4 text-amber-400" />
+                              <h5 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                                Member Bids Ledger: <span className="text-white normal-case">{userItem.displayName || userItem.email}</span>
+                              </h5>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] font-mono">
+                              <span className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                                {userBids.filter(b => b.status !== 'retracted').length} Active
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800">
+                                {userBids.filter(b => b.status === 'retracted').length} Retracted
+                              </span>
+                            </div>
+                          </div>
+
+                          {userBids.length === 0 ? (
+                            <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/60 text-center text-xs text-zinc-500">
+                              No bids placed by this member across any auctions.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {userBids.map(bid => renderBidItem(bid, true))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
                   })}
                 </div>
               )}
@@ -1993,6 +2351,49 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </div>
               </div>
 
+              {/* Auction Live Bids & Moderation Audit Stream */}
+              {(() => {
+                const ledgerAuctionBids = allLiveBids
+                  .filter(b => b.auctionId === activeLedgerAuction.id)
+                  .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                const activeCount = ledgerAuctionBids.filter(b => b.status !== 'retracted').length;
+                const retractedCount = ledgerAuctionBids.filter(b => b.status === 'retracted').length;
+
+                return (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-amber-400" />
+                          <span>Live Bids & Audit Stream — {activeLedgerAuction.title || activeLedgerAuction.id}</span>
+                        </h4>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Option B soft retraction audit trail. Moderate and retract fraudulent or errant bids atomically.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-mono">
+                        <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          {activeCount} Active Bid{activeCount === 1 ? '' : 's'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800">
+                          {retractedCount} Retracted
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 max-h-96 overflow-y-auto">
+                      {ledgerAuctionBids.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-zinc-500">
+                          No bids placed for this vehicle lot yet.
+                        </div>
+                      ) : (
+                        ledgerAuctionBids.map(bid => renderBidItem(bid, false))
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Full-Width All Auctions Ledger Table */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
@@ -2697,7 +3098,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   setConfirmDeleteLot(null);
                   try {
                     await deleteListing(target.id, cascadeDeleteConsignmentOnLot);
-                    showToast(`Successfully deleted vehicle lot "${target.title}".`);
+                    showToast(`Successfully deleted vehicle lot "${target.title}" and purged all associated bid records.`);
                   } catch (err: any) {
                     showToast(`Failed to delete lot: ${err.message || 'Error'}`, 'error');
                   }
@@ -2840,7 +3241,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   try {
                     await batchDeleteAuctions(selectedAuctionIds, bulkCascadeDeleteConsignment);
                     setSelectedAuctionIds([]);
-                    showToast(`Successfully deleted ${count} vehicle lot${count > 1 ? 's' : ''}.`);
+                    showToast(`Successfully deleted ${count} vehicle lot${count > 1 ? 's' : ''} and purged all associated bid records.`);
                   } catch (err: any) {
                     showToast(`Batch lot deletion failed: ${err.message || 'Error'}`, 'error');
                   }
@@ -2982,6 +3383,176 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
           </button>
         </aside>
       )}
+
+      {/* MODAL: RETRACT BID MODERATION (OPTION B SOFT RETRACTION) */}
+      {retractingBid && (() => {
+        const isLotMissing = !allAuctions.some(a => a.id === retractingBid.auctionId) && retractingBid.auctionId !== auction.id;
+        return (
+        <div
+          onClick={() => {
+            if (!retractionSubmitting) {
+              setRetractingBid(null);
+              setRetractionReason('');
+              setRetractionError(null);
+            }
+          }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-[#151a1e] rounded-2xl shadow-2xl border border-amber-600/60 p-6 space-y-5"
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-zinc-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white">Retract Bid — Audit Log Moderation</h3>
+                </div>
+                <p className="text-xs text-zinc-400">
+                  {isLotMissing
+                    ? 'Orphaned Bid Retraction (Parent lot was deleted)'
+                    : 'Option B Administrative Soft Retraction (preserves audit record)'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!retractionSubmitting) {
+                    setRetractingBid(null);
+                    setRetractionReason('');
+                    setRetractionError(null);
+                  }
+                }}
+                disabled={retractionSubmitting}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Bid Telemetry Summary */}
+            <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-400">Bid Amount:</span>
+                <span className="font-mono text-base font-black text-amber-400">
+                  {formatCurrency(retractingBid.amount)} CAD
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-400">Bidder:</span>
+                <span className="font-semibold text-zinc-200">
+                  {retractingBid.bidderName || 'Anonymous'} ({retractingBid.bidderEmail || '—'})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-400">Placed Timestamp:</span>
+                <span className="font-mono text-zinc-400">
+                  {formatDateTime(retractingBid.timestamp)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-400">Target Lot:</span>
+                <div className="flex items-center gap-2">
+                  {isLotMissing ? (
+                    <span
+                      className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-950/90 text-amber-300 border border-amber-800 shadow-sm inline-flex items-center gap-1"
+                      title="Referenced auction lot was deleted"
+                    >
+                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                      <span>ORPHANED BID (LOT DELETED)</span>
+                    </span>
+                  ) : (
+                    <span className="font-mono text-zinc-400 truncate max-w-[200px]">
+                      {retractingBid.auctionId}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Audit Trail Guarantee Notice / Orphaned Bid Notice */}
+            {isLotMissing ? (
+              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-600/70 flex items-start gap-2.5 text-xs text-amber-300">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="font-bold">Notice:</strong> Parent lot was deleted. Retracting will mark/purge this orphaned bid without updating lot telemetry.
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 flex items-start gap-2.5 text-xs text-amber-300">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <strong className="font-bold">Audit Trail Guarantee:</strong> This bid record will NOT be deleted. It will be marked with status <span className="font-mono uppercase font-bold text-amber-200">"retracted"</span> and stamped with your admin ID and timestamp. Auction high bid and count will be atomically recalculated.
+                </div>
+              </div>
+            )}
+
+            {/* Reason for Retraction (Required) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center justify-between">
+                <span>Reason for Retraction <span className="text-red-400">*</span></span>
+                <span className="text-[11px] font-normal text-zinc-500">Required for audit trail</span>
+              </label>
+              <textarea
+                value={retractionReason}
+                onChange={(e) => {
+                  setRetractionReason(e.target.value);
+                  if (retractionError) setRetractionError(null);
+                }}
+                disabled={retractionSubmitting}
+                placeholder="e.g. Errant typo bid ($50,000 instead of $5,000), bidder payment failure, mutual agreement with seller..."
+                rows={3}
+                className="w-full p-3 rounded-xl bg-black border border-zinc-700 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              {retractionError && (
+                <p className="text-xs font-semibold text-red-400 flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{retractionError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setRetractingBid(null);
+                  setRetractionReason('');
+                  setRetractionError(null);
+                }}
+                disabled={retractionSubmitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmRetraction}
+                disabled={retractionSubmitting || !retractionReason.trim()}
+                className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {retractionSubmitting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Retracting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Confirm Retraction</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 };

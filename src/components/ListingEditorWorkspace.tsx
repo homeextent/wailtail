@@ -962,14 +962,18 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       overviewHeading,
       overviewNarrative: paragraphs,
       specifications: compiledOverviewSpecs,
-      showcaseChapters: showcaseChapters.map((ch, idx) => ({
-        chapterNumber: String(idx + 1).padStart(2, '0'),
+      showcaseChapters: showcaseChapters.map((ch) => ({
+        category: ch.category,
         title: ch.title,
         subtitle: ch.subtitle,
-        featureBullets: ch.highlights,
-        bottomAttributeCards: ch.specCards.map(s => ({
-          label: s.key,
-          value: s.value
+        narrative: ch.narrative || '',
+        photoUrl: ch.photoUrl || '',
+        photoCaption: ch.photoCaption || '',
+        highlights: Array.isArray(ch.highlights) ? ch.highlights : [],
+        specCards: (ch.specCards || []).map(s => ({
+          key: s.key,
+          value: s.value,
+          isCustomKey: Boolean(s.isCustomKey)
         }))
       })),
       financials: {
@@ -982,12 +986,47 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     };
 
     const jsonString = JSON.stringify(draftData, null, 2);
-    navigator.clipboard.writeText(jsonString).then(() => {
+
+    const triggerSuccess = () => {
       setMessage({ type: 'success', text: 'ListingDraftSchema JSON copied to clipboard!' });
       setTimeout(() => setMessage(null), 4000);
-    }).catch(() => {
-      setMessage({ type: 'error', text: 'Failed to copy to clipboard.' });
-    });
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(jsonString).then(() => {
+        triggerSuccess();
+      }).catch(() => {
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = jsonString;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          triggerSuccess();
+        } catch {
+          setMessage({ type: 'error', text: 'Failed to copy to clipboard.' });
+        }
+      });
+    } else {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = jsonString;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        triggerSuccess();
+      } catch {
+        setMessage({ type: 'error', text: 'Failed to copy to clipboard.' });
+      }
+    }
   };
 
   // IMPORT JSON ACTION (ListingDraftSchema)
