@@ -57,6 +57,17 @@ service cloud.firestore {
     }
 
     // Platform Settings & Media Configuration
+    match /settings/promotions {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Promo Analytics & Click Telemetry
+    match /promo_analytics/{promoId} {
+      allow read: if true;
+      allow create, update: if true;
+    }
+
     match /settings/{settingId} {
       allow read: if true;
       allow write, create, update, delete: if isAuthenticated();

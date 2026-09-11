@@ -7,7 +7,13 @@ import {
   UserProfile, 
   UserRole, 
   MediaConfiguration, 
-  ConsignmentApplication 
+  ConsignmentApplication,
+  PlatformPromoSettings,
+  PromoCardConfig,
+  LotHeaderBannerConfig,
+  PromoCtaAction,
+  PromoAudience,
+  PromoAccentColor
 } from '../types';
 import { 
   fetchPaginatedBidders, 
@@ -33,7 +39,11 @@ import {
   compressImageDataUrl,
   uploadImageToStorage,
   retractBid,
-  MAIN_AUCTION_ID
+  MAIN_AUCTION_ID,
+  subscribeToPromoSettings,
+  subscribeToPromoAnalytics,
+  savePromoSettings,
+  DEFAULT_PROMO_SETTINGS
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
@@ -74,7 +84,11 @@ import {
   Tag,
   Sparkles,
   RefreshCw,
-  X
+  X,
+  Megaphone,
+  MousePointerClick,
+  Calendar,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface AdminPortalPageProps {
@@ -932,6 +946,137 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       showToast('Failed to save settings: ' + (err.message || 'Error'), 'error');
     } finally {
       setSavingBranding(false);
+    }
+  };
+
+  // -------------------------------------------------------------
+  // TAB 4 SUB-SECTION: PROMOTIONAL & LAUNCH CAMPAIGN STATE
+  // -------------------------------------------------------------
+  const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings>(DEFAULT_PROMO_SETTINGS);
+  const [savingPromos, setSavingPromos] = useState<boolean>(false);
+  const [expandedCardIds, setExpandedCardIds] = useState<Record<string, boolean>>({});
+  const [promoAnalytics, setPromoAnalytics] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const unsub = subscribeToPromoSettings((settings) => {
+      setPromoSettings(settings);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'branding') return;
+    const unsub = subscribeToPromoAnalytics((analyticsMap) => {
+      setPromoAnalytics(analyticsMap);
+    });
+    return () => unsub();
+  }, [activeTab]);
+
+  const handleSavePromoSettings = async () => {
+    setSavingPromos(true);
+    try {
+      const mergedSettings: PlatformPromoSettings = {
+        ...promoSettings,
+        lotHeaderBanner: {
+          ...promoSettings.lotHeaderBanner,
+          clickCount: promoAnalytics['lot_header_banner'] ?? promoSettings.lotHeaderBanner?.clickCount ?? 0
+        },
+        cards: (promoSettings.cards || []).map((card: PromoCardConfig) => ({
+          ...card,
+          clickCount: promoAnalytics[card.id] ?? card.clickCount ?? 0
+        }))
+      };
+      await savePromoSettings(mergedSettings);
+      showToast('Promotional campaign settings updated and live across the platform!');
+    } catch (err: any) {
+      showToast(`Failed to save promotional settings: ${err.message || 'Error'}`, 'error');
+    } finally {
+      setSavingPromos(false);
+    }
+  };
+
+  const handleAddPromoCard = () => {
+    const newCard: PromoCardConfig = {
+      id: `promo-${Date.now()}`,
+      enabled: true,
+      badgeText: 'LAUNCH SPECIAL',
+      headline: 'Special Campaign Title',
+      copy: 'Describe your launch offer, promotion, or member perk here.',
+      ctaText: 'Learn More',
+      ctaAction: 'consignment_modal',
+      accentColor: 'blue',
+      targetAudience: 'all',
+      clickCount: 0
+    };
+    setPromoSettings((prev) => ({
+      ...prev,
+      cards: [newCard, ...(prev.cards || [])]
+    }));
+    setExpandedCardIds((prev) => ({ ...prev, [newCard.id]: true }));
+  };
+
+  const handleRemovePromoCard = (id: string) => {
+    setPromoSettings((prev) => ({
+      ...prev,
+      cards: (prev.cards || []).filter((c) => c.id !== id)
+    }));
+  };
+
+  const handleUpdateCard = (id: string, updates: Partial<PromoCardConfig>) => {
+    setPromoSettings((prev) => ({
+      ...prev,
+      cards: (prev.cards || []).map((c) => (c.id === id ? { ...c, ...updates } : c))
+    }));
+  };
+
+  const handleUpdateBanner = (updates: Partial<LotHeaderBannerConfig>) => {
+    setPromoSettings((prev) => ({
+      ...prev,
+      lotHeaderBanner: {
+        ...prev.lotHeaderBanner,
+        ...updates
+      }
+    }));
+  };
+
+  const toggleCardExpanded = (id: string) => {
+    setExpandedCardIds((prev) => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const toDateTimeLocalValue = (val?: string | number) => {
+    if (!val) return '';
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handlePromoImageUpload = async (cardId: string, file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Please select a valid image file (PNG, JPG, WebP, SVG).', 'error');
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const rawResult = reader.result as string;
+          const compressed = await compressImageDataUrl(rawResult);
+          const result = await uploadImageToStorage(auction.id || MAIN_AUCTION_ID, compressed, 'promotions');
+          handleUpdateCard(cardId, { imageUrl: result });
+          showToast('Promotional asset uploaded! Click "Save Promotional Campaign" to persist.');
+        } catch (err: any) {
+          showToast('Image upload failed: ' + (err.message || 'Unknown error'), 'error');
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      showToast('Image read failed: ' + (err.message || 'Unknown error'), 'error');
     }
   };
 
@@ -2698,6 +2843,573 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Promotional & Launch Campaign Manager */}
+            <div className="bg-[#151a1e] rounded-2xl border border-zinc-800 p-6 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-zinc-800 gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Megaphone className="w-5 h-5 text-amber-400" />
+                    <span>Promotional & Launch Campaign Manager</span>
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Launch campaign cards, catalog grid injection, lot banners, audience filtering, and click analytics
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSavePromoSettings}
+                    disabled={savingPromos}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{savingPromos ? 'Saving Campaign...' : 'Save Campaign Settings'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Master Platform Promotional Toggle */}
+              <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>Promotional Subsystem Master Switch</span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                        promoSettings.enabled
+                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                      }`}
+                    >
+                      {promoSettings.enabled ? 'ACTIVE' : 'DISABLED'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Controls all client-facing catalog injection cards and direct-lot promotional banners globally.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!promoSettings.enabled}
+                    onChange={(e) =>
+                      setPromoSettings((prev) => ({
+                        ...prev,
+                        enabled: e.target.checked
+                      }))
+                    }
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+
+              {/* Lot View Header Banner Configuration */}
+              <div className="p-5 rounded-xl bg-[#121619] border border-zinc-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Direct-Lot Header Banner</h4>
+                      <p className="text-[11px] text-zinc-400">
+                        Sticky launch announcement banner pinned to top of active vehicle auction lots
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-300">
+                      <MousePointerClick className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{(promoAnalytics['lot_header_banner'] ?? promoSettings.lotHeaderBanner?.clickCount) || 0} clicks</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!promoSettings.lotHeaderBanner?.enabled}
+                        onChange={(e) => handleUpdateBanner({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Badge Text (Optional)</label>
+                    <input
+                      type="text"
+                      value={promoSettings.lotHeaderBanner?.badgeText || ''}
+                      onChange={(e) => handleUpdateBanner({ badgeText: e.target.value })}
+                      placeholder="e.g. LAUNCH SPECIAL"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Target Audience</label>
+                    <select
+                      value={promoSettings.lotHeaderBanner?.targetAudience || 'all'}
+                      onChange={(e) => handleUpdateBanner({ targetAudience: e.target.value as PromoAudience })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    >
+                      <option value="all">All Visitors (Guests & Registered)</option>
+                      <option value="guests_only">Guests Only (Unauthenticated)</option>
+                      <option value="authenticated_only">Registered Members Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-400">Banner Announcement Copy</label>
+                  <input
+                    type="text"
+                    value={promoSettings.lotHeaderBanner?.text || ''}
+                    onChange={(e) => handleUpdateBanner({ text: e.target.value })}
+                    placeholder="e.g. Zero buyer premiums & $0 seller fees for our inaugural catalog launch."
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">CTA Button Text</label>
+                    <input
+                      type="text"
+                      value={promoSettings.lotHeaderBanner?.ctaText || ''}
+                      onChange={(e) => handleUpdateBanner({ ctaText: e.target.value })}
+                      placeholder="e.g. Consign Vehicle"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">CTA Action Route</label>
+                    <select
+                      value={promoSettings.lotHeaderBanner?.ctaAction || 'consignment_modal'}
+                      onChange={(e) => handleUpdateBanner({ ctaAction: e.target.value as PromoCtaAction })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    >
+                      <option value="consignment_modal">Consignment Modal</option>
+                      <option value="auth_modal">Authentication / Login Modal</option>
+                      <option value="contact_modal">Seller Contact Modal</option>
+                      <option value="external_url">External Web Link</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">External URL (if selected)</label>
+                    <input
+                      type="text"
+                      disabled={promoSettings.lotHeaderBanner?.ctaAction !== 'external_url'}
+                      value={promoSettings.lotHeaderBanner?.ctaUrl || ''}
+                      onChange={(e) => handleUpdateBanner({ ctaUrl: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Start Date / Window (Optional)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(promoSettings.lotHeaderBanner?.startDate)}
+                      onChange={(e) =>
+                        handleUpdateBanner({
+                          startDate: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Expiration Date (Optional)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(promoSettings.lotHeaderBanner?.expiresAt)}
+                      onChange={(e) =>
+                        handleUpdateBanner({
+                          expiresAt: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Expandable Promo Card Manager */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-emerald-400" />
+                      <span>Catalog Grid Promotional Cards</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-800 text-zinc-300">
+                        {promoSettings.cards?.length || 0}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      Dynamically injected into empty vehicle slots when catalog has ≤ 2 active lots. Dismissible by clients.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddPromoCard}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white flex items-center gap-1 shadow transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Promotional Card</span>
+                  </button>
+                </div>
+
+                {(!promoSettings.cards || promoSettings.cards.length === 0) && (
+                  <div className="text-center py-8 rounded-xl border border-dashed border-zinc-800 text-zinc-500 text-xs">
+                    No promotional cards configured. Click "Add Promotional Card" above to create one.
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {(promoSettings.cards || []).map((card, idx) => {
+                    const isExpanded = !!expandedCardIds[card.id];
+                    const accentStyles = {
+                      amber: 'border-amber-500/40 bg-amber-950/20 text-amber-400',
+                      emerald: 'border-emerald-500/40 bg-emerald-950/20 text-emerald-400',
+                      purple: 'border-purple-500/40 bg-purple-950/20 text-purple-400',
+                      blue: 'border-blue-500/40 bg-blue-950/20 text-blue-400'
+                    }[card.accentColor || 'amber'];
+
+                    return (
+                      <div
+                        key={card.id || `card-${idx}`}
+                        className={`rounded-xl border transition-all ${
+                          isExpanded ? 'border-zinc-700 bg-zinc-900/90' : 'border-zinc-800 bg-[#121619] hover:border-zinc-700'
+                        }`}
+                      >
+                        {/* Header Bar */}
+                        <div className="p-4 flex items-center justify-between gap-3">
+                          <div
+                            onClick={() => toggleCardExpanded(card.id)}
+                            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer select-none"
+                          >
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                                card.accentColor === 'emerald'
+                                  ? 'bg-emerald-500'
+                                  : card.accentColor === 'purple'
+                                  ? 'bg-purple-500'
+                                  : card.accentColor === 'blue'
+                                  ? 'bg-blue-500'
+                                  : 'bg-amber-500'
+                              }`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-xs text-white truncate">
+                                  {card.headline || 'Untitled Promotional Card'}
+                                </span>
+                                {card.badgeText && (
+                                  <span className={`px-2 py-0.2 text-[9px] font-black uppercase rounded border ${accentStyles}`}>
+                                    {card.badgeText}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                                {card.copy || 'No description provided'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                            {/* Click Counter */}
+                            <div className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-800/80 border border-zinc-700/60 text-[11px] font-mono text-zinc-300">
+                              <MousePointerClick className="w-3 h-3 text-amber-400" />
+                              <span>{(promoAnalytics[card.id] ?? card.clickCount) || 0}</span>
+                            </div>
+
+                            {/* Card Enabled Toggle */}
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!card.enabled}
+                                onChange={(e) => handleUpdateCard(card.id, { enabled: e.target.checked })}
+                                className="sr-only peer"
+                              />
+                              <div className="w-8 h-4 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                            </label>
+
+                            {/* Expand / Collapse */}
+                            <button
+                              type="button"
+                              onClick={() => toggleCardExpanded(card.id)}
+                              className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                              title={isExpanded ? 'Collapse' : 'Expand'}
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+
+                            {/* Delete Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePromoCard(card.id)}
+                              className="p-1.5 text-zinc-500 hover:text-red-400 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                              title="Delete Card"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expanded Edit Form */}
+                        {isExpanded && (
+                          <div className="p-4 border-t border-zinc-800/80 bg-zinc-950/40 space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">Accent Color</label>
+                                <select
+                                  value={card.accentColor || 'amber'}
+                                  onChange={(e) =>
+                                    handleUpdateCard(card.id, { accentColor: e.target.value as PromoAccentColor })
+                                  }
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                                >
+                                  <option value="amber">Amber Gold</option>
+                                  <option value="emerald">Emerald Green</option>
+                                  <option value="purple">Purple Indigo</option>
+                                  <option value="blue">Electric Blue</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">Badge Text</label>
+                                <input
+                                  type="text"
+                                  value={card.badgeText || ''}
+                                  onChange={(e) => handleUpdateCard(card.id, { badgeText: e.target.value })}
+                                  placeholder="e.g. FOUNDERS OFFER"
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">Target Audience</label>
+                                <select
+                                  value={card.targetAudience || 'all'}
+                                  onChange={(e) =>
+                                    handleUpdateCard(card.id, { targetAudience: e.target.value as PromoAudience })
+                                  }
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                                >
+                                  <option value="all">All Visitors</option>
+                                  <option value="guests_only">Guests Only (Unauthenticated)</option>
+                                  <option value="authenticated_only">Registered Members Only</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-zinc-400">Headline</label>
+                              <input
+                                type="text"
+                                value={card.headline || ''}
+                                onChange={(e) => handleUpdateCard(card.id, { headline: e.target.value })}
+                                placeholder="e.g. $0 Seller Fees & 0% Buyer Premium"
+                                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-zinc-400">Card Narrative / Copy</label>
+                              <textarea
+                                rows={2}
+                                value={card.copy || ''}
+                                onChange={(e) => handleUpdateCard(card.id, { copy: e.target.value })}
+                                placeholder="Detailed campaign explanation or instructions..."
+                                className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white resize-y"
+                              />
+                            </div>
+
+                            {/* Promotional Card Image Asset */}
+                            <div className="space-y-2 pt-2 border-t border-zinc-800/80">
+                              <label className="block text-xs font-semibold text-zinc-400 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <ImageIcon className="w-3.5 h-3.5 text-purple-400" />
+                                  <span>Card Visual Asset (Optional Image)</span>
+                                </span>
+                                {card.imageUrl && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpdateCard(card.id, { imageUrl: '' })}
+                                    className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 cursor-pointer font-medium"
+                                  >
+                                    <X className="w-3 h-3" />
+                                    <span>Remove Image</span>
+                                  </button>
+                                )}
+                              </label>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                                <div className="sm:col-span-8">
+                                  <input
+                                    type="text"
+                                    value={card.imageUrl || ''}
+                                    onChange={(e) => handleUpdateCard(card.id, { imageUrl: e.target.value })}
+                                    placeholder="https://... or upload image asset"
+                                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono placeholder:font-sans"
+                                  />
+                                </div>
+                                <div className="sm:col-span-4">
+                                  <input
+                                    type="file"
+                                    id={`promo-image-file-${card.id}`}
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handlePromoImageUpload(card.id, file);
+                                    }}
+                                    className="hidden"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => document.getElementById(`promo-image-file-${card.id}`)?.click()}
+                                    className="w-full py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-2 border border-zinc-700 cursor-pointer shadow-xs transition-all"
+                                  >
+                                    <Upload className="w-3.5 h-3.5 text-purple-400" />
+                                    <span>Upload Image</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Inline Thumbnail Preview */}
+                              {card.imageUrl && (
+                                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-700/80">
+                                  <div className="w-20 h-14 rounded-lg overflow-hidden bg-black/60 border border-zinc-700 shrink-0 relative flex items-center justify-center">
+                                    <img
+                                      src={card.imageUrl}
+                                      alt={card.imageAlt || card.headline || 'Promo visual asset preview'}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <ImageIcon className="w-5 h-5 text-zinc-600 absolute pointer-events-none -z-10" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-mono text-zinc-200 truncate">{card.imageUrl}</p>
+                                    <p className="text-[10px] text-zinc-400 mt-0.5">Asset populated on catalog promo card</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="space-y-1">
+                                <label className="block text-[11px] font-medium text-zinc-400">Image Alt Text (Optional)</label>
+                                <input
+                                  type="text"
+                                  value={card.imageAlt || ''}
+                                  onChange={(e) => handleUpdateCard(card.id, { imageAlt: e.target.value })}
+                                  placeholder="e.g. Vintage 911 banner photo"
+                                  className="w-full px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-700/80 text-xs text-zinc-300"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">CTA Button Text</label>
+                                <input
+                                  type="text"
+                                  value={card.ctaText || ''}
+                                  onChange={(e) => handleUpdateCard(card.id, { ctaText: e.target.value })}
+                                  placeholder="e.g. Consign Vehicle"
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">CTA Action Route</label>
+                                <select
+                                  value={card.ctaAction || 'consignment_modal'}
+                                  onChange={(e) =>
+                                    handleUpdateCard(card.id, { ctaAction: e.target.value as PromoCtaAction })
+                                  }
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                                >
+                                  <option value="consignment_modal">Consignment Modal</option>
+                                  <option value="auth_modal">Authentication / Login Modal</option>
+                                  <option value="contact_modal">Seller Contact Modal</option>
+                                  <option value="external_url">External Web Link</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400">External URL (if selected)</label>
+                                <input
+                                  type="text"
+                                  disabled={card.ctaAction !== 'external_url'}
+                                  value={card.ctaUrl || ''}
+                                  onChange={(e) => handleUpdateCard(card.id, { ctaUrl: e.target.value })}
+                                  placeholder="https://..."
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white disabled:opacity-40"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                                  <span>Start Date / Window (Optional)</span>
+                                </label>
+                                <input
+                                  type="datetime-local"
+                                  value={toDateTimeLocalValue(card.startDate)}
+                                  onChange={(e) =>
+                                    handleUpdateCard(card.id, {
+                                      startDate: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                                  <span>Expiration Date (Optional)</span>
+                                </label>
+                                <input
+                                  type="datetime-local"
+                                  value={toDateTimeLocalValue(card.expiresAt)}
+                                  onChange={(e) =>
+                                    handleUpdateCard(card.id, {
+                                      expiresAt: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bottom Quick Save Bar */}
+              <div className="pt-4 border-t border-zinc-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSavePromoSettings}
+                  disabled={savingPromos}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white flex items-center gap-2 shadow-lg transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{savingPromos ? 'Saving Campaign Settings...' : 'Save Campaign Settings'}</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         )}
       </main>

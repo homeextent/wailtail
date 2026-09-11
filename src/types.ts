@@ -386,3 +386,46 @@ export interface UserActivitySummary {
   sellerListings: UserSellerListing[];
   consignments: UserConsignmentItem[];
 }
+
+export type PromoCtaAction = 'consignment_modal' | 'auth_modal' | 'contact_modal' | 'external_url';
+
+export type PromoAudience = 'all' | 'guests_only' | 'authenticated_only';
+
+export type PromoAccentColor = 'amber' | 'emerald' | 'purple' | 'blue';
+
+export interface PromoCardConfig {
+  id: string;
+  enabled: boolean;
+  badgeText?: string;
+  headline: string;
+  copy: string;
+  ctaText: string;
+  ctaAction: PromoCtaAction;
+  ctaUrl?: string;
+  accentColor?: PromoAccentColor;
+  targetAudience: PromoAudience;
+  startDate?: number | string;
+  expiresAt?: number | string;
+  clickCount?: number;
+  imageUrl?: string;
+  imageAlt?: string;
+}
+
+export interface LotHeaderBannerConfig {
+  enabled: boolean;
+  badgeText?: string;
+  text: string;
+  ctaText?: string;
+  ctaAction?: PromoCtaAction;
+  ctaUrl?: string;
+  targetAudience: PromoAudience;
+  startDate?: number | string;
+  expiresAt?: number | string;
+  clickCount?: number;
+}
+
+export interface PlatformPromoSettings {
+  enabled: boolean;
+  cards: PromoCardConfig[];
+  lotHeaderBanner: LotHeaderBannerConfig;
+}

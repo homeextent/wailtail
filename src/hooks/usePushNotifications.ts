@@ -43,8 +43,6 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       try {
         const hasNavigator = typeof navigator !== 'undefined';
         const hasServiceWorker = typeof window !== 'undefined' && 'serviceWorker' in navigator;
-        console.log('[FCM Setup] Navigator availability:', hasNavigator);
-        console.log('[FCM Setup] ServiceWorker availability:', hasServiceWorker);
 
         const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
 
@@ -56,11 +54,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             console.error('[FCM Error Details]:', suppErr);
           }
         }
-        console.log('[FCM Setup] isSupported() check:', messagingSupported);
 
         const rawVapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
         const hasVapidKey = Boolean(rawVapidKey && rawVapidKey.trim() !== '');
-        console.log('[FCM Setup] VAPID Key status:', hasVapidKey ? 'Present' : 'Undefined/Missing');
 
         if (!hasVapidKey) {
           console.warn('[FCM Setup] VITE_FIREBASE_VAPID_KEY is missing or empty');
@@ -170,7 +166,6 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       });
 
       if (token) {
-        console.log('[FCM Token for Testing]:', token);
         setToken(token);
         localStorage.setItem(FCM_TOKEN_STORAGE_KEY, token);
         setError(null);

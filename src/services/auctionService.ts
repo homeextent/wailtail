@@ -15,7 +15,9 @@ import {
   writeBatch,
   arrayUnion,
   arrayRemove,
-  DocumentReference
+  DocumentReference,
+  increment,
+  serverTimestamp
 } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, auth } from '../firebase';
@@ -33,7 +35,11 @@ import {
   UserBidActivity,
   UserWonAuction,
   UserSellerListing,
-  UserConsignmentItem
+  UserConsignmentItem,
+  PlatformPromoSettings,
+  PromoCardConfig,
+  LotHeaderBannerConfig,
+  PromoAudience
 } from '../types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from '../mediaConfig';
 export { DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG };
@@ -3235,3 +3241,187 @@ export async function fetchUserActivitySummary(
 
   return summary;
 }
+
+export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
+  enabled: true,
+  lotHeaderBanner: {
+    enabled: true,
+    badgeText: 'LAUNCH SPECIAL',
+    text: 'Zero buyer premiums & $0 seller fees for our inaugural catalog launch.',
+    ctaText: 'Consign Vehicle',
+    ctaAction: 'consignment_modal',
+    targetAudience: 'all',
+    clickCount: 0
+  },
+  cards: [
+    {
+      id: 'promo-zero-seller-fees',
+      enabled: true,
+      badgeText: 'FOUNDERS OFFER',
+      headline: '$0 Seller Fees & Zero Buyer Premiums',
+      copy: 'To celebrate the launch of Wailtail, consignors pay $0 listing fees and buyers pay 0% premium on all inaugural lots.',
+      ctaText: 'Consign Your Vehicle',
+      ctaAction: 'consignment_modal',
+      accentColor: 'amber',
+      targetAudience: 'all',
+      clickCount: 0
+    },
+    {
+      id: 'promo-early-access-membership',
+      enabled: true,
+      badgeText: 'INNER CIRCLE',
+      headline: 'Register for Early Bidding Access',
+      copy: 'Join Wailtail to get real-time outbid notifications, direct access to sellers, and custom watchlist tracking.',
+      ctaText: 'Create Free Account',
+      ctaAction: 'auth_modal',
+      accentColor: 'emerald',
+      targetAudience: 'guests_only',
+      clickCount: 0
+    }
+  ]
+};
+
+/**
+ * Evaluates whether a promotion schedule window is currently active.
+ * Safely parses ISO date strings, timestamp strings, or epoch numbers.
+ * Empty, null, or undefined date bounds evaluate as active (true).
+ */
+export function isPromoScheduleActive(
+  startDate?: string | number | null,
+  expiresAt?: string | number | null,
+  now = Date.now()
+): boolean {
+  if (startDate !== undefined && startDate !== null && startDate !== '') {
+    let startMs: number;
+    if (typeof startDate === 'number') {
+      startMs = startDate;
+    } else {
+      const parsed = Date.parse(startDate);
+      startMs = !isNaN(parsed) ? parsed : Number(startDate);
+    }
+    if (!isNaN(startMs) && now < startMs) {
+      return false;
+    }
+  }
+
+  if (expiresAt !== undefined && expiresAt !== null && expiresAt !== '') {
+    let expireMs: number;
+    if (typeof expiresAt === 'number') {
+      expireMs = expiresAt;
+    } else {
+      const parsed = Date.parse(expiresAt);
+      expireMs = !isNaN(parsed) ? parsed : Number(expiresAt);
+    }
+    if (!isNaN(expireMs) && now > expireMs) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Evaluates whether a promotion matches the target audience against active userProfile / authentication state.
+ * Empty, null, or undefined audience evaluates as 'all' (true).
+ */
+export function isPromoAudienceMatch(
+  targetAudience?: PromoAudience | string | null,
+  isAuthenticated?: boolean | UserProfile | null
+): boolean {
+  if (!targetAudience || targetAudience === 'all') return true;
+  const isAuthed = Boolean(isAuthenticated);
+  if (targetAudience === 'guests_only') return !isAuthed;
+  if (targetAudience === 'authenticated_only') return isAuthed;
+  return true;
+}
+
+/**
+ * Real-time onSnapshot listener on doc(db, 'settings', 'promotions') with fallback initializers.
+ */
+export function subscribeToPromoSettings(callback: (settings: PlatformPromoSettings) => void): () => void {
+  const promoRef = doc(db, 'settings', 'promotions');
+  return onSnapshot(
+    promoRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const rawBanner = data.lotHeaderBanner || {};
+        const settings: PlatformPromoSettings = {
+          enabled: typeof data.enabled === 'boolean' ? data.enabled : DEFAULT_PROMO_SETTINGS.enabled,
+          lotHeaderBanner: {
+            ...DEFAULT_PROMO_SETTINGS.lotHeaderBanner,
+            ...rawBanner,
+            enabled: typeof rawBanner.enabled === 'boolean' ? rawBanner.enabled : DEFAULT_PROMO_SETTINGS.lotHeaderBanner.enabled,
+            targetAudience: rawBanner.targetAudience || DEFAULT_PROMO_SETTINGS.lotHeaderBanner.targetAudience
+          },
+          cards: Array.isArray(data.cards) ? data.cards : DEFAULT_PROMO_SETTINGS.cards
+        };
+        callback(settings);
+      } else {
+        callback(DEFAULT_PROMO_SETTINGS);
+      }
+    },
+    (err) => {
+      console.warn('Failed to listen to promo settings in Firestore, using defaults:', err);
+      callback(DEFAULT_PROMO_SETTINGS);
+    }
+  );
+}
+
+/**
+ * Persists settings array and toggles to Firestore settings/promotions.
+ */
+export async function savePromoSettings(settings: PlatformPromoSettings): Promise<void> {
+  const promoRef = doc(db, 'settings', 'promotions');
+  await setDoc(promoRef, settings, { merge: true });
+}
+
+/**
+ * Uses Firestore increment(1) to update atomic click counters in decoupled 'promo_analytics' collection.
+ * Isolated in non-blocking try/catch logic to ensure telemetry failures never degrade user navigation.
+ */
+export async function recordPromoClick(promoId: string, isBanner?: boolean): Promise<void> {
+  try {
+    const targetId = promoId || (isBanner ? 'lot_header_banner' : '');
+    if (!targetId) return;
+
+    const analyticsRef = doc(db, 'promo_analytics', targetId);
+    await setDoc(
+      analyticsRef,
+      {
+        clickCount: increment(1),
+        lastClickedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    // Silently swallow telemetry error to guarantee uninterrupted guest navigation
+    console.warn('Silent promo telemetry failover:', err);
+  }
+}
+
+/**
+ * Real-time listener querying the promo_analytics collection.
+ * Returns a key-value map of { [promoId]: clickCount }.
+ */
+export function subscribeToPromoAnalytics(
+  callback: (analyticsMap: Record<string, number>) => void
+): () => void {
+  const colRef = collection(db, 'promo_analytics');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const analyticsMap: Record<string, number> = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        analyticsMap[docSnap.id] = typeof data?.clickCount === 'number' ? data.clickCount : 0;
+      });
+      callback(analyticsMap);
+    },
+    (err) => {
+      console.warn('Failed to listen to promo analytics in Firestore:', err);
+      callback({});
+    }
+  );
+}
+

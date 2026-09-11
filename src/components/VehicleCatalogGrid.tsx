@@ -1,7 +1,19 @@
-import React, { useState } from 'react';
-import { Auction } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Auction, 
+  PlatformPromoSettings, 
+  PromoCardConfig, 
+  PromoCtaAction, 
+  PromoAudience 
+} from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { CatalogCard } from './CatalogCard';
+import { 
+  subscribeToPromoSettings, 
+  recordPromoClick, 
+  DEFAULT_PROMO_SETTINGS 
+} from '../services/auctionService';
+import { useAuth } from '../context/AuthContext';
 import { 
   Car, 
   Search, 
@@ -15,8 +27,13 @@ import {
   ShieldCheck,
   Flame,
   ChevronRight,
-  Tag
+  Tag,
+  Sparkles,
+  X,
+  Zap
 } from 'lucide-react';
+
+const DISMISSED_PROMOS_STORAGE_KEY = 'wailtail_dismissed_promos';
 
 interface VehicleCatalogGridProps {
   auctions: Auction[];
@@ -25,6 +42,8 @@ interface VehicleCatalogGridProps {
   onOpenListingEditor?: (auctionId: string) => void;
   onOpenNewListingModal?: () => void;
   onOpenConsignmentModal?: () => void;
+  onOpenAuthModal?: () => void;
+  onOpenContactModal?: () => void;
   isAdmin?: boolean;
 }
 
@@ -44,10 +63,132 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   onOpenListingEditor,
   onOpenNewListingModal,
   onOpenConsignmentModal,
+  onOpenAuthModal,
+  onOpenContactModal,
   isAdmin = false
 }) => {
+  const { user, userProfile } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'live' | 'upcoming' | 'ended'>('all');
+  const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings>(DEFAULT_PROMO_SETTINGS);
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [brokenImageMap, setBrokenImageMap] = useState<Record<string, boolean>>({});
+
+  // Load dismissed promo IDs from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DISMISSED_PROMOS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setDismissedIds(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to read dismissed promos from localStorage:', err);
+    }
+  }, []);
+
+  // Subscribe to promotional settings in real-time
+  useEffect(() => {
+    const unsub = subscribeToPromoSettings((settings) => {
+      setPromoSettings(settings);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleDismissPromo = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const next = [...dismissedIds, id];
+      setDismissedIds(next);
+      localStorage.setItem(DISMISSED_PROMOS_STORAGE_KEY, JSON.stringify(next));
+    } catch (err) {
+      console.warn('Failed to save dismissed promo:', err);
+    }
+  };
+
+  const handlePromoAction = (card: PromoCardConfig) => {
+    // 1. Silent non-blocking telemetry failover
+    try {
+      recordPromoClick(card.id, false).catch(() => {});
+    } catch {
+      // Telemetry error swallowed silently to ensure zero guest modal latency
+    }
+
+    // 2. Immediate route CTA action
+    const action = card.ctaAction;
+    if (action === 'consignment_modal') {
+      if (onOpenConsignmentModal) {
+        onOpenConsignmentModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Sell Your Vehicle') || b.textContent?.includes('Consign')
+      );
+      if (btn) btn.click();
+    } else if (action === 'auth_modal') {
+      if (onOpenAuthModal) {
+        onOpenAuthModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Sign In') || b.textContent?.includes('Register')
+      );
+      if (btn) btn.click();
+    } else if (action === 'contact_modal') {
+      if (onOpenContactModal) {
+        onOpenContactModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Contact') || b.textContent?.includes('Inquiry')
+      );
+      if (btn) btn.click();
+    } else if (action === 'external_url') {
+      if (card.ctaUrl) {
+        if (card.ctaUrl.startsWith('http://') || card.ctaUrl.startsWith('https://')) {
+          window.open(card.ctaUrl, '_blank', 'noopener,noreferrer');
+        } else {
+          window.location.href = card.ctaUrl;
+        }
+      }
+    }
+  };
+
+  // Helper predicate: Audience matching
+  const matchesAudience = (audience: PromoAudience): boolean => {
+    if (!audience || audience === 'all') return true;
+    if (audience === 'guests_only') return !user;
+    if (audience === 'authenticated_only') return !!user;
+    return true;
+  };
+
+  // Helper predicate: Schedule window evaluation
+  const matchesSchedule = (startDate?: string | number, expiresAt?: string | number): boolean => {
+    const now = Date.now();
+    if (startDate) {
+      const startMs = typeof startDate === 'number' ? startDate : new Date(startDate).getTime();
+      if (!isNaN(startMs) && now < startMs) return false;
+    }
+    if (expiresAt) {
+      const expireMs = typeof expiresAt === 'number' ? expiresAt : new Date(expiresAt).getTime();
+      if (!isNaN(expireMs) && now > expireMs) return false;
+    }
+    return true;
+  };
+
+  // Active promo cards filtered by enabled, audience, schedule, and client dismissal
+  const activePromoCards = useMemo(() => {
+    if (!promoSettings.enabled) return [];
+    return (promoSettings.cards || []).filter((card) => {
+      if (!card.enabled) return false;
+      if (dismissedIds.includes(card.id)) return false;
+      if (!matchesAudience(card.targetAudience)) return false;
+      if (!matchesSchedule(card.startDate, card.expiresAt)) return false;
+      return true;
+    });
+  }, [promoSettings, dismissedIds, user]);
 
   const filteredAuctions = auctions.filter((lot) => {
     if (filterStatus === 'live' && !isLive(lot.status)) return false;
@@ -67,6 +208,11 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     }
     return true;
   });
+
+  // Calculate promotional card slots when catalog auctions count <= 2
+  const shouldInjectPromos = promoSettings.enabled && auctions.length <= 2 && activePromoCards.length > 0;
+  const promoSlotsCount = shouldInjectPromos ? Math.max(1, 3 - filteredAuctions.length) : 0;
+  const promoCardsToInject = shouldInjectPromos ? activePromoCards.slice(0, promoSlotsCount) : [];
 
   return (
     <div className="w-full bg-[#f8f9fa] text-zinc-900 py-8 px-4 sm:px-6 lg:px-8">
@@ -182,7 +328,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
         </div>
 
         {/* Vehicle Catalog Grid */}
-        {filteredAuctions.length === 0 ? (
+        {filteredAuctions.length === 0 && promoCardsToInject.length === 0 ? (
           <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center space-y-3 shadow-xs">
             <Car className="w-12 h-12 text-zinc-400 mx-auto" />
             <h3 className="text-base font-bold text-zinc-800">No vehicle listings match your filter</h3>
@@ -195,7 +341,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                 setSearchTerm('');
                 setFilterStatus('all');
               }}
-              className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-zinc-900 text-white hover:bg-zinc-800 transition-colors"
+              className="mt-2 px-4 py-2 rounded-lg text-xs font-bold bg-zinc-900 text-white hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               Reset Filters
             </button>
@@ -213,9 +359,116 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                 isAdmin={isAdmin}
               />
             ))}
+
+            {/* Injected Promotional Campaign Cards */}
+            {promoCardsToInject.map((card) => {
+              const themeStyles = {
+                amber: {
+                  container: 'border-amber-500/30 hover:border-amber-500/60 bg-gradient-to-b from-[#1c1813] via-[#141619] to-[#0e1114]',
+                  badge: 'bg-amber-950/80 text-amber-300 border-amber-700/60',
+                  glow: 'bg-amber-500/10',
+                  btn: 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black shadow-amber-900/20'
+                },
+                emerald: {
+                  container: 'border-emerald-500/30 hover:border-emerald-500/60 bg-gradient-to-b from-[#101c15] via-[#121719] to-[#0e1114]',
+                  badge: 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60',
+                  glow: 'bg-emerald-500/10',
+                  btn: 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white shadow-emerald-900/20'
+                },
+                purple: {
+                  container: 'border-purple-500/30 hover:border-purple-500/60 bg-gradient-to-b from-[#191220] via-[#13151b] to-[#0e1114]',
+                  badge: 'bg-purple-950/80 text-purple-300 border-purple-700/60',
+                  glow: 'bg-purple-500/10',
+                  btn: 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white shadow-purple-900/20'
+                },
+                blue: {
+                  container: 'border-blue-500/30 hover:border-blue-500/60 bg-gradient-to-b from-[#0f1927] via-[#12161b] to-[#0e1114]',
+                  badge: 'bg-blue-950/80 text-blue-300 border-blue-700/60',
+                  glow: 'bg-blue-500/10',
+                  btn: 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-900/20'
+                }
+              }[card.accentColor || 'amber'];
+
+              const hasMedia = !!card.imageUrl && !brokenImageMap[card.id];
+
+              return (
+                <div
+                  key={card.id}
+                  className={`rounded-2xl border flex flex-col justify-between relative shadow-xl overflow-hidden transition-all duration-300 hover:shadow-2xl group ${themeStyles.container}`}
+                  style={{ minHeight: '380px' }}
+                >
+                  {/* Atmospheric Glow */}
+                  <div className={`absolute -right-16 -top-16 w-56 h-56 rounded-full blur-3xl pointer-events-none ${themeStyles.glow}`} />
+
+                  {/* Dismiss Button (✕) */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDismissPromo(card.id, e)}
+                    className="absolute top-4 right-4 z-20 p-1.5 rounded-full bg-black/40 hover:bg-black/80 text-zinc-400 hover:text-white transition-all cursor-pointer backdrop-blur-xs"
+                    title="Dismiss offer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+
+                  {/* Top Media Header */}
+                  {hasMedia && (
+                    <div className="relative aspect-[16/9] w-full bg-zinc-950 overflow-hidden rounded-t-2xl">
+                      <img
+                        src={card.imageUrl}
+                        alt={card.imageAlt || card.headline}
+                        onError={() => setBrokenImageMap((prev) => ({ ...prev, [card.id]: true }))}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                    </div>
+                  )}
+
+                  {/* Card Content Body */}
+                  <div className="p-6 flex-1 flex flex-col justify-between relative z-10">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        {card.badgeText && (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border flex items-center gap-1 ${themeStyles.badge}`}>
+                            <Sparkles className="w-3 h-3" />
+                            <span>{card.badgeText}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <h3 className="text-xl sm:text-2xl font-black font-serif text-white leading-snug tracking-tight">
+                        {card.headline}
+                      </h3>
+
+                      <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                        {card.copy}
+                      </p>
+                    </div>
+
+                    {/* Bottom Action CTA */}
+                    <div className="pt-6 relative z-10 border-t border-zinc-800/80 mt-6">
+                      <button
+                        type="button"
+                        onClick={() => handlePromoAction(card)}
+                        className={`w-full py-3 px-4 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition-all active:scale-98 cursor-pointer group-hover:brightness-110 ${themeStyles.btn}`}
+                      >
+                        <span>{card.ctaText || 'Learn More'}</span>
+                        {card.ctaAction === 'external_url' ? (
+                          <ExternalLink className="w-4 h-4" />
+                        ) : (
+                          <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     </div>
   );
 };
+

@@ -10,9 +10,11 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Framework**: React 19 + TypeScript + Vite
 - **Progressive Web App (PWA) & Offline Caching**: `vite-plugin-pwa` with standalone Web Manifest (`#0f172a` theme), Workbox `StaleWhileRevalidate` caching for scripts/styles, and `NetworkFirst` runtime caching for Firebase Storage assets
 - **FCM Web Push Notification Engine**: Firebase Cloud Messaging (FCM) Web Push with root-scoped background service worker (`/firebase-messaging-sw.js`), VAPID key token exchange (`VITE_FIREBASE_VAPID_KEY`), race-condition safe hook lifecycle (`usePushNotifications.ts`), safe Firestore token merge persistence (`users/{uid}` and `bidders/{uid}` via `setDoc` with `{ merge: true }`), and diagnostic error state reporting
+- **Dynamic Promotional Campaign Subsystem**: Launch promotional engine featuring low-inventory catalog card injection (`VehicleCatalogGrid.tsx`), direct-lot header notification banners (`AuctionHeader.tsx`), dynamic CTA action routing (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), audience segmentation (`all`, `guests_only`, `authenticated_only`), date window scheduling, and client dismissal tracking (`wailtail_dismissed_promos`)
+- **Decoupled Guest Telemetry Engine (`promo_analytics`)**: Decoupled click tracking recording atomic `increment(1)` writes directly into `promo_analytics/{promoId}`, eliminating 403 Forbidden errors for unauthenticated guests while keeping campaign settings securely restricted to administrators
 - **Routing & Navigation**: Client-side full-page routing supporting multi-car catalog (`/` & `/catalog`), single-car lot details (`/auctions/[id]`), full-page admin portal (`/admin`), and dedicated split-screen authoring workspace (`/dashboard/listings/[id]/edit`)
 - **Tri-Role Access Control**: 3-way role hierarchy (`ADMIN`, `SELLER`, `BIDDER`) governing access privileges across administration, authoring, and bidding surfaces
-- **5-Tab Admin Command Portal**: Dedicated operations suite (`AdminPortalPage.tsx`) covering Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding
+- **5-Tab Admin Command Portal**: Dedicated operations suite (`AdminPortalPage.tsx`) covering Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with Promotional & Launch Campaign Manager)
 - **Multi-Select Bulk Action Engine**: Checkbox selection system with floating action toolbar and safe 150-item batch chunking for status mutations and bulk deletions
 - **Catalog Status Predicate Normalization**: Exported pure predicates (`isLive`, `isUpcoming`, `isEnded`) ensuring all draft, preview, and scheduled lots are counted cleanly
 - **Styling**: Tailwind CSS with custom editorial typography and layout scales
@@ -24,7 +26,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Serverless Email Proxy (`api/send-consignment-email.ts`)**: Dual-mode Vercel serverless function dispatching structured HTML notifications for both vehicle consignments (`type: 'consignment'`) and private buyer inquiries (`type: 'inquiry'`) via Resend API (with SendGrid fallback) directly to platform curation administrators and sellers. Equipped with actionable 1-click triage deep links (`/admin?tab=consignments&id=${appId}&action=approve|reject`).
 - **Serverless YouTube Ingestion (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
 - **Firebase Cloud Storage Asset Pipeline**: Direct Storage URL streaming (`uploadImageToStorage`) with client-side canvas micro-compression (`compressImageDataUrl`) and a 900KB serialized payload size cap in `saveMediaConfig()`.
-- **Firebase CLI Deployment Infrastructure**: `firebase.json` mapping, `.firebaserc` project binding (`studio-apps-483721`), and terminal deployment pipeline (`npm run deploy:rules`) executing direct rules deployment via `firebase-tools`.
+- **Firebase CLI Named Database Deployment**: `firebase.json` mapping bound explicitly to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), and terminal deployment pipeline (`npm run deploy:rules`) executing direct rules deployment via `firebase-tools`.
 
 ### Firebase Backend Services
 - **Cloud Firestore**:
@@ -33,18 +35,20 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `bids`: Real-time bidding telemetry with anti-sniping timestamp verification and Option B soft retraction audit fields (`status`, `retractedAt`, `retractionReason`, `retractedBy`, `retractedByName`).
   - `comments`: Community Q&A feed with verified seller and administrator official nested replies.
   - `users` / `bidders`: User profiles containing tri-role hierarchy (`ADMIN`, `SELLER`, `BIDDER`), ban statuses, email verification flags, personal saved vehicle lot arrays (`watchlist`), and registered FCM Web Push notification tokens (`fcmTokens`).
+  - `settings/promotions`: Promotional campaign configurations, catalog card definitions, and lot header banner settings locked to admins.
+  - `promo_analytics`: Decoupled guest click telemetry collection recording public atomic `increment(1)` interactions.
   - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
 - **Firebase Cloud Messaging (FCM)**: Native Web Push notification engine dispatching live outbid alerts and auction lifecycle events via root-scoped background service worker (`/firebase-messaging-sw.js`) with VAPID token exchange (`VITE_FIREBASE_VAPID_KEY`) and multi-device Firestore token merge synchronization.
 - **Firebase Authentication**: Email/password and Google OAuth authentication with email verification flags.
-- **Firebase Security Rules**: Role-based access control protecting administrative actions and auction modifications (`firestore.rules`).
+- **Firebase Security Rules**: Role-based access control protecting administrative actions, campaign settings, and auction modifications (`firestore.rules`).
 
 ### Repository Directory Structure
 ```
 .
 ├── .firebaserc                         # Firebase CLI default project binding (studio-apps-483721)
-├── firebase.json                       # Firebase CLI configuration mapping firestore.rules
+├── firebase.json                       # Firebase CLI configuration mapping firestore.rules to named database instance
 ├── api/
 │   ├── send-consignment-email.ts       # Serverless dual-mode email dispatcher (consignments & inquiries) via Resend API
 │   └── youtube-playlist.ts             # Serverless CORS proxy for YouTube RSS playlist ingestion
@@ -150,8 +154,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - Consignment applications compile 3-tier taxonomy, VIN, mileage, transmission, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking.
     - Private buyer inquiries generate structured HTML digest tables compiling inquirer contact details, inquiry topic, target lot title, and message text, dispatched with client error isolation.
 11. **Terminal Firebase Security Rule Deployment Infrastructure**:
-    - Direct rules deployment via `firebase.json` mapping, `.firebaserc` project binding (`studio-apps-483721`), and `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json`.
-    - Allows developers to deploy synchronized production `firestore.rules` directly from the terminal via `npm run deploy:rules`.
+    - Direct rules deployment via `firebase.json` mapping to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), and `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json`.
+    - Allows developers to deploy synchronized production `firestore.rules` directly from the terminal via `npm run deploy:rules` with zero drift.
 12. **Hero Media Carousel & Scoped Lightbox Viewer (`HeroMediaCarousel.tsx`)**:
     - **Lightbox Dataset Isolation**: Hero lightbox modal state is scoped strictly to `heroImages`, resolving index mismatch bugs with the full categorized photo gallery archive.
     - **Mobile Viewport Optimization**: Removed cluttering overlays on mobile screens (`hidden sm:flex` for "Fullscreen Lightbox", `hidden sm:block` for bottom photo count bar).
@@ -180,6 +184,12 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Moderation Dialog & Member Bid Ledger (`AdminPortalPage.tsx`)**: Interactive modal requiring explicit administrative justification before retraction, expandable member bid history accordions in the Bidder Registry, and visual strike-through styling with hoverable audit popovers in the Live Bids Telemetry Ledger.
     - **Human-Readable Moderator Resolution (`getAdminIdentifier()`)**: Automatically resolves raw administrator UIDs to human-readable identities across staff rosters and active sessions.
     - **Cascading Lot Deletions & Orphaned Bid Moderation**: 400-item chunked batch writes in `deleteListing()` and `batchDeleteAuctions()` eradicate parent listings, child media subcollections, settings documents, and bid records below Firestore's 500-operation ceiling. Orphaned bids from legacy lots surface an amber `ORPHANED BID (LOT DELETED)` fallback badge and remain safely retractable without missing document errors.
+18. **Dynamic Launch Promotional Subsystem & Decoupled Telemetry Engine**:
+    - **Low-Inventory Promo Injections (`VehicleCatalogGrid.tsx`)**: When catalog vehicle counts are sparse ($\le 2$ lots), the catalog automatically injects responsive promotional cards into empty grid slots to maintain editorial richness.
+    - **Direct-Lot Promotional Banners (`AuctionHeader.tsx`)**: Delivers contextual top banners on deep-linked single-car lot pages with custom badges, action CTAs, and client dismissal tracking (`wailtail_dismissed_promos`).
+    - **Centralized Campaign Control Suite (`AdminPortalPage.tsx`)**: Real-time management interface under Platform Branding featuring master switches, card creation, CTA routing (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), audience segmentation (`all`, `guests_only`, `authenticated_only`), and date window scheduling.
+    - **Promo Card Image Asset Uploader**: Supports image URLs and local image file uploads with canvas micro-compression (`compressImageDataUrl`) and Firebase Cloud Storage streaming (`uploadImageToStorage`), rendering responsive `aspect-[16/9]` media banners on promo cards.
+    - **Decoupled Guest Telemetry (`promo_analytics`)**: Decouples click logging from admin-restricted settings into `promo_analytics/{promoId}` using atomic `increment(1)` writes. Grants public guest click logging without 403 Forbidden security exceptions while keeping campaign settings securely restricted to administrators.
 
 ---
 

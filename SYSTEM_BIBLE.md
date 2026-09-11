@@ -9,20 +9,22 @@
 * **Progressive Web App (PWA) & Offline Engine**: `vite-plugin-pwa` with Workbox runtime caching (`StaleWhileRevalidate` for scripts/styles, `NetworkFirst` for media/queries) and standalone Web Manifest (`name: "Wailtail Auctions"`, `short_name: "Wailtail"`, `#0f172a` theme)
 * **Background Push Service Worker & FCM**: Native background Service Worker (`public/firebase-messaging-sw.js`) utilizing Firebase compat SDKs and Firebase Cloud Messaging (`firebase/messaging`) Web Push API with VAPID key token exchange
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
+* **Dynamic Promotional Campaign Engine**: Launch promotional subsystem featuring responsive catalog grid card injection (`VehicleCatalogGrid.tsx`), direct-lot header notification banners (`AuctionHeader.tsx`), audience-segmented display filters, schedule windows, image asset uploader, and client dismissal tracking (`wailtail_dismissed_promos`)
+* **Decoupled Guest Telemetry Engine**: Atomic `promo_analytics/{promoId}` click counting using `increment(1)` writes, permitting public unauthenticated telemetry logging while securing campaign configuration
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
 * **Host & Infrastructure**: Cloud Run containerized deployment, reverse proxied on port 3000
 * **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`)
-* **Firebase Infrastructure & CLI Deployment**: `firebase.json` configuration, `.firebaserc` project binding (`studio-apps-483721`), synchronized production `firestore.rules`, and terminal deployment pipeline via `npm run deploy:rules` (`firebase deploy --only firestore:rules`)
+* **Firebase Infrastructure & Named Database CLI Deployment**: `firebase.json` configuration binding explicitly to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), synchronized production `firestore.rules`, and zero-drift terminal deployment pipeline via `npm run deploy:rules` (`firebase deploy --only firestore:rules`)
 
 ### 1.1 Platform Architecture & Routing Map
 
 | Route / Surface | Component / Handler | Access Level | Description |
 | :--- | :--- | :--- | :--- |
-| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, and category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`). |
-| `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
-| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding. Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
+| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
+| `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
@@ -385,6 +387,65 @@ export function toggleWatchlistLot(
 export function fetchUserWatchlist(userId: string): Promise<Auction[]>;
 ```
 
+### 2.10 `settings/promotions` Document Schema
+
+Path: `settings/promotions`
+Governs platform-wide launch promotional campaigns, catalog grid card injection, and direct-lot header banners:
+```typescript
+export type PromoCtaAction = 'consignment_modal' | 'auth_modal' | 'contact_modal' | 'external_url';
+export type PromoAudience = 'all' | 'guests_only' | 'authenticated_only';
+export type PromoAccentColor = 'amber' | 'emerald' | 'purple' | 'blue';
+
+export interface PromoCardConfig {
+  id: string;
+  enabled: boolean;
+  badgeText?: string;
+  headline: string;
+  copy: string;
+  ctaText: string;
+  ctaAction: PromoCtaAction;
+  ctaUrl?: string;
+  accentColor?: PromoAccentColor;
+  targetAudience: PromoAudience;
+  startDate?: number | string;
+  expiresAt?: number | string;
+  clickCount?: number;
+  imageUrl?: string;
+  imageAlt?: string;
+}
+
+export interface LotHeaderBannerConfig {
+  enabled: boolean;
+  badgeText?: string;
+  text: string;
+  ctaText?: string;
+  ctaAction?: PromoCtaAction;
+  ctaUrl?: string;
+  targetAudience: PromoAudience;
+  startDate?: number | string;
+  expiresAt?: number | string;
+  clickCount?: number;
+}
+
+export interface PlatformPromoSettings {
+  enabled: boolean;
+  cards: PromoCardConfig[];
+  lotHeaderBanner: LotHeaderBannerConfig;
+}
+```
+
+### 2.11 `promo_analytics` Collection Schema
+
+Path: `promo_analytics/{promoId}`
+Provides a decoupled guest telemetry store capturing atomic click engagement without modifying admin-restricted `settings/promotions` configuration:
+```typescript
+export interface PromoAnalyticsRecord {
+  clickCount: number;      // Atomic incremented counter via FieldValue.increment(1)
+  lastClickedAt: number;   // Epoch timestamp ms of most recent visitor interaction
+  isBanner?: boolean;      // True when event originates from lot_header_banner
+}
+```
+
 ---
 
 ## 3. Real-Time Anti-Sniping Engine
@@ -679,7 +740,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     - Server-assisted client pagination (configurable page size with previous/next navigation).
     - Row-level controls: quick status dropdown switcher, live CAD high bid tracking, direct authoring workspace launch links (`/dashboard/listings/${id}/edit`), and single-lot deletion triggers.
   - **4. Live Bids Telemetry Ledger Tab** (`ledger`): Real-time streaming audit trail of all placed bids with bidder handles, lot titles, timestamps, and currency amounts. Includes active/retracted summary pill counts, strike-through formatting on retracted bids, hoverable audit popovers displaying retraction reasons/timestamps/moderators, and administrative retraction actions.
-  - **5. Platform Branding Tab** (`branding`): Global platform identity configuration for site logo, name, and tagline with Firestore persistence and local storage fallback.
+  - **5. Platform Branding Tab** (`branding`): Global platform identity configuration for site logo, name, and tagline alongside the full-featured **Promotional & Launch Campaign Manager** controlling dynamic promo cards and direct-lot banners with master switches, real-time analytics telemetry, image asset uploading, and CTA action routing.
 - **Option B Administrative Soft Bid Retractions (`retractBid` in `auctionService.ts`)**:
   - **Permanent Audit Trail Preservation**: Bids are never hard-deleted from Firestore. Retracted bids are marked with `status: 'retracted'`, `retractedAt: timestamp`, `retractionReason: string`, `retractedBy: adminUid`, and `retractedByName: string`.
   - **Atomic Telemetry Recalculation**: Executed within a Firestore transaction, `retractBid()` re-evaluates all remaining active bids on the auction (filtering out both the target bid and prior retracted bids), recalculating `currentBid`, `bidCount`, `highBidder`, and reserve met status in a single atomic transaction.
@@ -842,6 +903,53 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Completely resolves right-edge viewport clipping, vertical flex squishing, and overlapping with adjacent CTA buttons on smaller desktop and tablet screens.
   - Features outside-click listener (`handleClickOutside`) bound via React refs to guarantee clean teardown upon outside clicks or route navigation.
 
+### 6.13 Promotional & Launch Campaign Manager (`AdminPortalPage.tsx`, `VehicleCatalogGrid.tsx`, `AuctionHeader.tsx`)
+
+The platform integrates a dynamic promotional subsystem designed to spotlight launch promotions, seller incentives, early-access membership perks, and high-visibility CTAs:
+
+1. **Centralized Campaign Control Suite (`AdminPortalPage.tsx` under Platform Branding)**:
+   - **Master Platform Switches**:
+     - Global platform switch (`PlatformPromoSettings.enabled`) allows administrators to immediately activate or deactivate all promotional cards and banners across the platform.
+     - Individual lot header banner toggle (`lotHeaderBanner.enabled`) and card-level toggles (`card.enabled`) provide granular switch controls.
+   - **Card Authoring & Lifecycle Management**:
+     - Interactive card creator (`handleAddPromoCard`) generating structured campaign cards with unique IDs (`promo-${Date.now()}`).
+     - Expandable card accordions with real-time headline previews, badge tags, copy textarea, accent color selection (`amber`, `emerald`, `purple`, `blue`), and card deletion triggers.
+     - Positional controls and persistence via `savePromoSettings()`.
+   - **Dynamic CTA Action Routing (`PromoCtaAction`)**:
+     - `consignment_modal`: Seamlessly launches the seller consignment intake dialog (`ConsignmentModal.tsx`).
+     - `auth_modal`: Launches the platform authentication modal (`AuthModal.tsx`) prompting registration or sign-in.
+     - `contact_modal`: Opens the consignor direct communication dialog (`ContactSellerModal.tsx`).
+     - `external_url`: Redirects visitors to external URLs or landing pages (`ctaUrl`) with target validation.
+   - **Audience State Segmentation (`PromoAudience`)**:
+     - Target audience filtering via `isPromoAudienceMatch(targetAudience, isAuthenticated)`:
+       - `all`: Broadcast to every site visitor.
+       - `guests_only`: Targeted strictly at unauthenticated visitors (e.g. registration drives, membership benefits).
+       - `authenticated_only`: Visible only to authenticated bidders or consignors (e.g. VIP consignment discounts).
+   - **Date Window Scheduling**:
+     - Native datetime scheduling inputs (`startDate`, `expiresAt`) evaluated dynamically via `isPromoScheduleActive(startDate, expiresAt, now)`.
+     - Supports pre-scheduled campaigns that activate and expire automatically without manual intervention.
+   - **Promo Card Image Asset Uploader**:
+     - Supports both direct image URLs (`card.imageUrl`) and local file uploads (`handlePromoImageUpload`).
+     - Uploaded assets undergo client-side HTML5 canvas micro-compression (`compressImageDataUrl`) before streaming to Firebase Cloud Storage via `uploadImageToStorage(auctionId, compressed, 'promotions')`.
+     - Displays responsive top media banners (`aspect-[16/9]`, `object-cover`) on catalog promo cards matching standard vehicle listings.
+
+2. **Catalog Grid Card Injection (`VehicleCatalogGrid.tsx`)**:
+   - **Low-Inventory Position Injection**: When catalog inventory contains 2 or fewer vehicles (`auctions.length <= 2`), the grid automatically injects active promotional cards (`promoCardsToInject`) into empty grid slots, maintaining a dense, editorial 3-column layout.
+   - **Client Dismissal Tracking (`wailtail_dismissed_promos`)**:
+     - Each injected card features an unobtrusive dismiss action (`X` button).
+     - Dismissed promo IDs are saved to `localStorage` under `wailtail_dismissed_promos`, suppressing repeat impressions for that client.
+
+3. **Direct-Lot Promotional Header Banners (`AuctionHeader.tsx`)**:
+   - High-contrast banner rendered directly above vehicle titles on single-car lot pages (`/auctions/[id]`).
+   - Specifically optimizes conversion for deep-linked direct traffic arriving from social channels and collector forums.
+   - Features custom badges, copy, action CTAs, dismissal persistence (`LOT_HEADER_BANNER_ID`), schedule verification, and audience matching.
+
+4. **Decoupled Guest Telemetry Engine (`promo_analytics`)**:
+   - Telemetry execution (`recordPromoClick(promoId, isBanner)`) writes directly to independent documents in the `promo_analytics` collection using atomic Firestore `increment(1)` operations.
+   - **Security Decoupling**: Solves permission errors (HTTP 403 Forbidden) for unauthenticated visitors by allowing public writes (`allow create, update: if true;`) to `promo_analytics`, while the root configuration `settings/promotions` remains locked strictly to administrators.
+   - **Non-Blocking Telemetry Failover**: Wrapped in silent `try/catch` handlers to guarantee that analytics logging never degrades or blocks visitor navigation.
+   - **Real-Time Staff Telemetry Feed**: `subscribeToPromoAnalytics` powers real-time click counter badges (`MousePointerClick`) in `AdminPortalPage.tsx`, displaying live interaction counts alongside each campaign asset.
+
 ---
 
 ## 7. Security Rules & Permissions
@@ -930,6 +1038,17 @@ service cloud.firestore {
     }
 
     // Platform Settings & Media Configuration
+    match /settings/promotions {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Promo Analytics & Click Telemetry
+    match /promo_analytics/{promoId} {
+      allow read: if true;
+      allow create, update: if true;
+    }
+
     match /settings/{settingId} {
       allow read: if true;
       allow write, create, update, delete: if isAuthenticated();
@@ -990,12 +1109,15 @@ service firebase.storage {
 To ensure reproducible, zero-drift rule synchronization directly from developer terminals without console copy-pasting, the repository integrates native Firebase CLI deployment bindings:
 
 1. **`firebase.json` Configuration**:
-   Maps the Firestore rules target directly to the root source rules file:
+   Maps the Firestore rules target directly to the root source rules file bound to the target named database instance (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`):
    ```json
    {
-     "firestore": {
-       "rules": "firestore.rules"
-     }
+     "firestore": [
+       {
+         "database": "ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e",
+         "rules": "firestore.rules"
+       }
+     ]
    }
    ```
 

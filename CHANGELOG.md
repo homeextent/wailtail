@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Dynamic Launch Promotional Subsystem**:
+  - Implemented catalog promotional cards for low-inventory grid positions (`VehicleCatalogGrid.tsx`) and direct-lot header banners (`AuctionHeader.tsx`) for deep-linked social traffic.
+  - Added dynamic CTA actions (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), audience segmentation filters (`all`, `guests_only`, `authenticated_only`), start/expiry date window scheduling, and client dismissal tracking (`wailtail_dismissed_promos`).
+- **Promo Card Image Asset Uploader**:
+  - Added support for direct image URLs and local file uploads (`imageUrl`, `imageAlt`) in `AdminPortalPage.tsx` with canvas micro-compression and Cloud Storage streaming.
+  - Renders responsive top media banners (`aspect-[16/9]`, `object-cover`) on catalog promotional cards matching standard catalog vehicle listings.
+- **Decoupled Guest Telemetry Engine (`promo_analytics`)**:
+  - Decoupled click tracking from admin settings into `promo_analytics/{promoId}` using atomic `increment(1)` writes, resolving 403 (Forbidden) security errors for unauthenticated guests while keeping `settings/promotions` locked to administrators.
+  - Added real-time telemetry listener (`subscribeToPromoAnalytics`) streaming live click counts to admin badges.
+- **Admin Campaign Control Suite**:
+  - Built real-time promotional campaign editor in `src/components/AdminPortalPage.tsx` under Platform Branding with master switches, live analytics badges, expandable card accordions, and card reordering.
+- **Named Firestore Database Binding**:
+  - Bound `firebase.json` directly to instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` for zero-drift terminal deployments via `npm run deploy:rules`.
 - **FCM Web Push Notification Subsystem**: Integrated `usePushNotifications.ts` hook with VAPID key configuration (`VITE_FIREBASE_VAPID_KEY`) and interactive outbid alert toggles in `UserAccountHubModal.tsx`.
 - **Diagnostic FCM Error State Reporting**: Implemented structured `[FCM Setup]` console tracing and high-visibility monospace diagnostic callout cards in `UserAccountHubModal.tsx` for surfacing raw FCM error codes.
 - **Root-Scoped Service Worker (`firebase-messaging-sw.js`)**: Aligned Service Worker registration to root scope (`/`) with explicit `self.registration.showNotification()` handlers for background OS desktop toasts and window focus (`clients.openWindow('/')`).
@@ -111,6 +124,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Fixed
+- **FCM Console Cleanup**: Stripped verbose `[FCM Setup]` informational logs from `src/hooks/usePushNotifications.ts` to maintain clean browser console diagnostics while preserving actionable error warnings.
 - **Firestore FCM Token Persistence Failure**: Replaced `updateDoc` with `setDoc(..., { merge: true })` in `usePushNotifications.ts` to prevent document-missing exceptions when saving tokens.
 - **Service Worker Subscription Race Condition**: Added `await navigator.serviceWorker.ready` prior to `getToken()` execution, ensuring the worker is fully active before push subscription attempts.
 - **Hero Lightbox Dataset Isolation & Index Alignment**:
