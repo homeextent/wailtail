@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { 
   X, 
@@ -31,6 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const { 
     user, 
+    userProfile,
     isEmailVerified, 
     signInEmail, 
     signUpEmail, 
@@ -53,6 +56,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [unverifiedLoginAttempt, setUnverifiedLoginAttempt] = useState(false);
 
   if (!isOpen) return null;
 
@@ -92,10 +96,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnverifiedLoginAttempt(false);
+    setResendStatus(null);
     setLoading(true);
     try {
-      await signInEmail(email.trim(), password);
+      const loggedUser = await signInEmail(email.trim(), password);
+
+      // Strict Email Verification Guard: evaluate total email verification state across both sources
+      let profileVerified = false;
+      if (loggedUser) {
+        try {
+          const userDocSnap = await getDoc(doc(db, 'users', loggedUser.uid));
+          if (userDocSnap.exists()) {
+            profileVerified = Boolean(userDocSnap.data()?.isEmailVerified);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const isVerified = Boolean(loggedUser?.emailVerified || profileVerified || userProfile?.isEmailVerified);
+
       setLoading(false);
+
+      if (!isVerified) {
+        setUnverifiedLoginAttempt(true);
+        return;
+      }
+
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
@@ -227,6 +254,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setActiveTab('signin');
                 setError(null);
                 setSuccessMessage(null);
+                setUnverifiedLoginAttempt(false);
               }}
               className={`py-3 text-center transition-colors border-b-2 ${
                 activeTab === 'signin'
@@ -241,6 +269,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setActiveTab('signup');
                 setError(null);
                 setSuccessMessage(null);
+                setUnverifiedLoginAttempt(false);
               }}
               className={`py-3 text-center transition-colors border-b-2 ${
                 activeTab === 'signup'
@@ -271,6 +300,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* TAB 1: SIGN IN */}
           {activeTab === 'signin' && (
             <form onSubmit={handleSignIn} className="space-y-4">
+              {/* Email Verification Pending Banner */}
+              {unverifiedLoginAttempt && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 font-bold text-xs text-amber-800 mb-1">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Email Verification Pending</span>
+                  </div>
+                  <p className="text-xs text-zinc-600 mb-2.5">
+                    Please check your inbox to verify your email address.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Resend Verification Email</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('verify')}
+                      className="px-2.5 py-1.5 rounded-lg border border-zinc-300 hover:bg-zinc-100 text-zinc-700 text-xs font-medium transition-colors"
+                    >
+                      <span>Verification Options</span>
+                    </button>
+                  </div>
+                  {resendStatus && (
+                    <p className="mt-2 text-[11px] font-medium text-emerald-700">
+                      {resendStatus}
+                    </p>
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1">
                   Email Address

@@ -101,6 +101,12 @@ export default async function handler(req: any, res: any) {
     );
 
     if (!hasAdminCredentials) {
+      if (!isDevelopment && process.env.NODE_ENV === 'production') {
+        return sendJson(res, 500, {
+          success: false,
+          error: 'Firebase Admin credentials missing (FIREBASE_SERVICE_ACCOUNT_KEY, FIREBASE_PRIVATE_KEY, or GOOGLE_APPLICATION_CREDENTIALS).'
+        });
+      }
       console.warn('[admin-delete-user] Firebase Admin credentials missing (FIREBASE_SERVICE_ACCOUNT_KEY, FIREBASE_PRIVATE_KEY, or GOOGLE_APPLICATION_CREDENTIALS). Proceeding in simulated mode.');
       return sendJson(res, 200, {
         success: true,
@@ -117,6 +123,12 @@ export default async function handler(req: any, res: any) {
     });
 
     if (!admin) {
+      if (!isDevelopment && process.env.NODE_ENV === 'production') {
+        return sendJson(res, 500, {
+          success: false,
+          error: 'firebase-admin package unavailable in runtime.'
+        });
+      }
       console.warn('[admin-delete-user] firebase-admin package unavailable in runtime. Returning simulated success.');
       return sendJson(res, 200, {
         success: true,
@@ -129,6 +141,9 @@ export default async function handler(req: any, res: any) {
       try {
         if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
           const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+          if (serviceAccount.private_key) {
+            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+          }
           admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
           });
@@ -143,8 +158,8 @@ export default async function handler(req: any, res: any) {
         } else {
           admin.initializeApp();
         }
-      } catch (initErr) {
-        console.warn('[admin-delete-user] Firebase Admin initialization notice/failure:', initErr);
+      } catch (initErr: any) {
+        console.error('[admin-delete-user] Firebase Admin initialization failure:', initErr);
         if (isDevelopment || !process.env.NODE_ENV) {
           return sendJson(res, 200, {
             success: true,
@@ -152,7 +167,11 @@ export default async function handler(req: any, res: any) {
             uid: cleanUid
           });
         }
-        throw initErr;
+        return sendJson(res, 500, {
+          success: false,
+          error: initErr?.message || 'Failed to initialize Firebase Admin SDK.',
+          code: initErr?.code
+        });
       }
     }
 
@@ -178,21 +197,19 @@ export default async function handler(req: any, res: any) {
           uid: cleanUid
         });
       }
-      throw deleteErr;
+      console.error(`[admin-delete-user] Error deleting user ${cleanUid} from Firebase Auth:`, deleteErr);
+      return sendJson(res, 500, {
+        success: false,
+        error: deleteErr?.message || 'Failed to delete user from Firebase Auth.',
+        code: deleteErr?.code
+      });
     }
   } catch (err: any) {
     console.error('[admin-delete-user] Error during user deletion process:', err);
-    if (isDevelopment || !process.env.NODE_ENV) {
-      console.warn('[admin-delete-user] Non-production environment fallback: returning simulated success.');
-      return sendJson(res, 200, {
-        success: true,
-        simulated: true,
-        uid: targetUid || undefined
-      });
-    }
     return sendJson(res, 500, {
       success: false,
-      error: err?.message || 'Failed to delete user account.'
+      error: err?.message || 'Failed to delete user account.',
+      code: err?.code
     });
   }
 }

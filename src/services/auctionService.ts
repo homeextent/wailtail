@@ -632,23 +632,19 @@ export async function sendWelcomeBidderEmail(userEmail: string, displayName?: st
   }
 }
 
-// Wire welcome email dispatch into account registration lifecycle via Firebase Auth listener
+// Wire welcome email dispatch to execute only when email verification is confirmed
 if (typeof window !== 'undefined' && auth) {
   try {
     onAuthStateChanged(auth, (user) => {
-      if (user && user.email) {
+      if (user && user.email && user.emailVerified) {
         const uid = user.uid;
         const key = `wailtail_welcome_sent_${uid}`;
         try {
           if (!localStorage.getItem(key)) {
-            const createdAt = user.metadata?.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
-            const isNewlyRegistered = createdAt > 0 && (Date.now() - createdAt < 5 * 60 * 1000);
-            if (isNewlyRegistered) {
-              localStorage.setItem(key, 'true');
-              sendWelcomeBidderEmail(user.email, user.displayName || user.email.split('@')[0]).catch((err: any) => {
-                console.warn('Automatic welcome email dispatch notice:', err);
-              });
-            }
+            localStorage.setItem(key, 'true');
+            sendWelcomeBidderEmail(user.email, user.displayName || user.email.split('@')[0]).catch((err: any) => {
+              console.warn('Automatic verified welcome email dispatch notice:', err);
+            });
           }
         } catch {
           // Ignore localStorage permission errors
@@ -2123,6 +2119,21 @@ export async function setUserEmailVerified(userId: string, isVerified: boolean):
   }
 
   await batch.commit();
+
+  // Defer sendWelcomeBidderEmail dispatch so it executes when staff manual verification override is triggered in /admin
+  if (isVerified && userData?.email) {
+    const key = `wailtail_welcome_sent_${resolvedUid}`;
+    try {
+      if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
+        localStorage.setItem(key, 'true');
+        sendWelcomeBidderEmail(userData.email, userData.displayName || userData.email.split('@')[0]).catch((err) => {
+          console.warn('Staff manual verification welcome email dispatch notice:', err);
+        });
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
 }
 
 /**
