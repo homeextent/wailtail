@@ -24,7 +24,7 @@
 | :--- | :--- | :--- | :--- |
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
-| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
@@ -388,6 +388,27 @@ export function toggleWatchlistLot(
 export function fetchUserWatchlist(userId: string): Promise<Auction[]>;
 ```
 
+#### UserProfile Authentication & Security Protocols (`AuthContext.tsx` & `AuthModal.tsx`)
+
+1. **Orphaned Auth Session Revocation Guard**:
+   - `AuthContext.tsx` safeguards active sessions against deleted user accounts through dual verification: an initial `onAuthStateChanged` hydration verification and an active real-time `onSnapshot` profile listener on `users/{uid}`.
+   - If an account's Firestore document is deleted while the user has an active session, both listeners detect that `users/{uid}` no longer exists (`!snap.exists()`).
+   - Immediately executes `signOut(auth)` via `fbSignOut`, purges local user and profile state (`setUser(null)`, `setUserProfile(null)`), surfaces a persistent toast notification (`"This account has been deleted by an administrator."`), and forces an immediate client-side redirect to `/`.
+
+2. **Strict Email Verification Enforcement**:
+   - **Post-Signup Auto-Logout**: Following user registration via email and password (`signUpEmail()`), a verification email is dispatched and `signOut(auth)` is immediately invoked. This terminates the automatic Firebase client auto-login and prevents unverified sessions from interacting with the platform.
+   - **Login Blocking for Unverified Credentials**: During sign-in attempts in `AuthModal.tsx` and `signInEmail()`, credentials where `!currentUser.emailVerified && !userProfile.isEmailVerified` are blocked from session hydration, immediately signed out, and presented with a verification required prompt. Platform access is unlocked only after email confirmation link click or staff manual override (`setUserEmailVerified`).
+   - **Credentialed Unauthenticated Status Checks (`checkEmailVerification`)**: Enables users to verify their email status even without an active session by providing credentials (`email` and `pass`). The function signs in against Firebase Authentication, reloads the user instance via `currentUser.reload()`, evaluates `currentUser.emailVerified`, and atomically auto-syncs `isEmailVerified: true` across both `users/{uid}` and `bidders/{uid}` collections in Firestore.
+   - **Atomic Auto-Sync Across Collections**: Once email verification is confirmed (via client verification reload or manual administrative staff override in `/admin`), `isEmailVerified: true` is atomically written across both `users/{uid}` and `bidders/{uid}` documents, synchronizing the entire user profile in state.
+
+3. **Google OAuth Direct State Hydration (`signInGoogle`)**:
+   - Executes Google sign-in via `signInWithPopup(auth, googleProvider)`.
+   - **Eliminates Manual Page Refreshes**: Directly sets `setUser(cred.user)` and `setUserProfile(profile)` upon credential resolution, removing listener suppression flags and eliminating the need for page reloads.
+   - **Pre-Verified Email Guarantees**: Sets `isEmailVerified: true` by default since Google OAuth accounts are pre-verified.
+   - **Ban Checks**: Validates `profile.isBanned` and `profile.bannedFromBidding`. If flagged, immediately signs out (`fbSignOut(auth)`), clears all session states, and throws an access revoked error.
+   - **Designated Admin Role Assignment**: Cross-checks user email against `ADMIN_EMAILS` (case-insensitive); matching addresses receive `role: 'admin'`, while standard members are assigned `role: 'bidder'`.
+   - **Deferred Welcome Dispatch**: Checks `localStorage` sentinel key `wailtail_welcome_sent_${uid}`; if absent, dispatches `sendWelcomeBidderEmail()` asynchronously.
+
 ### 2.10 `settings/promotions` Document Schema
 
 Path: `settings/promotions`
@@ -590,9 +611,30 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - Dual-branded editorial HTML layout featuring dark header banner, vehicle summary card (Year, Make, Model, VIN, Mileage, Transmission, Location, Reserve Expectation), curation review expectation statement, and a direct CTA button to the Wailtail Member Dashboard (`/`).
    - **Verified Bidder Welcome Email (`type: 'welcome_bidder'`)**:
      - Subject line: `Welcome to Wailtail — Your Bidding Privileges Are Active`.
-     - Dual-branded editorial HTML layout welcoming the user (`${displayName}`), outlining core platform tenets (Transparent CAD Bidding, 2-Minute Anti-Sniping Soft Closes, Zero Buyer Fees, Direct Settlement), and featuring a high-contrast CTA button linking directly to the live vehicle catalog (`/catalog`). Dispatched strictly after email verification is confirmed.
+     - Dual-branded editorial HTML layout welcoming the user (`${displayName}`), outlining core platform tenets (Transparent CAD Bidding, 2-Minute Anti-Sniping Soft Closes, Zero Buyer Fees, Direct Settlement), and featuring a high-contrast CTA button linking directly to the live vehicle catalog (`/catalog`).
+     - **Deferred Dispatch Pipeline**: `sendWelcomeBidderEmail()` is suppressed during raw account registration and dispatches strictly upon confirmed email verification (`currentUser.emailVerified || data.isEmailVerified`) or staff manual verification override in `/admin` (`setUserEmailVerified`). Dispatches are deduplicated via persistent `localStorage` sentinel keys (`wailtail_welcome_sent_${uid}`).
 
-### 5.4 Mobile Viewport Hero & Gallery Architecture
+### 5.4 Serverless Admin User Deletion (`/api/admin-delete-user.ts`)
+1. **Endpoint Architecture & Service Account Credentials**:
+   - Hosted as a dedicated Vercel Serverless Function at `/api/admin-delete-user` (`api/admin-delete-user.ts`).
+   - Requires an authenticated administrative caller context in the POST payload: `{ uid: string, adminUid: string }`.
+   - Protects against accidental self-deletion by blocking requests where `cleanUid === cleanAdminUid` (HTTP 400).
+2. **Static Firebase Admin Import & ESM Interop Resolution**:
+   - Utilizes static module import for `firebase-admin`:
+     ```typescript
+     import * as admin from 'firebase-admin';
+     const firebaseAdmin = (admin as any).default || admin;
+     ```
+   - Resolves CommonJS/ESM interop bundling discrepancies across Vercel Node runtime environments, guaranteeing stable access to `initializeApp`, `credential.cert`, and `auth().deleteUser`.
+3. **Private Key Newline Unescaping**:
+   - Normalizes service account private keys from `FIREBASE_SERVICE_ACCOUNT_KEY` or `FIREBASE_PRIVATE_KEY` by unescaping literal newline sequences (`replace(/\\n/g, '\n')`).
+   - Completely avoids ASN.1/OpenSSL parse failures during credential instantiation.
+4. **Atomic Identity Purging Across Auth and Firestore**:
+   - Executes `await firebaseAdmin.auth().deleteUser(cleanUid)` on the serverless edge.
+   - Gracefully intercepts `auth/user-not-found` exceptions as non-fatal successes (`{ success: true, note: 'user-not-found' }`), allowing deletion workflows to proceed if Auth identity is already absent.
+   - Orchestrated client-side by `deleteUserRecord(userId, adminUid)` in `src/services/auctionService.ts`, which calls `/api/admin-delete-user` before committing an atomic Firestore batch purge wiping corresponding documents across `users/{uid}` and `bidders/{uid}` collections.
+
+### 5.5 Mobile Viewport Hero & Gallery Architecture
 
 #### 1. Hero Lightbox Dataset Isolation (`HeroMediaCarousel.tsx`)
 * **Strict Scoping to `heroImages`**: Scoped hero lightbox state strictly to `heroImages` (`validImages` / `safeImages`), fixing index mismatch bugs where clicking hero carousel slides triggered items from the master categorized photo archive.
@@ -829,7 +871,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **All Vehicle Listings Inventory Tab**: Unified inventory dashboard tracking all vehicle lots across the platform with lifecycle badges (`Live`, `Upcoming`, `Ended`), real-time search, and quick management actions (`Edit`, `Duplicate`, `Delete Lot`, `Set Active`).
   - **Standardized "+ New Listing" Modal**: Standardized creation trigger (`createNewListing`) prompting for vehicle lot name and initializing clean arrays and Canadian CAD defaults.
   - **Live Bids Telemetry Log**: Real-time audit trail of all placed bids with bidder identities, timestamps, and amounts.
-  - **Bidder Registry**: Approval, verification, and banning controls for bidders.
+  - **Member Directory / Member Directory Management**: Approval, verification, role assignment, and banning controls for all platform members.
   - **Winner Settlement**: Post-auction reserve and final settlement resolution.
   - **Platform Branding & Global Settings**: Logo, site name, and global auction defaults.
 - Integrated "Open Listing Editor →" button allowing immediate navigation into the authoring workspace.
@@ -1187,7 +1229,16 @@ The platform implements multi-layer session defense mechanisms in `src/context/A
 2. **Strict Email Verification Enforcement**:
    - **Auto-Logout Post-Signup**: When a user registers an account via email and password, `AuthContext.tsx` dispatches a verification email and immediately calls `signOut(auth)` to terminate the automatic Firebase client auto-login.
    - **Unverified Login Blocking**: During sign-in attempts in `AuthModal.tsx` and session evaluation in `AuthContext.tsx`, accounts where `!currentUser.emailVerified && !userProfile.isEmailVerified` are blocked from session hydration, immediately signed out, and prompted with an informative verification notice. Authenticated state is only unlocked upon email link confirmation or manual administrator staff override (`setUserEmailVerified`).
-   - **Deferred Welcome Email Dispatch**: To guarantee that welcome emails are only received by genuine, confirmed recipients, `sendWelcomeBidderEmail` (`type: 'welcome_bidder'`) is suppressed during initial signup. It is triggered only after verification is confirmed (`user.emailVerified || data.isEmailVerified`), with duplicate deliveries guarded via `wailtail_welcome_sent_${uid}` in `localStorage`.
+   - **Credentialed Unauthenticated Status Checks (`checkEmailVerification`)**: Enables users to verify their email status without an existing session by submitting credentials (`email` and `pass`). The routine signs in, calls `currentUser.reload()`, and if verified, atomically auto-syncs `isEmailVerified: true` across both `users/{uid}` and `bidders/{uid}` collections in Firestore while returning full authenticated session state.
+   - **Atomic Auto-Sync Across Collections**: Any confirmed verification (via client status check or staff manual override) executes synchronized writes ensuring `isEmailVerified: true` is permanently mirrored across both `users` and `bidders` profiles.
+   - **Deferred Welcome Email Dispatch**: To guarantee that welcome emails are only received by genuine, confirmed recipients, `sendWelcomeBidderEmail` (`type: 'welcome_bidder'`) is suppressed during initial signup. It is triggered strictly after verification is confirmed (`user.emailVerified || data.isEmailVerified`) or staff manual override, with duplicate deliveries guarded via `wailtail_welcome_sent_${uid}` in `localStorage`.
+
+3. **Google OAuth Direct State Hydration (`signInGoogle`)**:
+   - Executes pop-up authentication via `signInWithPopup(auth, googleProvider)`.
+   - **Zero-Refresh Direct Hydration**: Removes listener suppression flags and hydrates `user` and `userProfile` states directly (`setUser(cred.user); setUserProfile(profile);`), eradicating manual page reloads.
+   - **Pre-Verified Credentials**: Sets `isEmailVerified: true` immediately, respecting Google OAuth's trusted verification status.
+   - **Ban Enforcement**: Checks `profile.isBanned || profile.bannedFromBidding`, triggering immediate sign-out (`fbSignOut`) and error rejection if the member has been restricted.
+   - **Admin Privileges Assignment**: Cross-references user email against `ADMIN_EMAILS`, provisioning `role: 'admin'` for authorized staff and default `role: 'bidder'` for standard members.
 
 ---
 

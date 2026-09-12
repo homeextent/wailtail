@@ -9,21 +9,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Serverless User Deletion Endpoint (`api/admin-delete-user.ts`)**:
-  - Implemented `/api/admin-delete-user` endpoint using the `firebase-admin` SDK to permanently delete user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`).
-  - Integrated ESM interop resolution (`const firebaseAdmin = (admin as any).default || admin;`) and private key newline unescaping (`replace(/\\n/g, '\n')`) for environment credentials.
-  - Added self-deletion protection guards and graceful `auth/user-not-found` handling paired with atomic batch purging across `users/{uid}` and `bidders/{uid}` in `src/services/auctionService.ts` (`deleteUserRecord`).
+- **Serverless Admin User Deletion Endpoint (`api/admin-delete-user.ts`)**:
+  - Implemented `/api/admin-delete-user` endpoint using the `firebase-admin` SDK with static import and ESM interop resolution (`const firebaseAdmin = (admin as any).default || admin;`) to permanently delete user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`).
+  - Integrated private key newline unescaping (`replace(/\\n/g, '\n')`) for environment credentials (`FIREBASE_SERVICE_ACCOUNT_KEY` / `FIREBASE_PRIVATE_KEY`) to prevent ASN.1/OpenSSL parse failures.
+  - Added self-deletion protection guards (`cleanUid === cleanAdminUid`) and non-blocking `auth/user-not-found` handling paired with atomic batch purging across `users/{uid}` and `bidders/{uid}` in `src/services/auctionService.ts` (`deleteUserRecord`).
+- **Orphaned Auth Session Revocation Guard (`src/context/AuthContext.tsx`)**:
+  - Engineered orphaned session revocation guard in `AuthContext.tsx` executing immediate `signOut(auth)` when a user's `users/{uid}` document is missing or deleted in Firestore.
+  - Integrated both initial `onAuthStateChanged` hydration verification and a real-time `onSnapshot` profile listener on `users/{uid}`, displaying an instant toast alert (`"This account has been deleted by an administrator."`), clearing user profile state, and redirecting orphaned sessions to `/`.
+- **Strict Email Verification Enforcement & Credentialed Status Check (`src/components/AuthModal.tsx` & `src/context/AuthContext.tsx`)**:
+  - Added post-signup auto-logout: calling `signOut(auth)` immediately after email/password registration to prevent unverified sessions from auto-authenticating into the platform.
+  - Implemented unverified login blocking across `AuthModal.tsx` and `AuthContext.tsx` requiring email confirmation link or staff administrative override (`setUserEmailVerified`) prior to granting platform access.
+  - Added credentialed unauthenticated status checks (`checkEmailVerification(email, pass)`) allowing logged-out users to verify confirmation status via credentials and reload session state.
+  - Built atomic auto-sync of `isEmailVerified: true` across `users` and `bidders` collections in Firestore upon confirmed verification.
+- **Google OAuth Direct State Hydration (`src/context/AuthContext.tsx`)**:
+  - Implemented direct state hydration in `signInGoogle()`, removing listener suppression flags and hydrating `user` and `userProfile` UI states instantly without requiring a page refresh.
+  - Automatically sets `isEmailVerified: true` for pre-verified Google accounts, enforces ban checks (`profile.isBanned || profile.bannedFromBidding`), and assigns `role: 'admin'` for designated `ADMIN_EMAILS` (or default `bidder` role).
+- **Deferred Welcome Email Dispatch (`src/services/auctionService.ts` & `src/context/AuthContext.tsx`)**:
+  - Suppressed welcome email dispatch during initial unverified registration, deferring `sendWelcomeBidderEmail()` (`type: 'welcome_bidder'`) to fire strictly upon confirmed email verification (`user.emailVerified || data.isEmailVerified`) or staff manual override (`setUserEmailVerified`) in `/admin`.
+  - Deduplicated welcome dispatches via persistent `localStorage` sentinel keys (`wailtail_welcome_sent_${uid}`).
 - **Dual-Branded Wailtail HTML Email Templates (`api/send-consignment-email.ts`)**:
   - Implemented dual-branded HTML email templates in `/api/send-consignment-email`:
     - `welcome_bidder`: Comprehensive onboarding email for newly verified bidders detailing transparent CAD bidding, anti-sniping soft closes, zero buyer fees, and catalog exploration links.
     - `consignment_receipt`: Official submission acknowledgment email for seller applicants confirming receipt of their vehicle details, review SLA timelines (1–2 business days), and link to the member dashboard.
-- **Session Revocation Guard (`src/context/AuthContext.tsx`)**:
-  - Engineered orphaned session revocation guard in `AuthContext.tsx` executing immediate `signOut(auth)` when a user's `users/{uid}` document is deleted in Firestore.
-  - Integrated both initial `onAuthStateChanged` hydration verification and a real-time `onSnapshot` profile listener, displaying an instant toast alert (`"This account has been deleted by an administrator."`) and redirecting orphaned sessions to `/`.
-- **Strict Email Verification Enforcement (`src/components/AuthModal.tsx` & `src/context/AuthContext.tsx`)**:
-  - Added post-signup auto-logout: calling `signOut(auth)` immediately after email/password registration to prevent unverified sessions from auto-authenticating into the platform.
-  - Implemented unverified login blocking across `AuthModal.tsx` and `AuthContext.tsx` requiring email link confirmation or staff administrative override (`setUserEmailVerified`) prior to granting platform access.
-  - Deferred welcome email dispatch (`welcome_bidder`) until email verification is confirmed (`user.emailVerified || data.isEmailVerified`), preventing notifications to unverified addresses and deduplicated via `wailtail_welcome_sent_${uid}` in `localStorage`.
 - **Dynamic Launch Promotional Subsystem**:
   - Implemented catalog promotional cards for low-inventory grid positions (`VehicleCatalogGrid.tsx`) and direct-lot header banners (`AuctionHeader.tsx`) for deep-linked social traffic.
   - Added dynamic CTA actions (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), audience segmentation filters (`all`, `guests_only`, `authenticated_only`), start/expiry date window scheduling, and client dismissal tracking (`wailtail_dismissed_promos`).
