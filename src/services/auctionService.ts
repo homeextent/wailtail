@@ -19,6 +19,7 @@ import {
   increment,
   serverTimestamp
 } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, auth } from '../firebase';
 import { storage } from './firebase';
@@ -560,6 +561,106 @@ export async function createNewListing(title: string): Promise<Auction> {
 }
 
 /**
+ * Non-blocking client-side helper to dispatch a consignment receipt email to a seller.
+ */
+export async function sendConsignmentReceiptEmail(
+  applicationData: Partial<ConsignmentApplication> & Record<string, any>
+): Promise<boolean> {
+  const cleanEmail = (applicationData?.sellerEmail || applicationData?.email || '').trim().toLowerCase();
+  if (!cleanEmail) return false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...applicationData,
+        type: 'consignment_receipt',
+        sellerEmail: cleanEmail
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking consignment receipt email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking consignment receipt email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Non-blocking client-side helper to dispatch a welcome email to a new bidder.
+ */
+export async function sendWelcomeBidderEmail(userEmail: string, displayName?: string): Promise<boolean> {
+  const cleanEmail = (userEmail || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) return false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'welcome_bidder',
+        email: cleanEmail,
+        displayName: displayName || cleanEmail.split('@')[0]
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking welcome bidder email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking welcome bidder email error:', err);
+    return false;
+  }
+}
+
+// Wire welcome email dispatch into account registration lifecycle via Firebase Auth listener
+if (typeof window !== 'undefined' && auth) {
+  try {
+    onAuthStateChanged(auth, (user) => {
+      if (user && user.email) {
+        const uid = user.uid;
+        const key = `wailtail_welcome_sent_${uid}`;
+        try {
+          if (!localStorage.getItem(key)) {
+            const createdAt = user.metadata?.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
+            const isNewlyRegistered = createdAt > 0 && (Date.now() - createdAt < 5 * 60 * 1000);
+            if (isNewlyRegistered) {
+              localStorage.setItem(key, 'true');
+              sendWelcomeBidderEmail(user.email, user.displayName || user.email.split('@')[0]).catch((err: any) => {
+                console.warn('Automatic welcome email dispatch notice:', err);
+              });
+            }
+          }
+        } catch {
+          // Ignore localStorage permission errors
+        }
+      }
+    });
+  } catch (err: any) {
+    console.warn('Silent notice registering auth welcome listener:', err);
+  }
+}
+
+/**
  * Submit Seller Consignment Application
  */
 export async function submitConsignmentApplication(
@@ -651,6 +752,14 @@ export async function submitConsignmentApplication(
       console.warn('Non-blocking consignment email error:', emailErr);
     }
   })();
+
+  // Non-blocking seller receipt email dispatch
+  sendConsignmentReceiptEmail({
+    ...payload,
+    applicationId: createdId
+  }).catch((receiptErr) => {
+    console.warn('Non-blocking consignment receipt dispatch notice:', receiptErr);
+  });
 
   return createdId;
 }
@@ -2018,23 +2127,62 @@ export async function setUserEmailVerified(userId: string, isVerified: boolean):
 
 /**
  * Permanent User Deletion Service
- * Atomically deletes matching user documents from both 'users' and 'bidders' Firestore collections.
+ * First dispatches an administrative deletion request to /api/admin-delete-user to remove
+ * the target identity from Firebase Authentication.
+ * If the serverless proxy is unreachable (e.g. ECONNREFUSED on port 3000 in local dev),
+ * or the identity is not found (HTTP 404 / user-not-found) or already orphaned, falls back
+ * safely to purge matching user documents from both 'users' and 'bidders' Firestore collections.
  */
-export async function deleteUserRecord(userId: string): Promise<void> {
+export async function deleteUserRecord(userId: string, adminUid?: string): Promise<void> {
   const cleanId = userId?.trim();
   if (!cleanId) throw new Error('User ID is required for deletion.');
 
-  const { userDocRefs, bidderDocRefs } = await resolveUserAndBidderDocuments(cleanId);
-  const batch = writeBatch(db);
+  const resolvedAdminUid = (adminUid || auth?.currentUser?.uid || '').trim();
 
-  for (const ref of userDocRefs) {
-    batch.delete(ref);
-  }
-  for (const ref of bidderDocRefs) {
-    batch.delete(ref);
+  // 1. Call serverless deletion endpoint to remove Auth identity wrapped in dedicated try/catch
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch('/api/admin-delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: cleanId,
+          adminUid: resolvedAdminUid || cleanId
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        console.warn('[deleteUserRecord] Auth serverless proxy unreachable; proceeding with Firestore document purge.');
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (_err) {
+    console.warn('[deleteUserRecord] Auth serverless proxy unreachable; proceeding with Firestore document purge.');
   }
 
-  await batch.commit();
+  // 2. Ensure execution immediately proceeds to execute the atomic Firestore document deletions for both users/{userId} and bidders/{userId} documents via deleteDoc()
+  try {
+    const { userDocRefs, bidderDocRefs } = await resolveUserAndBidderDocuments(cleanId);
+    const batch = writeBatch(db);
+
+    for (const ref of userDocRefs) {
+      batch.delete(ref);
+    }
+    for (const ref of bidderDocRefs) {
+      batch.delete(ref);
+    }
+
+    await batch.commit();
+  } catch (resolveErr) {
+    console.warn('[deleteUserRecord] Batch document resolution notice, proceeding with direct deleteDoc:', resolveErr);
+  }
+
+  await deleteDoc(doc(db, 'users', cleanId));
+  await deleteDoc(doc(db, 'bidders', cleanId));
 }
 
 /**

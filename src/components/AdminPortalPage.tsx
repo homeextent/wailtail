@@ -554,7 +554,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     const targetEmail = confirmDeleteUser.email || 'User';
     setDeletingUser(true);
     try {
-      await deleteUserRecord(targetId);
+      await deleteUserRecord(targetId, currentAdminId);
       setBiddersList(prev => prev.filter(b => b.uid !== targetId));
       setBiddersTotal(prev => Math.max(0, prev - 1));
       showToast(`Permanently deleted account for ${targetEmail}.`);
@@ -1276,7 +1276,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>Bidder Registry</span>
+              <span>Member Directory</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                 activeTab === 'bidders' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
@@ -1358,7 +1358,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <Users className="w-5 h-5 text-red-500" />
-                    <span>Bidder Registry Management</span>
+                    <span>Member Directory Management</span>
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
                     Live authenticated member directory, 3-way role assignment, ban toggles, and email overrides

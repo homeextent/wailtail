@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 import { ConsignmentApplication, UserRole } from '../types';
-import { submitConsignmentApplication, checkUserAccountByEmail } from '../services/auctionService';
+import { submitConsignmentApplication, checkUserAccountByEmail, sendConsignmentReceiptEmail } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 
 interface TaxonomyModel {
@@ -225,6 +225,28 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
         sellerEmail: sellerEmail.trim(),
         sellerPhone: sellerPhone.trim(),
         notes: notes.trim()
+      });
+
+      // Non-blocking seller receipt email dispatch alongside existing admin notification
+      sendConsignmentReceiptEmail({
+        year: year.trim(),
+        make: effectiveMake,
+        model: effectiveModel,
+        generation: effectiveGeneration,
+        vin: vin.trim().toUpperCase(),
+        mileage: mileage.trim(),
+        transmission,
+        location: formattedLocation,
+        locationCity: locationCity.trim(),
+        locationProvince: locationProvince.trim(),
+        locationCountry: locationCountry.trim(),
+        reserveExpectation: reserveExpectation.trim(),
+        sellerName: sellerName.trim(),
+        sellerEmail: sellerEmail.trim(),
+        sellerPhone: sellerPhone.trim(),
+        notes: notes.trim()
+      }).catch((receiptErr: any) => {
+        console.warn('Non-blocking consignment receipt email error in modal:', receiptErr);
       });
 
       setSubmitted(true);
