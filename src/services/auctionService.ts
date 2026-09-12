@@ -2098,7 +2098,7 @@ export async function setUserBannedStatus(userId: string, isBanned: boolean): Pr
  * Admin: Set user email verified status
  * Persists updates atomically across Firestore 'users' and 'bidders' collections.
  */
-export async function setUserEmailVerified(userId: string, isVerified: boolean): Promise<void> {
+export async function setUserEmailVerified(userId: string, isVerified: boolean = true): Promise<void> {
   if (!userId) throw new Error('User ID is required to update email verification.');
   const { userDocRefs, bidderDocRefs, userData, resolvedUid } = await resolveUserAndBidderDocuments(userId);
 
@@ -2120,15 +2120,16 @@ export async function setUserEmailVerified(userId: string, isVerified: boolean):
 
   await batch.commit();
 
-  // Defer sendWelcomeBidderEmail dispatch so it executes when staff manual verification override is triggered in /admin
+  // Defer sendWelcomeBidderEmail dispatch so it executes when verification transitions to true
   const recipientEmail = (userData?.email || (auth.currentUser?.uid === resolvedUid ? auth.currentUser?.email : '') || '').trim();
   if (isVerified && recipientEmail) {
     const key = `wailtail_welcome_sent_${resolvedUid}`;
     try {
       if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
         localStorage.setItem(key, 'true');
-        sendWelcomeBidderEmail(recipientEmail, userData?.displayName || recipientEmail.split('@')[0]).catch((err) => {
-          console.warn('Staff manual verification welcome email dispatch notice:', err);
+        const displayName = userData?.displayName || (auth.currentUser?.uid === resolvedUid ? auth.currentUser?.displayName : '') || recipientEmail.split('@')[0];
+        sendWelcomeBidderEmail(recipientEmail, displayName).catch((err) => {
+          console.warn('Verification welcome email dispatch notice:', err);
         });
       }
     } catch {

@@ -15,7 +15,7 @@ import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { AlertCircle, X } from 'lucide-react';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile } from '../types';
-import { sendWelcomeBidderEmail } from '../services/auctionService';
+import { sendWelcomeBidderEmail, setUserEmailVerified } from '../services/auctionService';
 
 export const ADMIN_EMAILS = [
   'jeremygoodmurphy@gmail.com',
@@ -37,8 +37,8 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   resendVerificationEmail: (emailForResend?: string, passForResend?: string) => Promise<void>;
-  checkEmailVerification: () => Promise<boolean>;
-  manualVerifyForDemo: () => Promise<void>;
+  checkEmailVerification: (emailForCheck?: string, passForCheck?: string) => Promise<boolean>;
+  manualVerifyForDemo: (emailForDemo?: string, passForDemo?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -107,6 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               updates.isEmailVerified = true;
               data.isEmailVerified = true;
               updatedNeeded = true;
+              setUserEmailVerified(currentUser.uid, true).catch((err) => console.warn('User profile sync notice:', err));
             }
 
             if (updatedNeeded) {
@@ -211,23 +212,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     await reload(cred.user);
 
+    // If cred.user.emailVerified is true, execute await setUserEmailVerified(cred.user.uid, true)
+    if (cred.user.emailVerified) {
+      try {
+        await setUserEmailVerified(cred.user.uid, true);
+      } catch (syncErr) {
+        console.warn('Could not sync emailVerified to Firestore on signInEmail:', syncErr);
+      }
+    }
+
     // Check both Firebase Auth user.emailVerified and Firestore staff override userProfile.isEmailVerified
-    let isProfileVerified = false;
+    let profileData: UserProfile | null = null;
     try {
       const snap = await getDoc(doc(db, 'users', cred.user.uid));
       if (snap.exists()) {
-        isProfileVerified = Boolean(snap.data()?.isEmailVerified);
+        profileData = { uid: snap.id, ...snap.data() } as UserProfile;
       }
     } catch {
       // ignore
     }
 
+    const isProfileVerified = Boolean(profileData?.isEmailVerified);
     const isVerified = Boolean(cred.user.emailVerified || isProfileVerified);
     if (!isVerified) {
       await fbSignOut(auth).catch(() => {});
       setUser(null);
       setUserProfile(null);
       throw new Error('Email verification required. Please check your inbox to verify your email address before signing in.');
+    }
+
+    // Ensure the user profile hydrated from Firestore reflects isEmailVerified: true before completing sign-in and returning cred.user
+    if (profileData) {
+      if (cred.user.emailVerified || isVerified) {
+        profileData.isEmailVerified = true;
+      }
+      setUser(cred.user);
+      setUserProfile(profileData);
     }
 
     return cred.user;
@@ -330,50 +350,163 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const checkEmailVerification = async (): Promise<boolean> => {
-    if (!auth.currentUser) return false;
-    await reload(auth.currentUser);
-    const verified = auth.currentUser.emailVerified;
-    if (verified && userProfile) {
-      const updated = { ...userProfile, isEmailVerified: true };
-      setUserProfile(updated);
-      try {
-        await updateDoc(doc(db, 'users', auth.currentUser.uid), { isEmailVerified: true });
-      } catch (err) {
-        console.warn('Could not update verified flag in DB:', err);
+  const checkEmailVerification = async (emailForCheck?: string, passForCheck?: string): Promise<boolean> => {
+    let targetUser = auth.currentUser;
+    let temporarySession = false;
+
+    if (targetUser) {
+      await reload(targetUser);
+    } else if (emailForCheck) {
+      if (!passForCheck) {
+        throw new Error('Password is required to check email verification.');
       }
-      // Trigger deferred welcome email once email is confirmed
-      const key = `wailtail_welcome_sent_${auth.currentUser.uid}`;
       try {
-        if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
-          localStorage.setItem(key, 'true');
-          sendWelcomeBidderEmail(auth.currentUser.email || userProfile.email, userProfile.displayName).catch((err) => {
-            console.warn('Welcome email dispatch notice:', err);
-          });
+        const cred = await signInWithEmailAndPassword(auth, emailForCheck.trim(), passForCheck);
+        targetUser = cred.user;
+        temporarySession = true;
+        await reload(targetUser);
+      } catch (signInErr: any) {
+        const code = signInErr?.code || '';
+        let descriptiveMessage = signInErr?.message || 'Failed to authenticate for verification check.';
+        if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+          descriptiveMessage = 'Incorrect password. Please verify your credentials and try again.';
+        } else if (code === 'auth/user-not-found') {
+          descriptiveMessage = 'No account found with this email. Please register first.';
+        } else if (code === 'auth/invalid-email') {
+          descriptiveMessage = 'Please enter a valid email address.';
+        } else if (code === 'auth/too-many-requests') {
+          descriptiveMessage = 'Access temporarily blocked due to multiple attempts. Please try again later.';
         }
-      } catch {
-        // ignore
+        const customErr = new Error(descriptiveMessage);
+        (customErr as any).code = code;
+        throw customErr;
       }
+    } else {
+      return false;
     }
-    return verified;
+
+    if (!targetUser) {
+      return false;
+    }
+
+    const isVerified = Boolean(targetUser.emailVerified);
+
+    if (isVerified) {
+      try {
+        await setUserEmailVerified(targetUser.uid, true);
+      } catch (syncErr) {
+        console.warn('Could not sync emailVerified to Firestore in checkEmailVerification:', syncErr);
+      }
+
+      let profileData: UserProfile | null = null;
+      try {
+        const snap = await getDoc(doc(db, 'users', targetUser.uid));
+        if (snap.exists()) {
+          profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
+        }
+      } catch (fetchErr) {
+        console.warn('Could not fetch user profile in checkEmailVerification:', fetchErr);
+      }
+
+      if (!profileData) {
+        const userEmail = (targetUser.email || emailForCheck || '').toLowerCase();
+        const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+        profileData = {
+          uid: targetUser.uid,
+          email: targetUser.email || emailForCheck || '',
+          displayName: targetUser.displayName || (targetUser.email || emailForCheck || '').split('@')[0],
+          role: isDesignatedAdmin ? 'admin' : 'bidder',
+          isEmailVerified: true,
+          registeredAt: Date.now(),
+          totalBidsPlaced: 0,
+          highestBidPlaced: 0
+        };
+      }
+
+      setUser(targetUser);
+      setUserProfile(profileData);
+
+      // Trigger sendWelcomeBidderEmail (guarded against duplicates via localStorage)
+      const recipientEmail = (targetUser.email || profileData.email || '').trim();
+      if (recipientEmail) {
+        const key = `wailtail_welcome_sent_${targetUser.uid}`;
+        try {
+          if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
+            localStorage.setItem(key, 'true');
+            sendWelcomeBidderEmail(recipientEmail, profileData.displayName || recipientEmail.split('@')[0]).catch((err) => {
+              console.warn('Verification welcome email dispatch notice:', err);
+            });
+          }
+        } catch {
+          // Ignore localStorage errors
+        }
+      }
+
+      return true;
+    } else {
+      if (temporarySession) {
+        await fbSignOut(auth).catch(() => {});
+      }
+      return false;
+    }
   };
 
-  const manualVerifyForDemo = async () => {
-    if (!auth.currentUser) return;
-    if (userProfile) {
-      const updated = { ...userProfile, isEmailVerified: true };
-      setUserProfile(updated);
+  const manualVerifyForDemo = async (emailForDemo?: string, passForDemo?: string) => {
+    let targetUser = auth.currentUser;
+    if (!targetUser && emailForDemo && passForDemo) {
       try {
-        await updateDoc(doc(db, 'users', auth.currentUser.uid), { isEmailVerified: true });
+        const cred = await signInWithEmailAndPassword(auth, emailForDemo.trim(), passForDemo);
+        targetUser = cred.user;
       } catch (err) {
-        console.warn(err);
+        console.warn('Demo verify sign-in error:', err);
       }
-      // Trigger deferred welcome email once email is confirmed
-      const key = `wailtail_welcome_sent_${auth.currentUser.uid}`;
+    }
+
+    if (!targetUser) return;
+
+    try {
+      await setUserEmailVerified(targetUser.uid, true);
+    } catch (err) {
+      console.warn(err);
+    }
+
+    let profileData: UserProfile | null = null;
+    try {
+      const snap = await getDoc(doc(db, 'users', targetUser.uid));
+      if (snap.exists()) {
+        profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!profileData && userProfile) {
+      profileData = { ...userProfile, isEmailVerified: true };
+    } else if (!profileData) {
+      const userEmail = (targetUser.email || emailForDemo || '').toLowerCase();
+      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+      profileData = {
+        uid: targetUser.uid,
+        email: targetUser.email || emailForDemo || '',
+        displayName: targetUser.displayName || (targetUser.email || emailForDemo || '').split('@')[0],
+        role: isDesignatedAdmin ? 'admin' : 'bidder',
+        isEmailVerified: true,
+        registeredAt: Date.now(),
+        totalBidsPlaced: 0,
+        highestBidPlaced: 0
+      };
+    }
+
+    setUser(targetUser);
+    setUserProfile(profileData);
+
+    const recipientEmail = (targetUser.email || profileData?.email || '').trim();
+    if (recipientEmail) {
+      const key = `wailtail_welcome_sent_${targetUser.uid}`;
       try {
         if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
           localStorage.setItem(key, 'true');
-          sendWelcomeBidderEmail(auth.currentUser.email || userProfile.email, userProfile.displayName).catch((err) => {
+          sendWelcomeBidderEmail(recipientEmail, profileData?.displayName || recipientEmail.split('@')[0]).catch((err) => {
             console.warn('Welcome email dispatch notice:', err);
           });
         }

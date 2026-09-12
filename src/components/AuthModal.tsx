@@ -210,19 +210,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleCheckVerified = async () => {
+    setError(null);
     setLoading(true);
-    const verified = await checkEmailVerification();
-    setLoading(false);
-    if (verified) {
-      if (onSuccess) onSuccess();
-      onClose();
-    } else {
-      setError('Email is not verified yet. Please click the link in your inbox or use the instant demo verify.');
+    try {
+      const verified = await checkEmailVerification(email.trim(), password);
+      setLoading(false);
+      if (verified) {
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setError('Email is not verified yet. Please click the link in your inbox.');
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setError(parseAuthError(err));
     }
   };
 
   const handleQuickDemoVerify = async () => {
-    await manualVerifyForDemo();
+    await manualVerifyForDemo(email.trim(), password);
     if (onSuccess) onSuccess();
     onClose();
   };
