@@ -6,6 +6,8 @@
 
 import * as admin from 'firebase-admin';
 
+const firebaseAdmin = (admin as any).default || admin;
+
 function sendJson(res: any, status: number, data: any) {
   if (res.setHeader) {
     res.setHeader('Content-Type', 'application/json');
@@ -69,16 +71,12 @@ export default async function handler(req: any, res: any) {
     return sendJson(res, 405, { success: false, error: 'Method not allowed. Use POST.' });
   }
 
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  let targetUid = '';
-
   try {
     const body = await parseRequestBody(req);
     const { uid, adminUid } = body || {};
 
     const cleanUid = (uid || '').trim();
     const cleanAdminUid = (adminUid || '').trim();
-    targetUid = cleanUid;
 
     if (!cleanUid || !cleanAdminUid) {
       return sendJson(res, 400, {
@@ -96,69 +94,54 @@ export default async function handler(req: any, res: any) {
     }
 
     // Initialization guards checking for Firebase Admin SDK service account environment variables
+    const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
     const hasAdminCredentials = Boolean(
-      process.env.FIREBASE_SERVICE_ACCOUNT_KEY ||
+      serviceAccountRaw ||
       process.env.FIREBASE_PRIVATE_KEY ||
       process.env.GOOGLE_APPLICATION_CREDENTIALS
     );
 
     if (!hasAdminCredentials) {
-      if (!isDevelopment && process.env.NODE_ENV === 'production') {
-        return sendJson(res, 500, {
-          success: false,
-          error: 'Firebase Admin credentials missing (FIREBASE_SERVICE_ACCOUNT_KEY, FIREBASE_PRIVATE_KEY, or GOOGLE_APPLICATION_CREDENTIALS).'
-        });
-      }
-      console.warn('[admin-delete-user] Firebase Admin credentials missing (FIREBASE_SERVICE_ACCOUNT_KEY, FIREBASE_PRIVATE_KEY, or GOOGLE_APPLICATION_CREDENTIALS). Proceeding in simulated mode.');
-      return sendJson(res, 200, {
-        success: true,
-        simulated: true,
-        uid: cleanUid
+      console.error('[admin-delete-user] Missing Firebase Admin service account key or credentials.');
+      return sendJson(res, 500, {
+        success: false,
+        error: 'Missing Firebase Admin service account key.'
       });
     }
 
-    if (!admin.apps || admin.apps.length === 0) {
+    if (!firebaseAdmin.apps.length) {
       try {
-        if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-          const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+        if (serviceAccountRaw) {
+          const serviceAccount = JSON.parse(serviceAccountRaw);
           if (serviceAccount.private_key) {
             serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
           }
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
+          firebaseAdmin.initializeApp({
+            credential: firebaseAdmin.credential.cert(serviceAccount)
           });
         } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-          admin.initializeApp({
-            credential: admin.credential.cert({
+          firebaseAdmin.initializeApp({
+            credential: firebaseAdmin.credential.cert({
               projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
               clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
               privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
             })
           });
         } else {
-          admin.initializeApp();
+          firebaseAdmin.initializeApp();
         }
       } catch (initErr: any) {
         console.error('[admin-delete-user] Firebase Admin initialization failure:', initErr);
-        if (isDevelopment || !process.env.NODE_ENV) {
-          return sendJson(res, 200, {
-            success: true,
-            simulated: true,
-            uid: cleanUid
-          });
-        }
         return sendJson(res, 500, {
           success: false,
-          error: initErr?.message || 'Failed to initialize Firebase Admin SDK.',
-          code: initErr?.code
+          error: initErr?.message || 'Failed to delete user from Firebase Auth'
         });
       }
     }
 
-    // Wrap admin.auth().deleteUser(uid) in a try/catch block handling auth/user-not-found cleanly
+    // Wrap firebaseAdmin.auth().deleteUser(cleanUid) in a try/catch block handling auth/user-not-found cleanly
     try {
-      const auth = admin.auth();
-      await auth.deleteUser(cleanUid);
+      await firebaseAdmin.auth().deleteUser(cleanUid);
 
       console.log(`[admin-delete-user] Successfully deleted auth identity for uid: ${cleanUid} (requested by admin: ${cleanAdminUid})`);
       return sendJson(res, 200, {
@@ -180,16 +163,14 @@ export default async function handler(req: any, res: any) {
       console.error(`[admin-delete-user] Error deleting user ${cleanUid} from Firebase Auth:`, deleteErr);
       return sendJson(res, 500, {
         success: false,
-        error: deleteErr?.message || 'Failed to delete user from Firebase Auth.',
-        code: deleteErr?.code
+        error: deleteErr?.message || 'Failed to delete user from Firebase Auth'
       });
     }
   } catch (err: any) {
     console.error('[admin-delete-user] Error during user deletion process:', err);
     return sendJson(res, 500, {
       success: false,
-      error: err?.message || 'Failed to delete user account.',
-      code: err?.code
+      error: err?.message || 'Failed to delete user from Firebase Auth'
     });
   }
 }
