@@ -70,13 +70,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userRef = doc(db, 'users', currentUser.uid);
           let snap = await getDoc(userRef);
 
-          if (!snap.exists() && isRegistrationInProgress) {
+          if (!snap.exists()) {
             await new Promise((resolve) => setTimeout(resolve, 800));
             snap = await getDoc(userRef);
           }
 
           if (snap.exists()) {
             const data = snap.data() as UserProfile;
+
+            if (data.isBanned || data.bannedFromBidding) {
+              console.warn(`[AuthContext] Banned user detected for uid: ${currentUser.uid}. Enforcing signOut.`);
+              await fbSignOut(auth).catch(() => {});
+              setUser(null);
+              setUserProfile(null);
+              setToastMessage('Your bidding privileges have been revoked by an administrator.');
+              setLoading(false);
+              return;
+            }
+
             const isVerified = Boolean(currentUser.emailVerified || data.isEmailVerified);
 
             // Strict Unverified Session Enforcement: If both are false, prevent session login hydration and execute signOut(auth)
@@ -96,7 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
             
             // Ensure role is assigned
-            if (!data.role) {
+            if (isDesignatedAdmin && data.role !== 'admin') {
+              data.role = 'admin';
+              updates.role = 'admin';
+              updatedNeeded = true;
+            } else if (!data.role) {
               data.role = isDesignatedAdmin ? 'admin' : 'bidder';
               updates.role = data.role;
               updatedNeeded = true;
@@ -298,30 +313,83 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInGoogle = async () => {
-    isRegistrationInProgress = true;
+    setLoading(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const userRef = doc(db, 'users', cred.user.uid);
       const snap = await getDoc(userRef);
       const userEmail = (cred.user.email || '').toLowerCase();
       const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-      
-      if (!snap.exists()) {
+
+      let profile: UserProfile;
+
+      if (snap.exists()) {
+        const data = snap.data() as UserProfile;
+        let updateNeeded = false;
+        const updates: Partial<UserProfile> = {};
+
+        if (isDesignatedAdmin && data.role !== 'admin') {
+          data.role = 'admin';
+          updates.role = 'admin';
+          updateNeeded = true;
+        } else if (!data.role) {
+          data.role = isDesignatedAdmin ? 'admin' : 'bidder';
+          updates.role = data.role;
+          updateNeeded = true;
+        }
+
+        if (updateNeeded) {
+          await updateDoc(userRef, updates).catch((err) => console.warn('Admin/user role sync notice:', err));
+        }
+        profile = { ...data, uid: cred.user.uid };
+      } else {
         const newProfile: UserProfile = {
           uid: cred.user.uid,
           email: cred.user.email || '',
-          displayName: cred.user.displayName || 'Bidder',
+          displayName: cred.user.displayName || (cred.user.email ? cred.user.email.split('@')[0] : 'Bidder'),
           role: isDesignatedAdmin ? 'admin' : 'bidder',
-          isEmailVerified: true, // Google logins have pre-verified email
+          isEmailVerified: true, // Google OAuth pre-verifies email addresses
           registeredAt: Date.now(),
           totalBidsPlaced: 0,
           highestBidPlaced: 0
         };
         await setDoc(userRef, newProfile).catch((err) => console.warn('Error storing Google user profile:', err));
-        setUserProfile(newProfile);
+        profile = newProfile;
       }
+
+      if (profile.isBanned || profile.bannedFromBidding) {
+        await fbSignOut(auth).catch(() => {});
+        setUser(null);
+        setUserProfile(null);
+        throw new Error('Your bidding privileges have been revoked by an administrator.');
+      }
+
+      setUser(cred.user);
+      setUserProfile(profile);
+
+      if (cred.user.email) {
+        const key = `wailtail_welcome_sent_${cred.user.uid}`;
+        try {
+          if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
+            localStorage.setItem(key, 'true');
+            sendWelcomeBidderEmail(cred.user.email, profile.displayName || cred.user.email.split('@')[0]).catch((err: any) => {
+              console.warn('Automatic verified welcome email dispatch notice:', err);
+            });
+          }
+        } catch {
+          // Ignore localStorage errors
+        }
+      }
+    } catch (error: any) {
+      setLoading(false);
+      if (error?.code === 'auth/popup-closed-by-user') {
+        console.info('[AuthContext] Google sign-in popup closed by user.');
+      } else {
+        console.error('[AuthContext] Google sign-in error:', error);
+      }
+      throw error;
     } finally {
-      isRegistrationInProgress = false;
+      setLoading(false);
     }
   };
 
