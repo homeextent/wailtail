@@ -15,7 +15,7 @@
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
 * **Host & Infrastructure**: Cloud Run containerized deployment, reverse proxied on port 3000
-* **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`)
+* **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`, `/api/admin-delete-user`)
 * **Firebase Infrastructure & Named Database CLI Deployment**: `firebase.json` configuration binding explicitly to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), synchronized production `firestore.rules`, and zero-drift terminal deployment pipeline via `npm run deploy:rules` (`firebase deploy --only firestore:rules`)
 
 ### 1.1 Platform Architecture & Routing Map
@@ -24,11 +24,12 @@
 | :--- | :--- | :--- | :--- |
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
-| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Bidder Registry, Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
-| `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators. |
+| `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
+| `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
 | `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
 
 ---
@@ -552,19 +553,21 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - All legacy duration input fields, metadata extraction parsing, and timestamp duration badges (`00:00`) have been completely eradicated across workspace editors (`ListingEditorWorkspace.tsx`, `AdminPanelModal.tsx`) and public components (`YouTubePlaylistSection.tsx`). Focus is kept strictly on video title, description, and high-resolution thumbnail preview.
 
 ### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
-1. **Endpoint Architecture & Dual-Mode Proxy Pipeline**:
+1. **Endpoint Architecture & Multi-Template Proxy Pipeline**:
    - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
-   - Supports a dual-mode payload interface via `type: 'consignment' | 'inquiry'` (defaulting to `'consignment'` if unspecified):
+   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder'` (defaulting to `'consignment'` if unspecified):
      - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators.
      - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
+     - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**: Dispatches a dual-branded HTML acknowledgment email directly to the consignor/seller applicant confirming receipt of their vehicle submission, summarizing vehicle particulars, detailing curation review timelines (1–2 business days), and linking to their member dashboard.
+     - **New Verified Bidder Welcome (`type: 'welcome_bidder'`)**: Dispatches a dual-branded HTML onboarding email to newly verified bidders celebrating their registration, presenting platform bidding guidelines, highlighting zero buyer fees, and providing 1-click exploration of live auctions.
    - Integrates with the **Resend API** as primary mail provider (supporting direct HTTP fetch fallback if the SDK is unavailable), with built-in failover to **SendGrid** and a development mock logger when keys are absent.
 2. **Environment Variables**:
    - `RESEND_API_KEY`: Secret API token for Resend dispatch (`https://api.resend.com/emails`).
    - `ADMIN_NOTIFICATION_EMAIL` / `ADMIN_EMAIL` / `WAILTAIL_ADMIN_EMAIL`: Destination recipient inbox for new consignment and inquiry submissions (defaults to `contact@wailtail.com` if omitted).
    - `RESEND_FROM_EMAIL`: Authorized sender address (e.g. `Wailtail Curation <consignments@wailtail.com>`).
    - `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL`: Fallback mailer configuration.
-3. **Structured HTML Digest Templates**:
-   - **Consignment Application Digest**:
+3. **Structured HTML Digest & Branded Templates**:
+   - **Consignment Application Digest (`type: 'consignment'`)**:
      - Compiles vehicle taxonomy parameters (Year, Make, Model, Generation/Chassis), VIN, Mileage, Transmission, Reserve Expectation, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`).
      - Appends applicant contact info and private condition notes.
      - Embeds visual badge indicators differentiating registered members (`REGISTERED (SELLER)` / `REGISTERED (BIDDER)` in emerald green) from guest inquiries (`GUEST / UNREGISTERED` in amber).
@@ -573,7 +576,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
          - **Approve CTA**: `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=approve`
          - **Reject CTA**: `https://www.wailtail.com/admin?tab=consignments&id=${appId}&action=reject`
        - Enables platform administrators to triage incoming consignments straight from their inbox on mobile or desktop devices.
-   - **Private Buyer Inquiry HTML Table**:
+   - **Private Buyer Inquiry HTML Table (`type: 'inquiry'`)**:
      - Subject line: `[Private Inquiry] ${inquiryTopic} — ${targetVehicleTitle} (${inquiryName})`.
      - High-contrast structured HTML table containing:
        - **Inquirer Name**: Prospect's full name.
@@ -582,6 +585,12 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
        - **Inquiry Topic**: Subject topic (e.g., Vehicle History, Inspection, Financing, Reserve, Shipping).
        - **Target Vehicle Title**: Vehicle title/lot referenced by the inquiry.
        - **Inquiry Message**: Pre-formatted multiline inquiry text with line-height styling.
+   - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**:
+     - Subject line: `Consignment Application Received: ${year} ${make} ${model} — Wailtail Auctions`.
+     - Dual-branded editorial HTML layout featuring dark header banner, vehicle summary card (Year, Make, Model, VIN, Mileage, Transmission, Location, Reserve Expectation), curation review expectation statement, and a direct CTA button to the Wailtail Member Dashboard (`/`).
+   - **Verified Bidder Welcome Email (`type: 'welcome_bidder'`)**:
+     - Subject line: `Welcome to Wailtail — Your Bidding Privileges Are Active`.
+     - Dual-branded editorial HTML layout welcoming the user (`${displayName}`), outlining core platform tenets (Transparent CAD Bidding, 2-Minute Anti-Sniping Soft Closes, Zero Buyer Fees, Direct Settlement), and featuring a high-contrast CTA button linking directly to the live vehicle catalog (`/catalog`). Dispatched strictly after email verification is confirmed.
 
 ### 5.4 Mobile Viewport Hero & Gallery Architecture
 
@@ -731,7 +740,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Unauthorized visitors and non-admin users are automatically redirected to the root catalog route (`/`) with an alert notification.
   - Implements session authentication loading guards in `App.tsx` (`authLoading`) to prevent accidental redirect flashes during browser refreshes.
 - **5 Command Suites & Management Tabs**:
-  - **1. Bidder Registry Tab** (`bidders`): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls.
+  - **1. Member Directory Tab** (`bidders` — Member Directory Management): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls. Includes a role filter dropdown (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) for refined directory segmentation.
     - **Expandable Member Bid Ledger**: Click-to-expand bid history accordion displaying all historical bids placed by the user, breakdown counters for active vs. retracted bids, and an inline administrative "Retract" moderation button.
   - **2. Consignment Applications Tab** (`consignments`): Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
   - **3. Vehicle Inventory & Lots Tab** (`inventory` — 5th Admin Tab): Comprehensive full-width vehicle inventory management suite displaying active catalog lots, editable vehicle specifications, and status lifecycles.
@@ -774,7 +783,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **3-Way Role Switching (`updateUserRole`)**: Allows administrators to toggle user accounts between `ADMIN`, `SELLER`, and `BIDDER` via an atomic Firestore `writeBatch`.
   - **Account Ban Toggling (`setUserBannedStatus` / `banOrRemoveBidder` / `unbanBidder`)**: Atomically updates `isBanned`, `bannedFromBidding`, `bannedAt`, and `banReason`.
   - **Email Verification Override (`setUserEmailVerified`)**: Permits manual staff verification overrides (`isEmailVerified: true/false`).
-  - **Permanent Record Deletion (`deleteUserRecord`)**: Atomic batch deletion purging user documents from both `users` and `bidders` collections.
+  - **Permanent Record Deletion (`deleteUserRecord`)**: Two-stage atomic purge that first calls `/api/admin-delete-user` to permanently remove the identity from Firebase Authentication via the Firebase Admin SDK, followed by atomic batch deletion purging documents from both `users/{userId}` and `bidders/{userId}` collections with resilient fallback for orphaned or non-existent auth records.
 - **1-Click Consignment Approval Draft Conversion (`convertConsignmentToDraftListing`)**:
   - Administrators review pending vehicle consignment intake submissions and click `"Approve & Convert to Draft"`.
   - Atomically creates a fresh listing document in `auctions/{newAuctionId}` pre-populated with:
@@ -970,10 +979,10 @@ Wailtail implements a tri-role access control model defined in `src/types.ts` vi
 | View Won Lots & 4-Stage Offline CAD Settlement Checklist | ❌ | ✅ | ✅ | ✅ |
 | Access Dedicated Listing Workspace (`/dashboard/listings/[id]/edit`) | ❌ | ❌ | ✅ | ✅ |
 | Access Full-Page Operations Portal (`/admin`) | ❌ | ❌ | ❌ | ✅ |
-| Paginated Bidder Registry & Consignment Search | ❌ | ❌ | ❌ | ✅ |
+| Paginated Member Directory & Consignment Search | ❌ | ❌ | ❌ | ✅ |
 | Switch User Roles (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`) | ❌ | ❌ | ❌ | ✅ |
 | Ban / Unban Bidders & Override Email Verification | ❌ | ❌ | ❌ | ✅ |
-| Delete User Records from Firestore (`deleteUserRecord`) | ❌ | ❌ | ❌ | ✅ |
+| Purge User Account & Auth Identity (`deleteUserRecord` / `/api/admin-delete-user`) | ❌ | ❌ | ❌ | ✅ |
 | 1-Click Convert Consignment to Draft Listing | ❌ | ❌ | ❌ | ✅ |
 | Purge All Listings / Bulk Reset Catalog | ❌ | ❌ | ❌ | ✅ |
 
@@ -1139,6 +1148,46 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
      # Executes: firebase deploy --only firestore:rules
      ```
    - Automatically compiles, validates, and deploys `firestore.rules` to Google Cloud Firestore with real-time CLI status verification.
+
+### 7.5 Serverless Edge & Auth Deletion Architecture (`/api/admin-delete-user.ts`)
+
+To support permanent, legally compliant member deletions without client credential exposure, the platform deploys a dedicated Vercel Serverless Function at `/api/admin-delete-user`:
+
+1. **Firebase Admin SDK ESM Interop Resolution**:
+   - Resolves CommonJS/ESM module interop discrepancies across Vercel Node runtime bundlers via:
+     ```typescript
+     import * as admin from 'firebase-admin';
+     const firebaseAdmin = (admin as any).default || admin;
+     ```
+   - Ensures consistent runtime access to `initializeApp`, `credential.cert`, and `auth().deleteUser`.
+
+2. **Environment Private Key Newline Unescaping**:
+   - Private keys supplied through production environment variables (`FIREBASE_SERVICE_ACCOUNT_KEY` or `FIREBASE_PRIVATE_KEY`) frequently serialize newline characters as literal `\n` escape sequences.
+   - The endpoint normalizes keys prior to SDK credential initialization via `.replace(/\\n/g, '\n')`, preventing ASN.1/OpenSSL parse failures.
+
+3. **Atomic Account Purging Across Auth and Firestore**:
+   - Executed via `deleteUserRecord(userId, adminUid)` in `src/services/auctionService.ts`:
+     1. Dispatches an authenticated HTTP POST request to `/api/admin-delete-user` with `{ uid, adminUid }`.
+     2. The serverless handler verifies administrator parameters, enforces a self-deletion guard (`cleanUid === cleanAdminUid`), and executes `await firebaseAdmin.auth().deleteUser(cleanUid)`.
+     3. Gracefully catches and logs `auth/user-not-found`, treating already-purged Auth identities as non-blocking successes (`{ success: true, note: 'user-not-found' }`).
+     4. `deleteUserRecord` then resolves and commits an atomic batch deletion wiping associated documents across both `users/{userId}` and `bidders/{userId}` Firestore collections.
+
+### 7.6 Authentication Security & Session Defense (`AuthContext.tsx` & `AuthModal.tsx`)
+
+The platform implements multi-layer session defense mechanisms in `src/context/AuthContext.tsx` and `src/components/AuthModal.tsx` to maintain absolute data integrity and prevent unauthorized access:
+
+1. **Orphaned Session Revocation Guard**:
+   - **Initial Auth Restoration Guard**: During `onAuthStateChanged` hydration, if Firebase Auth returns an authenticated user but their corresponding Firestore profile `users/{currentUser.uid}` does not exist (and registration is not actively pending), `AuthContext` instantly treats the session as orphaned/deleted.
+   - **Real-Time Deletion Listener**: An active `onSnapshot` listener on `users/{currentAuthUser.uid}` monitors live document state. If an administrator deletes the account in the Member Directory while the user is actively browsing:
+     - Immediately executes `signOut(auth)` via `fbSignOut`.
+     - Flushes local state (`user: null`, `userProfile: null`).
+     - Dispatches a prominent high-visibility toast notice: `"This account has been deleted by an administrator."`.
+     - Instantly redirects the client to the root homepage (`/`).
+
+2. **Strict Email Verification Enforcement**:
+   - **Auto-Logout Post-Signup**: When a user registers an account via email and password, `AuthContext.tsx` dispatches a verification email and immediately calls `signOut(auth)` to terminate the automatic Firebase client auto-login.
+   - **Unverified Login Blocking**: During sign-in attempts in `AuthModal.tsx` and session evaluation in `AuthContext.tsx`, accounts where `!currentUser.emailVerified && !userProfile.isEmailVerified` are blocked from session hydration, immediately signed out, and prompted with an informative verification notice. Authenticated state is only unlocked upon email link confirmation or manual administrator staff override (`setUserEmailVerified`).
+   - **Deferred Welcome Email Dispatch**: To guarantee that welcome emails are only received by genuine, confirmed recipients, `sendWelcomeBidderEmail` (`type: 'welcome_bidder'`) is suppressed during initial signup. It is triggered only after verification is confirmed (`user.emailVerified || data.isEmailVerified`), with duplicate deliveries guarded via `wailtail_welcome_sent_${uid}` in `localStorage`.
 
 ---
 
