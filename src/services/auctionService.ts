@@ -2121,12 +2121,13 @@ export async function setUserEmailVerified(userId: string, isVerified: boolean):
   await batch.commit();
 
   // Defer sendWelcomeBidderEmail dispatch so it executes when staff manual verification override is triggered in /admin
-  if (isVerified && userData?.email) {
+  const recipientEmail = (userData?.email || (auth.currentUser?.uid === resolvedUid ? auth.currentUser?.email : '') || '').trim();
+  if (isVerified && recipientEmail) {
     const key = `wailtail_welcome_sent_${resolvedUid}`;
     try {
       if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
         localStorage.setItem(key, 'true');
-        sendWelcomeBidderEmail(userData.email, userData.displayName || userData.email.split('@')[0]).catch((err) => {
+        sendWelcomeBidderEmail(recipientEmail, userData?.displayName || recipientEmail.split('@')[0]).catch((err) => {
           console.warn('Staff manual verification welcome email dispatch notice:', err);
         });
       }

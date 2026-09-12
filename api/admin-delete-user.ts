@@ -4,6 +4,8 @@
  * Requires administrator authentication context { uid: string, adminUid: string }.
  */
 
+import * as admin from 'firebase-admin';
+
 function sendJson(res: any, status: number, data: any) {
   if (res.setHeader) {
     res.setHeader('Content-Type', 'application/json');
@@ -108,28 +110,6 @@ export default async function handler(req: any, res: any) {
         });
       }
       console.warn('[admin-delete-user] Firebase Admin credentials missing (FIREBASE_SERVICE_ACCOUNT_KEY, FIREBASE_PRIVATE_KEY, or GOOGLE_APPLICATION_CREDENTIALS). Proceeding in simulated mode.');
-      return sendJson(res, 200, {
-        success: true,
-        simulated: true,
-        uid: cleanUid
-      });
-    }
-
-    // Attempt Firebase Admin SDK deletion
-    // @ts-ignore
-    const admin = await import('firebase-admin').catch((importErr) => {
-      console.warn('[admin-delete-user] Could not import firebase-admin:', importErr);
-      return null;
-    });
-
-    if (!admin) {
-      if (!isDevelopment && process.env.NODE_ENV === 'production') {
-        return sendJson(res, 500, {
-          success: false,
-          error: 'firebase-admin package unavailable in runtime.'
-        });
-      }
-      console.warn('[admin-delete-user] firebase-admin package unavailable in runtime. Returning simulated success.');
       return sendJson(res, 200, {
         success: true,
         simulated: true,

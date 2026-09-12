@@ -36,7 +36,7 @@ interface AuthContextType {
   signInGoogle: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
-  resendVerificationEmail: () => Promise<void>;
+  resendVerificationEmail: (emailForResend?: string, passForResend?: string) => Promise<void>;
   checkEmailVerification: () => Promise<boolean>;
   manualVerifyForDemo: () => Promise<void>;
 }
@@ -62,6 +62,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
+        if (isRegistrationInProgress) {
+          setLoading(false);
+          return;
+        }
         try {
           const userRef = doc(db, 'users', currentUser.uid);
           let snap = await getDoc(userRef);
@@ -73,6 +77,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (snap.exists()) {
             const data = snap.data() as UserProfile;
+            const isVerified = Boolean(currentUser.emailVerified || data.isEmailVerified);
+
+            // Strict Unverified Session Enforcement: If both are false, prevent session login hydration and execute signOut(auth)
+            if (!isVerified) {
+              console.warn(`[AuthContext] Unverified session detected for uid: ${currentUser.uid}. Enforcing signOut.`);
+              await fbSignOut(auth).catch(() => {});
+              setUser(null);
+              setUserProfile(null);
+              setLoading(false);
+              return;
+            }
+
             let updatedNeeded = false;
             const updates: Partial<UserProfile> = {};
 
@@ -87,7 +103,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // Update email verified status if changed
-            const isVerified = Boolean(currentUser.emailVerified || data.isEmailVerified);
             if (currentUser.emailVerified && !data.isEmailVerified) {
               updates.isEmailVerified = true;
               data.isEmailVerified = true;
@@ -117,29 +132,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUserProfile(data);
           } else {
             // Profile is missing from Firestore - orphaned session (account deleted by administrator)
-            console.warn(`[AuthContext] Account profile users/${currentUser.uid} missing. Revoking session.`);
-            await fbSignOut(auth).catch((err) => console.warn('Forced sign-out notice:', err));
-            setUser(null);
-            setUserProfile(null);
-            setToastMessage('This account has been deleted by an administrator.');
-            if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-              window.location.href = '/';
+            if (!isRegistrationInProgress) {
+              console.warn(`[AuthContext] Account profile users/${currentUser.uid} missing. Revoking orphaned session.`);
+              await fbSignOut(auth).catch((err) => console.warn('Forced sign-out notice:', err));
+              setUser(null);
+              setUserProfile(null);
+              setToastMessage('This account has been deleted by an administrator.');
+              if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+                window.location.href = '/';
+              }
             }
           }
         } catch (error) {
           console.error('Error fetching user profile:', error);
-          const userEmail = (currentUser.email || '').toLowerCase();
-          const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-          // Fallback profile if Firestore permission issue
-          setUser(currentUser);
-          setUserProfile({
-            uid: currentUser.uid,
-            email: currentUser.email || '',
-            displayName: currentUser.displayName || 'Bidder',
-            role: isDesignatedAdmin ? 'admin' : 'bidder',
-            isEmailVerified: currentUser.emailVerified,
-            registeredAt: Date.now()
-          });
+          if (!isRegistrationInProgress) {
+            await fbSignOut(auth).catch(() => {});
+            setUser(null);
+            setUserProfile(null);
+          }
         }
       } else {
         setUser(null);
@@ -153,17 +163,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Real-time listener for active user profile revocation (if account is deleted during an active session)
   useEffect(() => {
-    if (!user || isRegistrationInProgress) return;
-    const userRef = doc(db, 'users', user.uid);
+    const currentAuthUser = auth.currentUser || user;
+    if (!currentAuthUser || isRegistrationInProgress) return;
+
+    const userRef = doc(db, 'users', currentAuthUser.uid);
     const unsub = onSnapshot(userRef, async (snap) => {
-      if (!snap.exists() && !isRegistrationInProgress) {
-        console.warn(`[AuthContext] Active session user doc users/${user.uid} removed. Revoking session.`);
-        await fbSignOut(auth).catch(() => {});
-        setUser(null);
-        setUserProfile(null);
-        setToastMessage('This account has been deleted by an administrator.');
-        if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-          window.location.href = '/';
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser && !isRegistrationInProgress) {
+        if (!snap.exists()) {
+          console.warn(`[AuthContext] Active session user doc users/${firebaseUser.uid} removed. Revoking session.`);
+          await fbSignOut(auth).catch(() => {});
+          setUser(null);
+          setUserProfile(null);
+          setToastMessage('This account has been deleted by an administrator.');
+          if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+            window.location.href = '/';
+          }
+        } else {
+          const data = snap.data() as UserProfile;
+          const isVerified = Boolean(firebaseUser.emailVerified || data.isEmailVerified);
+          if (!isVerified) {
+            console.warn(`[AuthContext] Real-time check: Session email unverified. Revoking session.`);
+            await fbSignOut(auth).catch(() => {});
+            setUser(null);
+            setUserProfile(null);
+          }
         }
       }
     }, (err) => {
@@ -186,6 +210,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInEmail = async (email: string, pass: string): Promise<User> => {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     await reload(cred.user);
+
+    // Check both Firebase Auth user.emailVerified and Firestore staff override userProfile.isEmailVerified
+    let isProfileVerified = false;
+    try {
+      const snap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (snap.exists()) {
+        isProfileVerified = Boolean(snap.data()?.isEmailVerified);
+      }
+    } catch {
+      // ignore
+    }
+
+    const isVerified = Boolean(cred.user.emailVerified || isProfileVerified);
+    if (!isVerified) {
+      await fbSignOut(auth).catch(() => {});
+      setUser(null);
+      setUserProfile(null);
+      throw new Error('Email verification required. Please check your inbox to verify your email address before signing in.');
+    }
+
     return cred.user;
   };
 
@@ -224,8 +268,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Error creating user doc:', e);
       }
       
-      setUser(cred.user);
-      setUserProfile(newProfile);
+      // Immediately execute signOut to prevent automatic Firebase client session auto-login
+      await fbSignOut(auth).catch(() => {});
+      setUser(null);
+      setUserProfile(null);
     } finally {
       isRegistrationInProgress = false;
     }
@@ -269,9 +315,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserProfile(null);
   };
 
-  const resendVerificationEmail = async () => {
+  const resendVerificationEmail = async (emailForResend?: string, passForResend?: string) => {
     if (auth.currentUser) {
       await sendEmailVerification(auth.currentUser);
+      return;
+    }
+    if (emailForResend && passForResend) {
+      const cred = await signInWithEmailAndPassword(auth, emailForResend, passForResend);
+      try {
+        await sendEmailVerification(cred.user);
+      } finally {
+        await fbSignOut(auth).catch(() => {});
+      }
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { signOut } from 'firebase/auth';
+import { db, auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { 
   X, 
@@ -116,18 +117,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       const isVerified = Boolean(loggedUser?.emailVerified || profileVerified || userProfile?.isEmailVerified);
 
-      setLoading(false);
-
       if (!isVerified) {
+        await signOut(auth).catch(() => {});
+        setLoading(false);
         setUnverifiedLoginAttempt(true);
+        setError('Email verification required. Please check your inbox to verify your email address before signing in.');
         return;
       }
 
+      setLoading(false);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
       setLoading(false);
-      setError(parseAuthError(err));
+      const msg = err?.message || '';
+      if (msg.includes('Email verification required') || msg.includes('verification')) {
+        await signOut(auth).catch(() => {});
+        setUnverifiedLoginAttempt(true);
+        setError('Email verification required. Please check your inbox to verify your email address before signing in.');
+      } else {
+        setError(parseAuthError(err));
+      }
     }
   };
 
@@ -146,6 +156,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setLoading(true);
     try {
       await signUpEmail(email.trim(), password, displayName.trim(), phone.trim());
+      // Explicitly execute signOut(auth) immediately to prevent automatic Firebase client session auto-login
+      await signOut(auth).catch(() => {});
       setLoading(false);
       setActiveTab('verify');
     } catch (err: any) {
@@ -190,10 +202,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleResend = async () => {
     setResendStatus(null);
     try {
-      await resendVerificationEmail();
+      await resendVerificationEmail(email.trim(), password);
       setResendStatus('Verification email sent! Check your inbox or spam folder.');
     } catch (err: any) {
-      setResendStatus('Error sending verification email: ' + err.message);
+      setResendStatus('Error sending verification email: ' + (err.message || 'Please try again.'));
     }
   };
 
@@ -308,7 +320,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>Email Verification Pending</span>
                   </div>
                   <p className="text-xs text-zinc-600 mb-2.5">
-                    Please check your inbox to verify your email address.
+                    Email verification required. Please check your inbox to verify your email address before signing in.
                   </p>
                   <div className="flex items-center gap-2">
                     <button
@@ -587,9 +599,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <p className="text-xs text-zinc-600 mt-1 max-w-sm mx-auto">
                   To ensure legitimate bids and preserve auction integrity, all bidders must verify their email before placing a bid.
                 </p>
-                {user?.email && (
+                {(user?.email || email) && (
                   <p className="text-xs font-mono font-bold text-zinc-800 bg-zinc-100 py-1 px-2 rounded mt-2 inline-block">
-                    {user.email}
+                    {user?.email || email}
                   </p>
                 )}
               </div>
