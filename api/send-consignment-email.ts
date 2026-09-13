@@ -938,16 +938,22 @@ export default async function handler(req: any, res: any) {
     });
 
     // Also dispatch seller receipt notification to sellerEmail if provided (consolidated intake).
-    // If sellerEmail and adminEmail match, suppress duplicate receipt email so only a single unified intake email arrives.
+    // Single-pass seller acknowledgment receipt deduplication:
+    // If sellerEmail.toLowerCase() === adminEmail.toLowerCase(), suppress duplicate delivery to the matching address.
+    const cleanSellerEmail = (sellerEmail || payload?.email || '').trim();
+    const cleanAdminEmail = (adminEmail || '').trim();
     const isSellerAdminDuplicate = Boolean(
-      sellerEmail &&
-      adminEmail &&
-      sellerEmail.trim().toLowerCase() === adminEmail.trim().toLowerCase()
+      cleanSellerEmail &&
+      cleanAdminEmail &&
+      cleanSellerEmail.toLowerCase() === cleanAdminEmail.toLowerCase()
     );
 
-    if (sellerEmail && !isSellerAdminDuplicate) {
+    if (cleanSellerEmail && !isSellerAdminDuplicate) {
       try {
-        await dispatchConsignmentReceiptEmail(payload);
+        await dispatchConsignmentReceiptEmail({
+          ...payload,
+          sellerEmail: cleanSellerEmail
+        });
       } catch (receiptErr) {
         console.warn('[send-consignment-email] Non-blocking seller receipt dispatch failure:', receiptErr);
       }
@@ -957,7 +963,7 @@ export default async function handler(req: any, res: any) {
       success: true,
       message: 'Consignment notification processed successfully.',
       recipient: adminEmail,
-      sellerReceiptRecipient: (sellerEmail && !isSellerAdminDuplicate) ? sellerEmail : null,
+      sellerReceiptRecipient: (cleanSellerEmail && !isSellerAdminDuplicate) ? cleanSellerEmail : null,
       vehicleTitle
     });
   } catch (err: any) {

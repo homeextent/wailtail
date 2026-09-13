@@ -15,7 +15,7 @@ import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, g
 import { AlertCircle, X } from 'lucide-react';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile } from '../types';
-import { sendWelcomeBidderEmail, setUserEmailVerified, updateUserRole } from '../services/auctionService';
+import { sendWelcomeBidderEmail, setUserEmailVerified } from '../services/auctionService';
 
 export const ADMIN_EMAILS = [
   'jeremygoodmurphy@gmail.com',
@@ -23,68 +23,6 @@ export const ADMIN_EMAILS = [
 ];
 
 let isRegistrationInProgress = false;
-
-/**
- * Automatically elevates newly registered or authenticated users with approved vehicle consignments
- * to role: 'seller' across users/{uid} and bidders/{uid} using updateUserRole(), and associates their
- * UID & display name with corresponding auctions/{convertedAuctionId} documents.
- */
-async function elevateApprovedConsignor(
-  userOrUid: User | string,
-  userEmail?: string,
-  displayName?: string
-): Promise<boolean> {
-  const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid.uid;
-  const rawEmail = (userEmail || (typeof userOrUid !== 'string' ? userOrUid.email : '') || '').trim();
-  const cleanEmail = rawEmail.toLowerCase();
-  if (!cleanEmail) return false;
-
-  try {
-    const colRef = collection(db, 'consignment_applications');
-    const q = query(colRef, where('sellerEmail', '==', cleanEmail));
-    let snap = await getDocs(q);
-
-    if (snap.empty && cleanEmail !== rawEmail) {
-      snap = await getDocs(query(colRef, where('sellerEmail', '==', rawEmail)));
-    }
-
-    const approvedDocs = snap.docs.filter((d) => {
-      const data = d.data();
-      return data?.status === 'approved';
-    });
-
-    if (approvedDocs.length === 0) {
-      return false;
-    }
-
-    // Atomically upgrade user role to 'seller' across users/{uid} and bidders/{uid}
-    await updateUserRole(uid, 'seller');
-
-    // Update corresponding auction documents auctions/{convertedAuctionId}
-    const resolvedName = displayName || (typeof userOrUid !== 'string' ? userOrUid.displayName : '') || cleanEmail.split('@')[0] || 'Seller';
-    for (const appDoc of approvedDocs) {
-      const appData = appDoc.data();
-      const convertedAuctionId = appData?.convertedAuctionId;
-      if (convertedAuctionId) {
-        try {
-          const auctionRef = doc(db, 'auctions', convertedAuctionId);
-          await updateDoc(auctionRef, {
-            sellerId: uid,
-            sellerName: resolvedName
-          });
-        } catch (auctionErr) {
-          console.warn(`Could not link seller ${uid} to auction ${convertedAuctionId}:`, auctionErr);
-        }
-      }
-    }
-
-    return true;
-  } catch (err) {
-    // Catch and handle Firestore permission errors silently if no approved consignment exists
-    console.warn('Gracefully handled error checking approved consignment applications:', err);
-    return false;
-  }
-}
 
 interface AuthContextType {
   user: User | null;
@@ -110,6 +48,87 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  /**
+   * Security rule-compliant seller elevation targeting users/{uid} and bidders/{uid} directly under isOwner(uid) authentication.
+   * Updates corresponding draft auction documents and immediately updates local userProfile React state.
+   */
+  const elevateApprovedConsignor = async (
+    userOrUid: User | string,
+    userEmail?: string,
+    displayName?: string
+  ): Promise<boolean> => {
+    const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid.uid;
+    const rawEmail = (userEmail || (typeof userOrUid !== 'string' ? userOrUid.email : '') || '').trim();
+    const cleanEmail = rawEmail.toLowerCase();
+    if (!cleanEmail || !uid) return false;
+
+    try {
+      const colRef = collection(db, 'consignment_applications');
+      const q = query(colRef, where('sellerEmail', '==', cleanEmail));
+      let snap = await getDocs(q);
+
+      if (snap.empty && cleanEmail !== rawEmail) {
+        snap = await getDocs(query(colRef, where('sellerEmail', '==', rawEmail)));
+      }
+
+      const approvedDocs = snap.docs.filter((d) => {
+        const data = d.data();
+        return data?.status === 'approved';
+      });
+
+      if (approvedDocs.length === 0) {
+        return false;
+      }
+
+      const now = Date.now();
+
+      // Wrap Firestore writes under active auth in try/catch blocks with error logging
+      try {
+        await setDoc(doc(db, 'users', uid), { role: 'seller', updatedAt: now }, { merge: true });
+      } catch (userDocErr) {
+        console.error(`[AuthContext] Error updating users/${uid} to seller role:`, userDocErr);
+      }
+
+      try {
+        await setDoc(doc(db, 'bidders', uid), { role: 'seller', updatedAt: now }, { merge: true });
+      } catch (bidderDocErr) {
+        console.error(`[AuthContext] Error updating bidders/${uid} to seller role:`, bidderDocErr);
+      }
+
+      // Update draft auction document doc(db, 'auctions', convertedAuctionId)
+      const sellerResolvedName = displayName || (typeof userOrUid !== 'string' ? userOrUid.displayName : '') || cleanEmail.split('@')[0];
+      for (const appDoc of approvedDocs) {
+        const appData = appDoc.data();
+        const convertedAuctionId = appData?.convertedAuctionId;
+        if (convertedAuctionId) {
+          try {
+            const auctionRef = doc(db, 'auctions', convertedAuctionId);
+            await setDoc(auctionRef, {
+              sellerId: uid,
+              sellerName: sellerResolvedName
+            }, { merge: true });
+          } catch (auctionErr) {
+            console.error(`[AuthContext] Could not link seller ${uid} to auction ${convertedAuctionId}:`, auctionErr);
+          }
+        }
+      }
+
+      // Immediately update React state so userProfile.role reflects 'seller' in memory without requiring a page refresh
+      setUserProfile((prev: UserProfile | null) => (prev ? { ...prev, role: 'seller' } : prev));
+      setUser((prev: User | null) => {
+        if (prev) {
+          (prev as any).role = 'seller';
+        }
+        return prev;
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[AuthContext] Error during approved consignor elevation:', err);
+      return false;
+    }
+  };
 
   useEffect(() => {
     if (toastMessage) {
@@ -206,6 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
             }
 
+            (currentUser as any).role = data.role;
             setUser(currentUser);
             setUserProfile(data);
           } else {
@@ -341,6 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (cred.user.emailVerified || isVerified) {
         profileData.isEmailVerified = true;
       }
+      (cred.user as any).role = profileData.role;
       setUser(cred.user);
       setUserProfile(profileData);
     }
@@ -498,6 +519,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Your bidding privileges have been revoked by an administrator.');
       }
 
+      (cred.user as any).role = profile.role;
       setUser(cred.user);
       setUserProfile(profile);
 
@@ -645,6 +667,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profileData.role = elevatedRole;
       }
 
+      (targetUser as any).role = profileData.role;
       setUser(targetUser);
       setUserProfile(profileData);
 
