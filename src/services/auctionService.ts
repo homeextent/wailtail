@@ -1262,14 +1262,14 @@ export async function updateConsignmentStatus(
     (async () => {
       try {
         let appRecord: (Partial<ConsignmentApplication> & { email?: string }) | null = applicationData || null;
-        const initialEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim();
-        if (!appRecord || !initialEmail || !appRecord.year || !appRecord.make || !appRecord.model) {
+        let sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
+        if (!appRecord || !sellerEmail || !appRecord.year || !appRecord.make || !appRecord.model) {
           appRecord = (await getConsignmentApplication(cleanId)) as (ConsignmentApplication & { email?: string }) | null;
+          sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
         }
 
-        const sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
         if (!sellerEmail || !sellerEmail.includes('@')) {
-          console.warn('[updateConsignmentStatus] Silent notice: Missing or unformatted sellerEmail for rejection email dispatch:', cleanId);
+          console.warn('[updateConsignmentStatus] Missing or invalid seller email address for rejection notification:', cleanId);
           return;
         }
 
@@ -1297,7 +1297,7 @@ export async function updateConsignmentStatus(
           clearTimeout(timeoutId);
         });
       } catch (err) {
-        console.warn('[updateConsignmentStatus] Silent warning handling rejection email:', err);
+        console.warn('[updateConsignmentStatus] Error handling rejection email dispatch:', err);
       }
     })();
   }
@@ -1434,7 +1434,7 @@ export async function batchUpdateConsignmentStatus(
             const appRecord = (await getConsignmentApplication(id)) as (ConsignmentApplication & { email?: string }) | null;
             const sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
             if (!sellerEmail || !sellerEmail.includes('@')) {
-              console.warn('[batchUpdateConsignmentStatus] Silent notice: Missing or unformatted sellerEmail for rejection email dispatch:', id);
+              console.warn('[batchUpdateConsignmentStatus] Missing or invalid seller email address for rejection notification:', id);
               return;
             }
 
@@ -1462,11 +1462,11 @@ export async function batchUpdateConsignmentStatus(
               clearTimeout(timeoutId);
             });
           } catch (itemErr) {
-            console.warn('[batchUpdateConsignmentStatus] Silent error dispatching rejection email for ID:', id, itemErr);
+            console.warn('[batchUpdateConsignmentStatus] Error dispatching rejection email for ID:', id, itemErr);
           }
         }));
       } catch (err) {
-        console.warn('[batchUpdateConsignmentStatus] Silent warning handling bulk rejection emails:', err);
+        console.warn('[batchUpdateConsignmentStatus] Error handling bulk rejection emails:', err);
       }
     })();
   }

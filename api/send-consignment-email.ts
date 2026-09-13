@@ -748,7 +748,13 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      await dispatchConsignmentRejectedEmail(payload);
+      const dispatchResult = await dispatchConsignmentRejectedEmail(payload);
+      if (!dispatchResult || !dispatchResult.success) {
+        return sendJson(res, 500, {
+          success: false,
+          error: 'Resend API email delivery failed.'
+        });
+      }
 
       return sendJson(res, 200, {
         success: true,
