@@ -24,7 +24,7 @@
 | :--- | :--- | :--- | :--- |
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
-| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Supports Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
+| `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Features deep-link auth preservation (suspends route guard during `authLoading`, caches triage parameters in `sessionStorage` key `wailtail_pending_admin_deeplink`, prompts contextual login banner, and auto-restores to target triage modal upon sign-in), Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
@@ -282,8 +282,14 @@ export interface ConsignmentApplication {
   registeredUserId?: string;    // UID of existing member if matched
   isRegisteredUser?: boolean;   // Flag indicating registered member submission
   registeredUserRole?: string;  // Active role ('ADMIN' | 'SELLER' | 'BIDDER') at submission
+  sellerId?: string;            // Resolved UID of seller post-onboarding claim
 }
 ```
+
+#### Lifecycle State Transitions & Seller Workspace Claim Integration:
+- **`status: 'rejected'`**: Marked when curation staff decline an intake submission. Automatically dispatches an asynchronous serverless rejection email (`type: 'consignment_rejected'`) via `/api/send-consignment-email` to `sellerEmail` (with fallback to `email`), conveying vehicle particulars and optional curator notes without blocking the administrative interface.
+- **`convertedAuctionId`**: Generated during administrative 1-click approval (`convertConsignmentToDraftListing`). References the new draft listing created in `auctions/{convertedAuctionId}` pre-populated with vehicle taxonomy, location, and reserve parameters.
+- **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. Upon authentication or account registration, `AuthContext.tsx` (`elevateApprovedConsignor`) queries `consignment_applications` by `sellerEmail`, executes security rule-compliant role promotion to `'seller'` across `users/{uid}` and `bidders/{uid}`, links `sellerId` and `sellerName` into `auctions/{convertedAuctionId}`, and associates `sellerId` on the consignment document.
 
 ### 2.8 User Activity Summary & Telemetry Data Models
 
@@ -576,10 +582,12 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 ### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
 1. **Endpoint Architecture & Multi-Template Proxy Pipeline**:
    - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
-   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder'` (defaulting to `'consignment'` if unspecified):
-     - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators.
+   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected'` (defaulting to `'consignment'` if unspecified):
+     - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators with 1-click admin triage deep-links. Includes case-insensitive admin recipient deduplication.
      - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
      - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**: Dispatches a dual-branded HTML acknowledgment email directly to the consignor/seller applicant confirming receipt of their vehicle submission, summarizing vehicle particulars, detailing curation review timelines (1–2 business days), and linking to their member dashboard.
+     - **Consignment Approved Notice (`type: 'consignment_approved'`)**: Dispatches a dual-branded emerald HTML acceptance notification to the seller (`sellerEmail`), summarizing approved vehicle specs and assigned lot reference, and presenting a prominent "Claim Your Seller Workspace" onboarding claim CTA button.
+     - **Consignment Rejection Notice (`type: 'consignment_rejected'`)**: Dispatches a branded editorial HTML notification to the applicant (`sellerEmail` with fallback to `email`) conveying application status and submitted vehicle particulars with complete taxonomy fallback hydration.
      - **New Verified Bidder Welcome (`type: 'welcome_bidder'`)**: Dispatches a dual-branded HTML onboarding email to newly verified bidders celebrating their registration, presenting platform bidding guidelines, highlighting zero buyer fees, and providing 1-click exploration of live auctions.
    - Integrates with the **Resend API** as primary mail provider (supporting direct HTTP fetch fallback if the SDK is unavailable), with built-in failover to **SendGrid** and a development mock logger when keys are absent.
 2. **Environment Variables**:
@@ -609,6 +617,18 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**:
      - Subject line: `Consignment Application Received: ${year} ${make} ${model} — Wailtail Auctions`.
      - Dual-branded editorial HTML layout featuring dark header banner, vehicle summary card (Year, Make, Model, VIN, Mileage, Transmission, Location, Reserve Expectation), curation review expectation statement, and a direct CTA button to the Wailtail Member Dashboard (`/`).
+   - **Consignment Approved Notification (`type: 'consignment_approved'`)**:
+     - Subject line: `Consignment Approved: ${year} ${make} ${model} — Wailtail Auctions`.
+     - Dual-branded dark/emerald HTML layout featuring:
+       - Prominent "CONSIGNMENT APPROVED" emerald badge (`#064e3b` / `#34d399`).
+       - Vehicle Particulars card displaying Year, Make, Model, Generation/Chassis, and assigned Lot Reference.
+       - Primary call-to-action button ("Claim Your Seller Workspace") deep-linked directly to the listing editor with claim query parameters (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${appId}&lot=${convertedAuctionId}&email=${sellerEmail}`).
+   - **Consignment Rejection Notification (`type: 'consignment_rejected'`)**:
+     - Subject line: `[Wailtail] Consignment Application Update — ${vehicleTitle}`.
+     - Branded editorial HTML layout with ruby accent border (`#ef4444`) and "APPLICATION UPDATE" status badge (`#450a0a` / `#f87171`).
+     - Vehicle Particulars table showing Year, Make, Model, Generation/Chassis, and VIN with robust fallback hydration (`'Your Vehicle'` / `'N/A'`).
+     - Courteous curation update message clarifying evaluation decisions and encouraging future submissions.
+     - Includes parameter fallback resolution checking `sellerEmail` against `email` to guarantee reliable delivery.
    - **Verified Bidder Welcome Email (`type: 'welcome_bidder'`)**:
      - Subject line: `Welcome to Wailtail — Your Bidding Privileges Are Active`.
      - Dual-branded editorial HTML layout welcoming the user (`${displayName}`), outlining core platform tenets (Transparent CAD Bidding, 2-Minute Anti-Sniping Soft Closes, Zero Buyer Fees, Direct Settlement), and featuring a high-contrast CTA button linking directly to the live vehicle catalog (`/catalog`).
@@ -781,6 +801,10 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Full-screen administrative command center gated strictly to authenticated accounts holding the `ADMIN` role (`userProfile?.role?.toUpperCase() === 'ADMIN'`).
   - Unauthorized visitors and non-admin users are automatically redirected to the root catalog route (`/`) with an alert notification.
   - Implements session authentication loading guards in `App.tsx` (`authLoading`) to prevent accidental redirect flashes during browser refreshes.
+  - **Deep-Link Auth Preservation Pipeline (`App.tsx` & `AuthModal.tsx`)**:
+    - When an unauthenticated visitor accesses an administrative deep-link (e.g. from an intake triage email `/admin?tab=consignments&id=${appId}&action=approve|reject`), `App.tsx` halts redirection while `authLoading` resolves.
+    - If unauthenticated, it preserves the incoming query string in `sessionStorage` under the key `wailtail_pending_admin_deeplink` and surfaces `AuthModal.tsx` directly with an emerald administrative callout banner (`"Admin Authentication Required — Please sign in with an administrator account to review this consignment deep-link."`).
+    - Once the user successfully authenticates as an administrator, `resolveAdminDeeplinkAfterAuth()` reads and purges the stored query parameters from `sessionStorage`, immediately redirecting the administrator to `/admin?${cleanParams}` without losing triage context.
 - **5 Command Suites & Management Tabs**:
   - **1. Member Directory Tab** (`bidders` — Member Directory Management): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls. Includes a role filter dropdown (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) for refined directory segmentation.
     - **Expandable Member Bid Ledger**: Click-to-expand bid history accordion displaying all historical bids placed by the user, breakdown counters for active vs. retracted bids, and an inline administrative "Retract" moderation button.
@@ -807,7 +831,12 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     3. Resets status filters to `ALL`, sets the search query to `targetId`, and scrolls/highlights the target record.
     4. Prepends the fetched application to local state if missing from the paginated page.
     5. Automatically opens the respective confirmation dialog modal (`confirmApproveApp` or `confirmRejectApp`).
-    6. Cleanses URL query parameters (`clearUrlParams()`) via `window.history.replaceState` to prevent repeated triggers on page refresh.
+    6. Cleanses URL query parameters (`clearUrlParams()`) via `window.history.replaceState` (`const cleanUrl = window.location.pathname; window.history.replaceState({}, document.title, cleanUrl);`) to guarantee that refreshing or bookmarking does not re-trigger triage confirmation modals.
+- **Non-Blocking Single & Bulk Consignment Rejection Email Dispatches (`auctionService.ts`)**:
+  - Whenever an application is rejected—either via single modal triage (`updateConsignmentStatus`) or the bulk toolbar (`batchUpdateConsignmentStatus`):
+    - `auctionService.ts` executes an asynchronous dispatch to `/api/send-consignment-email` with payload `type: 'consignment_rejected'`.
+    - Enforces recipient property fallback resolution (`sellerEmail` vs `email`), vehicle taxonomy fallback hydration (`year`, `make`, `model`, `generation`), and staff review notes pass-through.
+    - All bulk rejection emails are fired concurrently using `Promise.allSettled` and non-blocking `try/catch` wrappers, guaranteeing that any third-party SMTP or Resend API latency/errors will not block the transactional Firestore batch status update or halt the administrative user experience.
 - **Multi-Select Bulk Action Engine**:
   - Checkbox selection engine implemented across Consignments and Vehicle Inventory tabs with "Select Page" / "Select All" toggles.
   - Floating action toolbar (`aside` fixed bottom dock) displaying total selected items and contextual batch triggers:
@@ -914,10 +943,18 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Option A Registered Member Auto-Link Detection (`onBlur`)**:
   - When an applicant enters their email address and blurs the input, `checkUserAccountByEmail(email)` queries Firestore `users` to detect if the consignor is already a registered Wailtail member.
   - If recognized, a green notification banner surfaces displaying their member name and role (`REGISTERED BIDDER` or `REGISTERED SELLER`), auto-populating contact fields and linking `registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole` to the consignment document.
-- **Persistence & Serverless Notification**:
-  - Inquiries are stored in the Firestore `consignment_applications` collection via `submitConsignmentApplication`.
-  - Dispatches an asynchronous serverless email notification to `/api/send-consignment-email` alerting curation staff.
-  - Direct transition action allows sellers/admins to jump straight into a fresh listing authoring workspace (`/dashboard/listings/new`).
+- **Single-Pass Persistence & Consolidated Serverless Notification Pipeline**:
+  - Consignment submissions are persisted to Firestore `consignment_applications` via `submitConsignmentApplication()`.
+  - Consolidates intake processing into a single-pass serverless execution, removing redundant client-side receipt dispatches and enforcing case-insensitive admin recipient deduplication in `/api/send-consignment-email`.
+  - Immediately triggers dual notifications: structured intake digest with triage deep-links to curation staff, and dual-branded receipt confirmation to the consignor.
+- **Seller Workspace Claim Onboarding Pipeline (`action=claim_seller`)**:
+  - Upon consignment approval, the seller receives an email containing a dedicated claim onboarding deep-link targeting `/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${appId}&lot=${convertedAuctionId}&email=${sellerEmail}`.
+  - When opened by an unauthenticated seller, `AuthModal.tsx` activates the registration tab, pre-fills the applicant's email address, and renders an emerald onboarding banner (`"Seller Onboarding & Listing Claim — Create your Wailtail account or sign in with your approved consignment email to claim your listing workspace."`).
+  - **Security Rule-Compliant Role Elevation (`AuthContext.tsx` via `elevateApprovedConsignor`)**:
+    - Evaluates approved consignment records matching `sellerEmail`.
+    - Directly mutates `users/{uid}` and `bidders/{uid}` documents to `role: 'seller'` under verified `isOwner(uid)` Firestore security rules.
+    - Atomically merges `sellerId: uid` and `sellerName` onto the draft vehicle lot (`auctions/{convertedAuctionId}`) and attaches `sellerId` to the application document.
+    - Hydrates in-memory React context (`userProfile.role = 'seller'`), immediately granting seamless authorization to the split-screen listing authoring workspace.
 
 ### 6.9 Strict Fresh Listing Isolation Guarantees
 - **Data Leak Prevention**:

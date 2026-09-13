@@ -9,6 +9,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Automated Consignment Rejection Email Workflow (`api/send-consignment-email.ts` & `src/services/auctionService.ts`)**:
+  - Implemented `type: 'consignment_rejected'` serverless HTML template dispatching `[Wailtail] Consignment Application Update — ${vehicleTitle}` notifications to sellers upon consignment rejection.
+  - Added robust seller recipient property fallbacks (`sellerEmail` vs `email`), vehicle taxonomy fallback hydration, and staff/seller notes pass-through.
+  - Wired automated, non-blocking single rejection (`updateConsignmentStatus`) and bulk rejection (`batchUpdateConsignmentStatus`) dispatches with error resiliency to prevent rejection UI state blockages.
+- **Deep-Link Auth Preservation & Admin Triage Pipeline (`src/App.tsx`, `src/components/AuthModal.tsx`, `src/components/AdminPortalPage.tsx`)**:
+  - Engineered `/admin` route guard suspension while `authLoading` resolves, avoiding premature redirect bounces to `/`.
+  - Added pending deep-link query parameter preservation via `sessionStorage` key `wailtail_pending_admin_deeplink` (`tab`, `id`, `action`) when unauthenticated users access admin deep-links.
+  - Displayed contextual emerald admin authentication banner in `AuthModal.tsx` (`"Admin Authentication Required — Please sign in with an administrator account to review this consignment deep-link."`).
+  - Implemented automated triage restoration post-login, routing to `/admin` with preserved parameters, surfacing the triage modal, and sanitizing URL history via `clearUrlParams()`.
+- **Seller Workspace Claim Onboarding & Role Elevation (`src/context/AuthContext.tsx` & `src/components/AuthModal.tsx`)**:
+  - Integrated approval claim link routing (`action=claim_seller&appId=...&lotId=...&email=...`) targeting `/dashboard/listings/${lotId}/edit`.
+  - Added pre-filled registration email, dedicated emerald onboarding banner (`"Seller Onboarding & Listing Claim — Create your Wailtail account or sign in with your approved consignment email..."`), and automatic seller role elevation.
+  - Updated `AuthContext.tsx` to automatically elevate verified user claims (`role: 'seller'`) across `users/{uid}` and `bidders/{uid}` in Firestore, linking `sellerId` and `sellerName` to `auctions/{convertedAuctionId}` and updating the consignment application with `sellerId`.
+- **Consignment Intake Email Deduplication (`src/services/auctionService.ts` & `src/components/ConsignmentModal.tsx`)**:
+  - Removed redundant client-side seller receipt invocations from `ConsignmentModal.tsx`, consolidating intake and acknowledgment into a single-pass serverless execution within `submitConsignmentApplication()`.
+  - Added case-insensitive admin recipient deduplication in `api/send-consignment-email.ts` preventing duplicate email deliveries when staff and applicant addresses overlap.
+- **Listing Editor Draft Lifecycle Option (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Added `'draft'` status to the Section 7 Auction Lifecycle Status select dropdown, enabling administrators and sellers to isolate in-progress listings before publishing to preview, upcoming, or live states.
 - **Serverless Admin User Deletion Endpoint (`api/admin-delete-user.ts`)**:
   - Implemented `/api/admin-delete-user` endpoint using the `firebase-admin` SDK with static import and ESM interop resolution (`const firebaseAdmin = (admin as any).default || admin;`) to permanently delete user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`).
   - Integrated private key newline unescaping (`replace(/\\n/g, '\n')`) for environment credentials (`FIREBASE_SERVICE_ACCOUNT_KEY` / `FIREBASE_PRIVATE_KEY`) to prevent ASN.1/OpenSSL parse failures.
