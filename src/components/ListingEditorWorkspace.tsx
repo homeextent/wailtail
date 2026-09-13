@@ -2971,6 +2971,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       onChange={(e) => setStatus(e.target.value as any)}
                       className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-bold text-xs cursor-pointer"
                     >
+                      <option value="draft">Draft</option>
                       <option value="upcoming">Upcoming (Preview Mode - Countdown to Start)</option>
                       <option value="active">Active (Accepting Live Bids)</option>
                       <option value="ended">Ended (Bidding Closed)</option>

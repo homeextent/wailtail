@@ -937,8 +937,15 @@ export default async function handler(req: any, res: any) {
       html: htmlContent
     });
 
-    // Also dispatch seller receipt notification to sellerEmail if provided (consolidated intake)
-    if (sellerEmail) {
+    // Also dispatch seller receipt notification to sellerEmail if provided (consolidated intake).
+    // If sellerEmail and adminEmail match, suppress duplicate receipt email so only a single unified intake email arrives.
+    const isSellerAdminDuplicate = Boolean(
+      sellerEmail &&
+      adminEmail &&
+      sellerEmail.trim().toLowerCase() === adminEmail.trim().toLowerCase()
+    );
+
+    if (sellerEmail && !isSellerAdminDuplicate) {
       try {
         await dispatchConsignmentReceiptEmail(payload);
       } catch (receiptErr) {
@@ -950,7 +957,7 @@ export default async function handler(req: any, res: any) {
       success: true,
       message: 'Consignment notification processed successfully.',
       recipient: adminEmail,
-      sellerReceiptRecipient: sellerEmail || null,
+      sellerReceiptRecipient: (sellerEmail && !isSellerAdminDuplicate) ? sellerEmail : null,
       vehicleTitle
     });
   } catch (err: any) {

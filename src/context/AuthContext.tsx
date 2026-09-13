@@ -30,11 +30,13 @@ let isRegistrationInProgress = false;
  * UID & display name with corresponding auctions/{convertedAuctionId} documents.
  */
 async function elevateApprovedConsignor(
-  uid: string,
-  userEmail: string,
-  displayName: string
+  userOrUid: User | string,
+  userEmail?: string,
+  displayName?: string
 ): Promise<boolean> {
-  const cleanEmail = (userEmail || '').trim().toLowerCase();
+  const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid.uid;
+  const rawEmail = (userEmail || (typeof userOrUid !== 'string' ? userOrUid.email : '') || '').trim();
+  const cleanEmail = rawEmail.toLowerCase();
   if (!cleanEmail) return false;
 
   try {
@@ -42,8 +44,8 @@ async function elevateApprovedConsignor(
     const q = query(colRef, where('sellerEmail', '==', cleanEmail));
     let snap = await getDocs(q);
 
-    if (snap.empty && cleanEmail !== userEmail.trim()) {
-      snap = await getDocs(query(colRef, where('sellerEmail', '==', userEmail.trim())));
+    if (snap.empty && cleanEmail !== rawEmail) {
+      snap = await getDocs(query(colRef, where('sellerEmail', '==', rawEmail)));
     }
 
     const approvedDocs = snap.docs.filter((d) => {
@@ -59,7 +61,7 @@ async function elevateApprovedConsignor(
     await updateUserRole(uid, 'seller');
 
     // Update corresponding auction documents auctions/{convertedAuctionId}
-    const resolvedName = displayName || cleanEmail.split('@')[0] || 'Seller';
+    const resolvedName = displayName || (typeof userOrUid !== 'string' ? userOrUid.displayName : '') || cleanEmail.split('@')[0] || 'Seller';
     for (const appDoc of approvedDocs) {
       const appData = appDoc.data();
       const convertedAuctionId = appData?.convertedAuctionId;
@@ -78,6 +80,7 @@ async function elevateApprovedConsignor(
 
     return true;
   } catch (err) {
+    // Catch and handle Firestore permission errors silently if no approved consignment exists
     console.warn('Gracefully handled error checking approved consignment applications:', err);
     return false;
   }
@@ -315,6 +318,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Email verification required. Please check your inbox to verify your email address before signing in.');
     }
 
+    // Re-evaluate elevateApprovedConsignor immediately after email verification and authentication succeed
+    const userEmail = (cred.user.email || email).toLowerCase();
+    const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+    if (!isDesignatedAdmin) {
+      try {
+        const elevated = await elevateApprovedConsignor(
+          cred.user,
+          userEmail,
+          cred.user.displayName || profileData?.displayName
+        );
+        if (elevated && profileData) {
+          profileData.role = 'seller';
+        }
+      } catch (elevateErr) {
+        console.warn('Could not elevate approved consignor on signInEmail:', elevateErr);
+      }
+    }
+
     // Ensure the user profile hydrated from Firestore reflects isEmailVerified: true before completing sign-in and returning cred.user
     if (profileData) {
       if (cred.user.emailVerified || isVerified) {
@@ -343,26 +364,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userEmail = (cred.user.email || email).toLowerCase();
       const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
       let assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
+      const resolvedDisplayName = displayName || email.split('@')[0] || 'Member';
 
-      // Check if user has an approved consignment application and elevate role to 'seller'
-      let hasApprovedConsignment = false;
-      try {
-        hasApprovedConsignment = await elevateApprovedConsignor(
-          cred.user.uid,
-          userEmail,
-          displayName || email.split('@')[0]
-        );
-        if (hasApprovedConsignment && !isDesignatedAdmin) {
-          assignedRole = 'seller';
-        }
-      } catch (elevateErr) {
-        console.warn('Could not elevate approved consignor on sign up:', elevateErr);
-      }
-
+      // Create base user document in users/{uid} while authenticated
       const newProfile: UserProfile = {
         uid: cred.user.uid,
         email: cred.user.email || email,
-        displayName: displayName || email.split('@')[0],
+        displayName: resolvedDisplayName,
         phone: phone || '',
         role: assignedRole,
         isEmailVerified: cred.user.emailVerified,
@@ -377,14 +385,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Error creating user doc:', e);
       }
 
-      // If promoted to seller, ensure updateUserRole updates across users/{uid} and bidders/{uid}
-      if (hasApprovedConsignment && !isDesignatedAdmin) {
-        await updateUserRole(cred.user.uid, 'seller').catch((err) => {
-          console.warn('Could not set seller role on registration:', err);
-        });
+      // Execute await elevateApprovedConsignor(cred.user, email) before calling signOut(auth),
+      // ensuring Firestore writes to users/{uid}, bidders/{uid}, and auctions/{convertedAuctionId} happen while request.auth is active.
+      if (!isDesignatedAdmin) {
+        try {
+          const elevated = await elevateApprovedConsignor(
+            cred.user,
+            email,
+            resolvedDisplayName
+          );
+          if (elevated) {
+            assignedRole = 'seller';
+          }
+        } catch (elevateErr) {
+          // Catch and handle Firestore permission errors silently if no approved consignment exists for a registering user
+          console.warn('Could not elevate approved consignor on sign up:', elevateErr);
+        }
       }
       
-      // Immediately execute signOut to prevent automatic Firebase client session auto-login
+      // Immediately execute signOut to prevent automatic Firebase client session auto-login.
+      // Only fires after all Firestore profile writes and consignment elevations complete.
       await fbSignOut(auth).catch(() => {});
       setUser(null);
       setUserProfile(null);
@@ -590,19 +610,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Could not fetch user profile in checkEmailVerification:', fetchErr);
       }
 
+      const userEmail = (targetUser.email || emailForCheck || '').toLowerCase();
+      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+
+      // Re-evaluate elevateApprovedConsignor(user, email) immediately after email verification and authentication succeed
+      let elevatedRole: 'seller' | undefined;
+      if (!isDesignatedAdmin) {
+        try {
+          const elevated = await elevateApprovedConsignor(
+            targetUser,
+            userEmail,
+            targetUser.displayName || profileData?.displayName || userEmail.split('@')[0]
+          );
+          if (elevated) {
+            elevatedRole = 'seller';
+          }
+        } catch (elevateErr) {
+          console.warn('Could not elevate approved consignor on checkEmailVerification:', elevateErr);
+        }
+      }
+
       if (!profileData) {
-        const userEmail = (targetUser.email || emailForCheck || '').toLowerCase();
-        const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
         profileData = {
           uid: targetUser.uid,
           email: targetUser.email || emailForCheck || '',
           displayName: targetUser.displayName || (targetUser.email || emailForCheck || '').split('@')[0],
-          role: isDesignatedAdmin ? 'admin' : 'bidder',
+          role: isDesignatedAdmin ? 'admin' : (elevatedRole || 'bidder'),
           isEmailVerified: true,
           registeredAt: Date.now(),
           totalBidsPlaced: 0,
           highestBidPlaced: 0
         };
+      } else if (elevatedRole) {
+        profileData.role = elevatedRole;
       }
 
       setUser(targetUser);

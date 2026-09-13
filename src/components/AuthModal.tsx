@@ -282,9 +282,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   ? 'Bidder Email Verification' 
                   : activeTab === 'forgot'
                   ? 'Reset Your Password'
+                  : isClaimSeller
+                  ? 'Seller Account Onboarding'
                   : 'Bidder Authentication'}
               </h2>
-              <p className="text-xs text-zinc-400">Private Single-Car Auction</p>
+              <p className="text-xs text-zinc-400">
+                {isClaimSeller ? 'Seller Account Claim & Onboarding' : 'Private Single-Car Auction'}
+              </p>
             </div>
           </div>
           <button
@@ -326,7 +330,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : 'border-transparent text-zinc-500 hover:text-zinc-800'
               }`}
             >
-              Register to Bid
+              {isClaimSeller ? 'Register Seller Account' : 'Register to Bid'}
             </button>
           </div>
         )}
@@ -623,7 +627,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 className="w-full py-2.5 rounded-lg bg-red-700 hover:bg-red-800 text-white text-sm font-bold shadow transition-all flex items-center justify-center gap-2"
               >
                 {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                <span>Create Registered Account</span>
+                <span>
+                  {isClaimSeller ? 'Register Seller Account & Claim Workspace' : 'Create Registered Account'}
+                </span>
               </button>
 
               <button
