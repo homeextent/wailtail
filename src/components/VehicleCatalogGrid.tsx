@@ -51,7 +51,7 @@ export const isLive = (status?: string | null): boolean =>
   status === 'live' || status === 'ending_soon' || status === 'active';
 
 export const isUpcoming = (status?: string | null): boolean =>
-  status === 'upcoming' || status === 'preview' || status === 'draft' || !status;
+  status !== 'draft' && (status === 'upcoming' || status === 'preview' || !status);
 
 export const isEnded = (status?: string | null): boolean =>
   status === 'ended' || status === 'sold' || status === 'reserve_not_met';
@@ -190,7 +190,9 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     });
   }, [promoSettings, dismissedIds, user]);
 
-  const filteredAuctions = auctions.filter((lot) => {
+  const filteredAuctions = auctions.filter((lot: Auction) => {
+    // Draft lots are strictly excluded from public catalog views
+    if (lot.status === 'draft') return false;
     if (filterStatus === 'live' && !isLive(lot.status)) return false;
     if (filterStatus === 'upcoming' && !isUpcoming(lot.status)) return false;
     if (filterStatus === 'ended' && !isEnded(lot.status)) return false;
@@ -209,8 +211,9 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     return true;
   });
 
-  // Calculate promotional card slots when catalog auctions count <= 2
-  const shouldInjectPromos = promoSettings.enabled && auctions.length <= 2 && activePromoCards.length > 0;
+  // Calculate promotional card slots when catalog non-draft auctions count <= 2
+  const publicAuctions = auctions.filter((a: Auction) => a.status !== 'draft');
+  const shouldInjectPromos = promoSettings.enabled && publicAuctions.length <= 2 && activePromoCards.length > 0;
   const promoSlotsCount = shouldInjectPromos ? Math.max(1, 3 - filteredAuctions.length) : 0;
   const promoCardsToInject = shouldInjectPromos ? activePromoCards.slice(0, promoSlotsCount) : [];
 
@@ -287,7 +290,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                All Lots ({auctions.length})
+                All Lots ({publicAuctions.length})
               </button>
               <button
                 type="button"
@@ -299,7 +302,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live ({auctions.filter((a) => isLive(a.status)).length})
+                Live ({publicAuctions.filter((a: Auction) => isLive(a.status)).length})
               </button>
               <button
                 type="button"
@@ -310,7 +313,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Upcoming ({auctions.filter((a) => isUpcoming(a.status)).length})
+                Upcoming ({publicAuctions.filter((a: Auction) => isUpcoming(a.status)).length})
               </button>
               <button
                 type="button"
@@ -321,7 +324,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Ended ({auctions.filter((a) => isEnded(a.status)).length})
+                Ended ({publicAuctions.filter((a: Auction) => isEnded(a.status)).length})
               </button>
             </div>
           </div>

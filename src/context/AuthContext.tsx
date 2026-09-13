@@ -11,11 +11,11 @@ import {
   updateProfile,
   reload
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
 import { AlertCircle, X } from 'lucide-react';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile } from '../types';
-import { sendWelcomeBidderEmail, setUserEmailVerified } from '../services/auctionService';
+import { sendWelcomeBidderEmail, setUserEmailVerified, updateUserRole } from '../services/auctionService';
 
 export const ADMIN_EMAILS = [
   'jeremygoodmurphy@gmail.com',
@@ -23,6 +23,65 @@ export const ADMIN_EMAILS = [
 ];
 
 let isRegistrationInProgress = false;
+
+/**
+ * Automatically elevates newly registered or authenticated users with approved vehicle consignments
+ * to role: 'seller' across users/{uid} and bidders/{uid} using updateUserRole(), and associates their
+ * UID & display name with corresponding auctions/{convertedAuctionId} documents.
+ */
+async function elevateApprovedConsignor(
+  uid: string,
+  userEmail: string,
+  displayName: string
+): Promise<boolean> {
+  const cleanEmail = (userEmail || '').trim().toLowerCase();
+  if (!cleanEmail) return false;
+
+  try {
+    const colRef = collection(db, 'consignment_applications');
+    const q = query(colRef, where('sellerEmail', '==', cleanEmail));
+    let snap = await getDocs(q);
+
+    if (snap.empty && cleanEmail !== userEmail.trim()) {
+      snap = await getDocs(query(colRef, where('sellerEmail', '==', userEmail.trim())));
+    }
+
+    const approvedDocs = snap.docs.filter((d) => {
+      const data = d.data();
+      return data?.status === 'approved';
+    });
+
+    if (approvedDocs.length === 0) {
+      return false;
+    }
+
+    // Atomically upgrade user role to 'seller' across users/{uid} and bidders/{uid}
+    await updateUserRole(uid, 'seller');
+
+    // Update corresponding auction documents auctions/{convertedAuctionId}
+    const resolvedName = displayName || cleanEmail.split('@')[0] || 'Seller';
+    for (const appDoc of approvedDocs) {
+      const appData = appDoc.data();
+      const convertedAuctionId = appData?.convertedAuctionId;
+      if (convertedAuctionId) {
+        try {
+          const auctionRef = doc(db, 'auctions', convertedAuctionId);
+          await updateDoc(auctionRef, {
+            sellerId: uid,
+            sellerName: resolvedName
+          });
+        } catch (auctionErr) {
+          console.warn(`Could not link seller ${uid} to auction ${convertedAuctionId}:`, auctionErr);
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('Gracefully handled error checking approved consignment applications:', err);
+    return false;
+  }
+}
 
 interface AuthContextType {
   user: User | null;
@@ -283,14 +342,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userEmail = (cred.user.email || email).toLowerCase();
       const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-      const assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
+      let assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
+
+      // Check if user has an approved consignment application and elevate role to 'seller'
+      let hasApprovedConsignment = false;
+      try {
+        hasApprovedConsignment = await elevateApprovedConsignor(
+          cred.user.uid,
+          userEmail,
+          displayName || email.split('@')[0]
+        );
+        if (hasApprovedConsignment && !isDesignatedAdmin) {
+          assignedRole = 'seller';
+        }
+      } catch (elevateErr) {
+        console.warn('Could not elevate approved consignor on sign up:', elevateErr);
+      }
 
       const newProfile: UserProfile = {
         uid: cred.user.uid,
         email: cred.user.email || email,
         displayName: displayName || email.split('@')[0],
         phone: phone || '',
-        role: assignedRole, // Standard new users are strictly 'bidder'
+        role: assignedRole,
         isEmailVerified: cred.user.emailVerified,
         registeredAt: Date.now(),
         totalBidsPlaced: 0,
@@ -301,6 +375,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setDoc(doc(db, 'users', cred.user.uid), newProfile);
       } catch (e) {
         console.warn('Error creating user doc:', e);
+      }
+
+      // If promoted to seller, ensure updateUserRole updates across users/{uid} and bidders/{uid}
+      if (hasApprovedConsignment && !isDesignatedAdmin) {
+        await updateUserRole(cred.user.uid, 'seller').catch((err) => {
+          console.warn('Could not set seller role on registration:', err);
+        });
       }
       
       // Immediately execute signOut to prevent automatic Firebase client session auto-login
@@ -338,16 +419,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updateNeeded = true;
         }
 
+        profile = { ...data, uid: cred.user.uid };
+
+        // Check if user has an approved consignment application
+        try {
+          const hasApprovedConsignment = await elevateApprovedConsignor(
+            cred.user.uid,
+            userEmail,
+            cred.user.displayName || profile.displayName || userEmail.split('@')[0]
+          );
+          if (hasApprovedConsignment && !isDesignatedAdmin && profile.role !== 'seller') {
+            profile.role = 'seller';
+            updates.role = 'seller';
+            updateNeeded = true;
+          }
+        } catch (elevateErr) {
+          console.warn('Could not elevate approved consignor on Google sign in:', elevateErr);
+        }
+
         if (updateNeeded) {
           await updateDoc(userRef, updates).catch((err) => console.warn('Admin/user role sync notice:', err));
         }
-        profile = { ...data, uid: cred.user.uid };
       } else {
+        let assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
+
+        // Check if user has an approved consignment application
+        try {
+          const hasApprovedConsignment = await elevateApprovedConsignor(
+            cred.user.uid,
+            userEmail,
+            cred.user.displayName || userEmail.split('@')[0]
+          );
+          if (hasApprovedConsignment && !isDesignatedAdmin) {
+            assignedRole = 'seller';
+          }
+        } catch (elevateErr) {
+          console.warn('Could not elevate approved consignor on new Google profile:', elevateErr);
+        }
+
         const newProfile: UserProfile = {
           uid: cred.user.uid,
           email: cred.user.email || '',
           displayName: cred.user.displayName || (cred.user.email ? cred.user.email.split('@')[0] : 'Bidder'),
-          role: isDesignatedAdmin ? 'admin' : 'bidder',
+          role: assignedRole,
           isEmailVerified: true, // Google OAuth pre-verifies email addresses
           registeredAt: Date.now(),
           totalBidsPlaced: 0,

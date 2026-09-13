@@ -724,7 +724,7 @@ export async function submitConsignmentApplication(
     console.warn('Saved consignment locally fallback:', err);
   }
 
-  // Non-blocking serverless email notification with 5000ms timeout
+  // Non-blocking consolidated serverless email notification (intake & seller receipt) with 5000ms timeout
   (async () => {
     try {
       const controller = new AbortController();
@@ -748,14 +748,6 @@ export async function submitConsignmentApplication(
       console.warn('Non-blocking consignment email error:', emailErr);
     }
   })();
-
-  // Non-blocking seller receipt email dispatch
-  sendConsignmentReceiptEmail({
-    ...payload,
-    applicationId: createdId
-  }).catch((receiptErr) => {
-    console.warn('Non-blocking consignment receipt dispatch notice:', receiptErr);
-  });
 
   return createdId;
 }
@@ -1091,7 +1083,7 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
     highBidderEmail: '',
     highlightsBadge: highlightsBadge,
     watchCount: 0,
-    status: 'preview',
+    status: 'draft',
     createdAt: now,
     updatedAt: now
   };
@@ -1185,6 +1177,41 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
   }
 
   await batch.commit();
+
+  // Non-blocking background consignment approved email dispatch with AbortController 5000ms timeout
+  const cleanSellerEmail = (app.sellerEmail || '').trim().toLowerCase();
+  if (cleanSellerEmail) {
+    (async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        await fetch('/api/send-consignment-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            type: 'consignment_approved',
+            sellerEmail: cleanSellerEmail,
+            sellerName: (app.sellerName || '').trim(),
+            year: app.year,
+            make: makeStr,
+            model: modelStr,
+            generation: genStr,
+            convertedAuctionId: newAuctionId
+          }),
+          signal: controller.signal
+        }).catch((fetchErr) => {
+          console.warn('Non-blocking consignment approved email dispatch failed:', fetchErr);
+        }).finally(() => {
+          clearTimeout(timeoutId);
+        });
+      } catch (emailErr) {
+        console.warn('Non-blocking consignment approved email error:', emailErr);
+      }
+    })();
+  }
+
   return newAuctionId;
 }
 

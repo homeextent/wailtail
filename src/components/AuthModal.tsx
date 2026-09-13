@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
@@ -49,6 +49,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     user && !isEmailVerified ? 'verify' : initialTab
   );
 
+  const [internalOpen, setInternalOpen] = useState(false);
+  const [isClaimSeller, setIsClaimSeller] = useState(false);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -59,7 +62,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [resendStatus, setResendStatus] = useState<string | null>(null);
   const [unverifiedLoginAttempt, setUnverifiedLoginAttempt] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const action = searchParams.get('action');
+      const emailParam = searchParams.get('email');
+      const lotParam = searchParams.get('lot');
+
+      if (action === 'claim_seller') {
+        setIsClaimSeller(true);
+        setActiveTab('signup');
+        setInternalOpen(true);
+        if (emailParam) {
+          setEmail(emailParam);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse URL search parameters in AuthModal:', err);
+    }
+  }, []);
+
+  const isModalOpen = isOpen || internalOpen;
+
+  const handleClose = () => {
+    setInternalOpen(false);
+    onClose();
+  };
+
+  if (!isModalOpen) return null;
 
   const parseAuthError = (err: any): string => {
     if (!err) return 'An unexpected error occurred. Please try again.';
@@ -127,7 +158,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setLoading(false);
       if (onSuccess) onSuccess();
-      onClose();
+      handleClose();
     } catch (err: any) {
       setLoading(false);
       const msg = err?.message || '';
@@ -192,7 +223,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await signInGoogle();
       setLoading(false);
       if (onSuccess) onSuccess();
-      onClose();
+      handleClose();
     } catch (err: any) {
       setLoading(false);
       setError(parseAuthError(err));
@@ -217,7 +248,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(false);
       if (verified) {
         if (onSuccess) onSuccess();
-        onClose();
+        handleClose();
       } else {
         setError('Email is not verified yet. Please click the link in your inbox.');
       }
@@ -230,7 +261,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleQuickDemoVerify = async () => {
     await manualVerifyForDemo(email.trim(), password);
     if (onSuccess) onSuccess();
-    onClose();
+    handleClose();
   };
 
   return (
@@ -257,7 +288,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -491,6 +522,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* TAB 2: REGISTER */}
           {activeTab === 'signup' && (
             <form onSubmit={handleSignUp} className="space-y-3">
+              {/* High-contrast emerald claim banner for approved consignors */}
+              {isClaimSeller && (
+                <div className="p-3.5 rounded-xl bg-emerald-950 border-2 border-emerald-500 text-white shadow-md flex items-start gap-3 animate-in fade-in duration-200">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                      Consignment Approved
+                    </div>
+                    <p className="text-xs font-semibold text-emerald-100 mt-0.5 leading-relaxed">
+                      Your vehicle consignment has been approved! Register your account to claim your seller workspace.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1">
                   Full Name or Screen Handle
