@@ -51,6 +51,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const [internalOpen, setInternalOpen] = useState(false);
   const [isClaimSeller, setIsClaimSeller] = useState(false);
+  const [hasPendingAdminDeeplink, setHasPendingAdminDeeplink] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,10 +79,63 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setEmail(emailParam);
         }
       }
+
+      const pending = sessionStorage.getItem('wailtail_pending_admin_deeplink');
+      if (pending) {
+        setHasPendingAdminDeeplink(true);
+        setActiveTab('signin');
+      } else {
+        setHasPendingAdminDeeplink(false);
+      }
     } catch (err) {
-      console.warn('Failed to parse URL search parameters in AuthModal:', err);
+      console.warn('Failed to parse URL search parameters or pending deep link in AuthModal:', err);
     }
-  }, []);
+  }, [isOpen]);
+
+  const resolveAdminDeeplinkAfterAuth = async (authenticatedUid: string, userEmail?: string | null): Promise<boolean> => {
+    let pendingDeeplink: string | null = null;
+    try {
+      pendingDeeplink = sessionStorage.getItem('wailtail_pending_admin_deeplink');
+    } catch {}
+
+    if (!pendingDeeplink) {
+      return false;
+    }
+
+    // Inspect user role from Firestore
+    let userRole = '';
+    try {
+      const userDocSnap = await getDoc(doc(db, 'users', authenticatedUid));
+      if (userDocSnap.exists()) {
+        userRole = (userDocSnap.data()?.role || '').toLowerCase();
+      }
+    } catch (err) {
+      console.warn('Could not read user role from Firestore:', err);
+    }
+
+    const cleanEmail = (userEmail || '').toLowerCase();
+    const isDesignatedAdmin = cleanEmail === 'jeremygoodmurphy@gmail.com' || cleanEmail === 'jeremy@theinnovativegroup.ca';
+    const isUserAdmin = userRole === 'admin' || isDesignatedAdmin;
+
+    try {
+      sessionStorage.removeItem('wailtail_pending_admin_deeplink');
+    } catch {}
+    setHasPendingAdminDeeplink(false);
+
+    if (isUserAdmin) {
+      const cleanParams = pendingDeeplink.startsWith('?') ? pendingDeeplink.slice(1) : pendingDeeplink;
+      const targetUrl = cleanParams ? `/admin?${cleanParams}` : '/admin';
+      window.location.href = targetUrl;
+      return true;
+    } else {
+      // Non-admin account logged in via the deep-link prompt: clear and redirect with error toast
+      try {
+        sessionStorage.setItem('wailtail_route_toast', 'Access Restricted: Administrator privileges required.');
+      } catch {}
+      window.location.href = '/';
+      return true;
+    }
+  };
 
   const isModalOpen = isOpen || internalOpen;
 
@@ -157,6 +211,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       setLoading(false);
+      if (loggedUser) {
+        const handled = await resolveAdminDeeplinkAfterAuth(loggedUser.uid, loggedUser.email);
+        if (handled) return;
+      }
       if (onSuccess) onSuccess();
       handleClose();
     } catch (err: any) {
@@ -222,6 +280,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       await signInGoogle();
       setLoading(false);
+      const currentUser = auth.currentUser;
+      if (currentUser) {
+        const handled = await resolveAdminDeeplinkAfterAuth(currentUser.uid, currentUser.email);
+        if (handled) return;
+      }
       if (onSuccess) onSuccess();
       handleClose();
     } catch (err: any) {
@@ -247,6 +310,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const verified = await checkEmailVerification(email.trim(), password);
       setLoading(false);
       if (verified) {
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const handled = await resolveAdminDeeplinkAfterAuth(currentUser.uid, currentUser.email);
+          if (handled) return;
+        }
         if (onSuccess) onSuccess();
         handleClose();
       } else {
@@ -260,6 +328,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleQuickDemoVerify = async () => {
     await manualVerifyForDemo(email.trim(), password);
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      const handled = await resolveAdminDeeplinkAfterAuth(currentUser.uid, currentUser.email);
+      if (handled) return;
+    }
     if (onSuccess) onSuccess();
     handleClose();
   };
@@ -336,6 +409,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         <div className="p-6">
+          {/* Administrator Triage Deep-Link Authentication Banner */}
+          {hasPendingAdminDeeplink && (
+            <div className="mb-4 p-3.5 rounded-xl bg-red-950 border border-red-800 text-red-200 text-xs flex items-start gap-2.5 shadow-md animate-in fade-in duration-200">
+              <ShieldCheck className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span className="font-semibold leading-relaxed">
+                Administrator authentication required to complete consignment triage.
+              </span>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />

@@ -607,7 +607,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     const idParam = searchParams.get('id');
     const actionParam = searchParams.get('action');
 
-    if (tabParam === 'consignments') {
+    if (tabParam && tabParam.toLowerCase() === 'consignments') {
       setActiveTab('consignments');
 
       if (idParam) {
@@ -617,30 +617,90 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
           try {
             const targetApp = await getConsignmentApplication(targetId);
             if (!targetApp || !targetApp.id) {
-              showToast('Consignment application not found or already processed', 'error');
+              // Edge-case: target consignment ID in deep link was deleted
+              showToast('Consignment application was deleted or is no longer available.', 'info');
               clearUrlParams();
               return;
             }
 
-            // Auto-filter and focus the target application record
+            // Edge-case: target consignment ID in deep link was already converted/approved
+            if (targetApp.convertedAuctionId || targetApp.status === 'approved') {
+              showToast(
+                `Consignment application for ${targetApp.year} ${targetApp.make} ${targetApp.model} has already been approved and converted.`,
+                'info'
+              );
+              setConsignmentStatusFilter('ALL');
+              setConsignmentSearch(targetId);
+              setHighlightedConsignmentId(targetId);
+              setConsignmentsList((prev) => {
+                if (prev.some((c) => c.id === targetApp.id)) return prev;
+                return [targetApp, ...prev];
+              });
+              clearUrlParams();
+              setTimeout(() => {
+                const el = document.getElementById(`consignment-${targetId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 300);
+              return;
+            }
+
+            // Edge-case: target consignment ID was already rejected
+            if (targetApp.status === 'rejected' && actionParam?.toLowerCase() === 'reject') {
+              showToast(
+                `Consignment application for ${targetApp.year} ${targetApp.make} ${targetApp.model} has already been rejected.`,
+                'info'
+              );
+              setConsignmentStatusFilter('ALL');
+              setConsignmentSearch(targetId);
+              setHighlightedConsignmentId(targetId);
+              setConsignmentsList((prev) => {
+                if (prev.some((c) => c.id === targetApp.id)) return prev;
+                return [targetApp, ...prev];
+              });
+              clearUrlParams();
+              setTimeout(() => {
+                const el = document.getElementById(`consignment-${targetId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 300);
+              return;
+            }
+
+            // Auto-filter, ensure present in list, and focus/highlight the target application card
             setConsignmentStatusFilter('ALL');
             setConsignmentSearch(targetId);
             setHighlightedConsignmentId(targetId);
 
-            // Ensure the target application is included in current list
+            // Ensure the target application is included in current list if not in paginated view
             setConsignmentsList((prev) => {
               if (prev.some((c) => c.id === targetApp.id)) return prev;
               return [targetApp, ...prev];
             });
 
-            // Trigger corresponding confirmation modal
-            if (actionParam === 'approve') {
+            // Automatically surface the corresponding triage confirmation modal and cleanly erase URL params
+            const normalizedAction = actionParam ? actionParam.toLowerCase() : '';
+            if (normalizedAction === 'approve') {
               setConfirmApproveApp(targetApp);
-            } else if (actionParam === 'reject') {
+              clearUrlParams();
+            } else if (normalizedAction === 'reject') {
               setConfirmRejectApp(targetApp);
+              clearUrlParams();
+            } else {
+              clearUrlParams();
             }
+
+            // Focus and scroll into view
+            setTimeout(() => {
+              const el = document.getElementById(`consignment-${targetId}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 300);
           } catch (err) {
-            showToast('Consignment application not found or already processed', 'error');
+            showToast('Consignment application was deleted or is no longer available.', 'info');
             clearUrlParams();
           }
         })();

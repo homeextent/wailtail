@@ -275,18 +275,59 @@ const AuctionAppContent: React.FC = () => {
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
 
+  // Synchronize routeToast with sessionStorage if set across page navigation/redirect
+  useEffect(() => {
+    try {
+      const savedToast = sessionStorage.getItem('wailtail_route_toast');
+      if (savedToast) {
+        sessionStorage.removeItem('wailtail_route_toast');
+        setRouteToast(savedToast);
+      }
+    } catch {}
+  }, [currentPath]);
+
+  // Auto-dismiss routeToast after 5 seconds
+  useEffect(() => {
+    if (routeToast) {
+      const timer = setTimeout(() => setRouteToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [routeToast]);
+
   // RBAC Authorization Guard for /admin
   useEffect(() => {
-    if (isAdminRoute && !authLoading) {
+    // While authLoading is true, suspend route evaluation completely to prevent premature redirection or error toasts
+    if (authLoading) return;
+
+    if (isAdminRoute) {
       const isAuthorized = Boolean(
         user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
       );
       if (!isAuthorized) {
-        setRouteToast("Access Restricted: Administrator privileges required.");
-        navigateTo('/');
+        const search = window.location.search || (currentPath.includes('?') ? currentPath.slice(currentPath.indexOf('?')) : '');
+        const searchParams = new URLSearchParams(search);
+        const hasConsignmentDeeplink = 
+          searchParams.get('tab') === 'consignments' || 
+          searchParams.has('id') || 
+          searchParams.has('action');
+
+        if (hasConsignmentDeeplink) {
+          const queryToSave = search.startsWith('?') ? search.slice(1) : search;
+          if (queryToSave) {
+            try {
+              sessionStorage.setItem('wailtail_pending_admin_deeplink', queryToSave);
+            } catch (e) {
+              console.warn('Could not save pending admin deeplink:', e);
+            }
+          }
+          setIsAuthModalOpen(true);
+        } else {
+          setRouteToast("Access Restricted: Administrator privileges required.");
+          navigateTo('/');
+        }
       }
     }
-  }, [isAdminRoute, authLoading, user, userProfile, isAdmin]);
+  }, [isAdminRoute, authLoading, user, userProfile, isAdmin, currentPath]);
 
   // Auto-create and redirect if user directly lands on /dashboard/listings/new
   useEffect(() => {
@@ -537,6 +578,31 @@ const AuctionAppContent: React.FC = () => {
         />
       );
     }
+
+    // Unauthenticated or non-admin view while AuthModal is open or authenticating on /admin
+    return (
+      <div className="min-h-screen bg-[#0d1114] text-white flex flex-col font-sans">
+        <div className="h-16 bg-[#121619] border-b border-zinc-800 flex items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-red-700 flex items-center justify-center font-bold text-white shadow-inner">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <span className="text-sm font-bold tracking-tight text-white uppercase font-sans">Operations Portal</span>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center space-y-3">
+            <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-500">
+              <ShieldCheck className="w-6 h-6 text-red-500" />
+            </div>
+            <h3 className="text-sm font-bold text-zinc-200">Administrator Authentication Required</h3>
+            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              Please authenticate with an administrator account to access operations and consignment triage.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Dedicated Full-Page Authoring Route (/dashboard/listings/[id]/edit)
@@ -959,7 +1025,17 @@ const AuctionAppContent: React.FC = () => {
 
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          if (isAdminRoute) {
+            const isAuthorized = Boolean(
+              user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
+            );
+            if (!isAuthorized) {
+              navigateTo('/');
+            }
+          }
+        }}
       />
 
       <ConsignmentModal
