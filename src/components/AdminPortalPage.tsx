@@ -694,7 +694,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     if (!app.id) return;
     setProcessingConsignmentAction(true);
     try {
-      await updateConsignmentStatus(app.id, 'rejected');
+      await updateConsignmentStatus(app.id, 'rejected', app);
       setConsignmentsList(prev => prev.map(c => c.id === app.id ? { ...c, status: 'rejected' } : c));
       showToast(`Consignment application for ${app.year} ${app.make} ${app.model} has been rejected.`);
       if (consignmentStatusFilter.toLowerCase() === 'pending') {
@@ -3606,7 +3606,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   Are you sure you want to reject the application for <strong className="text-white">{confirmRejectApp.year} {confirmRejectApp.make} {confirmRejectApp.model}</strong> from <span className="text-zinc-200 font-semibold">{confirmRejectApp.sellerName}</span>?
                 </p>
                 <p className="text-[11px] text-zinc-400">
-                  The application status will be marked as rejected. It remains accessible in the consignment pipeline and can be re-opened at any time.
+                  The application status will be marked as rejected and an automated notification email will be dispatched to the consignor. It remains accessible in the consignment pipeline and can be re-opened at any time.
                 </p>
               </div>
             </div>

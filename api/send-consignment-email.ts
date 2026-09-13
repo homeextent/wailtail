@@ -4,7 +4,7 @@
  * bidder welcome emails, and private vehicle inquiries.
  */
 
-export type ConsignmentEmailType = 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved';
+export type ConsignmentEmailType = 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected';
 
 export interface ConsignmentEmailPayload {
   type?: ConsignmentEmailType;
@@ -460,6 +460,123 @@ async function dispatchConsignmentApprovedEmail(payload: any) {
   });
 }
 
+async function dispatchConsignmentRejectedEmail(payload: any) {
+  const {
+    sellerEmail,
+    email,
+    sellerName,
+    year,
+    make,
+    model,
+    generation
+  } = payload || {};
+
+  const recipientEmail = (sellerEmail || email || '').trim();
+  if (!recipientEmail) {
+    return { success: false, error: 'Missing seller email' };
+  }
+
+  const vehicleTitle = [year, make, model].filter(Boolean).join(' ').trim() || 'Your Vehicle';
+  const vehicleWithGen = [year, make, model, generation ? `(${generation})` : ''].filter(Boolean).join(' ').trim() || vehicleTitle;
+  const subject = `[Wailtail] Consignment Application Update — ${vehicleTitle}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid #ef4444; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #450a0a; color: #f87171; border: 1px solid #991b1b; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #cbd5e1; margin-bottom: 14px; }
+    .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .spec-table tr { border-bottom: 1px solid #1e293b; }
+    .spec-table tr:last-child { border-bottom: none; }
+    .spec-table td { padding: 9px 0; }
+    .spec-label { color: #64748b; font-weight: 600; width: 40%; }
+    .spec-val { color: #f1f5f9; font-weight: 700; text-align: right; }
+    .message-box { background: linear-gradient(135deg, rgba(30, 41, 59, 0.4) 0%, rgba(2, 6, 23, 0.6) 100%); border: 1px solid #1e293b; border-radius: 12px; padding: 18px; margin: 24px 0; }
+    .message-desc { font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.6; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Curated Vehicle Consignment</div>
+    </div>
+    <div class="body">
+      <div class="badge">APPLICATION UPDATE</div>
+      <h1 class="h1">Consignment Application Status</h1>
+      <p class="p">
+        Hello ${sellerName || 'there'}, thank you for submitting your <strong style="color: #ffffff;">${vehicleWithGen}</strong> for consideration on Wailtail Auctions.
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Submitted Vehicle Particulars</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Year</td>
+            <td class="spec-val">${year || 'N/A'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Make</td>
+            <td class="spec-val">${make || 'N/A'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Model</td>
+            <td class="spec-val">${model || 'N/A'}</td>
+          </tr>
+          ${generation ? `
+          <tr>
+            <td class="spec-label">Generation / Chassis</td>
+            <td class="spec-val">${generation}</td>
+          </tr>` : ''}
+        </table>
+      </div>
+
+      <div class="message-box">
+        <p class="message-desc">
+          After thorough review by our curation team, we regret to inform you that we are unable to select your vehicle for our active auction catalog at this time. Our curation decisions reflect current auction scheduling constraints, catalog composition, and active market demand.
+        </p>
+      </div>
+
+      <p class="p">
+        This decision is not a reflection of the quality or presentation of your vehicle. We sincerely appreciate your interest in consigning with Wailtail and encourage you to submit future enthusiast and collector vehicles for consideration.
+      </p>
+
+      <p class="p" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 24px;">
+        If you have questions or would like further information, please reply directly to this email or contact our curation team at <a href="mailto:consignments@wailtail.com" style="color: #ef4444; text-decoration: none;">consignments@wailtail.com</a>.
+      </p>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Curated Single-Car Classic &amp; Enthusiast Auctions</p>
+      <p>Canadian Settlements in CAD • 0% Seller Commission</p>
+      <p style="margin-top: 8px;">Sent to: ${recipientEmail}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: recipientEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
 export default async function handler(req: any, res: any) {
   // Handle CORS Preflight
   if (req.method === 'OPTIONS') {
@@ -622,6 +739,25 @@ export default async function handler(req: any, res: any) {
         message: 'Consignment approval email processed successfully.',
         recipient: recipientEmail,
         vehicleTitle
+      });
+    }
+
+    // Handle Consignment Rejected Email (type === 'consignment_rejected')
+    if (type === 'consignment_rejected') {
+      const recipientEmail = (payload?.sellerEmail || payload?.email || '').trim();
+      if (!recipientEmail) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required parameter: sellerEmail is required for consignment rejection notice.'
+        });
+      }
+
+      await dispatchConsignmentRejectedEmail(payload);
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Consignment rejection email sent successfully.',
+        recipient: recipientEmail
       });
     }
 
