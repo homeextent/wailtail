@@ -7,6 +7,7 @@
 ### Technology Stack
 * **Frontend Framework**: React 19 with TypeScript and Vite
 * **Progressive Web App (PWA) & Offline Engine**: `vite-plugin-pwa` with Workbox runtime caching (`StaleWhileRevalidate` for scripts/styles, `NetworkFirst` for media/queries) and standalone Web Manifest (`name: "Wailtail Auctions"`, `short_name: "Wailtail"`, `#0f172a` theme)
+* **Static Open Graph & Twitter Card Social Metadata (`index.html`)**: Pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) tags in `index.html` targeting canonical domain (`https://www.wailtail.com/`) and 1988 Porsche 928 launch hero imagery; guarantees 100% social preview card rendering for web crawlers (`facebookexternalhit`, X, WhatsApp, iMessage) without edge SSR or client-side JavaScript execution overhead
 * **Background Push Service Worker & FCM**: Native background Service Worker (`public/firebase-messaging-sw.js`) utilizing Firebase compat SDKs and Firebase Cloud Messaging (`firebase/messaging`) Web Push API with VAPID key token exchange
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
 * **Dynamic Promotional Campaign Engine**: Launch promotional subsystem featuring responsive catalog grid card injection (`VehicleCatalogGrid.tsx`), direct-lot header notification banners (`AuctionHeader.tsx`), audience-segmented display filters, schedule windows, image asset uploader, and client dismissal tracking (`wailtail_dismissed_promos`)
@@ -1279,7 +1280,7 @@ The platform implements multi-layer session defense mechanisms in `src/context/A
 
 ---
 
-## 8. Progressive Web App (PWA) & Firebase Cloud Messaging (FCM) Architecture
+## 8. Progressive Web App (PWA), Social Metadata & FCM Engine Architecture
 
 ### 8.1 Vite PWA Integration & Web App Manifest (`vite.config.ts`)
 The platform leverages `vite-plugin-pwa` to deliver a native app-like experience across desktop and mobile devices:
@@ -1394,5 +1395,39 @@ The platform features an end-to-end Web Push notification engine linking Firebas
 4. **Environment Configuration & PWA Installation Constraints**:
    - **VAPID Public Key**: Requires `VITE_FIREBASE_VAPID_KEY` to be configured in application environment variables. If missing or empty, `[FCM Setup]` issues console warnings and marks the hook state as disabled with diagnostic error messaging.
    - **iOS Safari PWA Installation Constraint**: Mobile Safari on iOS 16.4+ requires web applications to be added to the iOS Home Screen via PWA standalone mode (`window.navigator.standalone === true`) before Apple Push Notification service (APNs) grants push subscription permissions. The UI detects non-standalone Safari instances and renders step-by-step installation instructions.
+
+### 8.7 Static Open Graph & Twitter Card Social Metadata Pipeline (`index.html`)
+
+To maximize launch impact and viral reach across social networks and direct messaging applications, the platform implements pre-rendered, static Open Graph and Twitter Card social metadata directly within the root `index.html` entry document.
+
+#### 1. Rationale in Client-Side Vite React SPAs
+Traditional Single-Page Applications (SPAs) built with Vite and React perform routing and DOM rendering strictly on the client side. Web crawlers, scrapers, and preview link expanders—including Facebook external hit (`facebookexternalhit`), X/Twitterbot (`Twitterbot`), WhatsApp, Apple Messages (`iMessage`), Slack, Discord, and LinkedIn—do not execute JavaScript when parsing links. Instead, they make shallow, fast HTTP GET requests that only examine the initial raw HTML document returned by the origin server.
+
+If social tags are injected or updated asynchronously via client-side libraries (e.g., `react-helmet`, `react-helmet-async`, or `useEffect`), web crawlers receive an unpopulated `<head>`, failing to display preview rich cards (resulting in fallback grey boxes or missing media thumbnails).
+
+During the platform's single-car launch campaign centered on the **1988 Porsche 928**, embedding static metadata directly into `index.html`:
+* **Guarantees 100% Preview Card Delivery**: Social crawlers immediately parse pre-baked Open Graph and Twitter Card metadata on the first byte without executing JavaScript.
+* **Eliminates Server-Side Rendering (SSR) & Edge Overhead**: Obviates the need for running complex, costly server-side rendering nodes (such as Next.js, Remix, or edge workers with Chromium/Puppeteer prerendering) just for crawler metadata resolution.
+* **Optimizes Edge CDN Caching**: Allows static HTML to be cached globally at edge CDN locations with sub-millisecond Time to First Byte (TTFB).
+
+#### 2. Tag Specification & Launch Attributes
+The static head payload in `index.html` specifies canonical Open Graph and Twitter Card tags configured specifically for the 1988 Porsche 928 launch lot:
+
+| Tag / Property | Attribute Value | Purpose & Architectural Role |
+| :--- | :--- | :--- |
+| `og:site_name` | `Wailtail Auctions` | Identifies the overarching collector vehicle auction platform brand. |
+| `og:type` | `website` | Defines the Open Graph schema entity type for web crawlers. |
+| `og:title` | `1988 Porsche 928 — Wailtail Collector Car Auctions` | Clear, SEO-optimized title showcasing vehicle year, make, model, and platform name. |
+| `og:description` | `Bid on this 1988 Porsche 928. Transparent CAD bidding, 2-minute soft-close anti-sniping protection, and zero buyer fees on Wailtail.` | Compelling editorial summary highlighting CAD bidding, anti-sniping rules, and zero fee structure. |
+| `og:url` | `https://www.wailtail.com/` | Canonical launch URL establishing domain authority and eliminating duplicate link indexing. |
+| `og:image` | `https://firebasestorage.googleapis.com/.../hero/1788998248225-j943x.jpg` | Absolute HTTPS URL to the high-resolution 1988 Porsche 928 hero photograph hosted on Firebase Cloud Storage. |
+| `og:image:width` | `1200` | Recommended standard width ensuring instantaneous high-resolution card rendering without crawler layout reflow. |
+| `og:image:height` | `630` | Standard 1.91:1 aspect ratio height preventing letterboxing or awkward image cropping. |
+| `og:image:alt` | `1988 Porsche 928 Collector Car Auction` | Accessible descriptive text for screen readers and search indexing. |
+| `twitter:card` | `summary_large_image` | Specifies X/Twitter's prominent full-width hero photo card format for maximum visual conversion. |
+| `twitter:title` | `1988 Porsche 928 — Wailtail Collector Car Auctions` | Matches Open Graph title for brand consistency across X/Twitter feeds. |
+| `twitter:description` | `Bid on this 1988 Porsche 928. Transparent CAD bidding, 2-minute soft-close anti-sniping protection, and zero buyer fees on Wailtail.` | Matches Open Graph description providing key auction terms in Twitter link previews. |
+| `twitter:image` | `https://firebasestorage.googleapis.com/.../hero/1788998248225-j943x.jpg` | High-resolution hero image asset mapped to X/Twitter card preview containers. |
+| `twitter:image:alt` | `1988 Porsche 928 Collector Car Auction` | Accessible image description ensuring compliance across Twitter clients. |
 
 

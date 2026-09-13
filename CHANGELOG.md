@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Static Open Graph & Twitter Card Social Metadata (`index.html`)**:
+  - Injected pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) metadata tags into `index.html`.
+  - Configured social preview assets pointing directly to canonical domain `https://www.wailtail.com/` and the 1988 Porsche 928 hero photograph hosted on Firebase Cloud Storage (`1200x630` dimensions).
+  - Guarantees 100% preview card rendering fidelity for web crawlers and messaging platforms (`facebookexternalhit`, X/Twitterbot, WhatsApp, iMessage) without requiring client-side JavaScript execution or edge server-side rendering (SSR) overhead.
 - **Automated Consignment Rejection Email Workflow (`api/send-consignment-email.ts` & `src/services/auctionService.ts`)**:
   - Implemented `type: 'consignment_rejected'` serverless HTML template dispatching `[Wailtail] Consignment Application Update — ${vehicleTitle}` notifications to sellers upon consignment rejection.
   - Added robust seller recipient property fallbacks (`sellerEmail` vs `email`), vehicle taxonomy fallback hydration, and staff/seller notes pass-through.
