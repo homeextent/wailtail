@@ -1261,12 +1261,13 @@ export async function updateConsignmentStatus(
   if (status === 'rejected') {
     (async () => {
       try {
-        let appRecord: Partial<ConsignmentApplication> | null = applicationData || null;
-        if (!appRecord?.sellerEmail) {
-          appRecord = await getConsignmentApplication(cleanId);
+        let appRecord: (Partial<ConsignmentApplication> & { email?: string }) | null = applicationData || null;
+        const initialEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim();
+        if (!appRecord || !initialEmail || !appRecord.year || !appRecord.make || !appRecord.model) {
+          appRecord = (await getConsignmentApplication(cleanId)) as (ConsignmentApplication & { email?: string }) | null;
         }
 
-        const sellerEmail = (appRecord?.sellerEmail || '').trim().toLowerCase();
+        const sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
         if (!sellerEmail || !sellerEmail.includes('@')) {
           console.warn('[updateConsignmentStatus] Silent notice: Missing or unformatted sellerEmail for rejection email dispatch:', cleanId);
           return;
@@ -1423,6 +1424,53 @@ export async function batchUpdateConsignmentStatus(
     }
     await batch.commit();
   }
+
+  // When status === 'rejected', query or fetch target records and trigger automated non-blocking rejection emails
+  if (status === 'rejected') {
+    (async () => {
+      try {
+        await Promise.all(validIds.map(async (id) => {
+          try {
+            const appRecord = (await getConsignmentApplication(id)) as (ConsignmentApplication & { email?: string }) | null;
+            const sellerEmail = (appRecord?.sellerEmail || appRecord?.email || '').trim().toLowerCase();
+            if (!sellerEmail || !sellerEmail.includes('@')) {
+              console.warn('[batchUpdateConsignmentStatus] Silent notice: Missing or unformatted sellerEmail for rejection email dispatch:', id);
+              return;
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            await fetch('/api/send-consignment-email', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                type: 'consignment_rejected',
+                sellerEmail,
+                sellerName: (appRecord?.sellerName || '').trim(),
+                year: appRecord?.year,
+                make: (appRecord?.make || '').trim(),
+                model: (appRecord?.model || '').trim(),
+                generation: (appRecord?.generation || '').trim(),
+                applicationId: id
+              }),
+              signal: controller.signal
+            }).catch((fetchErr) => {
+              console.warn('[batchUpdateConsignmentStatus] Non-blocking rejection email dispatch failed:', fetchErr);
+            }).finally(() => {
+              clearTimeout(timeoutId);
+            });
+          } catch (itemErr) {
+            console.warn('[batchUpdateConsignmentStatus] Silent error dispatching rejection email for ID:', id, itemErr);
+          }
+        }));
+      } catch (err) {
+        console.warn('[batchUpdateConsignmentStatus] Silent warning handling bulk rejection emails:', err);
+      }
+    })();
+  }
+
   return validIds.length;
 }
 

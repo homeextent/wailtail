@@ -461,20 +461,16 @@ async function dispatchConsignmentApprovedEmail(payload: any) {
 }
 
 async function dispatchConsignmentRejectedEmail(payload: any) {
-  const {
-    sellerEmail,
-    email,
-    sellerName,
-    year,
-    make,
-    model,
-    generation
-  } = payload || {};
-
-  const recipientEmail = (sellerEmail || email || '').trim();
+  const recipientEmail = (payload?.sellerEmail || payload?.email || '').trim();
   if (!recipientEmail) {
     return { success: false, error: 'Missing seller email' };
   }
+
+  const year = payload?.year != null ? String(payload.year).trim() : '';
+  const make = (payload?.make || '').trim();
+  const model = (payload?.model || '').trim();
+  const generation = (payload?.generation || '').trim();
+  const sellerName = (payload?.sellerName || '').trim();
 
   const vehicleTitle = [year, make, model].filter(Boolean).join(' ').trim() || 'Your Vehicle';
   const vehicleWithGen = [year, make, model, generation ? `(${generation})` : ''].filter(Boolean).join(' ').trim() || vehicleTitle;
@@ -745,10 +741,10 @@ export default async function handler(req: any, res: any) {
     // Handle Consignment Rejected Email (type === 'consignment_rejected')
     if (type === 'consignment_rejected') {
       const recipientEmail = (payload?.sellerEmail || payload?.email || '').trim();
-      if (!recipientEmail) {
+      if (!recipientEmail || !recipientEmail.includes('@')) {
         return sendJson(res, 400, {
           success: false,
-          error: 'Missing required parameter: sellerEmail is required for consignment rejection notice.'
+          error: 'Missing required parameter: sellerEmail or email is required for consignment rejection notice.'
         });
       }
 
