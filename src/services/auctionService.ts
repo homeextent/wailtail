@@ -503,6 +503,7 @@ export async function createNewListing(title: string): Promise<Auction> {
     leadHeroImage: '',
     heroImages: [],
     highlightsBadge: '',
+    hagertyValuationUrl: '',
     watchCount: 0,
     location: '',
     sellerName: '',
@@ -1082,6 +1083,7 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
     highBidderName: '',
     highBidderEmail: '',
     highlightsBadge: highlightsBadge,
+    hagertyValuationUrl: '',
     watchCount: 0,
     status: 'draft',
     createdAt: now,
@@ -1625,6 +1627,19 @@ export async function batchUpdateAuctionStatus(
     await batch.commit();
   }
   return validIds.length;
+}
+
+/**
+ * Update a single auction's status in Firestore.
+ */
+export async function updateAuctionStatus(
+  auctionId: string,
+  status: Auction['status'] | string
+): Promise<void> {
+  if (!auctionId) return;
+  const targetId = auctionId.trim() || MAIN_AUCTION_ID;
+  const auctionRef = doc(db, 'auctions', targetId);
+  await setDoc(auctionRef, { status, updatedAt: Date.now() }, { merge: true });
 }
 
 /**

@@ -19,7 +19,7 @@ import {
   fetchYouTubePlaylistVideos
 } from '../services/auctionService';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
-import { formatCurrency, formatAuctionCountdown } from '../utils/formatters';
+import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
@@ -366,6 +366,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus ?? 'Clean Registration');
   const [customTitleStatus, setCustomTitleStatus] = useState('');
   const [sellerName, setSellerName] = useState(auction.sellerName ?? (isMainLot ? 'Private Consignor' : ''));
+  const [hagertyValuationUrl, setHagertyValuationUrl] = useState(auction.hagertyValuationUrl ?? '');
 
   // Structured Location state (City, Province/State, Country)
   const [locationCity, setLocationCity] = useState(() => {
@@ -722,6 +723,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [status, setStatus] = useState(auction.status ?? 'upcoming');
   const [startTimeInput, setStartTimeInput] = useState(formatForInput(auction.startTime ?? Date.now()));
   const [endTimeInput, setEndTimeInput] = useState(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
+  const [now, setNow] = useState(Date.now());
+
+  // Tick countdown timer every 1000ms for live preview evaluation
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Synchronize internal state when active vehicle auction changes
   useEffect(() => {
@@ -773,6 +783,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setTitleStatus(auction.titleStatus ?? 'Clean Registration');
     setCustomTitleStatus('');
     setSellerName(auction.sellerName ?? (isMain ? 'Private Consignor' : ''));
+    setHagertyValuationUrl(auction.hagertyValuationUrl ?? '');
 
     const parts = (auction.location ?? (isMain ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
     setLocationCity(parts[0] ?? (isMain ? 'Vancouver' : ''));
@@ -888,6 +899,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         interior,
         titleStatus: finalTitleStatus,
         highlightsBadge,
+        hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
         currency: 'CAD',
         startingBid: Number(startingBid),
         minimumIncrement: Number(minimumIncrement),
@@ -959,6 +971,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       titleStatus: finalTitleStatus,
       sellerName,
       highlightsBadge,
+      hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
       overviewHeading,
       overviewNarrative: paragraphs,
       specifications: compiledOverviewSpecs,
@@ -1095,6 +1108,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.mileage !== undefined) setMileage(String(parsed.mileage));
       if (parsed.distanceUnit) setDistanceUnit(parsed.distanceUnit);
       if (parsed.highlightsBadge) setHighlightsBadge(parsed.highlightsBadge);
+      if (parsed.hagertyValuationUrl !== undefined) setHagertyValuationUrl(parsed.hagertyValuationUrl || '');
       if (parsed.engine) setEngine(parsed.engine);
       if (parsed.exteriorColor) setExteriorColor(parsed.exteriorColor);
       if (parsed.interior) setInterior(parsed.interior);
@@ -1545,6 +1559,24 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setVideoChapters(copy);
   };
 
+  // Dynamic evaluation for live preview
+  const previewStartMs = new Date(startTimeInput).getTime() || auction.startTime || 0;
+  const previewEndMs = new Date(endTimeInput).getTime() || auction.endTime || 0;
+  const previewEffectiveStatus = getEffectiveAuctionStatus(
+    previewStartMs,
+    previewEndMs,
+    status,
+    now
+  );
+  const isPreviewUpcoming = previewEffectiveStatus === 'upcoming';
+  const isPreviewEnded = previewEffectiveStatus === 'ended' || previewEffectiveStatus === 'sold';
+  const previewCountdown = formatAuctionCountdown(
+    previewStartMs,
+    previewEndMs,
+    status,
+    now
+  );
+
   return (
     <div className="min-h-screen bg-[#0f1215] text-zinc-100 flex flex-col font-sans">
       {/* Hidden File Input for Image/PDF Uploads */}
@@ -1720,7 +1752,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       )}
 
       {/* MAIN WORKSPACE BODY */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex">
         {/* =================================================================== */}
         {/* LEFT PANE: VERTICAL STEPPER + FORM CONTROLS */}
         {/* =================================================================== */}
@@ -1731,9 +1763,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               ? 'w-full' 
               : 'w-full lg:w-[60%]'
         }`}>
-          <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1">
             {/* Sticky Vertical Progress Stepper */}
-            <aside className="sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto w-48 sm:w-56 bg-[#161a20] border-r border-zinc-800 p-3 flex flex-col justify-between flex-shrink-0 select-none z-20">
+            <aside className="sticky top-16 self-start max-h-[calc(100vh-4.5rem)] overflow-y-auto w-48 sm:w-56 bg-[#161a20] border-r border-zinc-800 p-3 flex flex-col justify-between flex-shrink-0 select-none z-20">
               <div className="space-y-1">
                 <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                   Listing Sections
@@ -2152,6 +2184,18 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
+                  </div>
+
+                  {/* Row 10: Hagerty Canada Valuation Link */}
+                  <div>
+                    <label className="block font-bold text-zinc-300 mb-1">Hagerty Canada Valuation Link (Optional)</label>
+                    <input
+                      type="url"
+                      value={hagertyValuationUrl}
+                      onChange={(e) => setHagertyValuationUrl(e.target.value)}
+                      placeholder="https://www.hagerty.ca/valuation-tools/..."
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                    />
                   </div>
                 </div>
               </section>
@@ -3225,14 +3269,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   </div>
                   <div>
                     <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">
-                      {status === 'upcoming' ? 'Auction Starts' : status === 'ended' ? 'Auction Status' : 'Time Remaining'}
+                      {isPreviewUpcoming ? 'Auction Starts' : isPreviewEnded ? 'Auction Status' : 'Time Remaining'}
                     </div>
                     <div className="text-base font-bold font-mono text-white">
-                      {formatAuctionCountdown(
-                        new Date(startTimeInput).getTime(),
-                        new Date(endTimeInput).getTime(),
-                        status
-                      ).formatted || (status === 'upcoming' ? 'Upcoming' : 'Active')}
+                      {previewCountdown.formatted || (isPreviewUpcoming ? 'Upcoming' : isPreviewEnded ? 'Auction Ended' : 'Active')}
                     </div>
                   </div>
                 </div>
@@ -3240,7 +3280,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-zinc-800">
                   <div className="text-right">
                     <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">
-                      {status === 'upcoming' ? 'Starting Bid' : 'Current High Bid'}
+                      {isPreviewUpcoming ? 'Starting Bid' : 'Current High Bid'}
                     </div>
                     <div className="text-lg font-black font-mono text-emerald-400">
                       ${Number(startingBid).toLocaleString()} CAD
@@ -3379,6 +3419,21 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       Inquiries, inspection booking & transport logistics
                     </p>
                   </div>
+
+                  {/* Hagerty Valuation Report CTA Button (Preview) */}
+                  {hagertyValuationUrl && hagertyValuationUrl.trim() !== '' && (
+                    <div className="pt-2 border-t border-zinc-200">
+                      <a
+                        href={formatExternalUrl(hagertyValuationUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-amber-400 border border-slate-700 font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Hagerty® Valuation Report ↗</span>
+                      </a>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -3424,7 +3479,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   <span>Auction Financials & Scheduling Rules</span>
                 </div>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 border border-zinc-200">
-                  Status: {status}
+                  Status: {previewEffectiveStatus}
                 </span>
               </div>
 

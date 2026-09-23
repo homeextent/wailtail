@@ -12,19 +12,30 @@ export function formatCurrency(amount: number, style: 'standard' | 'short' | 'co
   return `$${formatted} CAD`;
 }
 
+export function getEffectiveAuctionStatus(
+  startTime: number,
+  endTime: number,
+  status?: string,
+  now: number = Date.now()
+): 'draft' | 'upcoming' | 'active' | 'ending_soon' | 'ended' | 'sold' {
+  if (status === 'draft' || status === 'sold') return status;
+  if (now < startTime) return 'upcoming';
+  if (now >= endTime) return 'ended';
+  const isEndingSoon = (endTime - now) <= 120 * 1000;
+  return isEndingSoon ? 'ending_soon' : 'active';
+}
+
 export function formatAuctionCountdown(
   startTime: number, 
   endTime: number, 
   status?: string, 
   now: number = Date.now()
 ) {
-  // If explicitly upcoming or current time is before start time
-  const isUpcoming = (status === 'upcoming' || now < startTime) && status !== 'active' && status !== 'ended' && status !== 'sold';
-  const isExplicitlyEnded = status === 'ended' || status === 'sold';
-  const isTimeEnded = now >= endTime;
-  const isEnded = isExplicitlyEnded || (status !== 'upcoming' && isTimeEnded);
+  const effectiveStatus = getEffectiveAuctionStatus(startTime, endTime, status, now);
+  const isUpcoming = effectiveStatus === 'upcoming';
+  const isEnded = effectiveStatus === 'ended' || effectiveStatus === 'sold';
 
-  if (isUpcoming && !isExplicitlyEnded) {
+  if (isUpcoming) {
     const diff = Math.max(0, startTime - now);
     const totalSeconds = Math.floor(diff / 1000);
     const days = Math.floor(totalSeconds / 86400);
@@ -56,7 +67,7 @@ export function formatAuctionCountdown(
   }
 
   if (isEnded) {
-    const endType: 'sold' | 'ended' = status === 'sold' ? 'sold' : 'ended';
+    const endType: 'sold' | 'ended' = effectiveStatus === 'sold' ? 'sold' : 'ended';
     return {
       statusType: endType,
       days: 0,
@@ -67,11 +78,11 @@ export function formatAuctionCountdown(
       isEnded: true,
       isUpcoming: false,
       isUrgent: false,
-      formatted: status === 'sold' ? 'Vehicle Sold' : 'Auction Ended'
+      formatted: effectiveStatus === 'sold' ? 'Vehicle Sold' : 'Auction Ended'
     };
   }
 
-  // Active auction countdown
+  // Active auction countdown (when now >= startTime and now < endTime)
   const diff = Math.max(0, endTime - now);
   const totalSeconds = Math.floor(diff / 1000);
   const days = Math.floor(totalSeconds / 86400);
@@ -134,4 +145,19 @@ export function formatRelativeTime(timestamp: number): string {
   if (days < 7) return `${days}d ago`;
   
   return formatDateTime(timestamp);
+}
+
+/**
+ * Sanitizes and normalizes an external URL, prepending https:// if protocol is missing.
+ * Prevents browser relative URL path resolution errors.
+ * Returns empty string if url is invalid, empty, or whitespace-only.
+ */
+export function formatExternalUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
 }

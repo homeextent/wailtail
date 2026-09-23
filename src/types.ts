@@ -30,6 +30,7 @@ export interface Auction {
   leadHeroImage?: string;
   heroImages?: string[];
   highlightsBadge?: string;
+  hagertyValuationUrl?: string;
   watchCount?: number;
   startTime: number;
   endTime: number;
@@ -258,6 +259,7 @@ export interface ListingDraftSchema {
   titleStatus: string;
   sellerName: string;
   highlightsBadge: string;
+  hagertyValuationUrl?: string;
 
   // Section 2: Overview Narrative & Provenance
   overviewHeading: string;

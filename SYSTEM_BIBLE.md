@@ -26,7 +26,7 @@
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
 | `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Features deep-link auth preservation (suspends route guard during `authLoading`, caches triage parameters in `sessionStorage` key `wailtail_pending_admin_deeplink`, prompts contextual login banner, and auto-restores to target triage modal upon sign-in), Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
-| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper, and JSON schema import/export. |
+| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, and JSON schema import/export. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
@@ -52,6 +52,7 @@ interface Auction {
   mileage: string; // Formatted number or string (e.g. "126,200")
   distanceUnit: 'km' | 'mi'; // Canadian standard default is 'km'
   highlightsBadge?: string; // Header badge on specs card (e.g. "1978 911")
+  hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
   location: string;
   sellerName: string;
   engine: string;
@@ -533,6 +534,21 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 }
 ```
 
+### 3.3 Real-Time Clock-Driven Auction Lifecycle Transitions (`getEffectiveAuctionStatus`)
+- **Status Evaluation**: The platform utilizes `getEffectiveAuctionStatus(startTime, endTime, status, now)` (`src/utils/formatters.ts`) to dynamically evaluate current timestamps against auction lifecycle boundaries:
+  - `draft`: Retains draft state regardless of timestamp until deliberately published.
+  - `sold`: Retains terminal sold state.
+  - `now < startTime`: Evaluates dynamically as `upcoming`.
+  - `now >= endTime`: Evaluates dynamically as `ended`.
+  - `(endTime - now) <= 120 * 1000`: Evaluates dynamically as `ending_soon` within the final 2-minute soft-close window.
+  - Otherwise evaluates as `active`.
+- **Zero-Refresh UI Transitions**:
+  - `formatAuctionCountdown()` internally invokes `getEffectiveAuctionStatus()`, triggering dynamic status changes in countdown clocks and UI badges across state boundaries (`upcoming` $\rightarrow$ `active` $\rightarrow$ `ending_soon` $\rightarrow$ `ended`) without requiring page reloads or user interaction.
+  - `VehicleCatalogGrid.tsx` utilizes normalized predicates (`isLive`, `isUpcoming`, `isEnded`) driven by a 1-second interval ticker (`useEffect`), refreshing category filter tab counters and catalog lot card states automatically in real time.
+- **Silent Background Firestore Reconciliation**:
+  - In `AuctionHeader.tsx`, when an auction lot is active on screen and its persisted Firestore `status` diverges from its computed real-time `effectiveStatus` (e.g. crossing `startTime` from upcoming to live, or `endTime` from active to ended), a background reconciliation trigger automatically executes `updateAuctionStatus(auction.id, effectiveStatus)`.
+  - This guarantees that backend database records synchronize silently with real-time clock thresholds as soon as any client accesses the lot.
+
 ---
 
 ## 4. Canadian Financial Standard & Odometer Compliance
@@ -711,11 +727,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     1. **Split Mode (Default)**: 60/40 reactive layout with left-pane form authoring and right-pane live public preview.
     2. **Edit Form Mode**: Expanded full-width layout (`w-full max-w-6xl mx-auto`) for focused content creation.
     3. **Preview Mode**: Dedicated full-screen live public preview with device toggles.
-- **Sticky Vertical Progress Stepper**: Left-hand navigation tracking completion status across all 7 listing sections with live visual badges (`Complete`, `In Progress`, `Pending`), scroll anchoring, and sticky top pinning (`sticky top-6 self-start max-h-[calc(100vh-3rem)] overflow-y-auto`).
+- **Sticky Vertical Progress Stepper**: Left-hand navigation tracking completion status across all 7 listing sections with live visual badges (`Complete`, `In Progress`, `Pending`), scroll anchoring, and sticky top pinning (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)] overflow-y-auto`). Clipping `overflow-hidden` classes on parent layout wrappers are eliminated to guarantee that the navigation remains firmly pinned below the header bar during scrolling.
 - **Responsive Preview Viewport**: Toggle between full Desktop mode and 390px Mobile simulated phone container with live state hydration.
 - **100% Feature Parity Across All 7 Sections**:
-  - **Section 1 (Vehicle Identity & 9-Row Form Layout)**:
-    - **9-Row Form Hierarchy**:
+  - **Section 1 (Vehicle Identity & 10-Row Form Layout)**:
+    - **10-Row Form Hierarchy**:
       - **Row 1 (Top Row)**: 4-column responsive grid featuring the 3-tier dependent vehicle taxonomy pipeline: **Year** select (1930–2026), **Make** dropdown, **Model** dropdown, and **Generation / Chassis Code** dropdown (with dynamic custom input fallbacks).
       - **Row 2**: Primary Listing Title input equipped with an `"Auto Generate from Year / Make / Model / Gen"` helper trigger.
       - **Row 3**: Subtitle / Highlights Bar input for editorial headline summaries (e.g. `3.0L Flat-Six • 5-Speed 915 • Guards Red (027)`).
@@ -724,7 +740,8 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       - **Row 6**: 2-column grid for Exterior finish and Interior / Cabin specifications.
       - **Row 7**: Standardized Title & Registration Status dropdown with custom fallback entry.
       - **Row 8**: Structured 3-field vehicle location panel (City, Province / State, and Country).
-      - **Row 9 (Bottom Row)**: 2-column grid featuring Seller / Consignor name and the **Highlights Tag Badge** input.
+      - **Row 9**: 2-column grid featuring Seller / Consignor name and the **Highlights Tag Badge** input.
+      - **Row 10 (Bottom Row)**: Hagerty Canada Valuation Link (`hagertyValuationUrl`) optional URL input ensuring direct linking to third-party Hagerty valuation appraisal reports.
     - **`formatHighlightsBadge` Auto-Sync & `isBadgeOverridden` Manual Override Protection**:
       - The Highlights Tag Badge displays the prominent badge rendered in the public Vehicle Highlights sidebar (e.g. `"1978 Porsche 911 930"`).
       - When the user selects or updates Year, Make, Model, or Generation in Row 1, `formatHighlightsBadge(year, make, model, generation)` dynamically computes the badge label.
@@ -743,6 +760,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Section 6 `YouTubePlaylistSection` with video embed and chapter selectors.
   - Section 5 `PhotoGalleryGrid` with categorized filtering and full-screen lightbox modal.
   - Section 7 Financials & Scheduling Summary Card detailing soft-close rules and auction dates.
+  - Branded Hagerty® Valuation Report CTA button rendered conditionally with `TrendingUp` icon, opening external reports via sanitized `https://` protocol (`formatExternalUrl`).
 - **JSON Import / Export (`ListingDraftSchema`)**:
   - Standardized `ListingDraftSchema` interface capturing Sections 1–4 and 7 in clean, standardized JSON format:
     ```typescript
@@ -765,6 +783,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       titleStatus: string;
       sellerName: string;
       highlightsBadge: string;
+      hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
       
       // Section 2: Overview Narrative & Provenance
       overviewHeading: string;
@@ -794,8 +813,8 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       };
     }
     ```
-  - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections.
-  - "Export JSON" action copying active listing state directly to clipboard as formatted JSON.
+  - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections (including `hagertyValuationUrl`).
+  - "Export JSON" action copying active listing state directly to clipboard as formatted JSON (including `hagertyValuationUrl`).
 
 ### 6.3 Full-Page Admin Operations Portal (`/admin` via `AdminPortalPage.tsx`)
 - **Dedicated Route & Access Control**:
@@ -984,6 +1003,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Instant URL Clipboard Share ("🔗 Share")**:
   - Copies canonical auction URL (`window.location.href`) directly to clipboard via `navigator.clipboard.writeText()`.
   - Dispatches an instant high-visibility success toast notification (`Listing link copied to clipboard!`).
+- **Hagerty® Canada Valuation Report Action**:
+  - Prominent high-contrast CTA button rendered conditionally when `auction.hagertyValuationUrl` is defined.
+  - Formatted via `formatExternalUrl()` to enforce case-insensitive `https://` protocol prefixing and prevent browser relative-URL path resolution failures.
+  - Features the `TrendingUp` icon, opens in a new browser tab (`target="_blank"`, `rel="noopener noreferrer"`), and connects collectors directly to third-party Hagerty Canada market appraisal data.
+  - Fully replicated in the split-screen authoring workspace live preview pane (`ListingEditorWorkspace.tsx`).
 
 ### 6.12 Global Navigation & User Profile Menu (`Navbar.tsx`)
 - **User Profile Dropdown Positioning Repair**:

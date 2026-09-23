@@ -19,6 +19,9 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Multi-Select Bulk Action Engine**: Checkbox selection system with floating action toolbar and safe 150-item batch chunking for status mutations and bulk deletions
 - **Authentication Security & Session Defense**: Multi-layer security in `AuthContext.tsx` and `AuthModal.tsx` featuring real-time orphaned session revocation guards (auto-`signOut` and toast notice when user document is deleted), post-signup auto-logout, login blocking for unverified sessions, credentialed status verification checks, atomic verification auto-sync, Google OAuth direct state hydration, and deferred welcome email dispatch
 - **Catalog Status Predicate Normalization**: Exported pure predicates (`isLive`, `isUpcoming`, `isEnded`) ensuring all draft, preview, and scheduled lots are counted cleanly
+- **Real-Time Clock-Driven Auction Lifecycles**: Dynamic timestamp evaluation via `getEffectiveAuctionStatus()` resolving auction states (`upcoming`, `active`, `ending_soon`, `ended`, `sold`), continuous countdown clock transitions without full page reloads, and silent background Firestore synchronization (`updateAuctionStatus`) reconciling stored status with real-time clock thresholds in `AuctionHeader.tsx` and `VehicleCatalogGrid.tsx`
+- **Sticky Stepper Navigation**: Unobstructed sticky sidebar navigation (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`) in the 60/40 split-screen authoring workspace (`ListingEditorWorkspace.tsx`), eliminating layout clipping for seamless scrolling across all 7 listing sections
+- **Hagerty Canada Valuation Link Integration**: Direct linking of verified Hagerty Canada market appraisal reports on vehicle listings (`AuctionHeader.tsx`) and preview cards via sanitized `https://` protocols (`formatExternalUrl`), with full authoring workspace input and JSON import/export persistence
 - **Styling**: Tailwind CSS with custom editorial typography and layout scales
 - **Icons**: Lucide React
 - **Taxonomy Engine**: Curated 80+ collector vehicle dataset (`src/data/vehicleTaxonomy.json`) powering a reactive 3-tier dependent selection pipeline (Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code)
@@ -132,6 +135,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 6. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`) & Draft Lot Isolation**:
    - Split-screen workspace with live public preview pane (desktop and mobile viewports).
    - 7 listing sections: Vehicle Identity, Editorial Narrative, Single-Source Technical Specifications, Showcase Chapters (01-04), Hero & Categorized Photo Gallery, YouTube Driving Videos, and CAD Financial Rules.
+   - **Sticky Stepper Navigation**: Unobstructed vertical progress stepper (`sticky top-16 max-h-[calc(100vh-4.5rem)]`) with unclipped parent layout wrappers, keeping section navigation firmly pinned below the header during scrolling.
+   - **Hagerty Canada Valuation Link Integration**: Direct linking of verified Hagerty Canada valuation appraisal reports via `hagertyValuationUrl` text input in Section 1, sanitized protocol formatting (`formatExternalUrl`), full JSON export/import support, and high-contrast live preview CTA buttons.
    - **Draft Lot Isolation**: Section 7 Auction Lifecycle Status select dropdown includes `'draft'` status, allowing creators and administrators to isolate in-progress lots from public catalog feeds until curation readiness.
    - 100% blank draft isolation with nullish coalescing defaults (`$0 CAD` No Reserve).
 7. **Full-Page Admin Operations Portal (`/admin`)**:
@@ -215,6 +220,14 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Claim Link Routing**: Delivers customized claim links (`action=claim_seller&appId=...&lot=...&email=...`) targeting `/dashboard/listings/[id]/edit`.
     - **Registration Auto-Fill & Emerald Banner**: Pre-fills the approved seller's email address and renders a specialized onboarding banner in `AuthModal.tsx`.
     - **Security Rule-Compliant Role Elevation (`elevateApprovedConsignor`)**: Verifies approved consignment applications matching the user's email, automatically elevates user roles across `users/{uid}` and `bidders/{uid}` to `'seller'` under `isOwner(uid)` rules, assigns `sellerId` and `sellerName` to `auctions/{convertedAuctionId}`, and updates local React state for instantaneous authoring workspace authorization.
+23. **Real-Time Clock-Driven Auction Lifecycles & Silent Background Reconciliation (`src/utils/formatters.ts`, `src/components/AuctionHeader.tsx`, `src/components/VehicleCatalogGrid.tsx`)**:
+    - **Real-Time Clock Evaluation**: `getEffectiveAuctionStatus()` continuously evaluates real-time timestamps against `startTime` and `endTime` thresholds to dynamically resolve lot states (`upcoming`, `active`, `ending_soon`, `ended`, `sold`).
+    - **Zero-Refresh UI Transitions**: `formatAuctionCountdown()` triggers seamless client-side status shifts across lifecycle boundaries without page reloads. `VehicleCatalogGrid.tsx` pairs normalized predicates (`isLive`, `isUpcoming`, `isEnded`) with a 1-second interval ticker to update catalog filter tab counts dynamically.
+    - **Background Firestore Synchronization**: `AuctionHeader.tsx` automatically detects when stored Firestore status diverges from real-time effective status and invokes `updateAuctionStatus()`, reconciling the database silently in the background.
+24. **Hagerty Canada Valuation Integration & Sticky Stepper Ergonomics (`src/components/ListingEditorWorkspace.tsx`, `src/components/AuctionHeader.tsx`)**:
+    - **Third-Party Market Valuation**: Links verified Hagerty Canada valuation appraisal reports directly from single-car lot headers and workspace preview panes via conditional, high-contrast CTA buttons (`TrendingUp` icon, external window).
+    - **URL Protocol Sanitization**: Employs `formatExternalUrl()` to enforce case-insensitive `https://` prefixing on external links, guarding against relative path routing errors.
+    - **Sticky Progress Navigation**: Pins the 7-section progress stepper (`sticky top-16 max-h-[calc(100vh-4.5rem)]`) in the 60/40 authoring workspace, removing overflow clipping to maintain visible stepper anchors while drafting listings.
 
 ---
 

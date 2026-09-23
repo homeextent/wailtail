@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
-import { formatCurrency, formatAuctionCountdown } from '../utils/formatters';
+import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
 import { 
   toggleWatchlistLot,
   subscribeToPromoSettings,
   recordPromoClick,
   isPromoScheduleActive,
-  isPromoAudienceMatch
+  isPromoAudienceMatch,
+  updateAuctionStatus
 } from '../services/auctionService';
 import { 
   Clock, 
@@ -21,6 +22,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Radio,
+  ExternalLink,
+  TrendingUp,
   X
 } from 'lucide-react';
 
@@ -245,14 +248,35 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const effectiveStatus = getEffectiveAuctionStatus(
+    auction.startTime,
+    auction.endTime,
+    auction.status,
+    now
+  );
+
+  // Silent background reconciliation effect to keep Firestore synchronized with real-time status transitions
+  useEffect(() => {
+    if (
+      effectiveStatus !== auction.status &&
+      auction.status !== 'draft' &&
+      auction.status !== 'sold' &&
+      auction.id
+    ) {
+      updateAuctionStatus(auction.id, effectiveStatus).catch((err) => {
+        console.warn('Silent auction status reconciliation failed:', err);
+      });
+    }
+  }, [effectiveStatus, auction.id, auction.status]);
+
   const timeData = formatAuctionCountdown(
     auction.startTime, 
     auction.endTime, 
     auction.status, 
     now
   );
-  const isEnded = timeData.isEnded;
-  const isUpcoming = timeData.isUpcoming;
+  const isEnded = effectiveStatus === 'ended' || effectiveStatus === 'sold';
+  const isUpcoming = effectiveStatus === 'upcoming';
 
   // Dynamic reserve status: strictly never reveals the dollar amount
   const reserveMet = Boolean(auction.isReserveMet || auction.currentBid >= auction.reserveAmount);
@@ -508,6 +532,20 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                   >
                     <span>🔗 Share</span>
                   </button>
+
+                  {/* Hagerty Valuation Report Button */}
+                  {auction.hagertyValuationUrl && formatExternalUrl(auction.hagertyValuationUrl) && (
+                    <a
+                      href={formatExternalUrl(auction.hagertyValuationUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-950/80 hover:bg-rose-900/90 text-rose-200 border border-rose-700/70 hover:border-rose-500 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:text-white shrink-0"
+                      title="Verified Hagerty Canada Valuation Appraisal Report"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span>Hagerty® Valuation Report ↗</span>
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -516,17 +554,17 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             <div className="flex flex-col sm:flex-row lg:flex-col items-stretch sm:items-center lg:items-end gap-2">
               <button
                 onClick={onOpenBid}
-                disabled={isEnded || isUpcoming}
+                disabled={effectiveStatus !== 'active' && effectiveStatus !== 'ending_soon'}
                 className={`px-8 py-3.5 rounded-lg font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-lg ${
-                  isEnded
+                  effectiveStatus === 'ended' || effectiveStatus === 'sold'
                     ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed border border-zinc-600'
-                    : isUpcoming
+                    : effectiveStatus === 'upcoming'
                     ? 'bg-blue-800/80 text-blue-200 border border-blue-700/80 cursor-not-allowed'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-900/30 hover:scale-[1.02] active:scale-[0.99] border border-emerald-400/30'
                 }`}
               >
                 <Gavel className="w-4 h-4" />
-                <span>{isEnded ? 'Auction Closed' : isUpcoming ? 'Preview Mode' : 'Place Bid'}</span>
+                <span>{effectiveStatus === 'ended' || effectiveStatus === 'sold' ? 'Auction Closed' : effectiveStatus === 'upcoming' ? 'Preview Mode' : 'Place Bid'}</span>
               </button>
 
               <div className="text-[11px] text-zinc-400 text-center lg:text-right">

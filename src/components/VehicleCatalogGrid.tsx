@@ -47,14 +47,45 @@ interface VehicleCatalogGridProps {
   isAdmin?: boolean;
 }
 
-export const isLive = (status?: string | null): boolean =>
-  status === 'live' || status === 'ending_soon' || status === 'active';
+export const isLive = (
+  status?: string | null,
+  startTime?: number | null,
+  endTime?: number | null,
+  now: number = Date.now()
+): boolean => {
+  if (status === 'draft' || status === 'sold') return false;
+  if (startTime !== undefined && startTime !== null && endTime !== undefined && endTime !== null) {
+    return now >= startTime && now < endTime;
+  }
+  return status === 'live' || status === 'ending_soon' || status === 'active';
+};
 
-export const isUpcoming = (status?: string | null): boolean =>
-  status !== 'draft' && (status === 'upcoming' || status === 'preview' || !status);
+export const isUpcoming = (
+  status?: string | null,
+  startTime?: number | null,
+  endTime?: number | null,
+  now: number = Date.now()
+): boolean => {
+  if (status === 'draft' || status === 'sold') return false;
+  if (startTime !== undefined && startTime !== null) {
+    return now < startTime;
+  }
+  return status !== 'draft' && (status === 'upcoming' || status === 'preview' || !status);
+};
 
-export const isEnded = (status?: string | null): boolean =>
-  status === 'ended' || status === 'sold' || status === 'reserve_not_met';
+export const isEnded = (
+  status?: string | null,
+  startTime?: number | null,
+  endTime?: number | null,
+  now: number = Date.now()
+): boolean => {
+  if (status === 'sold' || status === 'ended') return true;
+  if (status === 'draft') return false;
+  if (endTime !== undefined && endTime !== null) {
+    return now >= endTime;
+  }
+  return status === 'ended' || status === 'sold' || status === 'reserve_not_met';
+};
 
 export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   auctions,
@@ -73,6 +104,15 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings>(DEFAULT_PROMO_SETTINGS);
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [brokenImageMap, setBrokenImageMap] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(Date.now());
+
+  // Tick countdown timer every 1000ms for dynamic status transitions
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Load dismissed promo IDs from localStorage on mount
   useEffect(() => {
@@ -193,9 +233,9 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   const filteredAuctions = auctions.filter((lot: Auction) => {
     // Draft lots are strictly excluded from public catalog views
     if (lot.status === 'draft') return false;
-    if (filterStatus === 'live' && !isLive(lot.status)) return false;
-    if (filterStatus === 'upcoming' && !isUpcoming(lot.status)) return false;
-    if (filterStatus === 'ended' && !isEnded(lot.status)) return false;
+    if (filterStatus === 'live' && !isLive(lot.status, lot.startTime, lot.endTime, now)) return false;
+    if (filterStatus === 'upcoming' && !isUpcoming(lot.status, lot.startTime, lot.endTime, now)) return false;
+    if (filterStatus === 'ended' && !isEnded(lot.status, lot.startTime, lot.endTime, now)) return false;
 
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
@@ -302,7 +342,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Live ({publicAuctions.filter((a: Auction) => isLive(a.status)).length})
+                Live ({publicAuctions.filter((a: Auction) => isLive(a.status, a.startTime, a.endTime, now)).length})
               </button>
               <button
                 type="button"
@@ -313,7 +353,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Upcoming ({publicAuctions.filter((a: Auction) => isUpcoming(a.status)).length})
+                Upcoming ({publicAuctions.filter((a: Auction) => isUpcoming(a.status, a.startTime, a.endTime, now)).length})
               </button>
               <button
                 type="button"
@@ -324,7 +364,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Ended ({publicAuctions.filter((a: Auction) => isEnded(a.status)).length})
+                Ended ({publicAuctions.filter((a: Auction) => isEnded(a.status, a.startTime, a.endTime, now)).length})
               </button>
             </div>
           </div>

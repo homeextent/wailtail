@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Automated Real-Time Auction Lifecycle Transitions (`src/utils/formatters.ts`, `src/components/AuctionHeader.tsx`, `src/components/VehicleCatalogGrid.tsx`)**:
+  - Implemented `getEffectiveAuctionStatus()` evaluating real-time timestamps against `startTime` and `endTime` to dynamically resolve auction states (`upcoming`, `active`, `ending_soon`, `ended`, `sold`).
+  - Refactored `formatAuctionCountdown()` to dynamically trigger status changes without requiring page reloads when `startTime` or `endTime` thresholds are crossed.
+  - Added background status reconciliation in `AuctionHeader.tsx` executing `updateAuctionStatus()` when Firestore stored status diverges from real-time effective status.
+  - Refactored `VehicleCatalogGrid.tsx` status predicates (`isLive`, `isUpcoming`, `isEnded`) and added a 1-second interval tick to auto-update filter tab counts and lot buckets in real time.
+- **Hagerty Canada Valuation Link Integration (`src/types.ts`, `src/utils/formatters.ts`, `src/services/auctionService.ts`, `src/components/ListingEditorWorkspace.tsx`, `src/components/AuctionHeader.tsx`)**:
+  - Added optional `hagertyValuationUrl?: string;` property to `Auction` and `ListingDraftSchema` interfaces.
+  - Exported `formatExternalUrl(url?: string): string` in `formatters.ts` ensuring case-insensitive `https://` protocol prefixing to prevent browser relative URL path resolution errors.
+  - Integrated "Hagerty Canada Valuation Link" text input under Section 1 (Vehicle Identity) in `ListingEditorWorkspace.tsx`, with persistence across workspace save, JSON export (`handleExportJson`), and JSON import (`handleApplyImportJson`).
+  - Added conditional high-contrast branded Hagerty® Valuation Report CTA buttons (`TrendingUp` icon, `target="_blank"`, `rel="noopener noreferrer"`) in `AuctionHeader.tsx` and the workspace live preview pane.
 - **Static Open Graph & Twitter Card Social Metadata (`index.html`)**:
   - Injected pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) metadata tags into `index.html`.
   - Configured social preview assets pointing directly to canonical domain `https://www.wailtail.com/` and the 1988 Porsche 928 hero photograph hosted on Firebase Cloud Storage (`1200x630` dimensions).
@@ -173,6 +183,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Preserved role dropdown filter (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) while updating navigation and header terminology to represent universal platform membership.
 
 ### Fixed
+- **Sticky Stepper Positioning in Listing Editor Workspace (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Adjusted sticky stepper container CSS to `sticky top-16 max-h-[calc(100vh-4.5rem)]` and removed clipping `overflow-hidden` classes on parent wrappers, ensuring the LISTING SECTIONS sidebar remains pinned below the header during scrolling.
 - **FCM Console Cleanup**: Stripped verbose `[FCM Setup]` informational logs from `src/hooks/usePushNotifications.ts` to maintain clean browser console diagnostics while preserving actionable error warnings.
 - **Firestore FCM Token Persistence Failure**: Replaced `updateDoc` with `setDoc(..., { merge: true })` in `usePushNotifications.ts` to prevent document-missing exceptions when saving tokens.
 - **Service Worker Subscription Race Condition**: Added `await navigator.serviceWorker.ready` prior to `getToken()` execution, ensuring the worker is fully active before push subscription attempts.
