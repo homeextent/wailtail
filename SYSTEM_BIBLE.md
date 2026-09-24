@@ -26,8 +26,10 @@
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
 | `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Features deep-link auth preservation (suspends route guard during `authLoading`, caches triage parameters in `sessionStorage` key `wailtail_pending_admin_deeplink`, prompts contextual login banner, and auto-restores to target triage modal upon sign-in), Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
-| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, and JSON schema import/export. |
+| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, and seller lot dropdown filtering (`visibleAuctions`). |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
+| Platform Legal Infrastructure (Modal) | `LegalModal.tsx` | Public | Tabbed modal dialog for platform Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage), triggered globally via `App.tsx` state (`isLegalModalOpen`, `legalModalTab`). |
+| Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct consignment inquiry trigger, and modal openers for Terms of Service and Privacy Policy. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
 | `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
@@ -38,7 +40,7 @@
 ## 2. Core Firestore Data Schemas
 
 ### 2.1 `auctions` Collection
-Document ID: `current` (or specific auction UUID)
+Document ID: SEO title slug format `${slug}-${shortHash}` (e.g. `1988-porsche-928-s4-automatic-mtur4abv`), generated via `slugifyTitle(title)` and `generateShortHash()` in `createNewListing()` (or legacy `current` / specific auction UUID)
 ```typescript
 interface Auction {
   id: string;
@@ -714,13 +716,16 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Photo cards feature responsive aspect ratios (`aspect-[4/3]`), top overlay with non-clipping category selectors, and dedicated high-contrast red delete action buttons.
 
 ### 6.2 Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`)
-- **Multi-Car Inventory Architecture**:
+- **Multi-Car Inventory Architecture & Seller Lot Dropdown Filtering**:
   - Full support for multi-car inventory catalogs in Firestore (`auctions` collection and per-lot `media-${auctionId}` settings).
-  - **"Select Vehicle Listing" Dropdown**: Located in the workspace header bar, allowing administrators to seamlessly switch between active and draft vehicle lots with automatic form state synchronization.
+  - **"Select Vehicle Listing" Dropdown & Seller Filtering**: Located in the workspace header bar, allowing administrators to seamlessly switch between active and draft vehicle lots with automatic form state synchronization. When accessed by a seller account, `visibleAuctions` automatically filters the dropdown to show only lots owned by that seller (`lot.sellerId === user.uid || lot.sellerEmail === user.email`), while administrators retain full catalog visibility.
+  - **Role-Gated Workspace Header Tools & Lifecycle Overrides**:
+    - Header administrative controls (**Import JSON**, **Export JSON**, and **+ New Listing**) are gated behind an `isAdmin` check, hiding them from standard seller accounts.
+    - Section 7 Auction Lifecycle Status overrides (`Ended - Manual Force Close`, `Sold - Settled Offline`) are restricted to administrators (`isAdmin`). Non-admin sellers are restricted to `Draft` and `Scheduled / Live (Automated Clock)`.
   - **Zero-Lot Database Support & Snapshot Rules**:
     - Snapshot listeners in `App.tsx` and `AdminPanelModal.tsx` (`subscribeToAllAuctions`) are configured to support empty states (`list || []`), removing legacy length guards to allow clean operation on a pristine database.
     - All catalog views render the actual database state without forced ternary fallbacks.
-  - **"+ New Listing" Workflow**: Modal prompt requesting Listing Title / Vehicle Lot Name; atomically provisions a new vehicle document in Firestore (`createNewListing`) with clean placeholders and default Canadian CAD financials ($1,000 start, $250 increment, 7-day duration) without overwriting existing listings.
+  - **"+ New Listing" Workflow & SEO Title Slugs**: Modal prompt requesting Listing Title / Vehicle Lot Name; atomically provisions a new vehicle document in Firestore (`createNewListing`) using human-readable document IDs (`${slug}-${shortHash}`, e.g., `1988-porsche-928-s4-automatic-mtur4abv`) via `slugifyTitle(title)` and `generateShortHash()`, initialized with clean placeholders and default Canadian CAD financials ($1,000 start, $250 increment, 7-day duration) without overwriting existing listings.
   - **Optimistic State Hydration**: Immediately appends new lot to local state upon creation to ensure instantaneous UI feedback while bridging Firestore synchronization latency.
 - **Full-Page Split-Screen Route & View Modes**:
   - Dedicated authoring workspace (`ListingEditorWorkspace.tsx`), offering 3 layout view modes:
@@ -731,12 +736,13 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Responsive Preview Viewport**: Toggle between full Desktop mode and 390px Mobile simulated phone container with live state hydration.
 - **100% Feature Parity Across All 7 Sections**:
   - **Section 1 (Vehicle Identity & 10-Row Form Layout)**:
+    - **Required Field Error Badges & Highlighting**: Empty required inputs display high-visibility red error border rings (`border-red-500/80`) and accompanying text warning badges (`* VIN Required`, `* Make Required`, `* Model Required`, `* Year Required`, etc.), eliminating seller confusion surrounding the sticky sidebar "1 needed" stepper counter.
     - **10-Row Form Hierarchy**:
       - **Row 1 (Top Row)**: 4-column responsive grid featuring the 3-tier dependent vehicle taxonomy pipeline: **Year** select (1930–2026), **Make** dropdown, **Model** dropdown, and **Generation / Chassis Code** dropdown (with dynamic custom input fallbacks).
-      - **Row 2**: Primary Listing Title input equipped with an `"Auto Generate from Year / Make / Model / Gen"` helper trigger.
+      - **Row 2**: Primary Listing Title input equipped with the inline `⚡ Auto-generate from Specs` helper trigger positioned directly adjacent to the "Listing Title" label text.
       - **Row 3**: Subtitle / Highlights Bar input for editorial headline summaries (e.g. `3.0L Flat-Six • 5-Speed 915 • Guards Red (027)`).
-      - **Row 4**: 2-column grid featuring Vehicle Identification Number (VIN) uppercase text input and Odometer reading paired with an interactive `km` / `mi` distance unit toggle.
-      - **Row 5**: 2-column grid for Engine specification and standardized Drivetrain / Gearbox dropdown with custom fallback entry.
+      - **Row 4**: 2-column grid featuring Vehicle Identification Number (VIN) uppercase text input and strict numeric Odometer reading (`[^0-9]` sanitization) paired with an interactive `km` / `mi` distance unit toggle.
+      - **Row 5**: 2-column grid for Engine specification and standardized **Universal Gearbox Taxonomy** dropdown (12 universal transmission choices: 4-Speed Manual, 5-Speed Manual, 6-Speed Manual, 7-Speed Manual, Automatic / Torque Converter, Dual-Clutch Automatic (DCT), Automated Manual (SMG/F1/E-Gear), Continuously Variable Transmission (CVT), Single-Speed Direct Drive (EV), Sequential / Dog-Leg, Preselector / Semi-Automatic, Other / Custom Gearbox...) with dynamic custom text input fallback.
       - **Row 6**: 2-column grid for Exterior finish and Interior / Cabin specifications.
       - **Row 7**: Standardized Title & Registration Status dropdown with custom fallback entry.
       - **Row 8**: Structured 3-field vehicle location panel (City, Province / State, and Country).
@@ -752,8 +758,9 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **Section 5 (Hero Carousel & Full Photo Gallery)**: Drag-and-drop and positional hero carousel reordering (`← Left` / `Right →`) with `★ Lead Hero` indicator; categorized gallery supporting exterior, interior, engine, underbody, and PDF inspection documents with non-clipping category selectors and high-visibility delete buttons.
   - **Section 6 (Videos & Driving Chapters)**: 1-click YouTube playlist video chapter ingestion via serverless proxy (`api/youtube-playlist.ts`), video metadata auto-fetching, driving chapter timeline cards with live thumbnail previews, and complete eradication of video duration metadata.
   - **Section 7 (Auction Financials & Schedule)**: Canadian Dollar (`CAD $`) financial ledger (starting bid, reserve, minimum increment), lifecycle status dropdown, interactive native datetime pickers with calendar trigger icons and native `.showPicker()` modal invocation styled with `[color-scheme:dark]`, and "Simulate Final 2 Minutes" Anti-Sniping test button.
-- **Full Public Preview Parity**:
-  - Live public header with dynamic countdown calculated via `formatAuctionCountdown`, starting/high bid, reserve status pill, and key header specs.
+- **Full Public Preview Parity & Demo Fallback String Purge**:
+  - Legacy demo fallback strings (`9118200142`, `126,200 km`, `Guards Red`, `3.0L Flat-Six CIS`) are stripped across public components and workspace preview panes, cleanly rendering empty/unentered fields with `'—'`.
+  - Live public header with dynamic countdown calculated via `formatAuctionCountdown`, starting/high bid, opening bid calculation sync (minimum bid = starting bid on zero-bid listings), reserve status pill, and key header specs.
   - Interactive `HeroMediaCarousel` with image navigation and lightbox triggers.
   - Section 2 & 3 Overview Narrative and synchronized "Vehicle Highlights" sidebar card with Zero Buyer Fees banner and Consignor Private Inquiry action.
   - Section 4 `InlineShowcaseSection` with photo lightboxes and highlight lists.
@@ -958,6 +965,16 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **3-Tier Vehicle Taxonomy & Custom Fallbacks**:
   - Standardized Year select (1930–2026), Make selector, Model selector, and Generation/Chassis Code selector backed by `vehicleTaxonomy.json`.
   - Integrated `TAXONOMY_OTHER_CUSTOM` fallback text inputs for unlisted makes, bespoke models, or rare coachbuilt variants.
+- **Universal Gearbox Taxonomy Symmetry**:
+  - Transmission selector implements the universal 12-entry automotive gearbox taxonomy (4-Speed Manual, 5-Speed Manual, 6-Speed Manual, 7-Speed Manual, Automatic / Torque Converter, Dual-Clutch Automatic (DCT), Automated Manual (SMG/F1/E-Gear), Continuously Variable Transmission (CVT), Single-Speed Direct Drive (EV), Sequential / Dog-Leg, Preselector / Semi-Automatic, Other / Custom Gearbox...) matching `ListingEditorWorkspace.tsx`, complete with dynamic text input for custom configurations.
+- **Strict Numeric & Telephone Input Sanitization**:
+  - Odometer Reading input restricts characters strictly to numeric digits (`[^0-9]`).
+  - Phone Number input restricts characters strictly to telephone characters (`[^0-9+\-() ]`), preventing malformed entries.
+- **Mandatory Clickwrap Legal Agreement Checkbox**:
+  - Controlled unchecked checkbox requiring explicit applicant agreement to Wailtail's Terms of Service and Privacy Policy before submission.
+  - The submission button remains disabled until agreement is certified, ensuring PIPEDA compliance and legal defensibility.
+- **Consignment Workflow Safeguards & Unvetted Draft Bypass Purge**:
+  - Completely purged the unvetted "Ready to draft your listing right now?" bypass card, enforcing mandatory administrative curation and approval prior to draft workspace creation.
 - **3-Column Structured Location Panel**:
   - Clean separation into City (`locationCity`), Province / State (`locationProvince`), and Country (`locationCountry`) with automatic composite string formatting (`formattedLocation`).
 - **Option A Registered Member Auto-Link Detection (`onBlur`)**:
@@ -1009,12 +1026,18 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Features the `TrendingUp` icon, opens in a new browser tab (`target="_blank"`, `rel="noopener noreferrer"`), and connects collectors directly to third-party Hagerty Canada market appraisal data.
   - Fully replicated in the split-screen authoring workspace live preview pane (`ListingEditorWorkspace.tsx`).
 
-### 6.12 Global Navigation & User Profile Menu (`Navbar.tsx`)
-- **User Profile Dropdown Positioning Repair**:
+### 6.12 Global Navigation & Footer (`Navbar.tsx`, `Footer.tsx`)
+- **User Profile Dropdown Positioning Repair (`Navbar.tsx`)**:
   - Replaced rigid fixed flex positioning with a dedicated `relative inline-block` wrapper ref (`userMenuRef`).
   - Dropdown menu is pinned with `absolute right-0 top-full mt-2 w-64 z-50` with high-contrast slate surfaces (`bg-slate-900 border border-slate-800 rounded-xl shadow-2xl`).
   - Completely resolves right-edge viewport clipping, vertical flex squishing, and overlapping with adjacent CTA buttons on smaller desktop and tablet screens.
   - Features outside-click listener (`handleClickOutside`) bound via React refs to guarantee clean teardown upon outside clicks or route navigation.
+- **Global Footer Overhaul & Platform Copy (`Footer.tsx`)**:
+  - Primary editorial description updated to reflect curated Canadian classic, collector, and enthusiast vehicle auctions.
+  - Prominent national geographic tagline: `"Consigning & Bidding Nationwide Across Canada 🇨🇦"`.
+  - Direct external routing to the Wailtail Legacy Marketplace ([https://marketplace.wailtail.com](https://marketplace.wailtail.com)).
+  - Interactive "Consign a Vehicle" call-to-action opening the consignment intake workflow (`onOpenConsignment`).
+  - Integrated legal compliance modal triggers invoking `LegalModal.tsx` directly into the designated active tab (`openLegalModal('terms')` or `openLegalModal('privacy')`).
 
 ### 6.13 Promotional & Launch Campaign Manager (`AdminPortalPage.tsx`, `VehicleCatalogGrid.tsx`, `AuctionHeader.tsx`)
 
@@ -1074,14 +1097,16 @@ Wailtail implements a tri-role access control model defined in `src/types.ts` vi
 | Platform Capability | Guest / Anonymous | BIDDER | SELLER | ADMIN |
 | :--- | :---: | :---: | :---: | :---: |
 | Browse Catalog & View Vehicle Lots (`/`, `/catalog`, `/auctions/[id]`) | ✅ | ✅ | ✅ | ✅ |
-| Submit Consignment Inquiry (`ConsignmentModal.tsx`) | ✅ | ✅ (Auto-Linked) | ✅ (Auto-Linked) | ✅ (Auto-Linked) |
-| Place Real-Time Anti-Snipe Bids | ❌ | ✅ (Unbanned) | ✅ (Unbanned) | ✅ |
+| Submit Consignment Inquiry (`ConsignmentModal.tsx`) | ✅ (Mandatory Clickwrap Agreement) | ✅ (Auto-Linked + Clickwrap) | ✅ (Auto-Linked + Clickwrap) | ✅ (Auto-Linked + Clickwrap) |
+| Place Real-Time Anti-Snipe Bids (`BidModal.tsx`) | ❌ | ✅ (Unbanned + Mandatory Clickwrap) | ✅ (Unbanned + Mandatory Clickwrap) | ✅ (Mandatory Clickwrap) |
 | Watchlist Auctions & Receive High-Bid Alerts | ❌ | ✅ | ✅ | ✅ |
 | Post Community Comments & Discussion Questions | ❌ | ✅ (`Verified Bidder`) | ✅ (`Seller`) | ✅ (`Staff / Admin`) |
 | Reply with Official Verified Badges in Comments | ❌ | ❌ | ✅ (`SELLER`) | ✅ (`STAFF / ADMIN`) |
 | Access User Activity Hub Modal (`UserAccountHubModal.tsx`) | ❌ | ✅ | ✅ | ✅ |
 | View Won Lots & 4-Stage Offline CAD Settlement Checklist | ❌ | ✅ | ✅ | ✅ |
-| Access Dedicated Listing Workspace (`/dashboard/listings/[id]/edit`) | ❌ | ❌ | ✅ | ✅ |
+| Access Dedicated Listing Workspace (`/dashboard/listings/[id]/edit`) | ❌ | ❌ | ✅ (Filtered to Owned Lots via `visibleAuctions`) | ✅ (All Catalog Lots) |
+| Authoring Workspace Header Tools (Import JSON, Export JSON, + New Listing) | ❌ | ❌ | ❌ (Role-Gated) | ✅ |
+| Manual Auction Force-Close & Offline Settlement Lifecycle Overrides | ❌ | ❌ | ❌ (Restricted to Draft / Scheduled) | ✅ (`Ended`, `Sold`) |
 | Access Full-Page Operations Portal (`/admin`) | ❌ | ❌ | ❌ | ✅ |
 | Paginated Member Directory & Consignment Search | ❌ | ❌ | ❌ | ✅ |
 | Switch User Roles (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`) | ❌ | ❌ | ❌ | ✅ |

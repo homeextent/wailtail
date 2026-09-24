@@ -51,7 +51,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
           {thumbnailUrl && thumbnailUrl.trim() !== '' ? (
             <img
               src={thumbnailUrl}
-              alt={auction.title}
+              alt={auction.title || 'Vehicle'}
               className="w-12 h-9 rounded object-cover border border-zinc-700 hidden sm:block flex-shrink-0"
               referrerPolicy="no-referrer"
             />
@@ -62,7 +62,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
           )}
           <div className="truncate">
             <h3 className="text-xs sm:text-sm font-bold text-zinc-100 truncate">
-              {auction.title}
+              {auction.title || '—'}
             </h3>
             <div className="flex items-center gap-2 text-[11px] text-zinc-400">
               <span className="flex items-center gap-1 font-mono text-zinc-300">
@@ -70,7 +70,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
                 {timeData.formatted}
               </span>
               <span>•</span>
-              <span className="text-zinc-300">{auction.bidCount} Bids</span>
+              <span className="text-zinc-300">{(auction.bidCount || 0)} {(auction.bidCount || 0) === 1 ? 'Bid' : 'Bids'}</span>
             </div>
           </div>
         </div>

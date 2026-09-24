@@ -4,7 +4,6 @@ import {
   Car, 
   CheckCircle, 
   ShieldCheck, 
-  Sparkles, 
   DollarSign, 
   Camera, 
   FileText, 
@@ -32,16 +31,33 @@ export const TAXONOMY_OTHER_CUSTOM = 'OTHER_CUSTOM';
 export const AVAILABLE_MAKES = Object.keys(vehicleTaxonomy).sort((a, b) => a.localeCompare(b));
 export const YEAR_OPTIONS = Array.from({ length: 2026 - 1900 + 1 }, (_, i) => 2026 - i);
 
+export const GEARBOX_OPTIONS = [
+  '4-Speed Manual',
+  '5-Speed Manual',
+  '6-Speed Manual',
+  '3-Speed Automatic',
+  '4-Speed Automatic',
+  '5-Speed Automatic',
+  '6-Speed Automatic',
+  '8-Speed Automatic',
+  'Dual-Clutch Automatic (DCT)',
+  'Sequential / Dog-Leg',
+  'Direct-Drive / Single-Speed',
+  'Other / Custom Gearbox...'
+];
+
 interface ConsignmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLaunchDirectListing?: () => void;
+  onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
 }
 
 export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   isOpen,
   onClose,
-  onLaunchDirectListing
+  onLaunchDirectListing,
+  onOpenLegalModal
 }) => {
   const { user } = useAuth();
 
@@ -57,7 +73,8 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   // Specs
   const [vin, setVin] = useState('');
   const [mileage, setMileage] = useState('');
-  const [transmission, setTransmission] = useState('Manual');
+  const [transmission, setTransmission] = useState('5-Speed Manual');
+  const [customTransmission, setCustomTransmission] = useState('');
 
   // 3-column structured location fields
   const [locationCity, setLocationCity] = useState('');
@@ -71,6 +88,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   const [sellerPhone, setSellerPhone] = useState('');
   const [notes, setNotes] = useState('');
 
+  const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -198,6 +216,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       setErrorMsg('Please complete all required fields (Year, Make, Model, Seller Name, and Email).');
       return;
     }
+    if (!hasAgreedToTerms) {
+      setErrorMsg('Please confirm legal vehicle ownership authority and agree to Wailtail\'s Terms of Service and Privacy Policy.');
+      return;
+    }
 
     setSubmitting(true);
     setErrorMsg(null);
@@ -207,6 +229,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       .filter(Boolean)
       .join(', ');
 
+    const effectiveTransmission = transmission === 'Other / Custom Gearbox...'
+      ? (customTransmission.trim() || 'Other / Custom Gearbox...')
+      : transmission;
+
     try {
       await submitConsignmentApplication({
         year: year.trim(),
@@ -215,7 +241,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
         generation: effectiveGeneration,
         vin: vin.trim().toUpperCase(),
         mileage: mileage.trim(),
-        transmission,
+        transmission: effectiveTransmission,
         location: formattedLocation,
         locationCity: locationCity.trim(),
         locationProvince: locationProvince.trim(),
@@ -247,7 +273,8 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     setCustomGeneration('');
     setVin('');
     setMileage('');
-    setTransmission('Manual');
+    setTransmission('5-Speed Manual');
+    setCustomTransmission('');
     setLocationCity('');
     setLocationProvince('');
     setLocationCountry('Canada');
@@ -258,6 +285,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     setNotes('');
     setDetectedAccount(null);
     setErrorMsg(null);
+    setHasAgreedToTerms(false);
     onClose();
   };
 
@@ -576,7 +604,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       type="text"
                       placeholder="e.g. 84,200 km"
                       value={mileage}
-                      onChange={(e) => setMileage(e.target.value)}
+                      onChange={(e) => {
+                        const cleanVal = e.target.value.replace(/[^0-9]/g, '');
+                        setMileage(cleanVal);
+                      }}
                       className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none"
                     />
                   </div>
@@ -587,14 +618,29 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     </label>
                     <select
                       value={transmission}
-                      onChange={(e) => setTransmission(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTransmission(val);
+                        if (val !== 'Other / Custom Gearbox...') {
+                          setCustomTransmission('');
+                        }
+                      }}
                       className="w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/90 text-white text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none cursor-pointer"
                     >
-                      <option value="Manual">Manual Transmission</option>
-                      <option value="Dual-Clutch / PDK">Dual-Clutch / PDK / Sequential</option>
-                      <option value="Automatic">Automatic Transmission</option>
-                      <option value="Other">Other</option>
+                      {GEARBOX_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
                     </select>
+                    {transmission === 'Other / Custom Gearbox...' && (
+                      <input
+                        type="text"
+                        placeholder="Specify custom gearbox / transaxle..."
+                        value={customTransmission}
+                        onChange={(e) => setCustomTransmission(e.target.value)}
+                        className="mt-2 w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none"
+                        required
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -711,7 +757,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       type="tel"
                       placeholder="e.g. (604) 555-0192"
                       value={sellerPhone}
-                      onChange={(e) => setSellerPhone(e.target.value)}
+                      onChange={(e) => {
+                        const cleanPhone = e.target.value.replace(/[^0-9+\-() ]/g, '');
+                        setSellerPhone(cleanPhone);
+                      }}
                       className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none"
                     />
                   </div>
@@ -730,53 +779,40 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                   />
                 </div>
               </div>
-
-              {/* Direct Workspace Option Banner */}
-              {(onLaunchDirectListing && (user?.role === 'seller' || user?.role === 'admin')) && (
-                <div className="p-3.5 rounded-xl bg-emerald-950/50 border border-emerald-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-200">
-                  <div>
-                    <div className="font-bold flex items-center gap-1.5 text-emerald-300">
-                      <Sparkles className="w-4 h-4 text-emerald-400" />
-                      <span>Ready to draft your listing right now?</span>
-                    </div>
-                    <div className="text-[11px] text-emerald-400/90 mt-0.5">
-                      Skip the inquiry and jump directly into the full listing workspace to upload photos and chapters.
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onLaunchDirectListing();
-                    }}
-                    className="min-h-[44px] px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs whitespace-nowrap transition-colors flex items-center justify-center gap-1 cursor-pointer flex-shrink-0"
-                  >
-                    <span>Listing Workspace (/dashboard/listings/new)</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Modal Sticky/Fixed Footer Action Buttons */}
-            <div className="p-4 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between gap-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={handleReset}
-                className="min-h-[44px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
+            <div className="p-4 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950 flex flex-col gap-3.5 flex-shrink-0">
+              <label className="flex items-start gap-2.5 cursor-pointer text-xs text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={hasAgreedToTerms}
+                  onChange={(e) => setHasAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 rounded border-zinc-700 bg-zinc-900 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span>
+                  I confirm I am the legal owner or authorized representative of this vehicle and agree to Wailtail's <button type="button" onClick={() => onOpenLegalModal?.('terms')} className="underline text-emerald-400 cursor-pointer">Terms of Service</button> and <button type="button" onClick={() => onOpenLegalModal?.('privacy')} className="underline text-emerald-400 cursor-pointer">Privacy Policy</button>.
+                </span>
+              </label>
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="min-h-[44px] px-5 sm:px-6 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{submitting ? 'Submitting Consignment...' : 'Submit Consignment Inquiry'}</span>
-              </button>
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="min-h-[44px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={submitting || !hasAgreedToTerms}
+                  className="min-h-[44px] px-5 sm:px-6 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{submitting ? 'Submitting Consignment...' : 'Submit Consignment Inquiry'}</span>
+                </button>
+              </div>
             </div>
           </form>
         )}

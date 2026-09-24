@@ -327,21 +327,21 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-zinc-800 uppercase tracking-wider">Auctions</span>
             <span>/</span>
-            <span className="text-zinc-600">{auction.make || 'Porsche'}</span>
+            <span className="text-zinc-600">{auction.make || '—'}</span>
             <span>/</span>
-            <span className="text-zinc-600">{auction.model || '911 (1974-1989 G-Body)'}</span>
+            <span className="text-zinc-600">{auction.model || '—'}</span>
             <span>/</span>
-            <span className="text-zinc-900 font-medium truncate max-w-xs">{auction.vin}</span>
+            <span className="text-zinc-900 font-medium truncate max-w-xs">{auction.vin || '—'}</span>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1 text-zinc-600">
               <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-              <span>{auction.location}</span>
+              <span>{auction.location || '—'}</span>
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600">
-              Seller: <strong className="text-zinc-900 font-semibold">{auction.sellerName}</strong>
+              Seller: <strong className="text-zinc-900 font-semibold">{auction.sellerName || '—'}</strong>
             </span>
           </div>
         </div>
@@ -349,38 +349,40 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
         {/* Main Vehicle Title */}
         <div className="mb-4">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-900 tracking-tight font-serif">
-            {auction.title}
+            {auction.title || '—'}
           </h1>
-          <p className="text-sm sm:text-base text-zinc-600 mt-1.5 font-normal">
-            {auction.subtitle}
-          </p>
+          {auction.subtitle && (
+            <p className="text-sm sm:text-base text-zinc-600 mt-1.5 font-normal">
+              {auction.subtitle}
+            </p>
+          )}
         </div>
 
         {/* Essential Vehicle Key Facts Grid / Pills */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-6 text-xs">
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Chassis / VIN</span>
-            <span className="font-mono font-bold text-zinc-800 text-xs break-all sm:truncate block mt-0.5" title={auction.vin}>{auction.vin}</span>
+            <span className="font-mono font-bold text-zinc-800 text-xs break-all sm:truncate block mt-0.5" title={auction.vin || '—'}>{auction.vin || '—'}</span>
           </div>
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Mileage</span>
-            <span className="font-bold text-zinc-800 text-xs block mt-0.5">{auction.mileage}</span>
+            <span className="font-bold text-zinc-800 text-xs block mt-0.5">{auction.mileage ? (auction.mileage.includes('km') || auction.mileage.includes('mi') ? auction.mileage : `${auction.mileage} ${auction.distanceUnit || 'km'}`.trim()) : '—'}</span>
           </div>
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Engine</span>
-            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.engine || "3.0L Flat-Six CIS"}</span>
+            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.engine || "—"}</span>
           </div>
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Drivetrain</span>
-            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.drivetrain || "5-Speed 915 Manual"}</span>
+            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.drivetrain || "—"}</span>
           </div>
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Exterior</span>
-            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.exteriorColor || "Guards Red / Whale Tail"}</span>
+            <span className="font-bold text-zinc-800 text-xs block mt-0.5 truncate">{auction.exteriorColor || "—"}</span>
           </div>
           <div className="bg-zinc-50 border border-zinc-200/80 rounded-md p-2.5">
             <span className="text-zinc-400 uppercase tracking-wider block text-[10px] font-semibold">Title Status</span>
-            <span className="font-bold text-emerald-700 text-xs block mt-0.5 truncate">{auction.titleStatus || "Clean Registration"}</span>
+            <span className="font-bold text-emerald-700 text-xs block mt-0.5 truncate">{auction.titleStatus || "—"}</span>
           </div>
         </div>
 

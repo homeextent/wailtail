@@ -40,6 +40,7 @@ import { ConsignmentModal } from './components/ConsignmentModal';
 import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
+import { LegalModal } from './components/LegalModal';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
 import { AdminPortalPage } from './components/AdminPortalPage';
@@ -171,6 +172,13 @@ const AuctionAppContent: React.FC = () => {
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
   const [isAccountHubOpen, setIsAccountHubOpen] = useState(false);
   const [accountHubTab, setAccountHubTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'>('bids');
+  const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
+
+  const handleOpenLegalModal = (tab: 'terms' | 'privacy' = 'terms') => {
+    setLegalModalTab(tab);
+    setIsLegalModalOpen(true);
+  };
 
   const handleOpenAccountHub = (tab?: string) => {
     if (!user) {
@@ -694,6 +702,8 @@ const AuctionAppContent: React.FC = () => {
           siteLogo={effectiveSiteLogo}
           siteName={effectiveSiteName}
           siteTagline={effectiveSiteTagline}
+          onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+          onOpenLegalModal={handleOpenLegalModal}
         />
       </div>
     );
@@ -971,6 +981,8 @@ const AuctionAppContent: React.FC = () => {
         siteLogo={effectiveSiteLogo}
         siteName={effectiveSiteName}
         siteTagline={effectiveSiteTagline}
+        onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+        onOpenLegalModal={handleOpenLegalModal}
       />
 
       {/* Modals */}
@@ -982,6 +994,7 @@ const AuctionAppContent: React.FC = () => {
           setIsBidModalOpen(false);
           setIsAuthModalOpen(true);
         }}
+        onOpenLegalModal={handleOpenLegalModal}
       />
 
       <ContactSellerModal
@@ -1042,6 +1055,13 @@ const AuctionAppContent: React.FC = () => {
         isOpen={isConsignmentModalOpen}
         onClose={() => setIsConsignmentModalOpen(false)}
         onLaunchDirectListing={handleLaunchListingWorkspace}
+        onOpenLegalModal={handleOpenLegalModal}
+      />
+
+      <LegalModal
+        isOpen={isLegalModalOpen}
+        onClose={() => setIsLegalModalOpen(false)}
+        initialTab={legalModalTab}
       />
 
       {isAdmin && (

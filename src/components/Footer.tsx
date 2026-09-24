@@ -7,13 +7,17 @@ interface FooterProps {
   siteLogo?: string;
   siteName?: string;
   siteTagline?: string;
+  onOpenConsignmentModal?: () => void;
+  onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({ 
   vehicleTitle,
   siteLogo,
   siteName,
-  siteTagline
+  siteTagline,
+  onOpenConsignmentModal,
+  onOpenLegalModal
 }) => {
   const brandName = siteName || 'wailtail';
   const tagline = siteTagline || 'Single-Car Auctions';
@@ -50,7 +54,7 @@ export const Footer: React.FC<FooterProps> = ({
             </div>
             
             <p className="text-zinc-400 text-xs leading-relaxed">
-              Curated single-car private auction platform honoring iconic air-cooled motorsport classics and the legendary Porsche Whale Tail aerodynamic lineage.
+              Curated private vehicle auction platform for classic, collector, and enthusiast automobiles across Canada. Transparent CAD bidding, soft-close anti-sniping protection, and 0% buyer fees.
             </p>
             <div className="text-[11px] text-zinc-500">
               Private collector auction direct from seller. Zero buyer commission.
@@ -80,16 +84,45 @@ export const Footer: React.FC<FooterProps> = ({
           </div>
         </div>
 
-        <div className="pt-8 border-t border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-zinc-500">
+        <div className="pt-8 border-t border-zinc-800 flex flex-col md:flex-row items-center justify-between gap-4 text-[11px] text-zinc-500">
           <div>
-            © {new Date().getFullYear()} {brandName.toUpperCase()}. Featured Vehicle: {vehicleTitle || "1978 Porsche 911 Turbo-Look 'Whale Tail'"}.
+            © {new Date().getFullYear()} {brandName.toUpperCase()}. Featured Vehicle: {vehicleTitle || "Wailtail Classic & Collector Auctions"}.
           </div>
-          <div className="flex items-center gap-4">
-            <a href="https://wailtail.com/featured/" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300 underline underline-offset-4">
-              wailtail.com/featured
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <a 
+              href="https://marketplace.wailtail.com" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-zinc-300 underline underline-offset-4 transition-colors"
+            >
+              Legacy Marketplace
             </a>
             <span>•</span>
-            <span>Vancouver / Calgary</span>
+            <button
+              type="button"
+              onClick={onOpenConsignmentModal}
+              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Consign a Vehicle
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => onOpenLegalModal?.('terms')}
+              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Terms of Service
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => onOpenLegalModal?.('privacy')}
+              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Privacy Policy
+            </button>
+            <span>•</span>
+            <span className="text-zinc-400 font-medium">Consigning & Bidding Nationwide Across Canada 🇨🇦</span>
           </div>
         </div>
       </div>

@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Platform Legal Infrastructure & PIPEDA Compliance (`src/components/LegalModal.tsx`, `src/components/Footer.tsx`, `src/App.tsx`)**:
+  - Created `LegalModal.tsx` supporting tabbed navigation for Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage).
+  - Integrated global state and opener handlers in `App.tsx` (`isLegalModalOpen`, `legalModalTab`).
+- **Mandatory Clickwrap Agreement Checkboxes (`src/components/BidModal.tsx`, `src/components/ConsignmentModal.tsx`)**:
+  - Integrated un-checked controlled checkboxes requiring explicit agreement to Wailtail Terms of Service and Privacy Policy before submitting bids or consignment inquiries, disabling submission buttons until checked.
+- **Footer Overhaul & Legacy Marketplace Integration (`src/components/Footer.tsx`)**:
+  - Updated primary copy to reflect curated Canadian classic & enthusiast vehicle auctions, updated national tagline to "Consigning & Bidding Nationwide Across Canada 🇨🇦", and added direct links for Legacy Marketplace ([https://marketplace.wailtail.com](https://marketplace.wailtail.com)), Consign a Vehicle, Terms of Service, and Privacy Policy.
+- **SEO-Friendly URL Document Slugs (`src/services/auctionService.ts`)**:
+  - Implemented `slugifyTitle()` and `generateShortHash()` in `createNewListing()` to generate human-readable lot document IDs (e.g., `1988-porsche-928-s4-automatic-mtur4abv`).
+- **Section 1 Required Field Error Highlighting (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Added red error rings (`border-red-500/80`) and text badges (`* VIN Required`, `* Make Required`, etc.) on empty required inputs in Section 1 to resolve seller confusion around the "1 needed" stepper badge.
+- **Universal Gearbox Taxonomy (`src/components/ListingEditorWorkspace.tsx`, `src/components/ConsignmentModal.tsx`)**:
+  - Standardized transmission choices to a 12-entry universal automotive gearbox taxonomy (4-Speed Manual, Dual-Clutch Automatic (DCT), Sequential / Dog-Leg, Other / Custom Gearbox...) with custom text input surfacing across workspace editors and consignment intake.
 - **Automated Real-Time Auction Lifecycle Transitions (`src/utils/formatters.ts`, `src/components/AuctionHeader.tsx`, `src/components/VehicleCatalogGrid.tsx`)**:
   - Implemented `getEffectiveAuctionStatus()` evaluating real-time timestamps against `startTime` and `endTime` to dynamically resolve auction states (`upcoming`, `active`, `ending_soon`, `ended`, `sold`).
   - Refactored `formatAuctionCountdown()` to dynamically trigger status changes without requiring page reloads when `startTime` or `endTime` thresholds are crossed.
@@ -178,11 +191,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Changed
+- **Starting Bid Financial Logic & First Bid Calculations (`src/services/auctionService.ts`, `src/components/BidModal.tsx`, `src/components/AuctionHeader.tsx`, `src/components/StickyBidBar.tsx`)**:
+  - Synchronized `currentBid` to `startingBid` when `bidCount === 0`.
+  - Calculated minimum required bid as `startingBid` (instead of `startingBid + increment`) for zero-bid listings, labeled opening bids as "Starting Bid" / "Opening Bid", and fixed hardcoded modal title to render dynamic `auction.title`.
+- **Inline Auto-Generate Title Trigger (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Relocated ⚡ Auto-generate from Specs button directly inline adjacent to the "Listing Title" label text.
+- **Strict Input Sanitization (`src/components/ConsignmentModal.tsx`, `src/components/ListingEditorWorkspace.tsx`)**:
+  - Restricted Odometer Reading inputs to numeric digits (`[^0-9]`) and Phone Number inputs to valid telephone characters (`[^0-9+\-() ]`).
 - **Admin Portal "Member Directory" Tab & Header Rename**:
   - Renamed Admin Portal "Bidder Registry" tab and section headers in `src/components/AdminPortalPage.tsx` to "Member Directory" / "Member Directory Management".
   - Preserved role dropdown filter (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) while updating navigation and header terminology to represent universal platform membership.
 
 ### Fixed
+- **Role-Gated Editor Header Tools & Lifecycle Overrides (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Gated administrative controls (Import JSON, Export JSON, + New Listing) and manual status overrides (Ended - Manual Force Close, Sold - Settled Offline) behind `isAdmin` check, restricting non-admin sellers to Draft and Scheduled / Live (Automated Clock).
+- **Legacy Porsche Fallback String Purge (`src/components/ListingEditorWorkspace.tsx`, `src/components/AuctionHeader.tsx`, `src/components/StickyBidBar.tsx`)**:
+  - Stripped hardcoded demo fallback strings (`9118200142`, `126,200 km`, `Guards Red`, `3.0L Flat-Six CIS`) across live preview and public components so unentered fields render cleanly as '—'.
+- **Unvetted Draft Workspace Consignment Bypass (`src/components/ConsignmentModal.tsx`)**:
+  - Purged the "Ready to draft your listing right now?" bypass card, enforcing mandatory admin approval before listing draft provisioning.
+- **Seller Lot Selection Filtering (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Derived `visibleAuctions` filtering the header lot selector dropdown to show only listings owned by the logged-in seller account (`lot.sellerId === user.uid || lot.sellerEmail === user.email`).
 - **Sticky Stepper Positioning in Listing Editor Workspace (`src/components/ListingEditorWorkspace.tsx`)**:
   - Adjusted sticky stepper container CSS to `sticky top-16 max-h-[calc(100vh-4.5rem)]` and removed clipping `overflow-hidden` classes on parent wrappers, ensuring the LISTING SECTIONS sidebar remains pinned below the header during scrolling.
 - **FCM Console Cleanup**: Stripped verbose `[FCM Setup]` informational logs from `src/hooks/usePushNotifications.ts` to maintain clean browser console diagnostics while preserving actionable error warnings.

@@ -24,13 +24,15 @@ interface BidModalProps {
   onClose: () => void;
   auction: Auction;
   onOpenAuth: () => void;
+  onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
 }
 
 export const BidModal: React.FC<BidModalProps> = ({
   isOpen,
   onClose,
   auction,
-  onOpenAuth
+  onOpenAuth,
+  onOpenLegalModal
 }) => {
   const { user, userProfile, isEmailVerified, manualVerifyForDemo } = useAuth();
   
@@ -40,7 +42,7 @@ export const BidModal: React.FC<BidModalProps> = ({
     : (auction.currentBid + auction.minimumIncrement);
 
   const [bidAmount, setBidAmount] = useState<number>(minRequired);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
@@ -52,6 +54,7 @@ export const BidModal: React.FC<BidModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setBidAmount(minRequired);
+      setHasAgreedToTerms(false);
       setError(null);
       setSuccessResult(null);
     }
@@ -84,8 +87,8 @@ export const BidModal: React.FC<BidModalProps> = ({
       setError(`Minimum bid required is ${formatCurrency(minRequired)}.`);
       return;
     }
-    if (!agreedToTerms) {
-      setError('Please agree to the auction bidding terms.');
+    if (!hasAgreedToTerms) {
+      setError('Please agree to Wailtail\'s Terms of Service and Privacy Policy.');
       return;
     }
 
@@ -126,6 +129,7 @@ export const BidModal: React.FC<BidModalProps> = ({
   const handleResetAndClose = () => {
     setSuccessResult(null);
     setError(null);
+    setHasAgreedToTerms(false);
     onClose();
   };
 
@@ -393,27 +397,29 @@ export const BidModal: React.FC<BidModalProps> = ({
               </div>
 
               {/* Terms Agreement */}
-              <label className="flex items-start gap-2.5 cursor-pointer text-xs text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={agreedToTerms}
-                  onChange={(e) => setAgreedToTerms(e.target.checked)}
-                  className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 border-zinc-300"
-                />
-                <span>
-                  I agree that this bid of <strong>{formatCurrency(bidAmount)}</strong> is a legally binding commitment. If I win, I agree to settle payment directly offline with the seller without platform fees.
-                </span>
-              </label>
+              <div className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={hasAgreedToTerms}
+                    onChange={(e) => setHasAgreedToTerms(e.target.checked)}
+                    className="mt-0.5 rounded border-zinc-700 bg-zinc-900 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span>
+                    I agree to Wailtail's <button type="button" onClick={() => onOpenLegalModal?.('terms')} className="underline text-emerald-400 cursor-pointer">Terms of Service</button> and <button type="button" onClick={() => onOpenLegalModal?.('privacy')} className="underline text-emerald-400 cursor-pointer">Privacy Policy</button>, and acknowledge that this bid of <strong>{formatCurrency(bidAmount)} CAD</strong> is a legally binding commitment.
+                  </span>
+                </label>
+              </div>
 
               {/* Submit Bid Button */}
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={loading || !agreedToTerms || bidAmount < minRequired}
+                  disabled={loading || !hasAgreedToTerms || bidAmount < minRequired}
                   className={`w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all ${
-                    loading || !agreedToTerms || bidAmount < minRequired
+                    loading || !hasAgreedToTerms || bidAmount < minRequired
                       ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:scale-[1.01] active:scale-[0.99]'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:scale-[1.01] active:scale-[0.99] cursor-pointer'
                   }`}
                 >
                   <Gavel className="w-4 h-4" />

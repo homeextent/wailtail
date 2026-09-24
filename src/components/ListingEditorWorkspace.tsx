@@ -217,15 +217,33 @@ const TITLE_STATUS_OPTIONS = [
 
 // Standardized Drivetrain & Gearbox options
 const GEARBOX_OPTIONS = [
-  '5-Speed Manual (915)',
+  '4-Speed Manual',
   '5-Speed Manual',
   '6-Speed Manual',
+  '3-Speed Automatic',
   '4-Speed Automatic',
   '5-Speed Automatic',
-  'Dual-Clutch / PDK',
-  'Sequential',
-  'Other'
+  '6-Speed Automatic',
+  '8-Speed Automatic',
+  'Dual-Clutch Automatic (DCT)',
+  'Sequential / Dog-Leg',
+  'Direct-Drive / Single-Speed',
+  'Other / Custom Gearbox...'
 ];
+
+export const resolveGearboxState = (rawGearbox: string | undefined | null) => {
+  const trimmed = (rawGearbox ?? '').trim();
+  if (!trimmed) {
+    return { dropdown: '5-Speed Manual', custom: '' };
+  }
+  if (GEARBOX_OPTIONS.includes(trimmed) && trimmed !== 'Other / Custom Gearbox...') {
+    return { dropdown: trimmed, custom: '' };
+  }
+  return {
+    dropdown: 'Other / Custom Gearbox...',
+    custom: (trimmed === 'Other' || trimmed === 'Other / Custom Gearbox...') ? '' : trimmed
+  };
+};
 
 export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   auction,
@@ -236,7 +254,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onUpdateMediaConfig,
   onBackToPublic
 }) => {
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
 
   // Multi-listing Catalog State
@@ -244,6 +262,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     if (allAuctions && allAuctions.length > 0) return allAuctions;
     return [auction];
   });
+
+  const visibleAuctions = useMemo(() => {
+    if (isAdmin) return availableAuctions;
+    return availableAuctions.filter(
+      (lot) => lot.sellerId === user?.uid || (lot.sellerEmail && lot.sellerEmail.toLowerCase() === user?.email?.toLowerCase())
+    );
+  }, [availableAuctions, isAdmin, user]);
 
   useEffect(() => {
     if (allAuctions && allAuctions.length > 0) {
@@ -363,13 +388,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
   const prevAutoBadgeRef = useRef<string>(initialAutoBadge);
   const [engine, setEngine] = useState(auction.engine ?? (isMainLot ? '3.0L Flat-Six CIS' : ''));
-  const [drivetrain, setDrivetrain] = useState(auction.drivetrain ?? (isMainLot ? '5-Speed Manual (915)' : ''));
-  const [customDrivetrain, setCustomDrivetrain] = useState('');
+  const initialGearboxState = resolveGearboxState(auction.drivetrain ?? (isMainLot ? '5-Speed Manual' : ''));
+  const [drivetrain, setDrivetrain] = useState(initialGearboxState.dropdown);
+  const [customDrivetrain, setCustomDrivetrain] = useState(initialGearboxState.custom);
   const [exteriorColor, setExteriorColor] = useState(auction.exteriorColor ?? (isMainLot ? 'Guards Red (027)' : ''));
   const [interior, setInterior] = useState(auction.interior ?? (isMainLot ? 'Black Leather / Houndstooth' : ''));
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus ?? 'Clean Registration');
   const [customTitleStatus, setCustomTitleStatus] = useState('');
   const [sellerName, setSellerName] = useState(auction.sellerName ?? (isMainLot ? 'Private Consignor' : ''));
+  const [sellerPhone, setSellerPhone] = useState(auction.sellerPhone ?? '');
   const [hagertyValuationUrl, setHagertyValuationUrl] = useState(auction.hagertyValuationUrl ?? '');
 
   // Structured Location state (City, Province/State, Country)
@@ -627,7 +654,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         : '' 
     },
     { label: 'Engine', value: engine },
-    { label: 'Transmission', value: drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain },
+    { label: 'Transmission', value: (drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || !GEARBOX_OPTIONS.includes(drivetrain)) && customDrivetrain ? customDrivetrain : drivetrain },
     { label: 'Exterior Color', value: exteriorColor },
     { label: 'Interior', value: interior },
     { label: 'Title Status', value: titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus },
@@ -780,13 +807,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       setIsBadgeOverridden(true);
     }
     setEngine(auction.engine ?? (isMain ? '3.0L Flat-Six CIS' : ''));
-    setDrivetrain(auction.drivetrain ?? (isMain ? '5-Speed Manual (915)' : ''));
-    setCustomDrivetrain('');
+    const nextGearboxState = resolveGearboxState(auction.drivetrain ?? (isMain ? '5-Speed Manual' : ''));
+    setDrivetrain(nextGearboxState.dropdown);
+    setCustomDrivetrain(nextGearboxState.custom);
     setExteriorColor(auction.exteriorColor ?? (isMain ? 'Guards Red (027)' : ''));
     setInterior(auction.interior ?? (isMain ? 'Black Leather / Houndstooth' : ''));
     setTitleStatus(auction.titleStatus ?? 'Clean Registration');
     setCustomTitleStatus('');
     setSellerName(auction.sellerName ?? (isMain ? 'Private Consignor' : ''));
+    setSellerPhone(auction.sellerPhone ?? '');
     setHagertyValuationUrl(auction.hagertyValuationUrl ?? '');
 
     const parts = (auction.location ?? (isMain ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
@@ -840,9 +869,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     }
   }, [auction.id, mediaConfig]);
 
+  // Missing Field State Flags for Section 1
+  const isTitleMissing = !title.trim();
+  const isVinMissing = !vin.trim();
+  const isMakeMissing = !make.trim();
+  const isModelMissing = !model.trim();
+
   // Progress Stepper Status Computations
   const stepStatuses = useMemo(() => {
-    const s1Missing = [!title && 'Title', !vin && 'VIN', !make && 'Make', !model && 'Model'].filter(Boolean);
+    const s1Missing = [isTitleMissing && 'Title', isVinMissing && 'VIN', isMakeMissing && 'Make', isModelMissing && 'Model'].filter(Boolean);
     const s1Status = s1Missing.length === 0 ? 'complete' : `${s1Missing.length} needed`;
 
     const s2Status = overviewParagraphsText.trim().length > 50 ? 'complete' : 'draft';
@@ -877,7 +912,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setSaving(true);
     setMessage(null);
     try {
-      const finalGearbox = drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain;
+      const finalGearbox = (drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || !GEARBOX_OPTIONS.includes(drivetrain)) && customDrivetrain.trim() ? customDrivetrain.trim() : drivetrain;
       const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
       const startMs = new Date(startTimeInput).getTime() || auction.startTime;
       const endMs = new Date(endTimeInput).getTime() || auction.endTime;
@@ -899,6 +934,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         distanceUnit,
         location: formattedLocation,
         sellerName,
+        sellerPhone: sellerPhone.trim() || undefined,
         engine,
         drivetrain: finalGearbox,
         exteriorColor,
@@ -956,7 +992,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
   // EXPORT JSON ACTION (ListingDraftSchema)
   const handleExportJson = () => {
-    const finalGearbox = drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain;
+    const finalGearbox = (drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || !GEARBOX_OPTIONS.includes(drivetrain)) && customDrivetrain.trim() ? customDrivetrain.trim() : drivetrain;
     const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
     const paragraphs = overviewParagraphsText.split('\n\n').map(p => p.trim()).filter(Boolean);
 
@@ -1122,13 +1158,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.sellerName) setSellerName(parsed.sellerName);
 
       if (parsed.gearbox) {
-        if (GEARBOX_OPTIONS.includes(parsed.gearbox)) {
-          setDrivetrain(parsed.gearbox);
-          setCustomDrivetrain('');
-        } else {
-          setDrivetrain('Other');
-          setCustomDrivetrain(parsed.gearbox);
-        }
+        const importedGearboxState = resolveGearboxState(parsed.gearbox);
+        setDrivetrain(importedGearboxState.dropdown);
+        setCustomDrivetrain(importedGearboxState.custom);
       }
 
       if (parsed.titleStatus) {
@@ -1636,7 +1668,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 className="bg-transparent text-white font-bold text-xs border-0 focus:ring-0 focus:outline-none cursor-pointer pr-1 max-w-[130px] sm:max-w-[190px] md:max-w-[240px] truncate"
                 title="Select vehicle listing inventory to edit"
               >
-                {availableAuctions.map((lot) => (
+                {visibleAuctions.map((lot) => (
                   <option key={lot.id} value={lot.id} className="bg-zinc-900 text-white font-normal py-1">
                     {lot.title || lot.id} {lot.status ? `(${lot.status.toUpperCase()})` : ''}
                   </option>
@@ -1860,11 +1892,18 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Make</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-zinc-300">Make</label>
+                        {isMakeMissing && (
+                          <span className="text-[10px] font-bold text-red-400 font-mono">* Make Required</span>
+                        )}
+                      </div>
                       <select
                         value={selectedMakeDropdown}
                         onChange={(e) => handleMakeSelect(e.target.value)}
-                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                        className={`w-full p-2.5 rounded-lg bg-slate-900 border text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer ${
+                          isMakeMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                        }`}
                       >
                         <option value="">Select Make...</option>
                         {AVAILABLE_MAKES.map((m) => (
@@ -1878,17 +1917,26 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={customMake}
                           onChange={(e) => handleCustomMakeChange(e.target.value)}
                           placeholder="Enter custom make..."
-                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          className={`mt-2 w-full p-2.5 rounded-lg bg-slate-900 border text-white focus:ring-2 focus:ring-amber-500 focus:outline-none ${
+                            isMakeMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                          }`}
                         />
                       )}
                     </div>
 
                     <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Model</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-zinc-300">Model</label>
+                        {isModelMissing && (
+                          <span className="text-[10px] font-bold text-red-400 font-mono">* Model Required</span>
+                        )}
+                      </div>
                       <select
                         value={selectedModelDropdown}
                         onChange={(e) => handleModelSelect(e.target.value)}
-                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+                        className={`w-full p-2.5 rounded-lg bg-slate-900 border text-white focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer ${
+                          isModelMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                        }`}
                       >
                         <option value="">Select Model...</option>
                         {availableModels.map((m) => (
@@ -1902,7 +1950,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           value={customModel}
                           onChange={(e) => handleCustomModelChange(e.target.value)}
                           placeholder="Enter custom model..."
-                          className="mt-2 w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                          className={`mt-2 w-full p-2.5 rounded-lg bg-slate-900 border text-white focus:ring-2 focus:ring-amber-500 focus:outline-none ${
+                            isModelMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                          }`}
                         />
                       )}
                     </div>
@@ -1967,24 +2017,29 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                   {/* Row 2: Listing Title */}
                   <div>
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2 mb-1">
                       <label className="block font-bold text-zinc-300">Listing Title</label>
                       <button
                         type="button"
                         onClick={handleAutoGenerateTitle}
                         className="text-[11px] text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 cursor-pointer transition-colors"
-                        title="Auto-generate title from Year, Make, and Model"
+                        title="Auto-generate title from Year, Make, Model, and Generation"
                       >
                         <Wand2 className="w-3 h-3" />
                         <span>⚡ Auto-generate from Specs</span>
                       </button>
+                      {isTitleMissing && (
+                        <span className="text-[10px] font-bold text-red-400 font-mono ml-auto">* Title Required</span>
+                      )}
                     </div>
                     <input
                       type="text"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. 1978 Porsche 911 SC 'Whale Tail' Coupe"
-                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      className={`w-full p-2.5 rounded-lg bg-slate-900 border text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none ${
+                        isTitleMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                      }`}
                     />
                   </div>
 
@@ -2003,13 +2058,20 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   {/* Row 4: VIN (Vehicle Identification Number) and Odometer Reading */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-bold text-zinc-300 mb-1">VIN (Vehicle Identification Number)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-zinc-300">VIN (Vehicle Identification Number)</label>
+                        {isVinMissing && (
+                          <span className="text-[10px] font-bold text-red-400 font-mono">* VIN Required</span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         value={vin}
                         onChange={(e) => setVin(e.target.value.toUpperCase())}
-                        placeholder="9118200142"
-                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono uppercase rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        placeholder="Enter VIN..."
+                        className={`w-full p-2.5 rounded-lg bg-slate-900 border text-white font-mono uppercase rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none ${
+                          isVinMissing ? 'border-red-500/80 ring-1 ring-red-500/50 bg-red-950/20' : 'border-slate-700'
+                        }`}
                       />
                     </div>
 
@@ -2036,7 +2098,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <input
                         type="text"
                         value={mileage}
-                        onChange={(e) => setMileage(e.target.value)}
+                        onChange={(e) => {
+                          const cleanVal = e.target.value.replace(/[^0-9]/g, '');
+                          setMileage(cleanVal);
+                        }}
                         placeholder="42,150"
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
@@ -2060,19 +2125,25 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <label className="block font-bold text-zinc-300 mb-1">Drivetrain / Gearbox</label>
                       <select
                         value={drivetrain}
-                        onChange={(e) => setDrivetrain(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setDrivetrain(val);
+                          if (val !== 'Other / Custom Gearbox...') {
+                            setCustomDrivetrain('');
+                          }
+                        }}
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
                       >
                         {GEARBOX_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
                       </select>
-                      {drivetrain === 'Other' && (
+                      {(drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || (drivetrain && !GEARBOX_OPTIONS.includes(drivetrain))) && (
                         <input
                           type="text"
                           value={customDrivetrain}
                           onChange={(e) => setCustomDrivetrain(e.target.value)}
-                          placeholder="Specify custom gearbox / transaxle..."
+                          placeholder="Specify custom gearbox / transaxle (e.g. Type 915, G50, Muncie 4-Speed)..."
                           className="w-full mt-2 p-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                         />
                       )}
@@ -2173,8 +2244,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Row 9 (Bottom Grid): Seller / Consignor Name and Highlights Tag Badge */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Row 9 (Bottom Grid): Seller / Consignor Name, Seller Phone, and Highlights Tag Badge */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Seller / Consignor Name</label>
                       <input
@@ -2182,6 +2253,19 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         value={sellerName}
                         onChange={(e) => setSellerName(e.target.value)}
                         placeholder="Private Consignor"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-zinc-300 mb-1">Seller Phone Number</label>
+                      <input
+                        type="tel"
+                        value={sellerPhone}
+                        onChange={(e) => {
+                          const cleanPhone = e.target.value.replace(/[^0-9+\-() ]/g, '');
+                          setSellerPhone(cleanPhone);
+                        }}
+                        placeholder="e.g. (604) 555-0192"
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
                       />
                     </div>
@@ -3302,7 +3386,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider bg-red-700 text-white">
-                    {highlightsBadge || (generation ? `${year} ${model} ${generation}` : '1978 911 SC')}
+                    {highlightsBadge || title || '—'}
                   </span>
                   {generation && (
                     <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/30">
@@ -3320,10 +3404,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               </div>
 
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 font-serif">
-                {title || '1978 Porsche 911 SC Coupe'}
+                {title || '—'}
               </h1>
               <p className="text-sm font-medium text-zinc-600">
-                {subtitle || '3.0L Flat-Six • 5-Speed 915'}
+                {subtitle || '—'}
               </p>
 
               {/* Live Bidding & Countdown Status Strip */}
@@ -3370,24 +3454,24 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-zinc-100 text-xs">
                 <div>
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold">Odometer</span>
-                  <span className="font-bold text-zinc-800">{mileage || '126,200'} {distanceUnit}</span>
+                  <span className="font-bold text-zinc-800">{mileage ? `${mileage}${distanceUnit}` : '—'}</span>
                 </div>
                 <div>
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold">VIN</span>
-                  <span className="font-mono font-bold text-zinc-800 break-all sm:truncate block" title={vin || '9118200142'}>
-                    {vin || '9118200142'}
+                  <span className="font-mono font-bold text-zinc-800 break-all sm:truncate block" title={vin || '—'}>
+                    {vin || '—'}
                   </span>
                 </div>
                 <div>
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold">Transmission</span>
                   <span className="font-bold text-zinc-800 truncate block">
-                    {drivetrain === 'Other' && customDrivetrain ? customDrivetrain : drivetrain}
+                    {((drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || !GEARBOX_OPTIONS.includes(drivetrain)) && customDrivetrain ? customDrivetrain : drivetrain) || '—'}
                   </span>
                 </div>
                 <div>
                   <span className="text-zinc-400 block text-[10px] uppercase font-bold">Registration</span>
                   <span className="font-bold text-emerald-700 truncate block">
-                    {titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus}
+                    {(titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus) || '—'}
                   </span>
                 </div>
               </div>
@@ -3414,7 +3498,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   </div>
 
                   <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 tracking-tight font-serif">
-                    {title || 'Lot Overview'}
+                    {title || '—'}
                   </h2>
 
                   {/* Optional Overview Target Image */}
@@ -3450,7 +3534,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   <h3 className="font-bold text-zinc-900 uppercase tracking-wider text-[11px] pb-2 border-b border-zinc-200 flex items-center justify-between">
                     <span>Vehicle Highlights</span>
                     <span className="text-red-700 font-mono font-bold">
-                      {highlightsBadge || [year, make, model, generation].filter(Boolean).join(' ') || '1978 911'}
+                      {highlightsBadge || title || '—'}
                     </span>
                   </h3>
 

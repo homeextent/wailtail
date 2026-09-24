@@ -8,6 +8,11 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 
 ### Frontend & Application Stack
 - **Framework**: React 19 + TypeScript + Vite
+- **Platform Legal Infrastructure & PIPEDA Compliance (`LegalModal.tsx`, `Footer.tsx`)**: Global modal dialog providing tabbed access to Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and PIPEDA-compliant Privacy Policy (winner contact disclosures, FCM push token lifecycle) triggered via global `App.tsx` state.
+- **Mandatory Clickwrap Agreement Checkboxes (`BidModal.tsx`, `ConsignmentModal.tsx`)**: Un-checked controlled checkboxes requiring explicit agreement to Wailtail Terms of Service and Privacy Policy before bidding or submitting consignment intake inquiries, disabling submission buttons until checked.
+- **Universal Automotive Gearbox Taxonomy**: Standardized 12-entry transmission taxonomy (4-Speed Manual, 5-Speed Manual, 6-Speed Manual, 7-Speed Manual, Automatic / Torque Converter, Dual-Clutch Automatic (DCT), Automated Manual (SMG/F1/E-Gear), Continuously Variable Transmission (CVT), Single-Speed Direct Drive (EV), Sequential / Dog-Leg, Preselector / Semi-Automatic, Other / Custom Gearbox...) across consignment intake and workspace authoring.
+- **Strict Input Sanitization & Required Field Highlighting**: Strict digit-only sanitization (`[^0-9]`) on odometer fields, telephone character enforcement (`[^0-9+\-() ]`) on phone numbers, and prominent red error border rings (`border-red-500/80`) with text badges on required Section 1 editor inputs.
+- **SEO-Friendly URL Document Slugs (`auctionService.ts`)**: Automatic generation of human-readable document IDs (`${slug}-${shortHash}`) in `createNewListing()` combining sanitized make/model/spec slugs with random short collision-resistant hashes.
 - **Progressive Web App (PWA) & Offline Caching**: `vite-plugin-pwa` with standalone Web Manifest (`#0f172a` theme), Workbox `StaleWhileRevalidate` caching for scripts/styles, and `NetworkFirst` runtime caching for Firebase Storage assets
 - **Static Open Graph & Twitter Card Social Metadata**: Pre-rendered static Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) preview tags in `index.html` referencing canonical domain (`https://www.wailtail.com/`) and Firebase Cloud Storage 1988 Porsche 928 hero photography, guaranteeing 100% social preview fidelity for web crawlers (`facebookexternalhit`, X, WhatsApp, iMessage) without edge SSR or client-side JavaScript execution overhead
 - **FCM Web Push Notification Engine**: Firebase Cloud Messaging (FCM) Web Push with root-scoped background service worker (`/firebase-messaging-sw.js`), VAPID key token exchange (`VITE_FIREBASE_VAPID_KEY`), race-condition safe hook lifecycle (`usePushNotifications.ts`), safe Firestore token merge persistence (`users/{uid}` and `bidders/{uid}` via `setDoc` with `{ merge: true }`), and diagnostic error state reporting
@@ -77,6 +82,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   │   ├── Footer.tsx                  # Platform legal and footer navigational elements
 │   │   ├── HeroMediaCarousel.tsx       # Scoped hero photo carousel with isolated lightbox viewer
 │   │   ├── InlineShowcaseSection.tsx   # Editorial showcase narrative chapters and specs
+│   │   ├── LegalModal.tsx              # Platform Terms of Service & PIPEDA Privacy Policy modal
 │   │   ├── ListingEditorWorkspace.tsx  # Split-screen authoring workspace (/dashboard/listings/[id]/edit)
 │   │   ├── ListingSubNav.tsx           # In-page listing section anchor sub-navigation
 │   │   ├── Navbar.tsx                  # Header navigation, brand logo, non-clipping user profile dropdown, and auth triggers
@@ -132,11 +138,16 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
    - The multi-car Vehicle Auction Catalog is the default homepage view (`/` and `/catalog`).
    - Clean 0-lot baseline support: snapshot listeners dynamically handle empty databases without forced fallbacks.
    - **Catalog Status Predicate Normalization**: Exported helper predicates (`isLive`, `isUpcoming`, `isEnded`) in `VehicleCatalogGrid.tsx` ensuring draft, preview, and scheduled lots count cleanly under the Upcoming filter, guaranteeing zero uncounted or dropped inventory lots.
-6. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`) & Draft Lot Isolation**:
+6. **Dedicated Listing Authoring Workspace (`/dashboard/listings/[id]/edit`) & Role-Gated Controls**:
    - Split-screen workspace with live public preview pane (desktop and mobile viewports).
    - 7 listing sections: Vehicle Identity, Editorial Narrative, Single-Source Technical Specifications, Showcase Chapters (01-04), Hero & Categorized Photo Gallery, YouTube Driving Videos, and CAD Financial Rules.
+   - **Role-Gated Workspace Controls & Lifecycle Overrides**: Administrative header controls (**Import JSON**, **Export JSON**, and **+ New Listing**) are strictly restricted to administrators. Manual lifecycle status overrides (`Ended - Manual Force Close`, `Sold - Settled Offline`) in Section 7 are role-gated behind `isAdmin`, restricting non-admin sellers to `Draft` and `Scheduled / Live`.
+   - **Seller Lot Selection Filtering**: Visible lots in the header vehicle dropdown are derived via `visibleAuctions`, filtering the selector for sellers to only show lots they own (`lot.sellerId === user.uid || lot.sellerEmail === user.email`).
+   - **Section 1 Required Field Error Highlighting**: Empty required inputs in Section 1 display red error border rings (`border-red-500/80`) and text warning badges (`* VIN Required`, `* Make Required`, etc.) resolving seller confusion surrounding stepper completion counters.
+   - **Inline Title Auto-Generator Trigger**: Relocated `⚡ Auto-generate from Specs` helper trigger inline directly adjacent to the "Listing Title" label.
    - **Sticky Stepper Navigation**: Unobstructed vertical progress stepper (`sticky top-16 max-h-[calc(100vh-4.5rem)]`) with unclipped parent layout wrappers, keeping section navigation firmly pinned below the header during scrolling.
    - **Hagerty Canada Valuation Link Integration**: Direct linking of verified Hagerty Canada valuation appraisal reports via `hagertyValuationUrl` text input in Section 1, sanitized protocol formatting (`formatExternalUrl`), full JSON export/import support, and high-contrast live preview CTA buttons.
+   - **Legacy Demo Fallback String Purge**: Stripped hardcoded demo fallback strings (`9118200142`, `126,200 km`, `Guards Red`, `3.0L Flat-Six CIS`) across live preview and public components so unentered fields render cleanly as '—'.
    - **Draft Lot Isolation**: Section 7 Auction Lifecycle Status select dropdown includes `'draft'` status, allowing creators and administrators to isolate in-progress lots from public catalog feeds until curation readiness.
    - 100% blank draft isolation with nullish coalescing defaults (`$0 CAD` No Reserve).
 7. **Full-Page Admin Operations Portal (`/admin`)**:
@@ -160,9 +171,10 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
    - Contextual "Watch" and "Share" action controls relocated from the global navigation bar directly into the auction lot header.
    - Interactive "★ Watch" / "★ Watching" button dynamically bound to `toggleWatchlistLot()`, toggling saved status across Firestore user profiles and syncing aggregate watch counts.
    - "🔗 Share" action copying canonical lot URLs directly to the system clipboard with instant high-visibility toast notifications.
-10. **Multi-Template Serverless Email Dispatcher & Dual-Branded Notifications (`api/send-consignment-email.ts`)**:
+10. **Multi-Template Serverless Email Dispatcher & Consignment Workflow Safeguards (`api/send-consignment-email.ts`, `ConsignmentModal.tsx`)**:
     - Multi-template serverless proxy handling vehicle consignment intake submissions (`type: 'consignment'`), private buyer inquiries (`type: 'inquiry'`), seller consignment receipts (`type: 'consignment_receipt'`), and verified bidder welcomes (`type: 'welcome_bidder'`) via Resend API (with SendGrid fallback).
-    - Consignment applications compile 3-tier taxonomy, VIN, mileage, transmission, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking.
+    - Consignment applications compile 3-tier taxonomy, universal gearbox selection, VIN, numeric-sanitized mileage, telephone-sanitized phone numbers, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking.
+    - **Mandatory Clickwrap Compliance & Bypass Purge**: Unchecked controlled agreement checkbox requiring explicit agreement to Terms of Service and Privacy Policy before submission. Completely purged the unvetted "Ready to draft your listing right now?" bypass card, enforcing mandatory admin approval prior to draft workspace provisioning.
     - Private buyer inquiries generate structured HTML digest tables compiling inquirer contact details, inquiry topic, target lot title, and message text, dispatched with client error isolation.
     - Dual-branded HTML templates provide polished buyer onboarding guidelines and official seller application receipts with direct deep links.
 11. **Terminal Firebase Security Rule Deployment Infrastructure**:
@@ -228,6 +240,18 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Third-Party Market Valuation**: Links verified Hagerty Canada valuation appraisal reports directly from single-car lot headers and workspace preview panes via conditional, high-contrast CTA buttons (`TrendingUp` icon, external window).
     - **URL Protocol Sanitization**: Employs `formatExternalUrl()` to enforce case-insensitive `https://` prefixing on external links, guarding against relative path routing errors.
     - **Sticky Progress Navigation**: Pins the 7-section progress stepper (`sticky top-16 max-h-[calc(100vh-4.5rem)]`) in the 60/40 authoring workspace, removing overflow clipping to maintain visible stepper anchors while drafting listings.
+25. **Platform Legal Infrastructure & Mandatory Clickwrap Compliance (`LegalModal.tsx`, `BidModal.tsx`, `ConsignmentModal.tsx`, `Footer.tsx`)**:
+    - **Tabbed Legal Modal**: `LegalModal.tsx` provides accessible, authoritative legal documentation across Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and PIPEDA-compliant Privacy Policy (winner disclosures, FCM token lifecycle) triggered via global `App.tsx` state.
+    - **Mandatory Clickwrap Agreements**: Un-checked controlled agreement checkboxes on `BidModal.tsx` and `ConsignmentModal.tsx` require explicit user agreement to Terms of Service and Privacy Policy before bidding or submitting consignment inquiries, disabling action buttons until checked.
+    - **Footer Overhaul & Legacy Marketplace Integration**: Refreshed platform copy, national Canadian tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), direct linking to Wailtail Legacy Marketplace ([https://marketplace.wailtail.com](https://marketplace.wailtail.com)), and global legal modal openers.
+26. **Starting Bid Financial Logic & First Bid Synchronization (`auctionService.ts`, `BidModal.tsx`, `AuctionHeader.tsx`, `StickyBidBar.tsx`)**:
+    - **Starting Bid Floor Alignment**: Synchronized `currentBid` to `startingBid` when `bidCount === 0`.
+    - **Opening Bid Calculations**: Sets minimum required bid to `startingBid` (instead of `startingBid + increment`) for zero-bid listings, labels bids cleanly as "Starting Bid" / "Opening Bid", and renders dynamic `auction.title` in modal headers.
+27. **Universal Automotive Gearbox Taxonomy & Strict Input Sanitization (`ListingEditorWorkspace.tsx`, `ConsignmentModal.tsx`)**:
+    - **12-Entry Universal Gearbox Taxonomy**: Standardized across consignment intake and workspace authoring (4-Speed Manual, 5-Speed Manual, 6-Speed Manual, 7-Speed Manual, Automatic / Torque Converter, Dual-Clutch Automatic (DCT), Automated Manual (SMG/F1/E-Gear), Continuously Variable Transmission (CVT), Single-Speed Direct Drive (EV), Sequential / Dog-Leg, Preselector / Semi-Automatic, Other / Custom Gearbox...) with dynamic custom text input.
+    - **Strict Regex Input Sanitization**: Digit-only sanitization (`[^0-9]`) on odometer inputs and telephone character validation (`[^0-9+\-() ]`) on phone numbers.
+28. **SEO-Friendly URL Document Slugs (`auctionService.ts`)**:
+    - Human-readable document IDs (`${slug}-${shortHash}`) generated in `createNewListing()` combining sanitized make/model/spec slugs with random collision-resistant short hashes (e.g., `1988-porsche-928-s4-automatic-mtur4abv`).
 
 ---
 
