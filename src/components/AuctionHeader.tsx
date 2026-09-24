@@ -455,11 +455,11 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
               {/* High Bid & Bid Count */}
               <div>
                 <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1">
-                  High Bid
+                  {(auction.bidCount || 0) === 0 ? 'Starting Bid' : 'High Bid'}
                 </div>
                 <div className="flex items-baseline gap-3">
                   <span className="text-3xl sm:text-4xl font-extrabold text-emerald-400 tracking-tight font-mono">
-                    {formatCurrency(auction.currentBid)}
+                    {formatCurrency((auction.bidCount || 0) === 0 ? auction.startingBid : auction.currentBid)}
                   </span>
                   <button 
                     onClick={onScrollToComments}
@@ -568,7 +568,13 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
               </button>
 
               <div className="text-[11px] text-zinc-400 text-center lg:text-right">
-                Next Min Bid: <strong className="text-zinc-200">{formatCurrency(auction.currentBid + auction.minimumIncrement)}</strong>
+                Next Min Bid: <strong className="text-zinc-200">
+                  {formatCurrency(
+                    (auction.bidCount || 0) === 0
+                      ? auction.startingBid
+                      : auction.currentBid + auction.minimumIncrement
+                  )}
+                </strong>
               </div>
             </div>
           </div>

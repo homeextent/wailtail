@@ -94,10 +94,19 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
         <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
           <div className="text-right">
             <div className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">
-              Current Bid
+              {(auction.bidCount || 0) === 0 ? 'Starting Bid' : 'High Bid'}
             </div>
-            <div className="text-base sm:text-xl font-black text-emerald-400 font-mono">
-              {formatCurrency(auction.currentBid)}
+            <div className="text-base sm:text-xl font-black text-emerald-400 font-mono leading-tight">
+              {formatCurrency((auction.bidCount || 0) === 0 ? auction.startingBid : auction.currentBid)}
+            </div>
+            <div className="text-[10px] text-zinc-400 hidden sm:block">
+              Next Min Bid: <strong className="text-zinc-200">
+                {formatCurrency(
+                  (auction.bidCount || 0) === 0
+                    ? auction.startingBid
+                    : auction.currentBid + auction.minimumIncrement
+                )}
+              </strong>
             </div>
           </div>
 

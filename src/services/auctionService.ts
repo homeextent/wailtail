@@ -176,6 +176,24 @@ function sanitizePayload(obj: any): any {
   return clean;
 }
 
+export function slugifyTitle(title: string): string {
+  const slug = (title || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'vehicle-listing';
+}
+
+export function generateShortHash(length = 8): string {
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyz';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 export const BLANK_AUCTION: Auction = {
   id: '',
   title: '',
@@ -202,7 +220,7 @@ export const BLANK_AUCTION: Auction = {
   endTime: Date.now() + 7 * 24 * 60 * 60 * 1000,
   startingBid: 1000,
   minimumIncrement: 250,
-  currentBid: 0,
+  currentBid: 1000,
   reserveAmount: 0,
   isReserveMet: true,
   bidCount: 0,
@@ -481,13 +499,10 @@ export function subscribeToAllAuctions(
  * and default CAD financials ($1,000 starting bid, $250 increment, 7-day duration).
  */
 export async function createNewListing(title: string): Promise<Auction> {
-  const cleanTitle = title.trim() || 'New Vehicle Listing';
-  const slug = cleanTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 30) || 'lot';
-  const newId = `lot-${slug}-${Date.now().toString(36)}`;
+  const cleanTitle = (title || '').trim() || 'New Vehicle Listing';
+  const slug = slugifyTitle(cleanTitle);
+  const newId = `${slug}-${generateShortHash(8)}`;
+  const defaultStartingBid = 1000;
 
   const newAuction: Auction = {
     id: newId,
@@ -515,9 +530,9 @@ export async function createNewListing(title: string): Promise<Auction> {
     currency: 'CAD',
     startTime: Date.now(),
     endTime: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    startingBid: 1000,
+    startingBid: defaultStartingBid,
     minimumIncrement: 250,
-    currentBid: 0,
+    currentBid: defaultStartingBid,
     reserveAmount: 0,
     isReserveMet: true,
     bidCount: 0,
@@ -1038,12 +1053,8 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
 
   const reserve = parseReserveAmount(app.reserveExpectation);
 
-  const slug = fullTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 30) || 'consigned-lot';
-  const newAuctionId = `lot-${slug}-${Date.now().toString(36)}`;
+  const slug = slugifyTitle(fullTitle);
+  const newAuctionId = `${slug}-${generateShortHash(8)}`;
 
   const now = Date.now();
   const newAuction: Auction = {
@@ -1075,7 +1086,7 @@ export async function convertConsignmentToDraftListing(consignmentId: string): P
     endTime: now + 7 * 24 * 60 * 60 * 1000,
     startingBid: 1000,
     minimumIncrement: 250,
-    currentBid: 0,
+    currentBid: 1000,
     reserveAmount: reserve,
     isReserveMet: reserve <= 0,
     bidCount: 0,
@@ -1667,12 +1678,8 @@ export async function duplicateListing(
   }
 
   const cleanTitle = `${sourceAuction.title || 'Vehicle Listing'} (Copy)`;
-  const slug = cleanTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 25) || 'lot';
-  const newId = `lot-${slug}-${Date.now().toString(36)}`;
+  const slug = slugifyTitle(cleanTitle);
+  const newId = `${slug}-${generateShortHash(8)}`;
 
   const duplicatedAuction: Auction = {
     ...sourceAuction,
@@ -1680,7 +1687,7 @@ export async function duplicateListing(
     title: cleanTitle,
     headline: sourceAuction.headline ? `${sourceAuction.headline} (Copy)` : cleanTitle,
     status: 'upcoming',
-    currentBid: 0,
+    currentBid: sourceAuction.startingBid || 1000,
     bidCount: 0,
     highBidderId: '',
     highBidderName: '',

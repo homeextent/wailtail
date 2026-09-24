@@ -21,6 +21,7 @@ import {
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
+import { useAuth } from '../context/AuthContext';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
 import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
@@ -235,6 +236,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onUpdateMediaConfig,
   onBackToPublic
 }) => {
+  const { userProfile } = useAuth();
+  const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
+
   // Multi-listing Catalog State
   const [availableAuctions, setAvailableAuctions] = useState<Auction[]>(() => {
     if (allAuctions && allAuctions.length > 0) return allAuctions;
@@ -877,7 +881,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
       const startMs = new Date(startTimeInput).getTime() || auction.startTime;
       const endMs = new Date(endTimeInput).getTime() || auction.endTime;
-      const isReserveMet = (auction.currentBid || 0) >= Number(reserveAmount);
+      const isZeroBids = (auction.bidCount || 0) === 0;
+      const effectiveStartingBid = Number(startingBid);
+      const isReserveMet = (isZeroBids ? effectiveStartingBid : (auction.currentBid || 0)) >= Number(reserveAmount);
 
       // 1. Update Core Auction Document
       await onUpdateAuction({
@@ -901,7 +907,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         highlightsBadge,
         hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
         currency: 'CAD',
-        startingBid: Number(startingBid),
+        startingBid: effectiveStartingBid,
+        ...(isZeroBids ? { currentBid: effectiveStartingBid } : {}),
         minimumIncrement: Number(minimumIncrement),
         reserveAmount: Number(reserveAmount),
         status,
@@ -1678,38 +1685,42 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
         {/* Right: Actions (Import/Export, + New Listing, Save) */}
         <div className="flex items-center gap-2">
-          {/* JSON Tools */}
-          <button
-            type="button"
-            onClick={() => setShowImportModal(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Import ListingDraftSchema JSON payload"
-          >
-            <Upload className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">Import JSON</span>
-          </button>
+          {/* Admin JSON & Creation Tools */}
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Import ListingDraftSchema JSON payload"
+              >
+                <Upload className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden sm:inline">Import JSON</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={handleExportJson}
-            className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Copy clean ListingDraftSchema JSON to clipboard"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">Export JSON</span>
-          </button>
+              <button
+                type="button"
+                onClick={handleExportJson}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Copy clean ListingDraftSchema JSON to clipboard"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Export JSON</span>
+              </button>
 
-          {/* + New Listing */}
-          <button
-            type="button"
-            onClick={() => setShowNewListingModal(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-white border border-emerald-800/80 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="Create a new vehicle listing lot"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden sm:inline">+ New Listing</span>
-            <span className="sm:hidden">+ New</span>
-          </button>
+              {/* + New Listing */}
+              <button
+                type="button"
+                onClick={() => setShowNewListingModal(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 hover:text-white border border-emerald-800/80 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Create a new vehicle listing lot"
+              >
+                <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">+ New Listing</span>
+                <span className="sm:hidden">+ New</span>
+              </button>
+            </>
+          )}
 
           {/* Master Save */}
           <button
@@ -3005,21 +3016,75 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </div>
                   </div>
 
+                  {/* Effective Status Display Badge */}
+                  <div className="pt-2 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-black/60 border border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-400 font-semibold text-xs">⚡ Live Clock Status:</span>
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        previewEffectiveStatus === 'active' || previewEffectiveStatus === 'ending_soon'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : previewEffectiveStatus === 'upcoming'
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          : previewEffectiveStatus === 'sold'
+                          ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                          : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          previewEffectiveStatus === 'active' || previewEffectiveStatus === 'ending_soon'
+                            ? 'bg-emerald-400 animate-pulse'
+                            : previewEffectiveStatus === 'upcoming'
+                            ? 'bg-blue-400'
+                            : 'bg-zinc-400'
+                        }`} />
+                        {previewEffectiveStatus === 'active'
+                          ? 'Active (Accepting Bids)'
+                          : previewEffectiveStatus === 'ending_soon'
+                          ? 'Active (Ending Soon)'
+                          : previewEffectiveStatus === 'upcoming'
+                          ? 'Upcoming (Scheduled Preview)'
+                          : previewEffectiveStatus === 'sold'
+                          ? 'Sold (Settled Offline)'
+                          : previewEffectiveStatus === 'ended'
+                          ? 'Ended (Bidding Closed)'
+                          : 'Draft (Private / Unlisted)'}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-zinc-500 font-mono">
+                      {previewCountdown.formatted}
+                    </span>
+                  </div>
+
                   {/* Auction Lifecycle Status Dropdown */}
-                  <div className="pt-2 border-t border-zinc-800">
+                  <div>
                     <label className="block font-bold text-zinc-300 mb-1">
                       Auction Lifecycle Status
                     </label>
                     <select
-                      value={status}
+                      value={status === 'active' ? 'upcoming' : status}
                       onChange={(e) => setStatus(e.target.value as any)}
                       className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-bold text-xs cursor-pointer"
                     >
-                      <option value="draft">Draft</option>
-                      <option value="upcoming">Upcoming (Preview Mode - Countdown to Start)</option>
-                      <option value="active">Active (Accepting Live Bids)</option>
-                      <option value="ended">Ended (Bidding Closed)</option>
-                      <option value="sold">Sold (Final Settlement Completed)</option>
+                      <option value="draft">Draft (Private / Unlisted)</option>
+                      <option value="upcoming">Scheduled / Live (Automated Clock)</option>
+                      {isAdmin ? (
+                        <>
+                          <option value="ended">Ended (Manual Force Close)</option>
+                          <option value="sold">Sold (Settled Offline)</option>
+                        </>
+                      ) : (
+                        <>
+                          {(status === 'ended' || auction.status === 'ended') && (
+                            <option value="ended" disabled>
+                              Ended (Manual Force Close)
+                            </option>
+                          )}
+                          {(status === 'sold' || auction.status === 'sold') && (
+                            <option value="sold" disabled>
+                              Sold (Settled Offline)
+                            </option>
+                          )}
+                        </>
+                      )}
                     </select>
                   </div>
 

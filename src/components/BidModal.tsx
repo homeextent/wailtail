@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Auction } from '../types';
 import { placeBid } from '../services/auctionService';
@@ -34,9 +34,10 @@ export const BidModal: React.FC<BidModalProps> = ({
 }) => {
   const { user, userProfile, isEmailVerified, manualVerifyForDemo } = useAuth();
   
-  const minRequired = auction.currentBid > 0 
-    ? auction.currentBid + auction.minimumIncrement 
-    : auction.startingBid;
+  const hasZeroBids = (auction.bidCount ?? 0) === 0;
+  const minRequired = hasZeroBids
+    ? (auction.startingBid || 1000)
+    : (auction.currentBid + auction.minimumIncrement);
 
   const [bidAmount, setBidAmount] = useState<number>(minRequired);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -48,10 +49,21 @@ export const BidModal: React.FC<BidModalProps> = ({
     reserveMet?: boolean;
   } | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setBidAmount(minRequired);
+      setError(null);
+      setSuccessResult(null);
+    }
+  }, [isOpen, minRequired]);
+
   if (!isOpen) return null;
 
   const handleIncrement = (inc: number) => {
-    setBidAmount((prev) => Math.max(minRequired, prev + inc));
+    setBidAmount((prev) => {
+      const base = prev < minRequired ? minRequired : prev;
+      return base + inc;
+    });
   };
 
   const handleSetDirect = (amount: number) => {
@@ -131,7 +143,7 @@ export const BidModal: React.FC<BidModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold tracking-tight">
-                Place a Bid on 1978 Porsche 911
+                Place a Bid on {auction.title || 'Vehicle Listing'}
               </h2>
               <p className="text-xs text-zinc-400">Live Single-Car Auction</p>
             </div>
@@ -294,9 +306,11 @@ export const BidModal: React.FC<BidModalProps> = ({
               {/* Auction Status Highlights */}
               <div className="grid grid-cols-2 gap-3 bg-zinc-50 p-3.5 rounded-xl border border-zinc-200 text-xs">
                 <div>
-                  <span className="text-zinc-500 block text-[10px] uppercase font-semibold">Current High Bid</span>
+                  <span className="text-zinc-500 block text-[10px] uppercase font-semibold">
+                    {hasZeroBids ? 'Opening Bid' : 'Current High Bid'}
+                  </span>
                   <span className="text-xl font-extrabold text-zinc-900 font-mono">
-                    {formatCurrency(auction.currentBid)}
+                    {formatCurrency(hasZeroBids ? (auction.startingBid || minRequired) : auction.currentBid)}
                   </span>
                 </div>
                 <div>
@@ -310,7 +324,7 @@ export const BidModal: React.FC<BidModalProps> = ({
               {/* Bid Amount Input */}
               <div>
                 <label className="block text-xs font-bold text-zinc-800 uppercase tracking-wider mb-1.5">
-                  Your Bid Amount (USD)
+                  Your Bid Amount ({auction.currency || 'CAD'})
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg font-bold text-zinc-500">$</span>
