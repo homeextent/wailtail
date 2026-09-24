@@ -1,17 +1,43 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShowcaseSection, ShowcaseChapter } from '../types';
 import { normalizeSectionToChapter } from '../utils/showcaseConverter';
-import { Check, ZoomIn } from 'lucide-react';
+import { Check, ZoomIn, X } from 'lucide-react';
 
 interface InlineShowcaseSectionProps {
   sections: (ShowcaseSection | ShowcaseChapter)[];
-  onOpenLightboxWithUrl: (imageUrl: string) => void;
+  onOpenLightboxWithUrl?: (imageUrl: string) => void;
 }
 
 export const InlineShowcaseSection: React.FC<InlineShowcaseSectionProps> = ({
   sections,
   onOpenLightboxWithUrl
 }) => {
+  const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<{
+    url: string;
+    caption?: string;
+    title?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!activeLightboxPhoto) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveLightboxPhoto(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeLightboxPhoto]);
+
   const normalizedChapters = sections.map((sec, idx) => normalizeSectionToChapter(sec, idx));
 
   return (
@@ -60,7 +86,14 @@ export const InlineShowcaseSection: React.FC<InlineShowcaseSectionProps> = ({
               {ch.photoUrl && ch.photoUrl.trim() !== '' && (
                 <figure className="my-6">
                   <div 
-                    onClick={() => onOpenLightboxWithUrl(ch.photoUrl)}
+                    onClick={() => {
+                      if (!ch.photoUrl || !ch.photoUrl.trim()) return;
+                      setActiveLightboxPhoto({
+                        url: ch.photoUrl,
+                        caption: ch.photoCaption,
+                        title: ch.title
+                      });
+                    }}
                     className="relative rounded-lg overflow-hidden border border-zinc-200 cursor-pointer group bg-zinc-100"
                   >
                     <img
@@ -132,6 +165,52 @@ export const InlineShowcaseSection: React.FC<InlineShowcaseSectionProps> = ({
           </article>
         );
       })}
+
+      {/* Dedicated Chapter Lightbox Modal */}
+      {activeLightboxPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 sm:p-8"
+          onClick={() => setActiveLightboxPhoto(null)}
+        >
+          {/* Close trigger button */}
+          <button
+            type="button"
+            onClick={() => setActiveLightboxPhoto(null)}
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 rounded-full bg-black/50 text-white/80 hover:text-white hover:bg-black/75 transition-colors focus:outline-none"
+            aria-label="Close lightbox"
+          >
+            <X className="w-6 h-6" />
+          </button>
+
+          {/* High-resolution image preview */}
+          <img
+            src={activeLightboxPhoto.url}
+            alt={activeLightboxPhoto.caption || activeLightboxPhoto.title || 'Showcase detail preview'}
+            className="max-h-[80vh] max-w-full object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            referrerPolicy="no-referrer"
+          />
+
+          {/* Bottom caption container */}
+          {(activeLightboxPhoto.title || activeLightboxPhoto.caption) && (
+            <div
+              className="mt-4 max-w-3xl text-center text-white space-y-1 px-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {activeLightboxPhoto.title && (
+                <h3 className="text-base sm:text-lg font-bold text-white tracking-wide">
+                  {activeLightboxPhoto.title}
+                </h3>
+              )}
+              {activeLightboxPhoto.caption && (
+                <p className="text-xs sm:text-sm text-zinc-300 italic">
+                  {activeLightboxPhoto.caption}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

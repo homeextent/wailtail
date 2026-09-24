@@ -217,6 +217,10 @@ interface GalleryImage {
 }
 ```
 
+#### Showcase Chapter Lightbox Isolation & Gallery Independence
+* **Dedicated Chapter Lightbox State (`activeLightboxPhoto`)**: `InlineShowcaseSection.tsx` maintains its own internal lightbox state (`activeLightboxPhoto`), rendering enlarged high-resolution chapter photos, titles, and captions independently of `fullGallery`. This enables chapter images uploaded directly via Section 4 (Curated Showcase Chapters) to enlarge cleanly with backdrop blur, Escape key dismissal, and window scroll locking without relying on the master photo archive.
+* **Parent Gallery Index Safeguard (`idx !== -1` Check in `App.tsx`)**: In `App.tsx`, `handleOpenLightboxByUrl()` verifies that a clicked image URL exists within `currentMedia.fullGallery` (`idx !== -1`) before updating `selectedLightboxIndex`. This prevents unintended resets or fallbacks to gallery index 0 when interacting with isolated chapter photos not present in `fullGallery`.
+
 ### 2.5 Predefined Showcase Chapter Taxonomy & Spec Presets
 
 #### Fixed Category Rules & Locked Titles
@@ -690,6 +694,10 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 * **8-Photo Initial Grid (2x4)**: To eliminate mobile scroll fatigue and optimize rendering performance for lots with 100+ images, mobile viewports truncate the thumbnail display to an initial 8 items (`filteredImages.slice(0, 8)`).
 * **`isMobileExpanded` Toggle Engine**: Controlled via `isMobileExpanded` state. Renders a full-width high-contrast toggle button ("Show All [X] Photos" with grid icon / "Collapse Gallery") below the grid on mobile (`sm:hidden`).
 * **Unbroken Full-Archive Lightbox Navigation**: Truncation applies strictly to the initial grid view. When any thumbnail is clicked, the full lightbox modal launches with access to the complete filtered image array (`validImages.length`). Mobile users can swipe through all vehicle photos in full resolution without needing to expand the thumbnail grid first.
+
+#### 4. Showcase Chapter Lightbox Isolation & Gallery Index Safeguard (`InlineShowcaseSection.tsx` & `App.tsx`)
+* **Dedicated Chapter Lightbox State (`activeLightboxPhoto`)**: `InlineShowcaseSection.tsx` maintains its own dedicated internal lightbox state (`activeLightboxPhoto`), allowing high-resolution showcase chapter photos and captions to render independently of `fullGallery`. Directly uploaded chapter photos (outside `fullGallery`) enlarge cleanly with caption and title presentation, dark backdrop blur, Escape key dismissal listener, and window scroll locking (`document.body.style.overflow = 'hidden'`).
+* **Parent Gallery Index Safeguard (`idx !== -1` Check in `App.tsx`)**: In `App.tsx`, `handleOpenLightboxByUrl()` verifies that the target image exists within `currentMedia.fullGallery` (`const idx = (currentMedia.fullGallery || []).findIndex((img) => img.url === url); if (idx !== -1) { setSelectedLightboxIndex(idx); }`). This prevents accidental gallery index fallbacks or resets to photo index 0 in the primary `PhotoGalleryGrid` lightbox modal when users click isolated chapter images uploaded directly via Section 4 rather than picked from `fullGallery`.
 
 ---
 

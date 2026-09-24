@@ -203,6 +203,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Preserved role dropdown filter (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) while updating navigation and header terminology to represent universal platform membership.
 
 ### Fixed
+- **Showcase Chapter Lightbox Isolation (`src/components/InlineShowcaseSection.tsx`)**:
+  - Isolated showcase chapter photo lightboxes into a self-contained modal state (`activeLightboxPhoto`), allowing directly uploaded chapter images (outside `fullGallery`) to enlarge cleanly with caption and title presentation, backdrop blur, Escape key dismissal, and window scroll locking.
+- **Parent Gallery Index Safeguard (`src/App.tsx`)**:
+  - Updated `handleOpenLightboxByUrl()` to verify `idx !== -1` before opening the primary `PhotoGalleryGrid` lightbox, suppressing accidental gallery resets to photo index 0 when clicking isolated chapter images.
 - **Role-Gated Editor Header Tools & Lifecycle Overrides (`src/components/ListingEditorWorkspace.tsx`)**:
   - Gated administrative controls (Import JSON, Export JSON, + New Listing) and manual status overrides (Ended - Manual Force Close, Sold - Settled Offline) behind `isAdmin` check, restricting non-admin sellers to Draft and Scheduled / Live (Automated Clock).
 - **Legacy Porsche Fallback String Purge (`src/components/ListingEditorWorkspace.tsx`, `src/components/AuctionHeader.tsx`, `src/components/StickyBidBar.tsx`)**:

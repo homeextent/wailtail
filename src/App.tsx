@@ -508,11 +508,9 @@ const AuctionAppContent: React.FC = () => {
   };
 
   const handleOpenLightboxByUrl = (url: string) => {
-    const idx = currentMedia.fullGallery.findIndex((img) => img.url === url);
-    if (idx >= 0) {
+    const idx = (currentMedia.fullGallery || []).findIndex((img) => img.url === url);
+    if (idx !== -1) {
       setSelectedLightboxIndex(idx);
-    } else {
-      setSelectedLightboxIndex(0);
     }
   };
 
