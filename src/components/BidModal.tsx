@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Auction } from '../types';
 import { placeBid } from '../services/auctionService';
@@ -41,6 +41,7 @@ export const BidModal: React.FC<BidModalProps> = ({
     ? (auction.startingBid || 1000)
     : (auction.currentBid + auction.minimumIncrement);
 
+  const [step, setStep] = useState<'input' | 'submitting' | 'success'>('input');
   const [bidAmount, setBidAmount] = useState<number>(minRequired);
   const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -51,14 +52,33 @@ export const BidModal: React.FC<BidModalProps> = ({
     reserveMet?: boolean;
   } | null>(null);
 
+  const prevIsOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
+      // Clean modal opening: initialize state to input
+      setStep('input');
       setBidAmount(minRequired);
       setHasAgreedToTerms(false);
       setError(null);
       setSuccessResult(null);
+      setLoading(false);
+    } else if (isOpen) {
+      // Modal is already open
+      // Block real-time Firestore onSnapshot background updates from auto-resetting
+      // or closing the modal while in 'success' or 'submitting' state!
+      if (step === 'input') {
+        setBidAmount((prev) => (prev < minRequired ? minRequired : prev));
+      }
+    } else {
+      // Clean dismissal: reset step back to input
+      setStep('input');
+      setError(null);
+      setSuccessResult(null);
+      setLoading(false);
     }
-  }, [isOpen, minRequired]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, minRequired, step]);
 
   if (!isOpen) return null;
 
@@ -94,6 +114,7 @@ export const BidModal: React.FC<BidModalProps> = ({
 
     setError(null);
     setLoading(true);
+    setStep('submitting');
 
     try {
       const result = await placeBid(auction.id, bidAmount, {
@@ -104,11 +125,11 @@ export const BidModal: React.FC<BidModalProps> = ({
 
       setLoading(false);
 
-      // Trigger Confetti!
+      // Trigger active Confetti burst
       try {
         confetti({
-          particleCount: 80,
-          spread: 70,
+          particleCount: 100,
+          spread: 80,
           origin: { y: 0.6 }
         });
       } catch (e) {
@@ -120,21 +141,28 @@ export const BidModal: React.FC<BidModalProps> = ({
         antiSniped: result.antiSniped,
         reserveMet: bidAmount >= auction.reserveAmount || auction.isReserveMet
       });
+      setStep('success');
     } catch (err: any) {
       setLoading(false);
+      setStep('input');
       setError(err.message || 'Failed to place bid. Please try again.');
     }
   };
 
   const handleResetAndClose = () => {
+    setStep('input');
     setSuccessResult(null);
     setError(null);
     setHasAgreedToTerms(false);
+    setLoading(false);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      onClick={handleResetAndClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200"
+    >
       <div 
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden"
@@ -147,14 +175,15 @@ export const BidModal: React.FC<BidModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold tracking-tight">
-                Place a Bid on {auction.title || 'Vehicle Listing'}
+                {step === 'success' ? 'Bid Confirmed' : `Place a Bid on ${auction.title || 'Vehicle Listing'}`}
               </h2>
               <p className="text-xs text-zinc-400">Live Single-Car Auction</p>
             </div>
           </div>
           <button
             onClick={handleResetAndClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Close Bid Modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -162,36 +191,52 @@ export const BidModal: React.FC<BidModalProps> = ({
 
         {/* Content */}
         <div className="p-6">
-          {/* CASE 1: SUCCESS STATE */}
-          {successResult ? (
-            <div className="text-center py-4 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center shadow-inner">
+          {/* STEP 1: SUCCESS CONFIRMATION VIEW */}
+          {step === 'success' && successResult ? (
+            <div className="text-center py-3 space-y-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center shadow-inner ring-4 ring-emerald-500/20">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
 
               <div>
-                <span className="text-xs uppercase font-bold tracking-wider text-emerald-700">Bid Successfully Confirmed</span>
-                <h3 className="text-3xl font-extrabold text-zinc-900 font-mono mt-1">
-                  {formatCurrency(successResult.amount)}
+                <span className="text-xs uppercase font-extrabold tracking-wider text-emerald-600">
+                  Transaction Confirmed
+                </span>
+                <h3 className="text-2xl sm:text-3xl font-black text-zinc-900 mt-0.5">
+                  Bid Placed Successfully!
                 </h3>
-                <p className="text-xs text-zinc-600 mt-1">
-                  You are now the current highest bidder for this vehicle!
-                </p>
+                <div className="text-3xl sm:text-4xl font-black text-emerald-600 font-mono mt-2">
+                  {formatCurrency(successResult.amount)} CAD
+                </div>
               </div>
 
-              {successResult.antiSniped && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 flex items-center justify-center gap-2">
-                  <Flame className="w-4 h-4 text-amber-600 flex-shrink-0 animate-bounce" />
-                  <span>
-                    <strong>Anti-Sniping Triggered:</strong> Auction clock extended to 2:00 minutes.
-                  </span>
+              <div className="flex items-center justify-center">
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-black uppercase tracking-wider shadow-xs">
+                  <span>★ LEADING BIDDER</span>
                 </div>
-              )}
+              </div>
+
+              {/* Anti-Snipe Countdown Status */}
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-left text-xs text-amber-950 flex items-start gap-2.5">
+                <Clock className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-amber-900">
+                    {successResult.antiSniped
+                      ? '⚡ Anti-Sniping Protection Triggered (+2:00)'
+                      : '⚡ 2-Minute Anti-Sniping Protection Active'}
+                  </div>
+                  <p className="text-amber-800/90 text-[11px] leading-relaxed">
+                    {successResult.antiSniped
+                      ? 'Your bid was recorded in the closing window. The auction countdown timer has been extended back to 2 full minutes.'
+                      : 'Any counter-bids placed in the final 2 minutes will automatically reset the countdown clock to 2 minutes.'}
+                  </p>
+                </div>
+              </div>
 
               {successResult.reserveMet && (
-                <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-xs text-emerald-900 font-bold flex items-center justify-center gap-1.5">
+                <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-bold flex items-center justify-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>RESERVE HAS BEEN MET</span>
+                  <span>RESERVE HAS BEEN MET — VEHICLE WILL SELL TO HIGH BIDDER</span>
                 </div>
               )}
 
@@ -199,9 +244,10 @@ export const BidModal: React.FC<BidModalProps> = ({
                 <button
                   type="button"
                   onClick={handleResetAndClose}
-                  className="w-full py-2.5 rounded-lg bg-zinc-900 hover:bg-black text-white text-xs font-bold shadow"
+                  className="w-full py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-black uppercase tracking-wider shadow-lg shadow-emerald-700/20 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  Return to Auction
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Done / Return to Auction</span>
                 </button>
               </div>
             </div>

@@ -44,7 +44,7 @@ export interface Auction {
   highBidderName?: string;
   highBidderEmail?: string;
   watchlist?: string[];
-  status: 'upcoming' | 'active' | 'live' | 'draft' | 'ended' | 'sold' | 'reserve_not_met' | 'preview';
+  status: 'draft' | 'pending_review' | 'preview' | 'upcoming' | 'active' | 'live' | 'ending_soon' | 'ended' | 'sold' | 'reserve_not_met';
   createdAt: number;
   updatedAt: number;
 }
@@ -301,6 +301,72 @@ export interface ListingDraftSchema {
     reserveAmount: number;
     durationDays: number;
   };
+}
+
+export type ConsignmentEmailType =
+  | 'consignment'
+  | 'inquiry'
+  | 'consignment_receipt'
+  | 'welcome_bidder'
+  | 'consignment_approved'
+  | 'consignment_rejected'
+  | 'listing_submitted_for_review'
+  | 'listing_approved'
+  | 'listing_revision_requested'
+  | 'outbid_notification'
+  | 'winning_bid_confirmation';
+
+export interface ConsignmentEmailPayload {
+  type?: ConsignmentEmailType;
+  // Consignment & Listing fields
+  id?: string;
+  lotId?: string;
+  auctionId?: string;
+  convertedAuctionId?: string;
+  applicationId?: string;
+  appId?: string;
+  year?: string | number;
+  make?: string;
+  model?: string;
+  generation?: string;
+  vin?: string;
+  mileage?: string;
+  transmission?: string;
+  reserveExpectation?: string;
+  locationCity?: string;
+  locationProvince?: string;
+  locationCountry?: string;
+  location?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+  notes?: string;
+  revisionNotes?: string;
+  reviewUrl?: string;
+  registeredUserId?: string;
+  isRegisteredUser?: boolean;
+  registeredUserRole?: string;
+  // Inquiry fields
+  name?: string;
+  email?: string;
+  phone?: string;
+  topic?: string;
+  message?: string;
+  vehicleTitle?: string;
+  auctionTitle?: string;
+  // Welcome Bidder fields
+  displayName?: string;
+  userEmail?: string;
+  // Outbid & Winning Bid Confirmation fields
+  currentBid?: number | string;
+  currentHighBid?: number | string;
+  minimumIncrement?: number | string;
+  minRequiredBid?: number | string;
+  winningBid?: number | string;
+  winnerEmail?: string;
+  winnerName?: string;
+  bidderEmail?: string;
+  bidderName?: string;
 }
 
 export interface ConsignmentApplication {

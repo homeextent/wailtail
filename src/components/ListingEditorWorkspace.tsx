@@ -10,13 +10,15 @@ import {
 } from '../types';
 import { 
   updateAuctionConfig,
+  updateAuctionStatus,
   setAuctionEndingSoon,
   createNewListing,
   subscribeToAllAuctions,
   compressImageDataUrl,
   uploadImageToStorage,
   MAIN_AUCTION_ID,
-  fetchYouTubePlaylistVideos
+  fetchYouTubePlaylistVideos,
+  sendListingSubmittedForReviewEmail
 } from '../services/auctionService';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
@@ -78,7 +80,8 @@ import {
   Info,
   Gavel,
   Mail,
-  Wand2
+  Wand2,
+  Rocket
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 
@@ -200,6 +203,8 @@ interface ListingEditorWorkspaceProps {
   onUpdateAuction: (data: Partial<Auction>) => Promise<void>;
   onUpdateMediaConfig: (newConfig: MediaConfiguration) => Promise<void>;
   onBackToPublic: () => void;
+  onBackToDashboard?: () => void;
+  onOpenAccountHub?: (tab?: string) => void;
 }
 
 // Standardized Year choices (2026 down to 1950, then key classics down to 1900)
@@ -252,10 +257,31 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onSelectAuction,
   onUpdateAuction,
   onUpdateMediaConfig,
-  onBackToPublic
+  onBackToPublic,
+  onBackToDashboard,
+  onOpenAccountHub
 }) => {
   const { user, userProfile } = useAuth();
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
+
+  const handleBackToDashboard = () => {
+    if (onBackToDashboard) {
+      onBackToDashboard();
+      return;
+    }
+    if (isAdmin) {
+      window.history.pushState({}, '', '/admin?tab=inventory');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } else {
+      window.history.pushState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      if (onOpenAccountHub) {
+        onOpenAccountHub('seller');
+      } else {
+        window.dispatchEvent(new CustomEvent('wailtail:open-account-hub', { detail: { tab: 'seller' } }));
+      }
+    }
+  };
 
   // Multi-listing Catalog State
   const [availableAuctions, setAvailableAuctions] = useState<Auction[]>(() => {
@@ -755,6 +781,30 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [startTimeInput, setStartTimeInput] = useState(formatForInput(auction.startTime ?? Date.now()));
   const [endTimeInput, setEndTimeInput] = useState(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
   const [now, setNow] = useState(Date.now());
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  const isPendingReview = auction.status === 'pending_review';
+  const isReadOnlyForSeller = !isAdmin && isPendingReview;
+
+  const handleWithdrawToDraft = async () => {
+    try {
+      setWithdrawing(true);
+      setStatus('draft');
+      await updateAuctionStatus(auction.id, 'draft');
+      await onUpdateAuction({ status: 'draft' });
+      setMessage({
+        type: 'info',
+        text: 'Listing withdrawn to draft. You now have full editing access to update your vehicle information.'
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: `Failed to withdraw listing: ${err?.message || 'Unknown error'}`
+      });
+    } finally {
+      setWithdrawing(false);
+    }
+  };
 
   // Tick countdown timer every 1000ms for live preview evaluation
   useEffect(() => {
@@ -980,7 +1030,29 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
       await onUpdateMediaConfig(updatedMedia);
 
-      setMessage({ type: 'success', text: 'All listing specifications, narrative chapters, and media saved successfully to Firestore!' });
+      // 3. Dispatch non-blocking curation review email trigger if status transitioned to pending_review
+      if (status === 'pending_review' && auction.status !== 'pending_review') {
+        sendListingSubmittedForReviewEmail({
+          id: auction.id,
+          year,
+          make,
+          model,
+          generation: generation.trim() || undefined,
+          vin,
+          sellerName,
+          sellerEmail: auction.sellerEmail || userProfile?.email,
+          sellerPhone: sellerPhone.trim() || auction.sellerPhone || userProfile?.phone
+        }, userProfile).catch((err) => {
+          console.warn('Non-blocking listing submitted for review email dispatch failed:', err);
+        });
+      }
+
+      setMessage({
+        type: 'success',
+        text: status === 'pending_review'
+          ? 'Listing submitted for curation review! Form is now read-only while administrators review your submission.'
+          : 'All listing specifications, narrative chapters, and media saved successfully to Firestore!'
+      });
       setTimeout(() => setMessage(null), 4500);
     } catch (err: any) {
       console.error('Error saving listing workspace:', err);
@@ -1631,7 +1703,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       {/* TOP WORKSPACE NAVIGATION & CONTROLS BAR */}
       <header className="sticky top-0 z-40 bg-[#14181d] border-b border-zinc-800 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 shadow-lg">
         {/* Left: Back Action & Breadcrumb */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             type="button"
             onClick={onBackToPublic}
@@ -1640,6 +1712,16 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden md:inline">Public View</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleBackToDashboard}
+            className="px-3 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white font-bold text-xs shadow-md shadow-red-950/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer flex items-center gap-1.5 shrink-0 border border-red-500/40"
+            title={isAdmin ? "Return to Admin Inventory Management" : "Return to Seller Dashboard"}
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Dashboard</span>
           </button>
 
           <div className="h-5 w-[1px] bg-zinc-700 hidden sm:block" />
@@ -1758,18 +1840,53 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           <button
             type="button"
             onClick={handleSaveWorkspace}
-            disabled={saving}
+            disabled={saving || isReadOnlyForSeller}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-all ${
-              saving 
+              saving || isReadOnlyForSeller
                 ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' 
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95'
+                : status === 'pending_review'
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black cursor-pointer active:scale-95 shadow-amber-900/30 ring-1 ring-amber-400/50'
+                  : 'bg-slate-700 hover:bg-slate-600 text-white cursor-pointer active:scale-95 border border-slate-600'
             }`}
           >
-            <Save className="w-4 h-4" />
-            <span>{saving ? 'Saving...' : 'Save Changes'}</span>
+            {status === 'pending_review' ? (
+              <Rocket className="w-4 h-4 text-black" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            <span>
+              {saving
+                ? 'Saving...'
+                : isReadOnlyForSeller
+                ? 'Locked for Review'
+                : status === 'pending_review'
+                ? 'Submit for Curation Review'
+                : 'Save Draft'}
+            </span>
           </button>
         </div>
       </header>
+
+      {/* HIGH-VISIBILITY BANNER: PENDING CURATION REVIEW */}
+      {isReadOnlyForSeller && (
+        <div className="bg-amber-950 border-b-2 border-amber-500 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-amber-100 shadow-xl z-30">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 animate-pulse" />
+            <span className="text-xs sm:text-sm font-bold tracking-tight">
+              Listing Submitted for Curation Review — Form is read-only while administrators review your submission.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleWithdrawToDraft}
+            disabled={withdrawing}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95 flex items-center gap-1.5 flex-shrink-0"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>{withdrawing ? 'Withdrawing...' : 'Withdraw Listing to Draft'}</span>
+          </button>
+        </div>
+      )}
 
       {/* GLOBAL TOAST / FEEDBACK BANNER */}
       {message && (
@@ -1864,6 +1981,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             <main className={`flex-1 p-4 sm:p-6 overflow-y-auto space-y-8 ${
               viewMode === 'form' ? 'w-full max-w-6xl mx-auto' : 'w-full'
             }`}>
+              <fieldset disabled={isReadOnlyForSeller} className={isReadOnlyForSeller ? 'pointer-events-none opacity-80 space-y-8 border-0 p-0 m-0 min-w-0' : 'space-y-8 border-0 p-0 m-0 min-w-0'}>
               {/* SECTION 1: VEHICLE IDENTITY */}
               <section id="sec-identity" className="bg-[#181d24] rounded-2xl border border-zinc-800 p-5 sm:p-6 space-y-5 scroll-mt-6">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
@@ -3126,6 +3244,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                           ? 'Active (Ending Soon)'
                           : previewEffectiveStatus === 'upcoming'
                           ? 'Upcoming (Scheduled Preview)'
+                          : previewEffectiveStatus === 'pending_review'
+                          ? 'Pending Review (Curation Queue)'
                           : previewEffectiveStatus === 'sold'
                           ? 'Sold (Settled Offline)'
                           : previewEffectiveStatus === 'ended'
@@ -3138,38 +3258,113 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </span>
                   </div>
 
-                  {/* Auction Lifecycle Status Dropdown */}
+                  {/* Auction Lifecycle Status Dropdown / Action Cards */}
                   <div>
-                    <label className="block font-bold text-zinc-300 mb-1">
+                    <label className="block font-bold text-zinc-300 mb-2">
                       Auction Lifecycle Status
                     </label>
-                    <select
-                      value={status === 'active' ? 'upcoming' : status}
-                      onChange={(e) => setStatus(e.target.value as any)}
-                      className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-bold text-xs cursor-pointer"
-                    >
-                      <option value="draft">Draft (Private / Unlisted)</option>
-                      <option value="upcoming">Scheduled / Live (Automated Clock)</option>
-                      {isAdmin ? (
-                        <>
+                    {isAdmin ? (
+                      <div className="space-y-2">
+                        <select
+                          value={status === 'active' ? 'upcoming' : status}
+                          onChange={(e) => setStatus(e.target.value as any)}
+                          className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-bold text-xs cursor-pointer focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="draft">Draft (Private / Unlisted)</option>
+                          <option value="pending_review">Pending Review (In Curation Queue)</option>
+                          <option value="upcoming">Scheduled / Live (Automated Clock)</option>
                           <option value="ended">Ended (Manual Force Close)</option>
                           <option value="sold">Sold (Settled Offline)</option>
-                        </>
-                      ) : (
-                        <>
-                          {(status === 'ended' || auction.status === 'ended') && (
-                            <option value="ended" disabled>
-                              Ended (Manual Force Close)
-                            </option>
-                          )}
-                          {(status === 'sold' || auction.status === 'sold') && (
-                            <option value="sold" disabled>
-                              Sold (Settled Offline)
-                            </option>
-                          )}
-                        </>
-                      )}
-                    </select>
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {/* Card 1: Save as Draft */}
+                        <div
+                          onClick={() => setStatus('draft')}
+                          className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer select-none flex flex-col justify-between hover:scale-[1.01] ${
+                            status === 'draft'
+                              ? 'bg-slate-900/90 border-slate-400 ring-2 ring-slate-400/40 shadow-lg shadow-black/40'
+                              : 'bg-black/60 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📝</span>
+                              <span className={`font-bold text-sm ${status === 'draft' ? 'text-white' : 'text-zinc-300'}`}>
+                                Save as Draft
+                              </span>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              status === 'draft'
+                                ? 'border-slate-300 bg-slate-300'
+                                : 'border-zinc-600 bg-transparent'
+                            }`}>
+                              {status === 'draft' && <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-400 mb-1 block">Work in Progress</span>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Keep your listing private while you gather photos, refine narrative, and finalize details.
+                          </p>
+                        </div>
+
+                        {/* Card 2: Submit for Curation Review */}
+                        <div
+                          onClick={() => setStatus('pending_review')}
+                          className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer select-none flex flex-col justify-between hover:scale-[1.01] ${
+                            status === 'pending_review'
+                              ? 'bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/40 shadow-lg shadow-amber-950/20'
+                              : 'bg-black/60 border-zinc-800 hover:border-zinc-700 text-zinc-400'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">🚀</span>
+                              <span className={`font-bold text-sm ${status === 'pending_review' ? 'text-amber-300' : 'text-zinc-300'}`}>
+                                Submit for Curation Review
+                              </span>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              status === 'pending_review'
+                                ? 'border-amber-400 bg-amber-400'
+                                : 'border-zinc-600 bg-transparent'
+                            }`}>
+                              {status === 'pending_review' && <span className="w-1.5 h-1.5 rounded-full bg-black" />}
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-semibold text-amber-400/90 mb-1 block">Ready for Curation Queue</span>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Submit your complete vehicle lot to Wailtail curators for verification and live auction scheduling.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Staging & Explanatory Banners */}
+                    {status === 'draft' && (
+                      <div className="mt-3 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 text-slate-300 text-xs flex items-start gap-2.5">
+                        <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-white block">Draft — Work in Progress</span>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            This listing is saved privately and will not be reviewed by curators yet.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {status === 'pending_review' && (
+                      <div className="mt-3 p-3 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs flex items-start gap-2.5 shadow-sm">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-amber-300 block">Pending Curation Review — Ready to Submit</span>
+                          <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                            Click 'Submit for Curation Review' above or below to save your changes and submit this lot to the Wailtail curation queue.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Auction Start Time & End Time with Quick-Action Pills */}
@@ -3316,9 +3511,52 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         <span>Simulate Final 2 Minutes</span>
                       </button>
                     </div>
+
+                    {/* Section 7 Primary Workspace Save Footer CTA */}
+                    <div className="pt-4 border-t border-zinc-800 flex items-center justify-between gap-4">
+                      <div className="text-xs text-zinc-400">
+                        {status === 'pending_review' ? (
+                          <span className="text-amber-400 font-semibold flex items-center gap-1.5">
+                            <Rocket className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                            <span>Submitting this form locks inputs and transfers the lot to curation review.</span>
+                          </span>
+                        ) : (
+                          <span>Save changes as a private draft without submitting to curators.</span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveWorkspace}
+                        disabled={saving || isReadOnlyForSeller}
+                        className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all flex-shrink-0 ${
+                          saving || isReadOnlyForSeller
+                            ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                            : status === 'pending_review'
+                              ? 'bg-amber-500 hover:bg-amber-400 text-black cursor-pointer active:scale-95 shadow-amber-950/40 ring-1 ring-amber-400/50'
+                              : 'bg-slate-700 hover:bg-slate-600 text-white cursor-pointer active:scale-95 border border-slate-600'
+                        }`}
+                      >
+                        {status === 'pending_review' ? (
+                          <Rocket className="w-4 h-4 text-black" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        <span>
+                          {saving
+                            ? 'Saving...'
+                            : isReadOnlyForSeller
+                            ? 'Locked for Review'
+                            : status === 'pending_review'
+                            ? 'Submit for Curation Review'
+                            : 'Save Draft'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </section>
+              </fieldset>
             </main>
           </div>
         </div>

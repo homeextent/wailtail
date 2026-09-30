@@ -17,8 +17,8 @@ export function getEffectiveAuctionStatus(
   endTime: number,
   status?: string,
   now: number = Date.now()
-): 'draft' | 'upcoming' | 'active' | 'ending_soon' | 'ended' | 'sold' {
-  if (status === 'draft' || status === 'sold') return status;
+): 'draft' | 'pending_review' | 'upcoming' | 'active' | 'ending_soon' | 'ended' | 'sold' {
+  if (status === 'draft' || status === 'pending_review' || status === 'sold') return status;
   if (now < startTime) return 'upcoming';
   if (now >= endTime) return 'ended';
   const isEndingSoon = (endTime - now) <= 120 * 1000;
@@ -32,6 +32,22 @@ export function formatAuctionCountdown(
   now: number = Date.now()
 ) {
   const effectiveStatus = getEffectiveAuctionStatus(startTime, endTime, status, now);
+
+  if (effectiveStatus === 'draft' || effectiveStatus === 'pending_review') {
+    return {
+      statusType: effectiveStatus,
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      totalSeconds: 0,
+      isEnded: false,
+      isUpcoming: false,
+      isUrgent: false,
+      formatted: effectiveStatus === 'pending_review' ? 'Pending Review' : 'Draft'
+    };
+  }
+
   const isUpcoming = effectiveStatus === 'upcoming';
   const isEnded = effectiveStatus === 'ended' || effectiveStatus === 'sold';
 

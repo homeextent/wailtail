@@ -648,6 +648,294 @@ export async function sendWelcomeBidderEmail(userEmail: string, displayName?: st
   }
 }
 
+/**
+ * Unverified / Missing Seller Email Fallback: Resolves seller email from auction or user profile record.
+ */
+export async function resolveSellerEmail(
+  auction: Partial<Auction>,
+  sellerProfile?: Partial<UserProfile>
+): Promise<string> {
+  let email = (auction.sellerEmail || sellerProfile?.email || '').trim().toLowerCase();
+  if ((!email || !email.includes('@')) && auction.sellerId) {
+    try {
+      const userRef = doc(db, 'users', auction.sellerId);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        email = (uData?.email || '').trim().toLowerCase();
+      }
+      if (!email || !email.includes('@')) {
+        const bidderRef = doc(db, 'bidders', auction.sellerId);
+        const bidderSnap = await getDoc(bidderRef);
+        if (bidderSnap.exists()) {
+          const bData = bidderSnap.data();
+          email = (bData?.email || '').trim().toLowerCase();
+        }
+      }
+    } catch (err) {
+      console.warn('Could not resolve seller email from profile:', err);
+    }
+  }
+  return email;
+}
+
+/**
+ * Non-blocking client-side trigger when seller submits listing for curation review.
+ */
+export async function sendListingSubmittedForReviewEmail(
+  auction: Partial<Auction>,
+  sellerProfile?: Partial<UserProfile>
+): Promise<boolean> {
+  try {
+    const resolvedEmail = await resolveSellerEmail(auction, sellerProfile);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'listing_submitted_for_review',
+        id: auction.id,
+        lotId: auction.id,
+        auctionId: auction.id,
+        year: auction.year,
+        make: auction.make,
+        model: auction.model,
+        generation: auction.generation,
+        vin: auction.vin,
+        sellerName: auction.sellerName || sellerProfile?.displayName || 'Seller',
+        sellerEmail: resolvedEmail,
+        sellerPhone: auction.sellerPhone || sellerProfile?.phone
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking listing submitted for review email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking listing submitted for review email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Non-blocking client-side trigger when curator approves a listing and activates the automated clock.
+ */
+export async function sendListingApprovedEmail(
+  auction: Partial<Auction>,
+  sellerProfile?: Partial<UserProfile>
+): Promise<boolean> {
+  try {
+    const resolvedEmail = await resolveSellerEmail(auction, sellerProfile);
+    if (!resolvedEmail || !resolvedEmail.includes('@')) {
+      console.warn('Cannot dispatch listing approved email: seller email not found');
+      return false;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'listing_approved',
+        id: auction.id,
+        lotId: auction.id,
+        auctionId: auction.id,
+        year: auction.year,
+        make: auction.make,
+        model: auction.model,
+        generation: auction.generation,
+        sellerName: auction.sellerName || sellerProfile?.displayName || 'Seller',
+        sellerEmail: resolvedEmail
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking listing approved email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking listing approved email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Non-blocking client-side trigger when curator requests revisions from the seller.
+ */
+export async function sendListingRevisionRequestedEmail(
+  auction: Partial<Auction>,
+  revisionNotes?: string,
+  sellerProfile?: Partial<UserProfile>
+): Promise<boolean> {
+  try {
+    const resolvedEmail = await resolveSellerEmail(auction, sellerProfile);
+    if (!resolvedEmail || !resolvedEmail.includes('@')) {
+      console.warn('Cannot dispatch listing revision requested email: seller email not found');
+      return false;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'listing_revision_requested',
+        id: auction.id,
+        lotId: auction.id,
+        auctionId: auction.id,
+        year: auction.year,
+        make: auction.make,
+        model: auction.model,
+        generation: auction.generation,
+        sellerName: auction.sellerName || sellerProfile?.displayName || 'Seller',
+        sellerEmail: resolvedEmail,
+        revisionNotes: revisionNotes || ''
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking listing revision requested email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking listing revision requested email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Non-blocking client-side trigger when a bidder is outbid by another user.
+ */
+export async function sendOutbidNotificationEmail(params: {
+  auctionId: string;
+  vehicleTitle: string;
+  currentBid: number;
+  minimumIncrement: number;
+  bidderEmail: string;
+  bidderName?: string;
+}): Promise<boolean> {
+  const cleanEmail = (params.bidderEmail || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) return false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'outbid_notification',
+        auctionId: params.auctionId,
+        vehicleTitle: params.vehicleTitle,
+        currentBid: params.currentBid,
+        minimumIncrement: params.minimumIncrement,
+        minRequiredBid: params.currentBid + params.minimumIncrement,
+        bidderEmail: cleanEmail,
+        bidderName: params.bidderName
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking outbid email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking outbid email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Non-blocking client-side trigger when an auction closes and the winning bidder is confirmed.
+ */
+export async function sendWinningBidConfirmationEmail(params: {
+  auctionId: string;
+  vehicleTitle: string;
+  winningBid: number;
+  winnerEmail: string;
+  winnerName?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
+}): Promise<boolean> {
+  const cleanEmail = (params.winnerEmail || '').trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@')) return false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch('/api/send-consignment-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        type: 'winning_bid_confirmation',
+        auctionId: params.auctionId,
+        vehicleTitle: params.vehicleTitle,
+        winningBid: params.winningBid,
+        winnerEmail: cleanEmail,
+        winnerName: params.winnerName,
+        sellerName: params.sellerName,
+        sellerEmail: params.sellerEmail,
+        sellerPhone: params.sellerPhone
+      }),
+      signal: controller.signal
+    }).catch((fetchErr: any) => {
+      console.warn('Non-blocking winning bid confirmation email dispatch failed:', fetchErr);
+      return null;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+    });
+
+    return Boolean(res && res.ok);
+  } catch (err: any) {
+    console.warn('Non-blocking winning bid confirmation email error:', err);
+    return false;
+  }
+}
+
+/**
+ * Automated Clock Safeguard:
+ * Evaluates whether an auction is eligible for background clock evaluation and countdown ticking.
+ * Lots with status 'draft' or 'pending_review' strictly bypass automated clock progression.
+ */
+export function evaluateAuctionClockSafeguard(status?: string | null): {
+  isClockActive: boolean;
+  bypassClock: boolean;
+} {
+  const norm = (status || '').toLowerCase().trim();
+  const bypassClock = norm === 'draft' || norm === 'pending_review';
+  return {
+    isClockActive: !bypassClock && (norm === 'live' || norm === 'active' || norm === 'upcoming' || norm === 'preview'),
+    bypassClock
+  };
+}
+
 // Wire welcome email dispatch to execute only when email verification is confirmed
 if (typeof window !== 'undefined' && auth) {
   try {
@@ -1637,6 +1925,14 @@ export async function batchUpdateAuctionStatus(
     }
     await batch.commit();
   }
+
+  const normStatus = (status || '').toLowerCase().trim();
+  if (normStatus === 'ended' || normStatus === 'sold') {
+    for (const id of validIds) {
+      updateAuctionStatus(id, status).catch(e => console.warn('Batch updateAuctionStatus notification notice:', e));
+    }
+  }
+
   return validIds.length;
 }
 
@@ -1651,6 +1947,43 @@ export async function updateAuctionStatus(
   const targetId = auctionId.trim() || MAIN_AUCTION_ID;
   const auctionRef = doc(db, 'auctions', targetId);
   await setDoc(auctionRef, { status, updatedAt: Date.now() }, { merge: true });
+
+  // Post-auction settlement routine:
+  // When an auction transitions to ended or sold with reserve met,
+  // retrieve the top winning bidder's email and asynchronously trigger the winning bid confirmation email.
+  const normStatus = (status || '').toLowerCase().trim();
+  if (normStatus === 'ended' || normStatus === 'sold') {
+    (async () => {
+      try {
+        const snap = await getDoc(auctionRef);
+        if (!snap.exists()) return;
+        const data = snap.data() as Auction & { winningEmailSent?: boolean };
+        const isReserveSatisfied = Boolean(
+          data.isReserveMet ||
+          (data.reserveAmount ? (data.currentBid || 0) >= data.reserveAmount : true) ||
+          normStatus === 'sold'
+        );
+        const winnerEmail = (data.highBidderEmail || '').trim();
+        if (winnerEmail && isReserveSatisfied && !data.winningEmailSent) {
+          // Atomic deduplication marker to prevent duplicate email dispatches
+          await setDoc(auctionRef, { winningEmailSent: true }, { merge: true });
+
+          await sendWinningBidConfirmationEmail({
+            auctionId: targetId,
+            vehicleTitle: data.title || 'Vehicle Listing',
+            winningBid: data.currentBid || data.startingBid || 0,
+            winnerEmail,
+            winnerName: data.highBidderName || winnerEmail.split('@')[0],
+            sellerName: data.sellerName || 'Verified Consignor',
+            sellerEmail: data.sellerEmail || '',
+            sellerPhone: data.sellerPhone || ''
+          });
+        }
+      } catch (err) {
+        console.warn('Non-blocking winning bid confirmation notification routine error:', err);
+      }
+    })();
+  }
 }
 
 /**
@@ -1901,9 +2234,17 @@ export async function placeBidWithAntiSnipe(
       }
 
       // 2. Outbid alert email to previous high bidder
-      if (prevHighBidderEmail && prevHighBidderId && prevHighBidderId !== bidder.uid) {
+      const isDistinctBidder = Boolean(
+        prevHighBidderEmail &&
+        prevHighBidderEmail.includes('@') &&
+        prevHighBidderId &&
+        prevHighBidderId !== bidder.uid &&
+        prevHighBidderEmail.toLowerCase() !== (bidder.email || '').toLowerCase()
+      );
+
+      if (isDistinctBidder) {
         sendOutbidAlertEmail({
-          toEmail: prevHighBidderEmail,
+          toEmail: prevHighBidderEmail!,
           bidderName: prevHighBidderName || "Registered Bidder",
           previousBidAmount: prevAmount,
           newBidAmount: amount,
@@ -1911,6 +2252,16 @@ export async function placeBidWithAntiSnipe(
           auctionId,
           endTime: newEndTime
         }).catch(err => console.warn('Outbid alert email error:', err));
+
+        // Asynchronously dispatch serverless transactional email notification via /api/send-consignment-email
+        sendOutbidNotificationEmail({
+          auctionId,
+          vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
+          currentBid: amount,
+          minimumIncrement: auctionData.minimumIncrement || 250,
+          bidderEmail: prevHighBidderEmail!,
+          bidderName: prevHighBidderName || "Registered Bidder"
+        }).catch(err => console.warn('Serverless outbid notification email error:', err));
       }
     }, 100);
 
@@ -2720,6 +3071,7 @@ export async function updateAuctionConfig(
   const auctionRef = doc(db, 'auctions', targetId);
   const cleanUpdates = sanitizePayload({
     ...updates,
+    ...(updates.status ? { status: updates.status } : {}),
     updatedAt: Date.now()
   });
 
@@ -3371,6 +3723,11 @@ export async function fetchUserActivitySummary(
     for (const [auctionId, bidInfo] of userAuctionBids.entries()) {
       const auction = auctionMap.get(auctionId);
       if (!auction) continue;
+
+      // Automated Clock Safeguard: Draft and Pending Review lots bypass active countdown/bidding evaluations
+      if (auction.status === 'draft' || auction.status === 'pending_review') {
+        continue;
+      }
 
       const isEnded =
         auction.status === 'ended' ||

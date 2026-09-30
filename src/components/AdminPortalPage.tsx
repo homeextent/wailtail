@@ -43,7 +43,9 @@ import {
   subscribeToPromoSettings,
   subscribeToPromoAnalytics,
   savePromoSettings,
-  DEFAULT_PROMO_SETTINGS
+  DEFAULT_PROMO_SETTINGS,
+  sendListingApprovedEmail,
+  sendListingRevisionRequestedEmail
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
@@ -812,7 +814,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const [inventoryPage, setInventoryPage] = useState<number>(1);
   const [inventoryPageSize, setInventoryPageSize] = useState<number>(8);
   const [inventorySearch, setInventorySearch] = useState<string>('');
-  const [inventoryStatusFilter, setInventoryStatusFilter] = useState<'all' | 'draft' | 'preview' | 'upcoming' | 'live' | 'ended'>('all');
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState<'all' | 'draft' | 'pending_review' | 'live' | 'ended'>('all');
 
   // Inventory & Bulk Deletion Modals & Cascading State
   const [confirmDeleteLot, setConfirmDeleteLot] = useState<Auction | null>(null);
@@ -865,11 +867,9 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       if (inventoryStatusFilter !== 'all') {
         const s = (lot.status || 'draft').toLowerCase();
         if (inventoryStatusFilter === 'live') {
-          if (s !== 'live' && s !== 'active') return false;
-        } else if (inventoryStatusFilter === 'upcoming') {
-          if (s !== 'upcoming') return false;
-        } else if (inventoryStatusFilter === 'preview') {
-          if (s !== 'preview') return false;
+          if (s !== 'live' && s !== 'active' && s !== 'upcoming' && s !== 'preview') return false;
+        } else if (inventoryStatusFilter === 'pending_review') {
+          if (s !== 'pending_review') return false;
         } else if (inventoryStatusFilter === 'draft') {
           if (s !== 'draft') return false;
         } else if (inventoryStatusFilter === 'ended') {
@@ -2190,21 +2190,27 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
                   {/* Status Filters */}
                   <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
-                    {(['all', 'draft', 'preview', 'upcoming', 'live', 'ended'] as const).map((filter) => (
+                    {[
+                      { id: 'all', label: `All (${allAuctions.length})` },
+                      { id: 'draft', label: `Draft (${allAuctions.filter(a => (a.status || 'draft') === 'draft').length})` },
+                      { id: 'pending_review', label: `Pending Review (${allAuctions.filter(a => a.status === 'pending_review').length})` },
+                      { id: 'live', label: `Scheduled / Live (${allAuctions.filter(a => a.status === 'live' || a.status === 'upcoming' || a.status === 'active' || a.status === 'preview').length})` },
+                      { id: 'ended', label: `Ended (${allAuctions.filter(a => a.status === 'ended' || a.status === 'sold' || a.status === 'reserve_not_met').length})` }
+                    ].map((item) => (
                       <button
-                        key={filter}
+                        key={item.id}
                         type="button"
                         onClick={() => {
-                          setInventoryStatusFilter(filter);
+                          setInventoryStatusFilter(item.id as any);
                           setInventoryPage(1);
                         }}
-                        className={`px-3 py-1.5 rounded-lg capitalize transition-all cursor-pointer whitespace-nowrap ${
-                          inventoryStatusFilter === filter
+                        className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                          inventoryStatusFilter === item.id
                             ? 'bg-zinc-800 text-white font-bold shadow-xs border border-zinc-700'
                             : 'text-zinc-400 hover:text-white'
                         }`}
                       >
-                        {filter === 'all' ? `All (${allAuctions.length})` : filter}
+                        {item.label}
                       </button>
                     ))}
                   </div>
@@ -2357,36 +2363,107 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                               )}
                             </td>
                             <td className="p-4">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
-                                (lotStatus === 'live' || lotStatus === 'active')
-                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                                  : lotStatus === 'upcoming'
-                                  ? 'bg-blue-950 text-blue-300 border border-blue-800'
-                                  : lotStatus === 'preview'
-                                  ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                                  : (lotStatus === 'ended' || lotStatus === 'sold' || lotStatus === 'reserve_not_met')
-                                  ? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                                  : 'bg-amber-950 text-amber-300 border border-amber-800'
-                              }`}>
-                                {lotStatus}
-                              </span>
+                              {lotStatus === 'pending_review' ? (
+                                <span className="px-2.5 py-1 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-500/60 shadow-xs flex items-center gap-1.5 w-fit">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                  <span>PENDING REVIEW</span>
+                                </span>
+                              ) : (
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
+                                  (lotStatus === 'live' || lotStatus === 'active')
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    : lotStatus === 'upcoming'
+                                    ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                    : lotStatus === 'preview'
+                                    ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                                    : (lotStatus === 'ended' || lotStatus === 'sold' || lotStatus === 'reserve_not_met')
+                                    ? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                                    : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                                }`}>
+                                  {lotStatus}
+                                </span>
+                              )}
                             </td>
                             <td className="p-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                {/* Open in Listing Editor */}
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenListingEditor(lot.id)}
-                                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95"
-                                  title={`Open in Listing Editor (/dashboard/listings/${lot.id}/edit)`}
-                                >
-                                  <span>Open in Listing Editor</span>
-                                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
-                                </button>
+                              <div className="flex items-center justify-end gap-2 flex-wrap">
+                                {lotStatus === 'pending_review' ? (
+                                  <>
+                                    {/* Quick Action: Review Listing */}
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenListingEditor(lot.id)}
+                                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-200 border border-amber-600/60 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 shadow-xs"
+                                      title={`Review Listing (/dashboard/listings/${lot.id}/edit)`}
+                                    >
+                                      <span>Review Listing</span>
+                                      <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
+                                    </button>
+
+                                    {/* Quick Action: Approve & Schedule Live */}
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          await batchUpdateAuctionStatus([lot.id], 'upcoming');
+                                          sendListingApprovedEmail(lot).catch(err => {
+                                            console.warn('Non-blocking listing approved email error:', err);
+                                          });
+                                          showToast(`Lot "${lot.title || lot.id}" approved and scheduled live! Automated clock active.`);
+                                        } catch (err: any) {
+                                          showToast(`Failed to approve lot: ${err.message}`, 'error');
+                                        }
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg text-xs font-extrabold bg-emerald-900/90 hover:bg-emerald-800 text-emerald-200 border border-emerald-600/80 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 shadow-xs"
+                                      title="Approve & Schedule Live (Activates Automated Clock)"
+                                    >
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Approve & Schedule Live</span>
+                                    </button>
+
+                                    {/* Quick Action: Request Revisions */}
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const revisionNotes = window.prompt(
+                                          `Enter curator revision notes for "${lot.title || lot.id}" (optional):`,
+                                          ''
+                                        );
+                                        if (revisionNotes === null) return;
+                                        try {
+                                          await batchUpdateAuctionStatus([lot.id], 'draft');
+                                          sendListingRevisionRequestedEmail(lot, revisionNotes).catch(err => {
+                                            console.warn('Non-blocking revision request email error:', err);
+                                          });
+                                          showToast(`Lot returned to Draft. Revisions requested from seller.`);
+                                        } catch (err: any) {
+                                          showToast(`Failed to request revisions: ${err.message}`, 'error');
+                                        }
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-zinc-700 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 shadow-xs"
+                                      title="Request Revisions (Reverts to Draft with Curator Notes)"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                                      <span>Request Revisions</span>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* Open in Listing Editor */}
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenListingEditor(lot.id)}
+                                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95"
+                                      title={`Open in Listing Editor (/dashboard/listings/${lot.id}/edit)`}
+                                    >
+                                      <span>Open in Listing Editor</span>
+                                      <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                                    </button>
+                                  </>
+                                )}
 
                                 {/* Status Dropdown */}
                                 <select
-                                  value={lotStatus}
+                                  value={lotStatus === 'active' || lotStatus === 'upcoming' ? 'upcoming' : lotStatus}
                                   onChange={async (e) => {
                                     const nextSt = e.target.value as Auction['status'];
                                     try {
@@ -2399,9 +2476,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                   className="px-2 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 border border-zinc-700 text-zinc-200 cursor-pointer focus:ring-1 focus:ring-red-500"
                                 >
                                   <option value="draft">Draft</option>
-                                  <option value="preview">Preview</option>
-                                  <option value="upcoming">Upcoming</option>
-                                  <option value="live">Live</option>
+                                  <option value="pending_review">Pending Review</option>
+                                  <option value="upcoming">Scheduled / Live (Automated Clock)</option>
                                   <option value="ended">Ended</option>
                                 </select>
 
@@ -4107,7 +4183,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-zinc-400 hidden md:inline">Set Status:</span>
-                {(['draft', 'upcoming', 'live', 'ended'] as const).map((st) => (
+                {(['draft', 'pending_review', 'upcoming', 'live', 'ended'] as const).map((st) => (
                   <button
                     key={st}
                     type="button"
@@ -4124,7 +4200,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     }}
                     className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 disabled:opacity-40 cursor-pointer transition-all active:scale-95"
                   >
-                    {st}
+                    {st === 'pending_review' ? 'Pending Review' : st}
                   </button>
                 ))}
               </div>

@@ -53,7 +53,7 @@ export const isLive = (
   endTime?: number | null,
   now: number = Date.now()
 ): boolean => {
-  if (status === 'draft' || status === 'sold') return false;
+  if (status === 'draft' || status === 'pending_review' || status === 'sold') return false;
   if (startTime !== undefined && startTime !== null && endTime !== undefined && endTime !== null) {
     return now >= startTime && now < endTime;
   }
@@ -66,11 +66,11 @@ export const isUpcoming = (
   endTime?: number | null,
   now: number = Date.now()
 ): boolean => {
-  if (status === 'draft' || status === 'sold') return false;
+  if (status === 'draft' || status === 'pending_review' || status === 'sold') return false;
   if (startTime !== undefined && startTime !== null) {
     return now < startTime;
   }
-  return status !== 'draft' && (status === 'upcoming' || status === 'preview' || !status);
+  return status !== 'draft' && status !== 'pending_review' && (status === 'upcoming' || status === 'preview' || !status);
 };
 
 export const isEnded = (
@@ -80,7 +80,7 @@ export const isEnded = (
   now: number = Date.now()
 ): boolean => {
   if (status === 'sold' || status === 'ended') return true;
-  if (status === 'draft') return false;
+  if (status === 'draft' || status === 'pending_review') return false;
   if (endTime !== undefined && endTime !== null) {
     return now >= endTime;
   }
@@ -231,8 +231,8 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   }, [promoSettings, dismissedIds, user]);
 
   const filteredAuctions = auctions.filter((lot: Auction) => {
-    // Draft lots are strictly excluded from public catalog views
-    if (lot.status === 'draft') return false;
+    // Draft and pending_review lots are strictly excluded from public catalog views
+    if (lot.status === 'draft' || lot.status === 'pending_review') return false;
     if (filterStatus === 'live' && !isLive(lot.status, lot.startTime, lot.endTime, now)) return false;
     if (filterStatus === 'upcoming' && !isUpcoming(lot.status, lot.startTime, lot.endTime, now)) return false;
     if (filterStatus === 'ended' && !isEnded(lot.status, lot.startTime, lot.endTime, now)) return false;
@@ -252,7 +252,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   });
 
   // Calculate promotional card slots when catalog non-draft auctions count <= 2
-  const publicAuctions = auctions.filter((a: Auction) => a.status !== 'draft');
+  const publicAuctions = auctions.filter((a: Auction) => a.status !== 'draft' && a.status !== 'pending_review');
   const shouldInjectPromos = promoSettings.enabled && publicAuctions.length <= 2 && activePromoCards.length > 0;
   const promoSlotsCount = shouldInjectPromos ? Math.max(1, 3 - filteredAuctions.length) : 0;
   const promoCardsToInject = shouldInjectPromos ? activePromoCards.slice(0, promoSlotsCount) : [];

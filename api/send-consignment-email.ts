@@ -4,7 +4,18 @@
  * bidder welcome emails, and private vehicle inquiries.
  */
 
-export type ConsignmentEmailType = 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected';
+export type ConsignmentEmailType =
+  | 'consignment'
+  | 'inquiry'
+  | 'consignment_receipt'
+  | 'welcome_bidder'
+  | 'consignment_approved'
+  | 'consignment_rejected'
+  | 'listing_submitted_for_review'
+  | 'listing_approved'
+  | 'listing_revision_requested'
+  | 'outbid_notification'
+  | 'winning_bid_confirmation';
 
 export interface ConsignmentEmailPayload {
   type?: ConsignmentEmailType;
@@ -33,6 +44,9 @@ export interface ConsignmentEmailPayload {
   id?: string;
   convertedAuctionId?: string;
   lotId?: string;
+  auctionId?: string;
+  revisionNotes?: string;
+  reviewUrl?: string;
   // Inquiry fields
   name?: string;
   email?: string;
@@ -44,6 +58,16 @@ export interface ConsignmentEmailPayload {
   // Welcome Bidder fields
   displayName?: string;
   userEmail?: string;
+  // Outbid & Winning Bid Confirmation fields
+  currentBid?: number | string;
+  currentHighBid?: number | string;
+  minimumIncrement?: number | string;
+  minRequiredBid?: number | string;
+  winningBid?: number | string;
+  winnerEmail?: string;
+  winnerName?: string;
+  bidderEmail?: string;
+  bidderName?: string;
 }
 
 function sendJson(res: any, status: number, data: any) {
@@ -573,6 +597,654 @@ async function dispatchConsignmentRejectedEmail(payload: any) {
   });
 }
 
+async function dispatchListingSubmittedForReviewEmail(payload: any, adminEmail: string) {
+  const {
+    id,
+    lotId,
+    auctionId,
+    year,
+    make,
+    model,
+    generation,
+    vin,
+    sellerName,
+    sellerEmail,
+    sellerPhone
+  } = payload || {};
+
+  const targetId = id || lotId || auctionId || '';
+  const vehicleTitle = [year, make, model].filter(Boolean).join(' ').trim() || 'Vehicle Listing';
+  const vehicleWithGen = [year, make, model, generation ? `(${generation})` : ''].filter(Boolean).join(' ').trim() || vehicleTitle;
+  const reviewUrl = `https://www.wailtail.com/dashboard/listings/${targetId}/edit`;
+  const subject = `[Curation Review] New Submission: ${vehicleTitle} — ${sellerName || 'Seller'}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid #f59e0b; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #fbbf24; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #451a03; color: #fbbf24; border: 1px solid #d97706; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #fbbf24; margin-bottom: 14px; }
+    .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .spec-table tr { border-bottom: 1px solid #1e293b; }
+    .spec-table tr:last-child { border-bottom: none; }
+    .spec-table td { padding: 9px 0; }
+    .spec-label { color: #64748b; font-weight: 600; width: 40%; }
+    .spec-val { color: #f1f5f9; font-weight: 700; text-align: right; }
+    .cta-box { text-align: center; margin: 32px 0 24px 0; }
+    .cta-btn { display: inline-block; background-color: #f59e0b; color: #020617; text-decoration: none; font-size: 14px; font-weight: 900; letter-spacing: 0.5px; padding: 16px 32px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Curator Listing Review Queue</div>
+    </div>
+    <div class="body">
+      <div class="badge">CURATION REVIEW QUEUE</div>
+      <h1 class="h1">New Listing Submitted for Review</h1>
+      <p class="p">
+        A seller has submitted a vehicle listing for curation review. This listing has been placed in <strong style="color: #fbbf24;">pending_review</strong> status and locked for editing until administrative review.
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Vehicle Particulars</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Year / Make / Model</td>
+            <td class="spec-val">${vehicleWithGen}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">VIN / Chassis #</td>
+            <td class="spec-val" style="font-family: monospace;">${vin || 'Not provided'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Seller Name</td>
+            <td class="spec-val">${sellerName || 'Not specified'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Seller Email</td>
+            <td class="spec-val"><a href="mailto:${sellerEmail || ''}" style="color: #fbbf24; text-decoration: none;">${sellerEmail || 'Not specified'}</a></td>
+          </tr>
+          <tr>
+            <td class="spec-label">Seller Phone</td>
+            <td class="spec-val">${sellerPhone || 'Not provided'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Lot ID</td>
+            <td class="spec-val" style="font-family: monospace;">${targetId}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="cta-box">
+        <a href="${reviewUrl}" class="cta-btn" target="_blank" rel="noopener noreferrer">
+          Review Listing in Workspace
+        </a>
+      </div>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Platform Administration</p>
+      <p>Received on: ${new Date().toUTCString()}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: adminEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
+async function dispatchListingApprovedEmail(payload: any) {
+  const {
+    id,
+    lotId,
+    auctionId,
+    sellerEmail,
+    email,
+    sellerName,
+    year,
+    make,
+    model,
+    generation
+  } = payload || {};
+
+  const recipientEmail = (sellerEmail || email || '').trim();
+  if (!recipientEmail) {
+    return { success: false, error: 'Missing seller email' };
+  }
+
+  const targetId = id || lotId || auctionId || '';
+  const vehicleTitle = [year, make, model].filter(Boolean).join(' ').trim() || 'Your Vehicle';
+  const vehicleWithGen = [year, make, model, generation ? `(${generation})` : ''].filter(Boolean).join(' ').trim() || vehicleTitle;
+  const workspaceUrl = targetId ? `https://www.wailtail.com/dashboard/listings/${targetId}/edit` : 'https://www.wailtail.com/catalog';
+  const subject = `[Wailtail] Listing Approved & Scheduled Live — ${vehicleTitle}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid #10b981; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #10b981; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #064e3b; color: #34d399; border: 1px solid #059669; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .cta-box { text-align: center; margin: 32px 0 24px 0; }
+    .cta-btn { display: inline-block; background-color: #10b981; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 900; letter-spacing: 0.5px; padding: 16px 32px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Curated Vehicle Consignment</div>
+    </div>
+    <div class="body">
+      <div class="badge">LISTING APPROVED</div>
+      <h1 class="h1">Your Listing Has Been Approved &amp; Scheduled Live</h1>
+      <p class="p">
+        Hello ${sellerName || 'there'}, excellent news! Our curation team has reviewed and approved your listing for the <strong style="color: #ffffff;">${vehicleWithGen}</strong>.
+      </p>
+      <p class="p">
+        Your auction is now scheduled and active under our automated auction clock architecture. Bidders across Canada will be able to follow, preview, and place bids on your vehicle.
+      </p>
+
+      <div class="cta-box">
+        <a href="${workspaceUrl}" class="cta-btn" target="_blank" rel="noopener noreferrer">
+          View Your Listing in Workspace
+        </a>
+      </div>
+
+      <p class="p" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 24px;">
+        If you have any questions during your auction run, reply directly to this email or contact <a href="mailto:contact@wailtail.com" style="color: #34d399; text-decoration: none;">contact@wailtail.com</a>.
+      </p>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Curated Single-Car Classic &amp; Enthusiast Auctions</p>
+      <p>Canadian Settlements in CAD • 0% Seller Commission</p>
+      <p style="margin-top: 8px;">Sent to: ${recipientEmail}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: recipientEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
+async function dispatchListingRevisionRequestedEmail(payload: any) {
+  const {
+    id,
+    lotId,
+    auctionId,
+    sellerEmail,
+    email,
+    sellerName,
+    year,
+    make,
+    model,
+    generation,
+    revisionNotes,
+    notes
+  } = payload || {};
+
+  const recipientEmail = (sellerEmail || email || '').trim();
+  if (!recipientEmail) {
+    return { success: false, error: 'Missing seller email' };
+  }
+
+  const targetId = id || lotId || auctionId || '';
+  const vehicleTitle = [year, make, model].filter(Boolean).join(' ').trim() || 'Your Vehicle';
+  const vehicleWithGen = [year, make, model, generation ? `(${generation})` : ''].filter(Boolean).join(' ').trim() || vehicleTitle;
+  const workspaceUrl = targetId ? `https://www.wailtail.com/dashboard/listings/${targetId}/edit` : 'https://www.wailtail.com';
+  const notesText = revisionNotes || notes || 'Please review your vehicle specifications and photography, update the requested information, and re-submit for curation.';
+  const subject = `[Wailtail] Action Required: Revisions Requested — ${vehicleTitle}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid #f59e0b; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #fbbf24; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #451a03; color: #fbbf24; border: 1px solid #d97706; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #fbbf24; margin-bottom: 14px; }
+    .cta-box { text-align: center; margin: 32px 0 24px 0; }
+    .cta-btn { display: inline-block; background-color: #f59e0b; color: #020617; text-decoration: none; font-size: 14px; font-weight: 900; letter-spacing: 0.5px; padding: 16px 32px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Curated Vehicle Consignment</div>
+    </div>
+    <div class="body">
+      <div class="badge">REVISIONS REQUESTED</div>
+      <h1 class="h1">Curator Revision Notes for ${vehicleTitle}</h1>
+      <p class="p">
+        Hello ${sellerName || 'there'}, our curation team has reviewed your listing for the <strong style="color: #ffffff;">${vehicleWithGen}</strong>. Before we can schedule your auction live, some updates or clarifications are needed.
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Curator Notes &amp; Requested Changes</div>
+        <div style="font-size: 13px; color: #e2e8f0; line-height: 1.6; white-space: pre-wrap;">${notesText}</div>
+      </div>
+
+      <p class="p">
+        Your listing has been returned to <strong style="color: #ffffff;">Draft</strong> mode so you can make the necessary edits. Once updated, you can re-submit the listing for curation review.
+      </p>
+
+      <div class="cta-box">
+        <a href="${workspaceUrl}" class="cta-btn" target="_blank" rel="noopener noreferrer">
+          Open Workspace &amp; Edit Listing
+        </a>
+      </div>
+
+      <p class="p" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 24px;">
+        If you have questions about these recommendations, reply directly to this email or reach us at <a href="mailto:contact@wailtail.com" style="color: #fbbf24; text-decoration: none;">contact@wailtail.com</a>.
+      </p>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Curated Single-Car Classic &amp; Enthusiast Auctions</p>
+      <p>Canadian Settlements in CAD • 0% Seller Commission</p>
+      <p style="margin-top: 8px;">Sent to: ${recipientEmail}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: recipientEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
+function formatCAD(val?: number | string): string {
+  if (val == null || val === '') return '$0 CAD';
+  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.]/g, ''));
+  if (isNaN(num)) return '$0 CAD';
+  return `$${Math.round(num).toLocaleString('en-CA')} CAD`;
+}
+
+async function dispatchOutbidNotificationEmail(payload: any) {
+  const {
+    auctionId,
+    lotId,
+    id,
+    vehicleTitle,
+    currentBid,
+    currentHighBid,
+    minimumIncrement,
+    minRequiredBid,
+    bidderEmail,
+    email,
+    userEmail,
+    bidderName,
+    displayName
+  } = payload || {};
+
+  const recipientEmail = (bidderEmail || email || userEmail || '').trim();
+  if (!recipientEmail) {
+    return { success: false, error: 'Missing bidder email' };
+  }
+
+  const targetLot = auctionId || lotId || id || '';
+  const lotUrl = targetLot ? `https://www.wailtail.com/auctions/${targetLot}` : 'https://www.wailtail.com';
+  const vTitle = vehicleTitle || 'Vehicle Lot';
+  const highBidVal = currentBid ?? currentHighBid ?? 0;
+  const formattedHighBid = formatCAD(highBidVal);
+  const minIncVal = minimumIncrement ?? 250;
+  const formattedInc = formatCAD(minIncVal);
+  const minNextBidVal = minRequiredBid ?? (Number(highBidVal) + Number(minIncVal));
+  const formattedMinNextBid = formatCAD(minNextBidVal);
+  const recipientName = bidderName || displayName || recipientEmail.split('@')[0] || 'Bidder';
+  const subject = `[Wailtail Outbid Alert] New High Bid: ${formattedHighBid} on ${vTitle}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid #f59e0b; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #fbbf24; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #451a03; color: #fbbf24; border: 1px solid #d97706; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #fbbf24; margin-bottom: 14px; }
+    .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .spec-table tr { border-bottom: 1px solid #1e293b; }
+    .spec-table tr:last-child { border-bottom: none; }
+    .spec-table td { padding: 10px 0; }
+    .spec-label { color: #64748b; font-weight: 600; width: 45%; }
+    .spec-val { color: #f1f5f9; font-weight: 700; text-align: right; }
+    .spec-val-alert { color: #f59e0b; font-size: 16px; font-weight: 900; }
+    .spec-val-next { color: #10b981; font-size: 15px; font-weight: 800; }
+    .notice-box { background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(2, 6, 23, 0.4) 100%); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 16px; margin: 20px 0; }
+    .notice-title { font-size: 13px; font-weight: 800; color: #fbbf24; margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .notice-desc { font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5; }
+    .cta-box { text-align: center; margin: 32px 0 24px 0; }
+    .cta-btn { display: inline-block; background-color: #f59e0b; color: #020617; text-decoration: none; font-size: 14px; font-weight: 900; letter-spacing: 0.5px; padding: 16px 32px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(245, 158, 11, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Live Auction Outbid Alert</div>
+    </div>
+    <div class="body">
+      <div class="badge">OUTBID NOTIFICATION</div>
+      <h1 class="h1">You Have Been Outbid on ${vTitle}</h1>
+      <p class="p">
+        Hello ${recipientName}, another verified bidder has placed a higher bid on <strong style="color: #ffffff;">${vTitle}</strong>. To regain leading bidder status before the auction timer expires, place a counter-bid directly on the vehicle lot.
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Current Bidding Telemetry</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Target Vehicle</td>
+            <td class="spec-val">${vTitle}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Current High Bid</td>
+            <td class="spec-val spec-val-alert">${formattedHighBid}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Minimum Required Increment</td>
+            <td class="spec-val">+${formattedInc}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Next Minimum Bid to Lead</td>
+            <td class="spec-val spec-val-next">${formattedMinNextBid}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="notice-box">
+        <div class="notice-title">⚡ 2-Minute Anti-Sniping Protection</div>
+        <p class="notice-desc">
+          Bids placed in the closing 2 minutes extend the countdown clock automatically by +2:00 minutes. Counter-bid immediately to secure your position.
+        </p>
+      </div>
+
+      <div class="cta-box">
+        <a href="${lotUrl}" class="cta-btn" target="_blank" rel="noopener noreferrer">
+          Regain Leading Bidder Status →
+        </a>
+      </div>
+
+      <p class="p" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 16px;">
+        Direct Lot Link: <a href="${lotUrl}" style="color: #fbbf24; word-break: break-all;">${lotUrl}</a>
+      </p>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Curated Single-Car Classic &amp; Enthusiast Auctions</p>
+      <p>Canadian Settlements in CAD • 0% Buyer Premium • Verified Bidders</p>
+      <p style="margin-top: 8px;">Sent to: ${recipientEmail}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: recipientEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
+async function dispatchWinningBidConfirmationEmail(payload: any) {
+  const {
+    auctionId,
+    lotId,
+    id,
+    vehicleTitle,
+    winningBid,
+    currentBid,
+    winnerEmail,
+    bidderEmail,
+    email,
+    userEmail,
+    winnerName,
+    bidderName,
+    displayName,
+    sellerName,
+    sellerEmail,
+    sellerPhone
+  } = payload || {};
+
+  const recipientEmail = (winnerEmail || bidderEmail || email || userEmail || '').trim();
+  if (!recipientEmail) {
+    return { success: false, error: 'Missing winning bidder email' };
+  }
+
+  const targetLot = auctionId || lotId || id || '';
+  const lotUrl = targetLot ? `https://www.wailtail.com/auctions/${targetLot}` : 'https://www.wailtail.com';
+  const vTitle = vehicleTitle || 'Vehicle Lot';
+  const winningAmountVal = winningBid ?? currentBid ?? 0;
+  const formattedWinningBid = formatCAD(winningAmountVal);
+  const recipientName = winnerName || bidderName || displayName || recipientEmail.split('@')[0] || 'Winning Bidder';
+  const subject = `[Wailtail] Congratulations! You Won ${vTitle} — ${formattedWinningBid}`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 36px 24px; text-align: center; border-bottom: 2px solid #10b981; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #10b981; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: #064e3b; color: #34d399; border: 1px solid #059669; }
+    .h1 { font-size: 24px; font-weight: 900; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 24px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #34d399; margin-bottom: 14px; }
+    .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .spec-table tr { border-bottom: 1px solid #1e293b; }
+    .spec-table tr:last-child { border-bottom: none; }
+    .spec-table td { padding: 10px 0; }
+    .spec-label { color: #64748b; font-weight: 600; width: 40%; }
+    .spec-val { color: #f1f5f9; font-weight: 700; text-align: right; }
+    .spec-val-winner { color: #10b981; font-size: 18px; font-weight: 900; }
+    .checklist-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 22px; margin: 24px 0; }
+    .checklist-title { font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #fbbf24; margin-bottom: 16px; }
+    .step-item { display: flex; margin-bottom: 16px; }
+    .step-item:last-child { margin-bottom: 0; }
+    .step-number { width: 28px; height: 28px; border-radius: 50%; background-color: #10b981; color: #020617; font-weight: 900; font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 14px; }
+    .step-content { flex: 1; }
+    .step-heading { font-size: 14px; font-weight: 800; color: #f8fafc; margin-bottom: 3px; }
+    .step-desc { font-size: 12px; color: #94a3b8; line-height: 1.5; margin: 0; }
+    .cta-box { text-align: center; margin: 32px 0 24px 0; }
+    .cta-btn { display: inline-block; background-color: #10b981; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 900; letter-spacing: 0.5px; padding: 16px 32px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Winning Bidder Settlement Confirmation</div>
+    </div>
+    <div class="body">
+      <div class="badge">★ AUCTION CONCLUDED • WINNER</div>
+      <h1 class="h1">Congratulations, ${recipientName}! You Won the Auction</h1>
+      <p class="p">
+        The hammer has fallen on <strong style="color: #ffffff;">${vTitle}</strong>. Your final bid of <strong style="color: #10b981;">${formattedWinningBid}</strong> was confirmed as the winning offer, and the lot reserve has been satisfied!
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Winning Hammer Particulars</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Vehicle Lot</td>
+            <td class="spec-val">${vTitle}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Winning CAD Bid</td>
+            <td class="spec-val spec-val-winner">${formattedWinningBid}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Buyer's Premium</td>
+            <td class="spec-val" style="color: #10b981;">$0 CAD (0% Platform Fee)</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Currency</td>
+            <td class="spec-val">Canadian Dollars ($CAD)</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="highlight-card">
+        <div class="section-title" style="color: #fbbf24;">Seller Contact Credentials</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Seller / Consignor</td>
+            <td class="spec-val">${sellerName || 'Verified Consignor'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Seller Email</td>
+            <td class="spec-val"><a href="mailto:${sellerEmail || ''}" style="color: #34d399; text-decoration: none;">${sellerEmail || 'Not specified'}</a></td>
+          </tr>
+          <tr>
+            <td class="spec-label">Seller Phone</td>
+            <td class="spec-val">${sellerPhone || 'Not provided'}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="checklist-card">
+        <div class="checklist-title">🍁 4-Stage Canadian CAD Settlement Checklist</div>
+
+        <div class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <div class="step-heading">Bank Wire / Certified Draft</div>
+            <p class="step-desc">
+              Contact the seller directly using the credentials above to confirm wire routing instructions or arrange a certified bank draft in Canadian Dollars ($CAD).
+            </p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <div class="step-heading">Title &amp; Bill of Sale</div>
+            <p class="step-desc">
+              Verify the provincial/state vehicle title and registration. Complete and sign the official Wailtail Bill of Sale and provincial transfer documents.
+            </p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <div class="step-heading">Transport / Collection</div>
+            <p class="step-desc">
+              Coordinate an in-person vehicle pickup or schedule insured enclosed carrier transport across Canadian provinces.
+            </p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <div class="step-heading">VIN Check &amp; Key Handover</div>
+            <p class="step-desc">
+              Perform the physical inspection, verify that the stamped chassis VIN matches the vehicle title exactly, and take delivery of vehicle keys and documentation.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-box">
+        <a href="${lotUrl}" class="cta-btn" target="_blank" rel="noopener noreferrer">
+          View Auction Lot &amp; Bill of Sale
+        </a>
+      </div>
+
+      <p class="p" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 16px;">
+        If you have any questions or require settlement assistance, our support team is available at <a href="mailto:consignments@wailtail.com" style="color: #34d399; text-decoration: none;">consignments@wailtail.com</a>.
+      </p>
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Curated Single-Car Classic &amp; Enthusiast Auctions</p>
+      <p>Canadian Settlements in CAD • 0% Buyer Premium • Verified Bidders</p>
+      <p style="margin-top: 8px;">Sent to: ${recipientEmail}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim();
+
+  return await sendEmailNotification({
+    to: recipientEmail,
+    subject,
+    html: htmlContent
+  });
+}
+
 export default async function handler(req: any, res: any) {
   // Handle CORS Preflight
   if (req.method === 'OPTIONS') {
@@ -915,6 +1587,98 @@ export default async function handler(req: any, res: any) {
         success: true,
         message: 'Welcome bidder email processed successfully.',
         recipient: recipientEmail
+      });
+    }
+
+    // Handle Listing Submitted for Review (type === 'listing_submitted_for_review')
+    if (type === 'listing_submitted_for_review') {
+      await dispatchListingSubmittedForReviewEmail(payload, adminEmail);
+      const vehicleTitle = [payload?.year, payload?.make, payload?.model].filter(Boolean).join(' ').trim() || 'Vehicle Listing';
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Listing submitted for review email processed successfully.',
+        recipient: adminEmail,
+        vehicleTitle
+      });
+    }
+
+    // Handle Listing Approved (type === 'listing_approved')
+    if (type === 'listing_approved') {
+      const recipientEmail = (payload?.sellerEmail || payload?.email || '').trim();
+      if (!recipientEmail) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required parameter: sellerEmail is required for listing approval notice.'
+        });
+      }
+
+      await dispatchListingApprovedEmail(payload);
+      const vehicleTitle = [payload?.year, payload?.make, payload?.model].filter(Boolean).join(' ').trim() || 'Vehicle Listing';
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Listing approval email processed successfully.',
+        recipient: recipientEmail,
+        vehicleTitle
+      });
+    }
+
+    // Handle Listing Revision Requested (type === 'listing_revision_requested')
+    if (type === 'listing_revision_requested') {
+      const recipientEmail = (payload?.sellerEmail || payload?.email || '').trim();
+      if (!recipientEmail) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required parameter: sellerEmail is required for revision request notice.'
+        });
+      }
+
+      await dispatchListingRevisionRequestedEmail(payload);
+      const vehicleTitle = [payload?.year, payload?.make, payload?.model].filter(Boolean).join(' ').trim() || 'Vehicle Listing';
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Listing revision request email processed successfully.',
+        recipient: recipientEmail,
+        vehicleTitle
+      });
+    }
+
+    // Handle Outbid Notification Email (type === 'outbid_notification')
+    if (type === 'outbid_notification') {
+      const recipientEmail = (payload?.bidderEmail || payload?.email || payload?.userEmail || '').trim();
+      if (!recipientEmail || !recipientEmail.includes('@')) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required parameter: bidderEmail or email is required for outbid notification.'
+        });
+      }
+
+      await dispatchOutbidNotificationEmail(payload);
+      const vehicleTitle = payload?.vehicleTitle || [payload?.year, payload?.make, payload?.model].filter(Boolean).join(' ').trim() || 'Vehicle Lot';
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Outbid notification email processed successfully.',
+        recipient: recipientEmail,
+        vehicleTitle
+      });
+    }
+
+    // Handle Winning Bid Confirmation Email (type === 'winning_bid_confirmation')
+    if (type === 'winning_bid_confirmation') {
+      const recipientEmail = (payload?.winnerEmail || payload?.bidderEmail || payload?.email || payload?.userEmail || '').trim();
+      if (!recipientEmail || !recipientEmail.includes('@')) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required parameter: winnerEmail or email is required for winning bid confirmation.'
+        });
+      }
+
+      await dispatchWinningBidConfirmationEmail(payload);
+      const vehicleTitle = payload?.vehicleTitle || [payload?.year, payload?.make, payload?.model].filter(Boolean).join(' ').trim() || 'Vehicle Lot';
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Winning bid confirmation email processed successfully.',
+        recipient: recipientEmail,
+        vehicleTitle
       });
     }
 

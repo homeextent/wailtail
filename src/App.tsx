@@ -210,11 +210,16 @@ const AuctionAppContent: React.FC = () => {
     const handleLocationChange = () => {
       setCurrentPath(window.location.pathname + window.location.search + window.location.hash);
     };
+    const handleAccountHubEvent = (e: any) => {
+      handleOpenAccountHub(e?.detail?.tab || 'seller');
+    };
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('wailtail:open-account-hub', handleAccountHubEvent);
     return () => {
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('wailtail:open-account-hub', handleAccountHubEvent);
     };
   }, []);
 
@@ -632,6 +637,18 @@ const AuctionAppContent: React.FC = () => {
         }}
         onUpdateMediaConfig={handleUpdateMediaConfig}
         onBackToPublic={() => navigateTo('/')}
+        onBackToDashboard={() => {
+          const userIsAdmin = Boolean(
+            user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
+          );
+          if (userIsAdmin) {
+            navigateTo('/admin?tab=inventory');
+          } else {
+            navigateTo('/');
+            handleOpenAccountHub('seller');
+          }
+        }}
+        onOpenAccountHub={handleOpenAccountHub}
       />
     );
   }
