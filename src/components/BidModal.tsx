@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Auction } from '../types';
-import { placeBid } from '../services/auctionService';
+import { placeBid, isTransientContentionError } from '../services/auctionService';
 import { formatCurrency } from '../utils/formatters';
 import confetti from 'canvas-confetti';
 import { 
@@ -145,7 +145,24 @@ export const BidModal: React.FC<BidModalProps> = ({
     } catch (err: any) {
       setLoading(false);
       setStep('input');
-      setError(err.message || 'Failed to place bid. Please try again.');
+      const rawMsg = (err?.message || '').toString();
+      const rawCode = (err?.code || '').toString().toLowerCase();
+      const isVersionMismatch =
+        isTransientContentionError(err) ||
+        rawCode === 'aborted' ||
+        rawCode === 'failed-precondition' ||
+        rawMsg.toLowerCase().includes('stored version') ||
+        rawMsg.toLowerCase().includes('does not match the required base version') ||
+        rawMsg.toLowerCase().includes('version mismatch') ||
+        rawMsg.toLowerCase().includes('failed-precondition') ||
+        rawMsg.toLowerCase().includes('failed precondition') ||
+        rawMsg.toLowerCase().includes('aborted');
+
+      if (isVersionMismatch) {
+        setError('High bidding activity detected—another bid was placed at the same time. Please re-confirm your bid.');
+      } else {
+        setError(rawMsg || 'Failed to place bid. Please try again.');
+      }
     }
   };
 

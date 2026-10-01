@@ -8,7 +8,8 @@ import {
   recordPromoClick,
   isPromoScheduleActive,
   isPromoAudienceMatch,
-  updateAuctionStatus
+  updateAuctionStatus,
+  reconcileAuctionClosureAndNotifyWinner
 } from '../services/auctionService';
 import { 
   Clock, 
@@ -266,8 +267,14 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
       updateAuctionStatus(auction.id, effectiveStatus).catch((err) => {
         console.warn('Silent auction status reconciliation failed:', err);
       });
+
+      if (effectiveStatus === 'ended' || (auction.endTime && now >= auction.endTime)) {
+        reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
+          console.warn('Silent auction closure reconciliation failed:', err);
+        });
+      }
     }
-  }, [effectiveStatus, auction.id, auction.status]);
+  }, [effectiveStatus, auction.id, auction.status, auction.endTime, now]);
 
   const timeData = formatAuctionCountdown(
     auction.startTime, 

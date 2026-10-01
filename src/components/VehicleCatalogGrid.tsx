@@ -11,7 +11,9 @@ import { CatalogCard } from './CatalogCard';
 import { 
   subscribeToPromoSettings, 
   recordPromoClick, 
-  DEFAULT_PROMO_SETTINGS 
+  DEFAULT_PROMO_SETTINGS,
+  updateAuctionStatus,
+  reconcileAuctionClosureAndNotifyWinner
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -113,6 +115,28 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Real-time clock reconciliation for active auctions crossing endTime (now >= endTime)
+  useEffect(() => {
+    auctions.forEach((auction: Auction) => {
+      if (
+        auction.id &&
+        auction.status !== 'draft' &&
+        auction.status !== 'pending_review' &&
+        auction.status !== 'ended' &&
+        auction.status !== 'sold' &&
+        auction.endTime &&
+        now >= auction.endTime
+      ) {
+        updateAuctionStatus(auction.id, 'ended').catch((err) => {
+          console.warn('VehicleCatalogGrid: silent auction status reconciliation failed:', err);
+        });
+        reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
+          console.warn('VehicleCatalogGrid: silent auction closure reconciliation failed:', err);
+        });
+      }
+    });
+  }, [auctions, now]);
 
   // Load dismissed promo IDs from localStorage on mount
   useEffect(() => {

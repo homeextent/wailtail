@@ -1937,6 +1937,205 @@ export async function batchUpdateAuctionStatus(
 }
 
 /**
+ * Helper to identify transient Firestore concurrency/contention errors
+ * that are safe to retry with exponential backoff.
+ */
+export function isTransientContentionError(err: any): boolean {
+  if (!err) return false;
+  const code = (err.code || '').toString().toLowerCase();
+  const msg = (err.message || '').toString().toLowerCase();
+  return (
+    code === 'aborted' ||
+    code === 'failed-precondition' ||
+    code === 'unavailable' ||
+    code.includes('aborted') ||
+    code.includes('failed-precondition') ||
+    code.includes('failed_precondition') ||
+    msg.includes('aborted') ||
+    msg.includes('failed-precondition') ||
+    msg.includes('failed precondition') ||
+    msg.includes('does not match the required base version') ||
+    msg.includes('version mismatch') ||
+    msg.includes('stored version') ||
+    msg.includes('version') ||
+    msg.includes('contention') ||
+    msg.includes('concurrency')
+  );
+}
+
+/**
+ * Idempotent Auction Close Settlement Reconciliation Helper:
+ * Ensures winning bidder confirmation emails fire strictly once per auction closure,
+ * guards against auctions ending with zero bids or reserve not satisfied,
+ * and hydrates bidder details from users/bidders collections.
+ */
+export async function reconcileAuctionClosureAndNotifyWinner(
+  auctionId: string
+): Promise<{ success: boolean; settled: boolean; winnerEmail?: string }> {
+  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
+  if (!targetId) return { success: false, settled: false };
+
+  const auctionRef = doc(db, 'auctions', targetId);
+
+  try {
+    // 1. Check auctions/{auctionId}: if winningEmailSent === true, exit immediately.
+    const auctionSnap = await getDoc(auctionRef);
+    if (!auctionSnap.exists()) return { success: false, settled: false };
+
+    const auctionData = auctionSnap.data() as Auction & { winningEmailSent?: boolean };
+    if (auctionData.winningEmailSent === true) {
+      return { success: true, settled: false };
+    }
+
+    // 2. Query highest active (non-retracted) bid from auctions/{auctionId}/bids
+    const collectedBids: Bid[] = [];
+    try {
+      const subBidsSnap = await getDocs(collection(db, 'auctions', targetId, 'bids'));
+      subBidsSnap.docs.forEach((d) => {
+        collectedBids.push({ id: d.id, ...d.data() } as Bid);
+      });
+    } catch (e) {
+      console.warn('Could not query subcollection bids for closure reconciliation:', e);
+    }
+
+    // Fallback/merge with root 'bids' collection
+    try {
+      const rootBidsSnap = await getDocs(
+        query(collection(db, 'bids'), where('auctionId', '==', targetId))
+      );
+      rootBidsSnap.docs.forEach((d) => {
+        if (!collectedBids.some((b) => b.id === d.id)) {
+          collectedBids.push({ id: d.id, ...d.data() } as Bid);
+        }
+      });
+    } catch (e) {
+      console.warn('Could not query root bids for closure reconciliation:', e);
+    }
+
+    // Filter active bids (exclude retracted) and sort descending by amount, then ascending by timestamp
+    const activeBids = collectedBids
+      .filter((b) => b.status !== 'retracted')
+      .sort((a, b) => {
+        if (b.amount !== a.amount) return b.amount - a.amount;
+        return (a.timestamp || 0) - (b.timestamp || 0);
+      });
+
+    const hasActiveBids = activeBids.length > 0;
+    const highestBid = hasActiveBids ? activeBids[0] : null;
+
+    // Guard against auctions closing with zero bids or reserve not met:
+    // do not dispatch winning confirmation emails if no active bids exist or if the reserve price was not satisfied.
+    const reserveAmount = Number(auctionData.reserveAmount) || 0;
+    const isReserveSatisfied = Boolean(
+      auctionData.isReserveMet ||
+      (highestBid ? (reserveAmount > 0 ? highestBid.amount >= reserveAmount : true) : false) ||
+      auctionData.status === 'sold'
+    );
+
+    const shouldNotifyWinner = Boolean(hasActiveBids && highestBid && isReserveSatisfied);
+
+    let winnerEmail = '';
+    let winnerName = '';
+
+    if (shouldNotifyWinner && highestBid) {
+      winnerName = highestBid.bidderName || '';
+      // Hydrate winning bidder email from users/{bidderId} / bidders/{bidderId}
+      const bidderId = highestBid.bidderId;
+      if (bidderId) {
+        try {
+          const userSnap = await getDoc(doc(db, 'users', bidderId));
+          if (userSnap.exists()) {
+            const uData = userSnap.data();
+            if (uData?.email) winnerEmail = uData.email.trim().toLowerCase();
+            if (!winnerName && uData?.displayName) winnerName = uData.displayName;
+          }
+        } catch (err) {
+          console.warn('Could not hydrate winner email from users collection:', err);
+        }
+
+        if (!winnerEmail || !winnerEmail.includes('@')) {
+          try {
+            const bidderSnap = await getDoc(doc(db, 'bidders', bidderId));
+            if (bidderSnap.exists()) {
+              const bData = bidderSnap.data();
+              if (bData?.email) winnerEmail = bData.email.trim().toLowerCase();
+              if (!winnerName && bData?.displayName) winnerName = bData.displayName;
+            }
+          } catch (err) {
+            console.warn('Could not hydrate winner email from bidders collection:', err);
+          }
+        }
+      }
+
+      if ((!winnerEmail || !winnerEmail.includes('@')) && highestBid.bidderEmail) {
+        winnerEmail = highestBid.bidderEmail.trim().toLowerCase();
+      }
+    }
+
+    // Atomically update auctions/{auctionId} setting status: 'ended' and winningEmailSent: true
+    // to guarantee the notification fires strictly once across concurrent clients.
+    let updatedAtomically = false;
+    try {
+      await runTransaction(db, async (txn) => {
+        const snap = await txn.get(auctionRef);
+        if (!snap.exists()) return;
+        const currentData = snap.data() as Auction & { winningEmailSent?: boolean };
+        if (currentData.winningEmailSent === true) {
+          return;
+        }
+        txn.update(auctionRef, {
+          status: 'ended',
+          winningEmailSent: true,
+          updatedAt: Date.now()
+        });
+        updatedAtomically = true;
+      });
+    } catch (txnErr) {
+      console.warn('runTransaction failed during reconcileAuctionClosureAndNotifyWinner, falling back to updateDoc:', txnErr);
+      try {
+        await updateDoc(auctionRef, {
+          status: 'ended',
+          winningEmailSent: true,
+          updatedAt: Date.now()
+        });
+        updatedAtomically = true;
+      } catch (updErr) {
+        console.warn('updateDoc fallback failed during reconcileAuctionClosureAndNotifyWinner:', updErr);
+      }
+    }
+
+    // Trigger sendWinningBidConfirmationEmail() via non-blocking fetch to /api/send-consignment-email
+    if (updatedAtomically && shouldNotifyWinner && winnerEmail && winnerEmail.includes('@') && highestBid) {
+      (async () => {
+        try {
+          await sendWinningBidConfirmationEmail({
+            auctionId: targetId,
+            vehicleTitle: auctionData.title || 'Vehicle Listing',
+            winningBid: highestBid.amount,
+            winnerEmail,
+            winnerName: winnerName || winnerEmail.split('@')[0],
+            sellerName: auctionData.sellerName || 'Verified Consignor',
+            sellerEmail: auctionData.sellerEmail || '',
+            sellerPhone: auctionData.sellerPhone || ''
+          });
+        } catch (emailErr) {
+          console.warn('Non-blocking winning bid confirmation notification routine error:', emailErr);
+        }
+      })();
+    }
+
+    return {
+      success: true,
+      settled: updatedAtomically,
+      winnerEmail: shouldNotifyWinner ? winnerEmail : undefined
+    };
+  } catch (err) {
+    console.warn('reconcileAuctionClosureAndNotifyWinner error:', err);
+    return { success: false, settled: false };
+  }
+}
+
+/**
  * Update a single auction's status in Firestore.
  */
 export async function updateAuctionStatus(
@@ -1950,39 +2149,12 @@ export async function updateAuctionStatus(
 
   // Post-auction settlement routine:
   // When an auction transitions to ended or sold with reserve met,
-  // retrieve the top winning bidder's email and asynchronously trigger the winning bid confirmation email.
+  // reconcile closure and trigger winning bid confirmation notification idempotently.
   const normStatus = (status || '').toLowerCase().trim();
   if (normStatus === 'ended' || normStatus === 'sold') {
-    (async () => {
-      try {
-        const snap = await getDoc(auctionRef);
-        if (!snap.exists()) return;
-        const data = snap.data() as Auction & { winningEmailSent?: boolean };
-        const isReserveSatisfied = Boolean(
-          data.isReserveMet ||
-          (data.reserveAmount ? (data.currentBid || 0) >= data.reserveAmount : true) ||
-          normStatus === 'sold'
-        );
-        const winnerEmail = (data.highBidderEmail || '').trim();
-        if (winnerEmail && isReserveSatisfied && !data.winningEmailSent) {
-          // Atomic deduplication marker to prevent duplicate email dispatches
-          await setDoc(auctionRef, { winningEmailSent: true }, { merge: true });
-
-          await sendWinningBidConfirmationEmail({
-            auctionId: targetId,
-            vehicleTitle: data.title || 'Vehicle Listing',
-            winningBid: data.currentBid || data.startingBid || 0,
-            winnerEmail,
-            winnerName: data.highBidderName || winnerEmail.split('@')[0],
-            sellerName: data.sellerName || 'Verified Consignor',
-            sellerEmail: data.sellerEmail || '',
-            sellerPhone: data.sellerPhone || ''
-          });
-        }
-      } catch (err) {
-        console.warn('Non-blocking winning bid confirmation notification routine error:', err);
-      }
-    })();
+    reconcileAuctionClosureAndNotifyWinner(targetId).catch((err) => {
+      console.warn('Non-blocking reconcileAuctionClosureAndNotifyWinner in updateAuctionStatus warning:', err);
+    });
   }
 }
 
@@ -2116,161 +2288,249 @@ export async function placeBidWithAntiSnipe(
 
   const auctionRef = doc(db, 'auctions', auctionId);
 
-  return await runTransaction(db, async (transaction) => {
-    const auctionSnap = await transaction.get(auctionRef);
-    if (!auctionSnap.exists()) {
-      throw new Error("Auction does not exist.");
-    }
+  let txResult: {
+    success: boolean;
+    antiSniped?: boolean;
+    newEndTime?: number;
+    outbidDetails: {
+      auctionId: string;
+      vehicleTitle: string;
+      currentBid: number;
+      minimumIncrement: number;
+      bidderEmail: string;
+      bidderName: string;
+      previousBidAmount?: number;
+      newEndTime?: number;
+    } | null;
+    bidPlacedDetails: {
+      toEmail: string;
+      bidderName: string;
+      bidAmount: number;
+      vehicleTitle: string;
+      auctionId: string;
+      isReserveMet: boolean;
+      endTime: number;
+      antiSniped: boolean;
+    } | null;
+  } | null = null;
 
-    const auctionData = auctionSnap.data() as Auction;
-    const now = Date.now();
+  const maxAttempts = 3;
+  let lastError: any = null;
 
-    // Check if bidder has been revoked or banned by administrator
-    if (bidder.uid) {
-      const userRef = doc(db, 'users', bidder.uid);
-      const userSnap = await transaction.get(userRef);
-      if (userSnap.exists()) {
-        const userData = userSnap.data() as UserProfile;
-        if (userData.bannedFromBidding) {
-          throw new Error("Your bidding privileges have been revoked by the auction administrator.");
+  // Transaction Concurrency Retry Loop with exponential backoff for transient contention
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      txResult = await runTransaction(db, async (transaction) => {
+        const auctionSnap = await transaction.get(auctionRef);
+        if (!auctionSnap.exists()) {
+          throw new Error("Auction does not exist.");
         }
-      }
-    }
 
-    // Check if auction is active
-    if (now < auctionData.startTime) {
-      throw new Error("Auction has not started yet.");
-    }
-    if (now > auctionData.endTime || auctionData.status === 'ended') {
-      throw new Error("Auction has already ended.");
-    }
+        const auctionData = auctionSnap.data() as Auction;
+        const now = Date.now();
 
-    // Minimum required bid validation
-    const minRequired = auctionData.currentBid > 0 
-      ? auctionData.currentBid + auctionData.minimumIncrement 
-      : auctionData.startingBid;
+        // Check if bidder has been revoked or banned by administrator
+        if (bidder.uid) {
+          const userRef = doc(db, 'users', bidder.uid);
+          const userSnap = await transaction.get(userRef);
+          if (userSnap.exists()) {
+            const userData = userSnap.data() as UserProfile;
+            if (userData.bannedFromBidding) {
+              throw new Error("Your bidding privileges have been revoked by the auction administrator.");
+            }
+          }
+        }
 
-    if (amount < minRequired) {
-      throw new Error(`Bid must be at least $${minRequired.toLocaleString()}.`);
-    }
+        // Check if auction is active
+        if (now < auctionData.startTime) {
+          throw new Error("Auction has not started yet.");
+        }
+        if (now > auctionData.endTime || auctionData.status === 'ended') {
+          throw new Error("Auction has already ended.");
+        }
 
-    // Check reserve status
-    const isReserveMet = amount >= auctionData.reserveAmount || auctionData.isReserveMet;
+        // Minimum required bid validation
+        const minRequired = auctionData.currentBid > 0 
+          ? auctionData.currentBid + auctionData.minimumIncrement 
+          : auctionData.startingBid;
 
-    // Capture previous lead bidder for outbid alert
-    const prevHighBidderEmail = auctionData.highBidderEmail;
-    const prevHighBidderName = auctionData.highBidderName;
-    const prevHighBidderId = auctionData.highBidderId;
-    const prevAmount = auctionData.currentBid;
+        if (amount < minRequired) {
+          throw new Error(`Bid must be at least $${minRequired.toLocaleString()}.`);
+        }
 
-    // Anti-sniping logic:
-    // If a bid is placed within the final 2 minutes, extend the countdown timer back to 2 minutes
-    let newEndTime = auctionData.endTime;
-    let antiSniped = false;
-    const remainingTime = auctionData.endTime - now;
+        // Check reserve status
+        const isReserveMet = amount >= auctionData.reserveAmount || auctionData.isReserveMet;
 
-    if (remainingTime <= ANTI_SNIPING_WINDOW_MS) {
-      newEndTime = now + ANTI_SNIPING_EXTENSION_MS;
-      antiSniped = true;
-    }
+        // Capture previous lead bidder during the transaction read phase
+        const previousBidderEmail = auctionData.highBidderEmail;
+        const previousBidderName = auctionData.highBidderName;
+        const previousBidderId = auctionData.highBidderId;
+        const prevAmount = auctionData.currentBid;
 
-    // Update auction doc
-    transaction.update(auctionRef, {
-      currentBid: amount,
-      bidCount: (auctionData.bidCount || 0) + 1,
-      highBidderId: bidder.uid,
-      highBidderName: bidder.displayName,
-      highBidderEmail: bidder.email,
-      isReserveMet,
-      endTime: newEndTime,
-      updatedAt: now
-    });
+        // Anti-sniping logic:
+        // If a bid is placed within the final 2 minutes, extend the countdown timer back to 2 minutes
+        let newEndTime = auctionData.endTime;
+        let antiSniped = false;
+        const remainingTime = auctionData.endTime - now;
 
-    // Create bid record in bids collection
-    const newBidRef = doc(collection(db, 'bids'));
-    const bidRecord: Bid = {
-      id: newBidRef.id,
-      auctionId,
-      amount,
-      bidderId: bidder.uid,
-      bidderName: bidder.displayName,
-      bidderEmail: bidder.email,
-      timestamp: now,
-      antiSniped
-    };
-    transaction.set(newBidRef, bidRecord);
+        if (remainingTime <= ANTI_SNIPING_WINDOW_MS) {
+          newEndTime = now + ANTI_SNIPING_EXTENSION_MS;
+          antiSniped = true;
+        }
 
-    // Also add an automated comment entry in public comment feed for live bid tracking
-    const newCommentRef = doc(collection(db, 'comments'));
-    const bidComment: Comment = {
-      id: newCommentRef.id,
-      auctionId,
-      userId: bidder.uid,
-      userName: bidder.displayName,
-      userBadge: 'Verified Bidder',
-      text: `Bid placed for $${amount.toLocaleString()}${antiSniped ? ' (Timer extended +2:00 via Anti-Sniping)' : ''}`,
-      timestamp: now,
-      upvotes: 0,
-      upvotedBy: [],
-      isBid: true,
-      bidAmount: amount
-    };
-    transaction.set(newCommentRef, bidComment);
-
-    // Dispatched after transaction resolves successfully
-    setTimeout(() => {
-      // 1. Transactional Email to new high bidder
-      if (bidder.email) {
-        sendBidPlacedEmail({
-          toEmail: bidder.email,
-          bidderName: bidder.displayName,
-          bidAmount: amount,
-          vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
-          auctionId,
+        // Update auction doc
+        transaction.update(auctionRef, {
+          currentBid: amount,
+          bidCount: (auctionData.bidCount || 0) + 1,
+          highBidderId: bidder.uid,
+          highBidderName: bidder.displayName,
+          highBidderEmail: bidder.email,
           isReserveMet,
           endTime: newEndTime,
+          updatedAt: now
+        });
+
+        // Create bid record in bids collection
+        const newBidRef = doc(collection(db, 'bids'));
+        const bidRecord: Bid = {
+          id: newBidRef.id,
+          auctionId,
+          amount,
+          bidderId: bidder.uid,
+          bidderName: bidder.displayName,
+          bidderEmail: bidder.email,
+          timestamp: now,
           antiSniped
-        }).catch(err => console.warn('Transactional email send error:', err));
-      }
+        };
+        transaction.set(newBidRef, bidRecord);
 
-      // 2. Outbid alert email to previous high bidder
-      const isDistinctBidder = Boolean(
-        prevHighBidderEmail &&
-        prevHighBidderEmail.includes('@') &&
-        prevHighBidderId &&
-        prevHighBidderId !== bidder.uid &&
-        prevHighBidderEmail.toLowerCase() !== (bidder.email || '').toLowerCase()
-      );
-
-      if (isDistinctBidder) {
-        sendOutbidAlertEmail({
-          toEmail: prevHighBidderEmail!,
-          bidderName: prevHighBidderName || "Registered Bidder",
-          previousBidAmount: prevAmount,
-          newBidAmount: amount,
-          vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
+        // Also add an automated comment entry in public comment feed for live bid tracking
+        const newCommentRef = doc(collection(db, 'comments'));
+        const bidComment: Comment = {
+          id: newCommentRef.id,
           auctionId,
-          endTime: newEndTime
-        }).catch(err => console.warn('Outbid alert email error:', err));
+          userId: bidder.uid,
+          userName: bidder.displayName,
+          userBadge: 'Verified Bidder',
+          text: `Bid placed for $${amount.toLocaleString()}${antiSniped ? ' (Timer extended +2:00 via Anti-Sniping)' : ''}`,
+          timestamp: now,
+          upvotes: 0,
+          upvotedBy: [],
+          isBid: true,
+          bidAmount: amount
+        };
+        transaction.set(newCommentRef, bidComment);
 
-        // Asynchronously dispatch serverless transactional email notification via /api/send-consignment-email
-        sendOutbidNotificationEmail({
-          auctionId,
-          vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
-          currentBid: amount,
-          minimumIncrement: auctionData.minimumIncrement || 250,
-          bidderEmail: prevHighBidderEmail!,
-          bidderName: prevHighBidderName || "Registered Bidder"
-        }).catch(err => console.warn('Serverless outbid notification email error:', err));
+        // Record outbid parameters for post-transaction execution (prevent self-outbid emails)
+        const isDistinctBidder = Boolean(
+          previousBidderEmail &&
+          previousBidderEmail.includes('@') &&
+          previousBidderId &&
+          previousBidderId !== bidder.uid &&
+          previousBidderEmail.toLowerCase() !== (bidder.email || '').toLowerCase()
+        );
+
+        const outbidDetails = isDistinctBidder
+          ? {
+              auctionId,
+              vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
+              currentBid: amount,
+              minimumIncrement: auctionData.minimumIncrement || 250,
+              bidderEmail: previousBidderEmail!,
+              bidderName: previousBidderName || "Registered Bidder",
+              previousBidAmount: prevAmount,
+              newEndTime
+            }
+          : null;
+
+        const bidPlacedDetails = bidder.email
+          ? {
+              toEmail: bidder.email,
+              bidderName: bidder.displayName,
+              bidAmount: amount,
+              vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
+              auctionId,
+              isReserveMet,
+              endTime: newEndTime,
+              antiSniped
+            }
+          : null;
+
+        return {
+          success: true,
+          antiSniped,
+          newEndTime: antiSniped ? newEndTime : undefined,
+          outbidDetails,
+          bidPlacedDetails
+        };
+      });
+
+      // Transaction succeeded: break retry loop
+      break;
+    } catch (err: any) {
+      lastError = err;
+      const isTransient = isTransientContentionError(err);
+      if (isTransient && attempt < maxAttempts) {
+        const backoffMs = attempt === 1 ? 100 : 300;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
       }
-    }, 100);
+      throw err;
+    }
+  }
 
-    return {
-      success: true,
-      antiSniped,
-      newEndTime: antiSniped ? newEndTime : undefined
-    };
-  });
+  if (!txResult) {
+    throw lastError || new Error("Failed to place bid after multiple attempts.");
+  }
+
+  const { outbidDetails, bidPlacedDetails } = txResult;
+
+  // NON-BLOCKING EMAIL DISPATCH - Executed strictly OUTSIDE and AFTER runTransaction completes
+  if (bidPlacedDetails) {
+    const details = bidPlacedDetails;
+    try {
+      sendBidPlacedEmail(details).catch((err) => console.warn('Transactional email send error:', err));
+    } catch (err) {
+      console.warn('Transactional email send invocation error:', err);
+    }
+  }
+
+  if (outbidDetails) {
+    const details = outbidDetails;
+    try {
+      sendOutbidAlertEmail({
+        toEmail: details.bidderEmail,
+        bidderName: details.bidderName,
+        previousBidAmount: details.previousBidAmount || 0,
+        newBidAmount: details.currentBid,
+        vehicleTitle: details.vehicleTitle,
+        auctionId: details.auctionId,
+        endTime: details.newEndTime || Date.now()
+      }).catch((err) => console.warn('Outbid alert email error:', err));
+    } catch (err) {
+      console.warn('Outbid alert email invocation error:', err);
+    }
+
+    try {
+      // Asynchronously dispatch serverless transactional email notification via /api/send-consignment-email
+      sendOutbidNotificationEmail({
+        auctionId: details.auctionId,
+        vehicleTitle: details.vehicleTitle,
+        currentBid: details.currentBid,
+        minimumIncrement: details.minimumIncrement,
+        bidderEmail: details.bidderEmail,
+        bidderName: details.bidderName
+      }).catch((err) => console.warn('Serverless outbid notification email error:', err));
+    } catch (err) {
+      console.warn('Serverless outbid notification email invocation error:', err);
+    }
+  }
+
+  return {
+    success: txResult.success,
+    antiSniped: txResult.antiSniped,
+    newEndTime: txResult.newEndTime
+  };
 }
 
 export const placeBid = placeBidWithAntiSnipe;
