@@ -9,11 +9,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Transactional Bidding & Settlement Email Notifications (`api/send-consignment-email.ts` & `src/services/auctionService.ts`)**: Implemented `type: 'outbid_notification'` and `type: 'winning_bid_confirmation'` serverless email templates. Added 4-tier winning email resolution fallback chain, dual-path bid query evaluation (`auctions/{auctionId}/bids` subcollection first, fallback to root bids), and Section 7 manual force-close settlement hooks.
-- **In-Tab Settlement Mutex & Transaction-Gated Email Dispatch (`src/services/auctionService.ts`)**: Implemented module-level in-tab mutex lock (`inFlightSettlementIds`) and gated HTTP email `fetch('/api/send-consignment-email')` strictly after successful Firestore transaction commits (`winningEmailSent: true`).
-- **Bid Modal Confirmation Lock State Machine (`src/components/BidModal.tsx`)**: Explicit step state machine (`step: 'input' | 'submitting' | 'success'`) preventing `onSnapshot` background updates from auto-resetting modal state during active confirmation views.
-- **Listing Editor Workspace Navigation (`src/components/ListingEditorWorkspace.tsx`)**: High-contrast ← Back to Dashboard navigation CTA button routing admins to `/admin?tab=inventory` and sellers to `/` with the activity hub open.
-- **Google OAuth Popup Mutex & Rate Limit Error Mapping (`src/context/AuthContext.tsx` & `src/components/AuthModal.tsx`)**: Added `isGoogleSigningIn` mutex state lock and mapped `auth/quota-exceeded` errors to clean user messaging.
+- *No unreleased changes.*
+
+---
+
+## [1.4.0] - 2026-10-04 — Bidding Concurrency, Transaction Locks & Settlement Email Engine
+
+### Added
+- **Transactional Bidding & Settlement Email Notifications (`api/send-consignment-email.ts` & `src/services/auctionService.ts`)**:
+  - Implemented `type: 'outbid_notification'` and `type: 'winning_bid_confirmation'` serverless email templates.
+  - Built 4-tier winning email resolution fallback chain: `winningBid.bidderEmail` → `users/{bidderId}.email` → `bidders/{bidderId}.email` → `auctionData.highBidderEmail`.
+  - Built dual-path bid query in settlement logic evaluating `auctions/{auctionId}/bids` subcollection first with fallback to root `bids`.
+  - Integrated manual force-close settlement hooks in `updateAuctionConfig()` and `updateAuctionStatus()`.
+- **In-Tab Settlement Mutex & Transaction-Gated Email Dispatch (`src/services/auctionService.ts`)**:
+  - Implemented module-level in-tab mutex lock (`inFlightSettlementIds`) to short-circuit duplicate settlement triggers across parallel components.
+  - Gated serverless HTTP email `fetch('/api/send-consignment-email')` strictly *after* successful Firestore transaction commits (`winningEmailSent: true`).
+- **Bid Modal Confirmation Lock State Machine (`src/components/BidModal.tsx`)**:
+  - Explicit step state machine (`step: 'input' | 'submitting' | 'success'`) locking confirmation view and confetti animations until user dismissal.
+- **Listing Editor Workspace Navigation (`src/components/ListingEditorWorkspace.tsx`)**:
+  - Added high-contrast `← Back to Dashboard` navigation CTA button in the workspace top header bar.
+- **Google OAuth Popup Mutex & Rate Limit Error Mapping (`src/context/AuthContext.tsx` & `src/components/AuthModal.tsx`)**:
+  - Introduced `isGoogleSigningIn` mutex state lock and mapped `auth/quota-exceeded` errors to clean user banner prompts.
 - **Platform Legal Infrastructure & PIPEDA Compliance (`src/components/LegalModal.tsx`, `src/components/Footer.tsx`, `src/App.tsx`)**:
   - Created `LegalModal.tsx` supporting tabbed navigation for Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage).
   - Integrated global state and opener handlers in `App.tsx` (`isLegalModalOpen`, `legalModalTab`).
@@ -196,8 +212,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Built resilient orphaned bid moderation fallback in `src/components/AdminPortalPage.tsx`: if a bid's parent vehicle lot is missing or was deleted prior to cascading cleanup, the interface tags the record with an amber `ORPHANED BID (LOT DELETED)` badge and allows administrators to safely execute soft retractions on the orphaned bid without throwing missing parent document errors.
 
 ### Changed
-- **Firestore Welcome Email Sentinel (`src/services/auctionService.ts` & `src/context/AuthContext.tsx`)**: Moved `welcomeEmailSent: true` sentinel directly to Firestore user profiles (`users/{uid}` and `bidders/{uid}`).
-- **Firestore Outbox Queue Security Rules (`firestore.rules`)**: Updated rules for `/mail/{mailId}`, `/emails/{emailId}`, and `/emailLogs/{logId}` to allow public creation (`allow create: if true;`).
+- **Firestore Welcome Email Sentinel (`src/services/auctionService.ts` & `src/context/AuthContext.tsx`)**:
+  - Moved `welcomeEmailSent: true` sentinel flag directly onto Firestore user profiles (`users/{uid}` and `bidders/{uid}`).
+- **Firestore Outbox Queue Security Rules (`firestore.rules`)**:
+  - Updated security rules for `/mail/{mailId}`, `/emails/{emailId}`, and `/emailLogs/{logId}` to permit public creation (`allow create: if true;`).
 - **Starting Bid Financial Logic & First Bid Calculations (`src/services/auctionService.ts`, `src/components/BidModal.tsx`, `src/components/AuctionHeader.tsx`, `src/components/StickyBidBar.tsx`)**:
   - Synchronized `currentBid` to `startingBid` when `bidCount === 0`.
   - Calculated minimum required bid as `startingBid` (instead of `startingBid + increment`) for zero-bid listings, labeled opening bids as "Starting Bid" / "Opening Bid", and fixed hardcoded modal title to render dynamic `auction.title`.
@@ -211,9 +229,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - **Instantaneous Bid Modal Reset Glitch**: Locked bid success view and confetti graphics until explicitly dismissed.
-- **Transient Bidding Concurrency Delays & Error Translation**: 3-pass fast backoff retry loop (50ms, 150ms, 300ms) with clean translation for Firestore version mismatch errors.
-- **Expired Auction Catalog Disappearance & Terminal Status Lock**: Enforced strict terminal status rules setting status explicitly to isReserveMet ? 'sold' : 'ended' on expired lots with bids.
-- **Background Ticker Document Contention**: Suppressed redundant updateAuctionStatus() writes when effectiveStatus === auction.status.
+- **Transient Bidding Concurrency Delays & Error Translation**: Wrapped `placeBidWithAntiSnipe()` in a fast 3-pass exponential backoff retry loop (50ms, 150ms, 300ms) with clean user error translation.
+- **Expired Auction Catalog Disappearance & Terminal Status Lock**: Enforced strict terminal status rules in `updateAuctionStatus()` and `reconcileAuctionClosureAndNotifyWinner()`.
+- **Background Ticker Document Contention**: Suppressed redundant background `updateAuctionStatus()` writes when status values match.
 - **Showcase Chapter Lightbox Isolation (`src/components/InlineShowcaseSection.tsx`)**:
   - Isolated showcase chapter photo lightboxes into a self-contained modal state (`activeLightboxPhoto`), allowing directly uploaded chapter images (outside `fullGallery`) to enlarge cleanly with caption and title presentation, backdrop blur, Escape key dismissal, and window scroll locking.
 - **Parent Gallery Index Safeguard (`src/App.tsx`)**:
