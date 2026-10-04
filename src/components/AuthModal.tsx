@@ -36,6 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     user, 
     userProfile,
     isEmailVerified, 
+    isGoogleSigningIn,
     signInEmail, 
     signUpEmail, 
     signInGoogle, 
@@ -175,6 +176,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (code === 'auth/too-many-requests') {
       return 'Access temporarily blocked due to multiple failed login attempts. Please wait a moment.';
     }
+    if (code === 'auth/quota-exceeded' || msg.includes('quota-exceeded')) {
+      return 'Google Sign-In rate limit reached. Please wait a few minutes or sign in with your email and password.';
+    }
 
     return msg.replace(/^Firebase:\s*/, '') || 'Authentication failed. Please try again.';
   };
@@ -275,6 +279,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleGoogleSignIn = async () => {
+    if (isGoogleSigningIn) return;
     setError(null);
     setLoading(true);
     try {
@@ -284,12 +289,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (currentUser) {
         const handled = await resolveAdminDeeplinkAfterAuth(currentUser.uid, currentUser.email);
         if (handled) return;
+        if (onSuccess) onSuccess();
+        handleClose();
       }
-      if (onSuccess) onSuccess();
-      handleClose();
     } catch (err: any) {
       setLoading(false);
-      setError(parseAuthError(err));
+      const code = err?.code || '';
+      const msg = err?.message || '';
+      if (code === 'auth/quota-exceeded' || code.includes('quota-exceeded') || msg.includes('quota-exceeded')) {
+        setError('Google Sign-In rate limit reached. Please wait a few minutes or sign in with your email and password.');
+      } else {
+        setError(parseAuthError(err));
+      }
     }
   };
 
@@ -538,16 +549,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                disabled={loading}
-                className="w-full py-2.5 px-4 rounded-lg border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                disabled={loading || isGoogleSigningIn}
+                className="w-full py-2.5 px-4 rounded-lg border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#EA4335" d="M12 5c1.7 0 3 .7 3.9 1.5l2.9-2.9C17 2 14.7 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.6 2.8C6.4 7.2 8.9 5 12 5z" />
-                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.6 2.8c2.1-2 3.8-5 3.8-8.7z" />
-                  <path fill="#FBBC05" d="M5.5 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.4C.7 9.8 0 12 0 14.5s.7 4.7 1.9 7.1l3.6-2.8z" />
-                  <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.6-2.8c-1.1.7-2.5 1.2-4.4 1.2-3.1 0-5.6-2.2-6.5-5.1L1.9 16.6C3.7 20.3 7.5 23.5 12 23.5z" />
-                </svg>
-                <span>Sign In with Google</span>
+                {isGoogleSigningIn ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-zinc-600" />
+                ) : (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#EA4335" d="M12 5c1.7 0 3 .7 3.9 1.5l2.9-2.9C17 2 14.7 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.6 2.8C6.4 7.2 8.9 5 12 5z" />
+                    <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.6 2.8c2.1-2 3.8-5 3.8-8.7z" />
+                    <path fill="#FBBC05" d="M5.5 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.4C.7 9.8 0 12 0 14.5s.7 4.7 1.9 7.1l3.6-2.8z" />
+                    <path fill="#34A853" d="M12 23.5c3.2 0 6-1.1 8-3l-3.6-2.8c-1.1.7-2.5 1.2-4.4 1.2-3.1 0-5.6-2.2-6.5-5.1L1.9 16.6C3.7 20.3 7.5 23.5 12 23.5z" />
+                  </svg>
+                )}
+                <span>{isGoogleSigningIn ? 'Signing In with Google...' : 'Sign In with Google'}</span>
               </button>
             </form>
           )}
@@ -718,10 +733,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                disabled={loading}
-                className="w-full py-2.5 px-4 rounded-lg border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                disabled={loading || isGoogleSigningIn}
+                className="w-full py-2.5 px-4 rounded-lg border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>Register with Google (Instant Verified)</span>
+                {isGoogleSigningIn ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-zinc-600" />
+                ) : null}
+                <span>{isGoogleSigningIn ? 'Registering with Google...' : 'Register with Google (Instant Verified)'}</span>
               </button>
             </form>
           )}

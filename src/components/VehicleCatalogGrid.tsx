@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Auction, 
   PlatformPromoSettings, 
@@ -116,23 +116,39 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const reconciledLotsRef = useRef<Set<string>>(new Set());
+
   // Real-time clock reconciliation for active auctions crossing endTime (now >= endTime)
+  // When real-time clock tickers detect an active lot crossing endTime (now >= endTime),
+  // directly invoke reconcileAuctionClosureAndNotifyWinner(auction.id) to guarantee settlement execution.
   useEffect(() => {
     auctions.forEach((auction: Auction) => {
+      const hasValidEndTime = typeof auction.endTime === 'number' && auction.endTime > 0;
+      const isDraftOrPending = auction.status === 'draft' || auction.status === 'pending_review';
+
       if (
         auction.id &&
-        auction.status !== 'draft' &&
-        auction.status !== 'pending_review' &&
-        auction.status !== 'ended' &&
-        auction.status !== 'sold' &&
-        auction.endTime &&
-        now >= auction.endTime
+        !isDraftOrPending &&
+        hasValidEndTime &&
+        now >= auction.endTime &&
+        auction.winningEmailSent !== true &&
+        !reconciledLotsRef.current.has(auction.id)
       ) {
-        updateAuctionStatus(auction.id, 'ended').catch((err) => {
-          console.warn('VehicleCatalogGrid: silent auction status reconciliation failed:', err);
-        });
+        reconciledLotsRef.current.add(auction.id);
+        console.log(`[Settlement] Real-time clock ticker in VehicleCatalogGrid detected lot ${auction.id} crossing endTime. Directly invoking reconcileAuctionClosureAndNotifyWinner.`);
+        const isReserveMet = Boolean(
+          auction.isReserveMet ||
+          (auction.reserveAmount > 0 ? auction.currentBid >= auction.reserveAmount : true)
+        );
+        const terminalStatus = isReserveMet ? 'sold' : 'ended';
+
+        if (auction.status !== terminalStatus) {
+          updateAuctionStatus(auction.id, terminalStatus).catch((err) => {
+            console.warn('[Settlement] VehicleCatalogGrid: silent auction status reconciliation failed:', err);
+          });
+        }
         reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
-          console.warn('VehicleCatalogGrid: silent auction closure reconciliation failed:', err);
+          console.warn('[Settlement] VehicleCatalogGrid: silent auction closure reconciliation failed:', err);
         });
       }
     });

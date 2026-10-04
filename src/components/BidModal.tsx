@@ -116,53 +116,68 @@ export const BidModal: React.FC<BidModalProps> = ({
     setLoading(true);
     setStep('submitting');
 
-    try {
-      const result = await placeBid(auction.id, bidAmount, {
-        uid: user.uid,
-        displayName: userProfile.displayName || user.displayName || 'Verified Bidder',
-        email: user.email || ''
-      });
+    const maxSubmissions = 3;
+    let lastErr: any = null;
 
-      setLoading(false);
-
-      // Trigger active Confetti burst
+    for (let subAttempt = 1; subAttempt <= maxSubmissions; subAttempt++) {
       try {
-        confetti({
-          particleCount: 100,
-          spread: 80,
-          origin: { y: 0.6 }
+        const result = await placeBid(auction.id, bidAmount, {
+          uid: user.uid,
+          displayName: userProfile.displayName || user.displayName || 'Verified Bidder',
+          email: user.email || ''
         });
-      } catch (e) {
-        // ignore
-      }
 
-      setSuccessResult({
-        amount: bidAmount,
-        antiSniped: result.antiSniped,
-        reserveMet: bidAmount >= auction.reserveAmount || auction.isReserveMet
-      });
-      setStep('success');
-    } catch (err: any) {
-      setLoading(false);
-      setStep('input');
-      const rawMsg = (err?.message || '').toString();
-      const rawCode = (err?.code || '').toString().toLowerCase();
-      const isVersionMismatch =
-        isTransientContentionError(err) ||
-        rawCode === 'aborted' ||
-        rawCode === 'failed-precondition' ||
-        rawMsg.toLowerCase().includes('stored version') ||
-        rawMsg.toLowerCase().includes('does not match the required base version') ||
-        rawMsg.toLowerCase().includes('version mismatch') ||
-        rawMsg.toLowerCase().includes('failed-precondition') ||
-        rawMsg.toLowerCase().includes('failed precondition') ||
-        rawMsg.toLowerCase().includes('aborted');
+        setLoading(false);
 
-      if (isVersionMismatch) {
-        setError('High bidding activity detected—another bid was placed at the same time. Please re-confirm your bid.');
-      } else {
-        setError(rawMsg || 'Failed to place bid. Please try again.');
+        // Trigger active Confetti burst
+        try {
+          confetti({
+            particleCount: 100,
+            spread: 80,
+            origin: { y: 0.6 }
+          });
+        } catch (e) {
+          // ignore
+        }
+
+        setSuccessResult({
+          amount: bidAmount,
+          antiSniped: result.antiSniped,
+          reserveMet: bidAmount >= auction.reserveAmount || auction.isReserveMet
+        });
+        setStep('success');
+        return;
+      } catch (err: any) {
+        lastErr = err;
+        const isTransient = isTransientContentionError(err);
+        if (isTransient && subAttempt < maxSubmissions) {
+          // Fast pass delay before retrying submission to handle transient version collision
+          await new Promise((res) => setTimeout(res, subAttempt * 80));
+          continue;
+        }
+        break;
       }
+    }
+
+    setLoading(false);
+    setStep('input');
+    const rawMsg = (lastErr?.message || '').toString();
+    const rawCode = (lastErr?.code || '').toString().toLowerCase();
+    const isVersionMismatch =
+      isTransientContentionError(lastErr) ||
+      rawCode === 'aborted' ||
+      rawCode === 'failed-precondition' ||
+      rawMsg.toLowerCase().includes('stored version') ||
+      rawMsg.toLowerCase().includes('does not match the required base version') ||
+      rawMsg.toLowerCase().includes('version mismatch') ||
+      rawMsg.toLowerCase().includes('failed-precondition') ||
+      rawMsg.toLowerCase().includes('failed precondition') ||
+      rawMsg.toLowerCase().includes('aborted');
+
+    if (isVersionMismatch) {
+      setError('High bidding activity detected—another bid was placed at the same time. Please re-confirm your bid.');
+    } else {
+      setError(rawMsg || 'Failed to place bid. Please try again.');
     }
   };
 

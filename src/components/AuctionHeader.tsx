@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { useAuth } from '../context/AuthContext';
@@ -256,25 +256,100 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
     now
   );
 
+  const reconciledStatusRef = useRef<string>('');
+  const settledAuctionRef = useRef<Set<string>>(new Set());
+
+  // Real-time clock ticker settlement:
+  // When real-time clock tickers detect an active lot crossing endTime (now >= endTime),
+  // directly invoke reconcileAuctionClosureAndNotifyWinner(auction.id) to guarantee settlement execution.
+  useEffect(() => {
+    const hasValidEndTime = typeof auction.endTime === 'number' && auction.endTime > 0;
+    const isDraftOrPending = auction.status === 'draft' || auction.status === 'pending_review';
+
+    if (
+      auction.id &&
+      !isDraftOrPending &&
+      hasValidEndTime &&
+      now >= auction.endTime &&
+      auction.winningEmailSent !== true &&
+      !settledAuctionRef.current.has(auction.id)
+    ) {
+      settledAuctionRef.current.add(auction.id);
+      console.log(`[Settlement] Real-time clock ticker in AuctionHeader detected active lot ${auction.id} crossing endTime. Directly invoking reconcileAuctionClosureAndNotifyWinner.`);
+      reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
+        console.warn(`[Settlement] AuctionHeader reconcileAuctionClosureAndNotifyWinner error for ${auction.id}:`, err);
+      });
+    }
+  }, [auction.id, auction.endTime, auction.status, auction.winningEmailSent, now]);
+
   // Silent background reconciliation effect to keep Firestore synchronized with real-time status transitions
   useEffect(() => {
-    if (
-      effectiveStatus !== auction.status &&
-      auction.status !== 'draft' &&
-      auction.status !== 'sold' &&
-      auction.id
-    ) {
-      updateAuctionStatus(auction.id, effectiveStatus).catch((err) => {
-        console.warn('Silent auction status reconciliation failed:', err);
-      });
+    const hasValidEndTime = typeof auction.endTime === 'number' && auction.endTime > 0;
+    const isTerminal = auction.status === 'ended' || auction.status === 'sold' || auction.status === 'reserve_not_met';
+    const isDraftOrPending = auction.status === 'draft' || auction.status === 'pending_review';
 
-      if (effectiveStatus === 'ended' || (auction.endTime && now >= auction.endTime)) {
-        reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
-          console.warn('Silent auction closure reconciliation failed:', err);
-        });
-      }
+    // Skip if auction is already in terminal state or draft/pending
+    if (!auction.id || isTerminal || isDraftOrPending) {
+      return;
     }
-  }, [effectiveStatus, auction.id, auction.status, auction.endTime, now]);
+
+    // Skip if effective status matches current document status
+    if (effectiveStatus === auction.status) {
+      return;
+    }
+
+    // Prevent background status tickers from firing updates while auction is actively receiving bids
+    // (e.g. do not persist client-side visual states like 'ending_soon' to the auction document)
+    if (effectiveStatus === 'ending_soon' && (auction.status === 'active' || auction.status === 'live')) {
+      return;
+    }
+
+    // Verify valid endTime exists before evaluating expiration
+    const isExpired = hasValidEndTime && now >= auction.endTime;
+    const isUpcomingToActive = auction.status === 'upcoming' && now >= auction.startTime && (!hasValidEndTime || now < auction.endTime);
+
+    if (!isExpired && !isUpcomingToActive) {
+      return;
+    }
+
+    // Target terminal status upon expiration or active upon start
+    const isReserveMet = Boolean(
+      auction.isReserveMet ||
+      (auction.reserveAmount > 0 ? auction.currentBid >= auction.reserveAmount : true)
+    );
+    const targetStatus = isExpired ? (isReserveMet ? 'sold' : 'ended') : 'active';
+
+    if (targetStatus === auction.status) {
+      return;
+    }
+
+    const key = `${auction.id}:${targetStatus}`;
+    if (reconciledStatusRef.current === key) {
+      return;
+    }
+    reconciledStatusRef.current = key;
+
+    updateAuctionStatus(auction.id, targetStatus).catch((err) => {
+      console.warn('Silent auction status reconciliation failed:', err);
+    });
+
+    if (isExpired) {
+      console.log(`[Settlement] AuctionHeader: Lot ${auction.id} expired. Invoking reconcileAuctionClosureAndNotifyWinner.`);
+      reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
+        console.warn('Silent auction closure reconciliation failed:', err);
+      });
+    }
+  }, [
+    effectiveStatus,
+    auction.id,
+    auction.status,
+    auction.endTime,
+    auction.startTime,
+    auction.isReserveMet,
+    auction.currentBid,
+    auction.reserveAmount,
+    now
+  ]);
 
   const timeData = formatAuctionCountdown(
     auction.startTime, 

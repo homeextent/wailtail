@@ -78,27 +78,53 @@ function generateEmailHtml(params: {
 async function recordAndQueueEmail(email: EmailNotification): Promise<void> {
   try {
     // 1. Write to standard Firebase 'mail' collection (Trigger Email extension)
-    const mailCol = collection(db, 'mail');
-    await addDoc(mailCol, {
-      to: [email.to],
-      message: {
-        subject: email.subject,
-        text: email.text,
-        html: email.html
-      },
-      createdAt: email.timestamp,
-      notificationType: email.type,
-      metadata: email.metadata || {}
-    });
+    try {
+      const mailCol = collection(db, 'mail');
+      await addDoc(mailCol, {
+        to: [email.to],
+        message: {
+          subject: email.subject,
+          text: email.text,
+          html: email.html
+        },
+        createdAt: email.timestamp,
+        notificationType: email.type,
+        metadata: email.metadata || {}
+      });
+    } catch (mailErr) {
+      console.warn('[emailService] Warning writing to mail queue collection:', mailErr);
+    }
 
-    // 2. Also log to 'emailLogs' collection for Owner Dashboard inspection
-    const logsCol = collection(db, 'emailLogs');
-    await addDoc(logsCol, {
-      ...email,
-      status: 'sent'
-    });
+    // 2. Optional queue to 'emails' collection
+    try {
+      const emailsCol = collection(db, 'emails');
+      await addDoc(emailsCol, {
+        to: [email.to],
+        message: {
+          subject: email.subject,
+          text: email.text,
+          html: email.html
+        },
+        createdAt: email.timestamp,
+        notificationType: email.type,
+        metadata: email.metadata || {}
+      });
+    } catch (emailsErr) {
+      console.warn('[emailService] Warning writing to emails collection:', emailsErr);
+    }
+
+    // 3. Also log to 'emailLogs' collection for Owner Dashboard inspection
+    try {
+      const logsCol = collection(db, 'emailLogs');
+      await addDoc(logsCol, {
+        ...email,
+        status: 'sent'
+      });
+    } catch (logsErr) {
+      console.warn('[emailService] Warning writing to emailLogs collection:', logsErr);
+    }
   } catch (err) {
-    console.warn('Notice: Logged transactional email to local/client console (Firestore write queued):', err);
+    console.warn('[emailService] Notice: Logged transactional email to local/client console (Firestore write queued):', err);
   }
 }
 

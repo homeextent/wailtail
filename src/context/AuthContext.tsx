@@ -28,6 +28,7 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
+  isGoogleSigningIn: boolean;
   isAdmin: boolean;
   isSeller: boolean;
   isEmailVerified: boolean;
@@ -47,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   /**
@@ -211,18 +213,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // Defer welcome email dispatch until email verification is confirmed
-            if (isVerified && currentUser.email) {
-              const key = `wailtail_welcome_sent_${currentUser.uid}`;
-              try {
-                if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
-                  localStorage.setItem(key, 'true');
-                  sendWelcomeBidderEmail(currentUser.email, data.displayName || currentUser.email.split('@')[0]).catch((err: any) => {
-                    console.warn('Automatic verified welcome email dispatch notice:', err);
-                  });
-                }
-              } catch {
-                // Ignore localStorage errors
-              }
+            if (isVerified && currentUser.email && data.welcomeEmailSent !== true) {
+              console.log(`[Welcome Email] Dispatching welcome email in onAuthStateChanged for ${currentUser.email} (${currentUser.uid})`);
+              sendWelcomeBidderEmail(currentUser.uid, currentUser.email, data.displayName || currentUser.email.split('@')[0])
+                .then((sent) => {
+                  if (sent) data.welcomeEmailSent = true;
+                })
+                .catch((err: any) => {
+                  console.warn('[Welcome Email] Automatic verified welcome email dispatch notice:', err);
+                });
+            } else if (data.welcomeEmailSent === true) {
+              console.log(`[Welcome Email] Skipped welcome email in onAuthStateChanged: welcomeEmailSent sentinel is true for ${currentUser.uid}`);
             }
 
             (currentUser as any).role = data.role;
@@ -364,6 +365,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (cred.user as any).role = profileData.role;
       setUser(cred.user);
       setUserProfile(profileData);
+
+      // Verify userProfile.welcomeEmailSent !== true in Firestore state instead of checking client localStorage
+      if (isVerified && cred.user.email && profileData.welcomeEmailSent !== true) {
+        console.log(`[Welcome Email] Dispatching welcome email in signInEmail for ${cred.user.email} (${cred.user.uid})`);
+        sendWelcomeBidderEmail(
+          cred.user.uid,
+          cred.user.email,
+          profileData.displayName || cred.user.displayName || cred.user.email.split('@')[0]
+        ).then((sent) => {
+          if (sent && profileData) profileData.welcomeEmailSent = true;
+        }).catch((err) => {
+          console.warn('[Welcome Email] signInEmail welcome email notice:', err);
+        });
+      } else if (profileData.welcomeEmailSent === true) {
+        console.log(`[Welcome Email] Skipped welcome email in signInEmail: welcomeEmailSent sentinel is true for ${cred.user.uid}`);
+      }
     }
 
     return cred.user;
@@ -435,9 +452,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signInGoogle = async () => {
+    if (isGoogleSigningIn) return;
+    setIsGoogleSigningIn(true);
     setLoading(true);
     try {
-      const cred = await signInWithPopup(auth, googleProvider);
+      let cred;
+      try {
+        cred = await signInWithPopup(auth, googleProvider);
+      } catch (popupErr: any) {
+        const code = popupErr?.code || '';
+        const msg = popupErr?.message || '';
+        if (msg.includes('INTERNAL ASSERTION FAILED') || msg.includes('internal assertion')) {
+          console.warn('[AuthContext] Silenced internal assertion error during Google sign-in:', msg);
+          return;
+        }
+        if (code === 'auth/popup-closed-by-user') {
+          console.info('[AuthContext] Google sign-in popup closed by user.');
+          const cleanError = new Error('Sign-in popup was closed before completing verification.');
+          (cleanError as any).code = 'auth/popup-closed-by-user';
+          throw cleanError;
+        }
+        throw popupErr;
+      }
+
+      if (!cred || !cred.user) {
+        return;
+      }
+
       const userRef = doc(db, 'users', cred.user.uid);
       const snap = await getDoc(userRef);
       const userEmail = (cred.user.email || '').toLowerCase();
@@ -523,28 +564,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(cred.user);
       setUserProfile(profile);
 
-      if (cred.user.email) {
-        const key = `wailtail_welcome_sent_${cred.user.uid}`;
-        try {
-          if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
-            localStorage.setItem(key, 'true');
-            sendWelcomeBidderEmail(cred.user.email, profile.displayName || cred.user.email.split('@')[0]).catch((err: any) => {
-              console.warn('Automatic verified welcome email dispatch notice:', err);
-            });
-          }
-        } catch {
-          // Ignore localStorage errors
-        }
+      // Verify userProfile.welcomeEmailSent !== true in Firestore state instead of checking client localStorage
+      if (cred.user.email && profile.welcomeEmailSent !== true) {
+        console.log(`[Welcome Email] Dispatching welcome email in signInGoogle for ${cred.user.email} (${cred.user.uid})`);
+        sendWelcomeBidderEmail(
+          cred.user.uid,
+          cred.user.email,
+          profile.displayName || cred.user.displayName || cred.user.email.split('@')[0]
+        ).then((sent) => {
+          if (sent) profile.welcomeEmailSent = true;
+        }).catch((err: any) => {
+          console.warn('[Welcome Email] Google sign-in welcome email dispatch notice:', err);
+        });
+      } else if (profile.welcomeEmailSent === true) {
+        console.log(`[Welcome Email] Skipped welcome email in signInGoogle: welcomeEmailSent sentinel is true for ${cred.user.uid}`);
       }
     } catch (error: any) {
-      setLoading(false);
-      if (error?.code === 'auth/popup-closed-by-user') {
+      const code = error?.code || '';
+      const msg = error?.message || '';
+      if (code === 'auth/popup-closed-by-user') {
         console.info('[AuthContext] Google sign-in popup closed by user.');
+      } else if (msg.includes('INTERNAL ASSERTION FAILED') || msg.includes('internal assertion')) {
+        console.warn('[AuthContext] Silenced internal assertion error during Google sign-in:', msg);
+        return;
       } else {
         console.error('[AuthContext] Google sign-in error:', error);
       }
       throw error;
     } finally {
+      setIsGoogleSigningIn(false);
       setLoading(false);
     }
   };
@@ -671,20 +719,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(targetUser);
       setUserProfile(profileData);
 
-      // Trigger sendWelcomeBidderEmail (guarded against duplicates via localStorage)
+      // Trigger sendWelcomeBidderEmail (guarded against duplicates via Firestore welcomeEmailSent sentinel)
       const recipientEmail = (targetUser.email || profileData.email || '').trim();
-      if (recipientEmail) {
-        const key = `wailtail_welcome_sent_${targetUser.uid}`;
-        try {
-          if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
-            localStorage.setItem(key, 'true');
-            sendWelcomeBidderEmail(recipientEmail, profileData.displayName || recipientEmail.split('@')[0]).catch((err) => {
-              console.warn('Verification welcome email dispatch notice:', err);
-            });
-          }
-        } catch {
-          // Ignore localStorage errors
-        }
+      if (recipientEmail && profileData.welcomeEmailSent !== true) {
+        console.log(`[Welcome Email] Dispatching welcome email in checkEmailVerification for ${recipientEmail} (${targetUser.uid})`);
+        sendWelcomeBidderEmail(
+          targetUser.uid,
+          recipientEmail,
+          profileData.displayName || recipientEmail.split('@')[0]
+        ).then((sent) => {
+          if (sent && profileData) profileData.welcomeEmailSent = true;
+        }).catch((err) => {
+          console.warn('[Welcome Email] Verification welcome email dispatch notice:', err);
+        });
+      } else if (profileData.welcomeEmailSent === true) {
+        console.log(`[Welcome Email] Skipped welcome email in checkEmailVerification: welcomeEmailSent sentinel is true for ${targetUser.uid}`);
       }
 
       return true;
@@ -746,18 +795,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserProfile(profileData);
 
     const recipientEmail = (targetUser.email || profileData?.email || '').trim();
-    if (recipientEmail) {
-      const key = `wailtail_welcome_sent_${targetUser.uid}`;
-      try {
-        if (typeof window !== 'undefined' && !localStorage.getItem(key)) {
-          localStorage.setItem(key, 'true');
-          sendWelcomeBidderEmail(recipientEmail, profileData?.displayName || recipientEmail.split('@')[0]).catch((err) => {
-            console.warn('Welcome email dispatch notice:', err);
-          });
-        }
-      } catch {
-        // ignore
-      }
+    if (recipientEmail && profileData?.welcomeEmailSent !== true) {
+      console.log(`[Welcome Email] Dispatching welcome email in manualVerifyForDemo for ${recipientEmail} (${targetUser.uid})`);
+      sendWelcomeBidderEmail(
+        targetUser.uid,
+        recipientEmail,
+        profileData?.displayName || recipientEmail.split('@')[0]
+      ).then((sent) => {
+        if (sent && profileData) profileData.welcomeEmailSent = true;
+      }).catch((err) => {
+        console.warn('[Welcome Email] Demo welcome email dispatch notice:', err);
+      });
+    } else if (profileData?.welcomeEmailSent === true) {
+      console.log(`[Welcome Email] Skipped welcome email in manualVerifyForDemo: welcomeEmailSent sentinel is true for ${targetUser.uid}`);
     }
   };
 
@@ -767,6 +817,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         userProfile,
         loading,
+        isGoogleSigningIn,
         isAdmin,
         isSeller,
         isEmailVerified,

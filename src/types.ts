@@ -43,6 +43,7 @@ export interface Auction {
   highBidderId?: string;
   highBidderName?: string;
   highBidderEmail?: string;
+  winningEmailSent?: boolean;
   watchlist?: string[];
   status: 'draft' | 'pending_review' | 'preview' | 'upcoming' | 'active' | 'live' | 'ending_soon' | 'ended' | 'sold' | 'reserve_not_met';
   createdAt: number;
@@ -55,6 +56,7 @@ export interface Bid {
   amount: number;
   bidderId: string;
   bidderName: string;
+  bidderHandle?: string;
   bidderEmail: string;
   timestamp: number;
   antiSniped?: boolean;
@@ -95,6 +97,7 @@ export interface UserProfile {
   registeredAt: number;
   totalBidsPlaced?: number;
   highestBidPlaced?: number;
+  welcomeEmailSent?: boolean;
   bannedFromBidding?: boolean;
   isBanned?: boolean;
   bannedAt?: number;
