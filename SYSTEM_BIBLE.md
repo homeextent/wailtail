@@ -26,7 +26,7 @@
 | `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
 | `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Features deep-link auth preservation (suspends route guard during `authLoading`, caches triage parameters in `sessionStorage` key `wailtail_pending_admin_deeplink`, prompts contextual login banner, and auto-restores to target triage modal upon sign-in), Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
-| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, and seller lot dropdown filtering (`visibleAuctions`). |
+| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, seller lot dropdown filtering (`visibleAuctions`), and high-contrast ← Back to Dashboard navigation CTA button routing administrators to `/admin?tab=inventory` and sellers to `/` with the activity hub open. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Platform Legal Infrastructure (Modal) | `LegalModal.tsx` | Public | Tabbed modal dialog for platform Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage), triggered globally via `App.tsx` state (`isLegalModalOpen`, `legalModalTab`). |
 | Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct consignment inquiry trigger, and modal openers for Terms of Service and Privacy Policy. |
@@ -79,6 +79,7 @@ interface Auction {
   antiSnipeThresholdSeconds: number; // Default: 120 seconds (2 minutes)
   antiSnipeExtensionSeconds: number; // Default: 120 seconds (adds 2 minutes)
   watchlist?: string[]; // Registered user UIDs watching this auction lot
+  winningEmailSent?: boolean; // Sentinel flag preventing duplicate winning bidder settlement notifications
   
   // Global Platform Branding Overrides
   siteLogo?: string;
@@ -379,6 +380,7 @@ export interface UserProfile {
   registeredAt: number;
   totalBidsPlaced?: number;
   highestBidPlaced?: number;
+  welcomeEmailSent?: boolean; // Firestore sentinel flag ensuring welcome email dispatches strictly once per verified account
   bannedFromBidding?: boolean;
   isBanned?: boolean;
   bannedAt?: number;
@@ -553,7 +555,24 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - `VehicleCatalogGrid.tsx` utilizes normalized predicates (`isLive`, `isUpcoming`, `isEnded`) driven by a 1-second interval ticker (`useEffect`), refreshing category filter tab counters and catalog lot card states automatically in real time.
 - **Silent Background Firestore Reconciliation**:
   - In `AuctionHeader.tsx`, when an auction lot is active on screen and its persisted Firestore `status` diverges from its computed real-time `effectiveStatus` (e.g. crossing `startTime` from upcoming to live, or `endTime` from active to ended), a background reconciliation trigger automatically executes `updateAuctionStatus(auction.id, effectiveStatus)`.
+  - Redundant writes are suppressed when `effectiveStatus === auction.status`.
   - This guarantees that backend database records synchronize silently with real-time clock thresholds as soon as any client accesses the lot.
+
+### 3.4 Bidding Concurrency, Retry Loop & Outbid Email Dispatch
+1. **Transaction Concurrency & Fast Exponential Backoff Retry Loop**:
+   - Bidding operations in `placeBidWithAntiSnipe()` (`src/services/auctionService.ts`) execute inside Firestore atomic transactions (`runTransaction`) to preserve total ordering and prevent race conditions.
+   - Implements a 4-attempt retry loop (`maxAttempts = 4`) backed by fast exponential backoffs (50ms, 150ms, 300ms) for transient database contention, allowing rapid recovery during intense closing-second bidding battles.
+2. **Contention Error Mapping (`isTransientContentionError`)**:
+   - Helper function identifies transient concurrency failures: error codes (`aborted`, `failed-precondition`, `unavailable`) and messages matching `does not match the required base version`, `version mismatch`, `stored version`, `contention`, or `concurrency`.
+   - Isolates transient transaction conflicts from permanent validation rules (e.g., minimum bid increments, revoked privileges, or closed lots), mapping errors cleanly for client UX presentation without unhandled exceptions.
+3. **Deduplicated Outbid Alerts & Transaction-Gated Dispatch**:
+   - Evaluates `isDistinctBidder` by verifying the previous high bidder's UID and email diverge from the current bidder (`previousBidderId !== bidder.uid` and case-insensitive email comparison).
+   - Email dispatch is deferred strictly outside and after `runTransaction` successfully commits, eliminating phantom outbid emails if the transaction aborts.
+   - Triggers non-blocking dual dispatch: local queue alert (`sendOutbidAlertEmail`) and serverless email proxy (`sendOutbidNotificationEmail` targeting `/api/send-consignment-email` with `type: 'outbid_notification'`).
+4. **`inFlightSettlementIds` In-Tab Mutex Lock & Winning Settlement Pipeline**:
+   - Module-level in-tab mutex lock (`inFlightSettlementIds = new Set<string>()`) guards `reconcileAuctionClosureAndNotifyWinner()`, preventing concurrent ticker invocations, background state listeners, or manual admin force-close triggers from initiating duplicate settlement passes.
+   - Mutex locks both `auctionId` and `targetId` upon function entry and cleans up reliably within a `finally` block.
+   - Serverless winning bidder dispatch (`type: 'winning_bid_confirmation'`) is strictly transaction-gated: only dispatched after Firestore atomically records `winningEmailSent: true` and terminal lifecycle status (`sold` or `ended`) onto the auction document.
 
 ---
 
@@ -605,13 +624,15 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 ### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
 1. **Endpoint Architecture & Multi-Template Proxy Pipeline**:
    - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
-   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected'` (defaulting to `'consignment'` if unspecified):
+   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected' | 'outbid_notification' | 'winning_bid_confirmation'` (defaulting to `'consignment'` if unspecified):
      - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators with 1-click admin triage deep-links. Includes case-insensitive admin recipient deduplication.
      - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
      - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**: Dispatches a dual-branded HTML acknowledgment email directly to the consignor/seller applicant confirming receipt of their vehicle submission, summarizing vehicle particulars, detailing curation review timelines (1–2 business days), and linking to their member dashboard.
      - **Consignment Approved Notice (`type: 'consignment_approved'`)**: Dispatches a dual-branded emerald HTML acceptance notification to the seller (`sellerEmail`), summarizing approved vehicle specs and assigned lot reference, and presenting a prominent "Claim Your Seller Workspace" onboarding claim CTA button.
      - **Consignment Rejection Notice (`type: 'consignment_rejected'`)**: Dispatches a branded editorial HTML notification to the applicant (`sellerEmail` with fallback to `email`) conveying application status and submitted vehicle particulars with complete taxonomy fallback hydration.
      - **New Verified Bidder Welcome (`type: 'welcome_bidder'`)**: Dispatches a dual-branded HTML onboarding email to newly verified bidders celebrating their registration, presenting platform bidding guidelines, highlighting zero buyer fees, and providing 1-click exploration of live auctions.
+     - **Outbid Notification (`type: 'outbid_notification'`)**: Dispatches an instant, transaction-decoupled outbid alert to displaced high bidders with current CAD high bid metrics, required minimum increment, and direct deep-link CTA back to the active vehicle auction.
+     - **Winning Bid Confirmation (`type: 'winning_bid_confirmation'`)**: Dispatches official auction win documentation to the highest bidder upon terminal auction closure, presenting the winning CAD amount, consignor contact details, and the 4-stage Canadian offline settlement checklist.
    - Integrates with the **Resend API** as primary mail provider (supporting direct HTTP fetch fallback if the SDK is unavailable), with built-in failover to **SendGrid** and a development mock logger when keys are absent.
 2. **Environment Variables**:
    - `RESEND_API_KEY`: Secret API token for Resend dispatch (`https://api.resend.com/emails`).
@@ -656,6 +677,30 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - Subject line: `Welcome to Wailtail — Your Bidding Privileges Are Active`.
      - Dual-branded editorial HTML layout welcoming the user (`${displayName}`), outlining core platform tenets (Transparent CAD Bidding, 2-Minute Anti-Sniping Soft Closes, Zero Buyer Fees, Direct Settlement), and featuring a high-contrast CTA button linking directly to the live vehicle catalog (`/catalog`).
      - **Deferred Dispatch Pipeline**: `sendWelcomeBidderEmail()` is suppressed during raw account registration and dispatches strictly upon confirmed email verification (`currentUser.emailVerified || data.isEmailVerified`) or staff manual verification override in `/admin` (`setUserEmailVerified`). Dispatches are deduplicated via persistent `localStorage` sentinel keys (`wailtail_welcome_sent_${uid}`).
+   - **Outbid Notification (`type: 'outbid_notification'`)**:
+     - Subject line: `Outbid Alert: ${vehicleTitle} — Wailtail Auctions`.
+     - Branded high-contrast HTML notification with dark styling and amber alert accenting (`#f59e0b`).
+     - Parameters:
+       - `auctionId` / `lotId` / `id`: Unique lot identifier used for URL deep-linking (`https://www.wailtail.com/auctions/${lotId}`).
+       - `vehicleTitle`: Title of the vehicle lot.
+       - `currentBid` / `currentHighBid`: Latest high bid in CAD.
+       - `minimumIncrement` / `minRequiredBid`: Minimum increment required for counter-bidding.
+       - `bidderEmail` / `email` / `userEmail`: Outbid recipient email address (required).
+       - `bidderName` / `displayName`: Displaced bidder display name.
+     - Includes vehicle summary, current high bid, next required minimum bid, and a prominent "Place Counter-Bid" CTA button deep-linking directly to the lot page.
+   - **Winning Bid Confirmation (`type: 'winning_bid_confirmation'`)**:
+     - Subject line: `Auction Won: ${vehicleTitle} — Wailtail Auctions`.
+     - Dual-branded editorial HTML layout with emerald victory accenting (`#10b981`).
+     - Parameters:
+       - `auctionId` / `lotId` / `id`: Lot identifier.
+       - `vehicleTitle`: Title of won vehicle lot.
+       - `winningBid` / `currentBid`: Final closing CAD bid amount.
+       - `winnerEmail` / `bidderEmail` / `email` / `userEmail`: Winning bidder recipient email address (required).
+       - `winnerName` / `bidderName` / `displayName`: Winning bidder display name.
+       - `sellerName`: Consignor / seller full name.
+       - `sellerEmail`: Consignor direct email for settlement.
+       - `sellerPhone`: Consignor direct contact phone number.
+     - Displays winning financial breakdown, consignor direct contact credentials, 4-stage Canadian offline CAD settlement checklist (1. Bank Wire / Certified Draft, 2. Title & Bill of Sale, 3. Transport / Collection, 4. VIN Check & Key Handover), and direct link to the member dashboard.
 
 ### 5.4 Serverless Admin User Deletion (`/api/admin-delete-user.ts`)
 1. **Endpoint Architecture & Service Account Credentials**:
@@ -1233,6 +1278,11 @@ service cloud.firestore {
     }
 
     match /emails/{emailId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated();
+    }
+
+    match /emailLogs/{logId} {
       allow create: if true;
       allow read, update, delete: if isAuthenticated();
     }
