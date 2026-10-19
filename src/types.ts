@@ -261,6 +261,8 @@ export interface ListingDraftSchema {
   interior: string;
   titleStatus: string;
   sellerName: string;
+  sellerEmail?: string;
+  sellerPhone?: string;
   highlightsBadge: string;
   hagertyValuationUrl?: string;
 

@@ -422,6 +422,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus ?? 'Clean Registration');
   const [customTitleStatus, setCustomTitleStatus] = useState('');
   const [sellerName, setSellerName] = useState(auction.sellerName ?? (isMainLot ? 'Private Consignor' : ''));
+  const [sellerEmail, setSellerEmail] = useState(auction.sellerEmail ?? '');
   const [sellerPhone, setSellerPhone] = useState(auction.sellerPhone ?? '');
   const [hagertyValuationUrl, setHagertyValuationUrl] = useState(auction.hagertyValuationUrl ?? '');
 
@@ -865,6 +866,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setTitleStatus(auction.titleStatus ?? 'Clean Registration');
     setCustomTitleStatus('');
     setSellerName(auction.sellerName ?? (isMain ? 'Private Consignor' : ''));
+    setSellerEmail(auction.sellerEmail ?? '');
     setSellerPhone(auction.sellerPhone ?? '');
     setHagertyValuationUrl(auction.hagertyValuationUrl ?? '');
 
@@ -984,6 +986,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         distanceUnit,
         location: formattedLocation,
         sellerName,
+        sellerEmail: sellerEmail.trim() || undefined,
         sellerPhone: sellerPhone.trim() || undefined,
         engine,
         drivetrain: finalGearbox,
@@ -1040,7 +1043,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           generation: generation.trim() || undefined,
           vin,
           sellerName,
-          sellerEmail: auction.sellerEmail || userProfile?.email,
+          sellerEmail: sellerEmail.trim() || auction.sellerEmail || userProfile?.email,
           sellerPhone: sellerPhone.trim() || auction.sellerPhone || userProfile?.phone
         }, userProfile).catch((err) => {
           console.warn('Non-blocking listing submitted for review email dispatch failed:', err);
@@ -1085,6 +1088,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       interior,
       titleStatus: finalTitleStatus,
       sellerName,
+      sellerEmail: sellerEmail.trim() || undefined,
+      sellerPhone: sellerPhone.trim() || undefined,
       highlightsBadge,
       hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
       overviewHeading,
@@ -1228,6 +1233,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.exteriorColor) setExteriorColor(parsed.exteriorColor);
       if (parsed.interior) setInterior(parsed.interior);
       if (parsed.sellerName) setSellerName(parsed.sellerName);
+      if (parsed.sellerEmail) setSellerEmail(parsed.sellerEmail);
+      if (parsed.sellerPhone) {
+        setSellerPhone(parsed.sellerPhone.replace(/[^0-9+\-() ]/g, ''));
+      }
 
       if (parsed.gearbox) {
         const importedGearboxState = resolveGearboxState(parsed.gearbox);
@@ -2362,8 +2371,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Row 9 (Bottom Grid): Seller / Consignor Name, Seller Phone, and Highlights Tag Badge */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Row 9 (Bottom Grid): Seller / Consignor Name, Seller Email, Seller Phone, and Highlights Tag Badge */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">Seller / Consignor Name</label>
                       <input
@@ -2375,7 +2384,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block font-bold text-zinc-300 mb-1">Seller Phone Number</label>
+                      <label className="block font-bold text-zinc-300 mb-1">Consignor Email</label>
+                      <input
+                        type="email"
+                        value={sellerEmail}
+                        onChange={(e) => setSellerEmail(e.target.value)}
+                        placeholder="consignor@example.com"
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-zinc-300 mb-1">Consignor Phone</label>
                       <input
                         type="tel"
                         value={sellerPhone}

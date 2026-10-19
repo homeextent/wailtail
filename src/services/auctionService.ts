@@ -52,6 +52,7 @@ export const GLOBAL_BRANDING_STORAGE_KEY = 'wailtail_global_branding';
 export const ANTI_SNIPING_WINDOW_MS = 2 * 60 * 1000; // 2 minutes in ms
 export const ANTI_SNIPING_EXTENSION_MS = 2 * 60 * 1000; // 2 minutes extension
 
+const settledAuctionSessionIds = new Set<string>();
 const inFlightSettlementIds = new Set<string>();
 
 export interface GlobalBrandingSettings {
@@ -2091,6 +2092,12 @@ export async function reconcileAuctionClosureAndNotifyWinner(
   const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
   if (!targetId) return { success: false, settled: false };
 
+  if (settledAuctionSessionIds.has(auctionId) || settledAuctionSessionIds.has(targetId)) {
+    return { success: true, settled: false };
+  }
+  settledAuctionSessionIds.add(auctionId);
+  settledAuctionSessionIds.add(targetId);
+
   if (inFlightSettlementIds.has(auctionId) || inFlightSettlementIds.has(targetId)) {
     console.log('[Settlement] Skipped: Lock active or winningEmailSent already set');
     return { success: true, settled: false };
@@ -2230,6 +2237,55 @@ export async function reconcileAuctionClosureAndNotifyWinner(
           return { status: 'no_winner' as const };
         }
 
+        // Consignor Contact Fallback Resolution Chain:
+        // sellerEmail: freshAuction.sellerEmail -> users/{sellerId}.email -> consignment_applications.sellerEmail -> 'contact@wailtail.com'
+        let resolvedSellerEmail = (auctionData.sellerEmail || '').trim();
+        let resolvedSellerPhone: string | undefined = (auctionData.sellerPhone || '').trim() || undefined;
+
+        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@') || !resolvedSellerPhone) {
+          if (auctionData.sellerId) {
+            try {
+              const sellerUserSnap = await transaction.get(doc(db, 'users', auctionData.sellerId));
+              if (sellerUserSnap.exists()) {
+                const sUserData = sellerUserSnap.data();
+                if ((!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) && sUserData?.email) {
+                  resolvedSellerEmail = String(sUserData.email).trim();
+                }
+                if (!resolvedSellerPhone && sUserData?.phone) {
+                  resolvedSellerPhone = String(sUserData.phone).trim() || undefined;
+                }
+              }
+            } catch (err) {
+              console.warn(`[Settlement] Could not resolve seller credentials from users/${auctionData.sellerId}:`, err);
+            }
+          }
+        }
+
+        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@') || !resolvedSellerPhone) {
+          try {
+            const appQ = query(
+              collection(db, 'consignment_applications'),
+              where('convertedAuctionId', '==', targetId)
+            );
+            const appSnap = await getDocs(appQ);
+            if (!appSnap.empty) {
+              const appData = appSnap.docs[0].data();
+              if ((!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) && appData?.sellerEmail) {
+                resolvedSellerEmail = String(appData.sellerEmail).trim();
+              }
+              if (!resolvedSellerPhone && appData?.sellerPhone) {
+                resolvedSellerPhone = String(appData.sellerPhone).trim() || undefined;
+              }
+            }
+          } catch (err) {
+            console.warn(`[Settlement] Could not resolve seller credentials from consignment_applications for ${targetId}:`, err);
+          }
+        }
+
+        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) {
+          resolvedSellerEmail = 'contact@wailtail.com';
+        }
+
         // Transaction Write: Atomically set winningEmailSent: true and status: 'sold' on the auctions/{auctionId} document.
         transaction.update(auctionRef, {
           status: 'sold',
@@ -2250,8 +2306,8 @@ export async function reconcileAuctionClosureAndNotifyWinner(
           winningBid: winningBid.amount,
           vehicleTitle: auctionData.title || 'Vehicle Listing',
           sellerName: auctionData.sellerName || 'Verified Consignor',
-          sellerEmail: auctionData.sellerEmail || '',
-          sellerPhone: auctionData.sellerPhone || ''
+          sellerEmail: resolvedSellerEmail,
+          sellerPhone: resolvedSellerPhone
         };
       });
     } catch (txnErr: any) {
@@ -2302,7 +2358,7 @@ export async function reconcileAuctionClosureAndNotifyWinner(
             signal: controller.signal
           });
         } catch (fetchErr: any) {
-          console.warn(`[Settlement] Email dispatch warning: ${fetchErr?.message || fetchErr}`);
+          console.error(`[Settlement] Email dispatch failed for ${txResult.winnerEmail}:`, fetchErr);
         } finally {
           clearTimeout(timeoutId);
         }
@@ -2312,11 +2368,11 @@ export async function reconcileAuctionClosureAndNotifyWinner(
           if (emailResponse.ok) {
             console.log(`[Settlement] SUCCESS: Dispatched winning bid confirmation email to ${txResult.winnerEmail}.`);
           } else {
-            console.warn(`[Settlement] Email dispatch warning: HTTP ${emailResponse.status} for ${txResult.winnerEmail}`);
+            console.error(`[Settlement] Email dispatch returned error status HTTP ${emailResponse.status} for ${txResult.winnerEmail}`);
           }
         }
       } catch (err: any) {
-        console.warn(`[Settlement] Email dispatch warning: ${err?.message || err}`);
+        console.error(`[Settlement] Email dispatch error:`, err);
       }
 
       return {

@@ -257,7 +257,7 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   );
 
   const reconciledStatusRef = useRef<string>('');
-  const settledAuctionRef = useRef<Set<string>>(new Set());
+  const settledLotsRef = useRef<Set<string>>(new Set());
 
   // Real-time clock ticker settlement:
   // When real-time clock tickers detect an active lot crossing endTime (now >= endTime),
@@ -272,9 +272,9 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
       hasValidEndTime &&
       now >= auction.endTime &&
       auction.winningEmailSent !== true &&
-      !settledAuctionRef.current.has(auction.id)
+      !settledLotsRef.current.has(auction.id)
     ) {
-      settledAuctionRef.current.add(auction.id);
+      settledLotsRef.current.add(auction.id);
       console.log(`[Settlement] Real-time clock ticker in AuctionHeader detected active lot ${auction.id} crossing endTime. Directly invoking reconcileAuctionClosureAndNotifyWinner.`);
       reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
         console.warn(`[Settlement] AuctionHeader reconcileAuctionClosureAndNotifyWinner error for ${auction.id}:`, err);
@@ -312,6 +312,11 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
       return;
     }
 
+    // If lot is expired, guard against repeated reconciliation across 1-second ticks
+    if (isExpired && settledLotsRef.current.has(auction.id)) {
+      return;
+    }
+
     // Target terminal status upon expiration or active upon start
     const isReserveMet = Boolean(
       auction.isReserveMet ||
@@ -328,6 +333,10 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
       return;
     }
     reconciledStatusRef.current = key;
+
+    if (isExpired) {
+      settledLotsRef.current.add(auction.id);
+    }
 
     updateAuctionStatus(auction.id, targetStatus).catch((err) => {
       console.warn('Silent auction status reconciliation failed:', err);

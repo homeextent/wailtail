@@ -57,6 +57,8 @@ interface Auction {
   hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
   location: string;
   sellerName: string;
+  sellerEmail?: string; // Optional consignor contact email for winning bidder settlement
+  sellerPhone?: string; // Optional consignor contact phone for winning bidder settlement
   engine: string;
   drivetrain: string;
   exteriorColor: string;
@@ -569,10 +571,19 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - Evaluates `isDistinctBidder` by verifying the previous high bidder's UID and email diverge from the current bidder (`previousBidderId !== bidder.uid` and case-insensitive email comparison).
    - Email dispatch is deferred strictly outside and after `runTransaction` successfully commits, eliminating phantom outbid emails if the transaction aborts.
    - Triggers non-blocking dual dispatch: local queue alert (`sendOutbidAlertEmail`) and serverless email proxy (`sendOutbidNotificationEmail` targeting `/api/send-consignment-email` with `type: 'outbid_notification'`).
-4. **`inFlightSettlementIds` In-Tab Mutex Lock & Winning Settlement Pipeline**:
-   - Module-level in-tab mutex lock (`inFlightSettlementIds = new Set<string>()`) guards `reconcileAuctionClosureAndNotifyWinner()`, preventing concurrent ticker invocations, background state listeners, or manual admin force-close triggers from initiating duplicate settlement passes.
-   - Mutex locks both `auctionId` and `targetId` upon function entry and cleans up reliably within a `finally` block.
-   - Serverless winning bidder dispatch (`type: 'winning_bid_confirmation'`) is strictly transaction-gated: only dispatched after Firestore atomically records `winningEmailSent: true` and terminal lifecycle status (`sold` or `ended`) onto the auction document.
+4. **Permanent Session Settlement Mutex, Atomic Transaction Sentinel & Winning Settlement Pipeline**:
+   - **Dual-Layer Mutex Locks (`settledAuctionSessionIds` & `inFlightSettlementIds`)**:
+     - Introduces a module-level permanent session mutex (`settledAuctionSessionIds = new Set<string>()`) in `src/services/auctionService.ts` to permanently lock settled lots from recurring settlement passes within an active browser tab session.
+     - Accompanied by the ephemeral in-tab mutex lock (`inFlightSettlementIds = new Set<string>()`), preventing concurrent ticker invocations, background snapshot listeners, or manual admin force-close triggers from initiating duplicate settlement passes. Ephemeral locks release in `finally`, while permanent session IDs persist.
+   - **Database-First Atomic Transaction Sentinel**:
+     - `reconcileAuctionClosureAndNotifyWinner()` executes an atomic Firestore `runTransaction` that reads fresh document state directly from the database (`transaction.get(auctionRef)`) instead of relying on stale in-memory React component props.
+     - Sentinel check: Aborts immediately with `{ status: 'already_sent' }` if `winningEmailSent === true`.
+     - Atomically commits `winningEmailSent: true` and terminal lifecycle status (`sold` or `ended`) to the auction document *prior* to triggering the outbound HTTP fetch to `/api/send-consignment-email` (`type: 'winning_bid_confirmation'`), eliminating race conditions and duplicate dispatch email storms.
+   - **Hierarchical Consignor Contact Fallback Resolution Chain**:
+     - Resolves consignor contact credentials through a 4-tier fallback pipeline:
+       - `sellerEmail`: `freshAuction.sellerEmail` $\rightarrow$ `users/{sellerId}.email` $\rightarrow$ `consignment_applications.sellerEmail` $\rightarrow$ `'contact@wailtail.com'`.
+       - `sellerPhone`: `freshAuction.sellerPhone` $\rightarrow$ `users/{sellerId}.phone` $\rightarrow$ `consignment_applications.sellerPhone` $\rightarrow$ `undefined`.
+     - Guarantees complete and populated consignor credentials in the winning bidder post-auction confirmation email and 4-Stage Offline Settlement Checklist.
 
 ---
 
@@ -799,7 +810,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       - **Row 6**: 2-column grid for Exterior finish and Interior / Cabin specifications.
       - **Row 7**: Standardized Title & Registration Status dropdown with custom fallback entry.
       - **Row 8**: Structured 3-field vehicle location panel (City, Province / State, and Country).
-      - **Row 9**: 2-column grid featuring Seller / Consignor name and the **Highlights Tag Badge** input.
+      - **Row 9**: Grid controls featuring Seller / Consignor name (`sellerName`), Consignor Email (`sellerEmail`), Consignor Phone (`sellerPhone` with telephone character sanitization `[^0-9+\-() ]`), and the **Highlights Tag Badge** input.
       - **Row 10 (Bottom Row)**: Hagerty Canada Valuation Link (`hagertyValuationUrl`) optional URL input ensuring direct linking to third-party Hagerty valuation appraisal reports.
     - **`formatHighlightsBadge` Auto-Sync & `isBadgeOverridden` Manual Override Protection**:
       - The Highlights Tag Badge displays the prominent badge rendered in the public Vehicle Highlights sidebar (e.g. `"1978 Porsche 911 930"`).
@@ -842,6 +853,8 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       interior: string;
       titleStatus: string;
       sellerName: string;
+      sellerEmail?: string;
+      sellerPhone?: string;
       highlightsBadge: string;
       hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
       

@@ -13,6 +13,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] - 2026-10-19 — Winning Bidder Settlement Loop Guard & Consignor Credential Pipeline
+
+### Added
+- **Consignor Credential Schema Extension (`src/types.ts`)**: Added optional `sellerEmail?: string;` and `sellerPhone?: string;` to `Auction` and `ListingDraftSchema` interfaces.
+- **Permanent Session Settlement Mutex (`src/services/auctionService.ts`)**: Introduced module-level `settledAuctionSessionIds = new Set<string>()` to permanently lock lots from recurring settlement passes within an active browser tab session.
+- **Hierarchical Consignor Contact Fallback Resolution Chain (`src/services/auctionService.ts`)**: Built 4-tier fallback for consignor credentials (`sellerEmail`: `freshAuction.sellerEmail` → `users/{sellerId}.email` → `consignment_applications.sellerEmail` → `'contact@wailtail.com'`; `sellerPhone`: `freshAuction.sellerPhone` → `users/{sellerId}.phone` → `consignment_applications.sellerPhone` → `undefined`).
+- **Consignor Contact Editor Controls (`src/components/ListingEditorWorkspace.tsx`)**: Added Consignor Email (`sellerEmail`) and Consignor Phone (`sellerPhone`) form inputs under Section 1 (Row 9) with telephone digit sanitization (`[^0-9+\-() ]`), full workspace state hydration, and JSON import/export support.
+- **Consignment Intake Conversion Mapping (`src/services/auctionService.ts`)**: Mapped `app.sellerEmail` and `app.sellerPhone` to newly created `Auction` drafts in `convertConsignmentToDraftListing()`.
+
+### Changed
+- **Database-First Atomic Settlement Sentinel (`src/services/auctionService.ts`)**: Refactored `reconcileAuctionClosureAndNotifyWinner` to execute a Firestore `runTransaction` that reads fresh document state directly from the database (`transaction.get(auctionRef)`) instead of relying on stale in-memory React props. Aborts immediately if `winningEmailSent === true`, and commits `winningEmailSent: true` and terminal status (`sold` / `ended`) atomically before triggering the outbound HTTP fetch to `/api/send-consignment-email`.
+
+### Fixed
+- **Winning Bidder Multi-Dispatch Email Storm**: Eliminated the infinite loop where expired lots triggered repeated dispatches on every countdown clock tick due to ephemeral mutex release and stale in-memory props.
+- **Clock Interval Reconciler Guard (`src/components/AuctionHeader.tsx`)**: Replaced loose interval tracking with `settledLotsRef = useRef(new Set<string>())`, preventing the 1-second countdown effect from repeatedly invoking status updates and reconciliation passes on expired lots.
+- **Unpopulated Consignor Credentials in Settlement Emails**: Fixed schema and state hydration gaps that previously caused the 4-Stage Offline Settlement Checklist to render Seller Email as "Not specified" and Seller Phone as "Not provided".
+
+---
+
 ## [1.4.0] - 2026-10-04 — Bidding Concurrency, Transaction Locks & Settlement Email Engine
 
 ### Added
