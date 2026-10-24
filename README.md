@@ -32,6 +32,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Icons**: Lucide React
 - **Taxonomy Engine**: Curated 80+ collector vehicle dataset (`src/data/vehicleTaxonomy.json`) powering a reactive 3-tier dependent selection pipeline (Year $\rightarrow$ Make $\rightarrow$ Model $\rightarrow$ Generation / Chassis Code)
 - **State & Synchronization**: Real-time Firestore snapshot listeners (`onSnapshot`) with dynamic user profile synchronization (`subscribeToUserProfile`) and optimistic UI state hydration
+- **Dynamic Browser Tab Synchronization & Brand Identity**: Route-aware `document.title` synchronization engine (`src/App.tsx`) dynamically switching browser tab titles across Catalog (*Wailtail — Curated Collector Car Auctions*), Single Lot Detail (`${year} ${make} ${model} — Wailtail`), Admin Portal, and Listing Editor Workspace views, paired with the standalone SVG `/favicon.svg` asset integration (`public/favicon.svg`) with `?v=2` cache-busting in `index.html` bypassing Chromium tab caching.
 
 ### Serverless & Cloud Infrastructure
 - **Serverless User Deletion (`api/admin-delete-user.ts`)**: Vercel serverless function leveraging `firebase-admin` SDK with ESM interop resolution (`(admin as any).default || admin`) and private key newline unescaping (`replace(/\\n/g, '\n')`) to securely purge user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`), with self-deletion guards and Firestore batch document purging.

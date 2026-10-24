@@ -8,8 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
 - *No unreleased changes.*
+
+---
+
+## [1.6.1] - 2026-10-24 — Brand Favicon & Reactive Document Title Synchronization
+
+### Added
+- **Brand Favicon Asset (`public/favicon.svg`)**: Extraction of the canonical whale-tail vector path into a standalone high-contrast SVG asset, with a `?v=2` cache-busting query parameter in `index.html`.
+
+### Changed
+- **Reactive Route Title Synchronization (`src/App.tsx`)**: Implementation of a dynamic `useEffect` hook to synchronize `document.title` across Catalog (*Wailtail — Curated Collector Car Auctions*), Single Lot Detail (`${year} ${make} ${model} — Wailtail`), Admin Portal, and Listing Editor Workspace views, eliminating the legacy 1988 Porsche 928 hardcoded fallback.
 
 ---
 
