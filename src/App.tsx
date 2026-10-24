@@ -264,6 +264,51 @@ const AuctionAppContent: React.FC = () => {
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
 
+  // Synchronize document.title dynamically with route, view state, and active auction
+  useEffect(() => {
+    const DEFAULT_TITLE = 'Wailtail — Curated Collector Car Auctions';
+
+    if (isAdminRoute) {
+      document.title = 'Admin Operations Portal — Wailtail';
+      return;
+    }
+
+    if (isEditorRoute) {
+      const displayTitle = auction?.title?.trim() || 'Draft Listing';
+      document.title = `Listing Editor: ${displayTitle} — Wailtail`;
+      return;
+    }
+
+    if (isSpecificAuctionRoute) {
+      const { year, make, model, generation, title } = auction || {};
+      if (year && make && model) {
+        const genPart = generation ? ` ${generation}` : '';
+        document.title = `${year} ${make} ${model}${genPart} — Wailtail`;
+      } else if (title && title.trim()) {
+        document.title = `${title.trim()} — Wailtail`;
+      } else {
+        document.title = DEFAULT_TITLE;
+      }
+      return;
+    }
+
+    // Default: Catalog Homepage (/ or /catalog) and fallback
+    document.title = DEFAULT_TITLE;
+
+    return () => {
+      document.title = DEFAULT_TITLE;
+    };
+  }, [
+    isAdminRoute, 
+    isEditorRoute, 
+    isSpecificAuctionRoute, 
+    auction?.year, 
+    auction?.make, 
+    auction?.model, 
+    auction?.generation, 
+    auction?.title
+  ]);
+
   // Synchronize routeToast with sessionStorage if set across page navigation/redirect
   useEffect(() => {
     try {
