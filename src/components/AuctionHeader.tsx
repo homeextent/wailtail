@@ -24,11 +24,9 @@ import {
   AlertTriangle,
   Radio,
   ExternalLink,
-  TrendingUp,
-  X
+  TrendingUp
 } from 'lucide-react';
 
-const DISMISSED_PROMOS_STORAGE_KEY = 'wailtail_dismissed_promos';
 const LOT_HEADER_BANNER_ID = 'lot_header_banner';
 
 interface AuctionHeaderProps {
@@ -54,22 +52,6 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   const [isWatchLoading, setIsWatchLoading] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings | null>(null);
-  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(DISMISSED_PROMOS_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            return parsed.includes(LOT_HEADER_BANNER_ID);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return false;
-  });
 
   // Subscribe to promotional settings in real-time
   useEffect(() => {
@@ -78,42 +60,6 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
     });
     return () => unsub();
   }, []);
-
-  // Sync dismissal state from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(DISMISSED_PROMOS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setIsBannerDismissed(parsed.includes(LOT_HEADER_BANNER_ID));
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to read dismissed promos from localStorage:', err);
-    }
-  }, []);
-
-  const handleDismissBanner = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      setIsBannerDismissed(true);
-      let nextDismissed: string[] = [];
-      const stored = localStorage.getItem(DISMISSED_PROMOS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          nextDismissed = parsed;
-        }
-      }
-      if (!nextDismissed.includes(LOT_HEADER_BANNER_ID)) {
-        nextDismissed.push(LOT_HEADER_BANNER_ID);
-        localStorage.setItem(DISMISSED_PROMOS_STORAGE_KEY, JSON.stringify(nextDismissed));
-      }
-    } catch (err) {
-      console.warn('Failed to persist dismissed promo banner:', err);
-    }
-  };
 
   const handleBannerCtaClick = () => {
     try {
@@ -168,12 +114,11 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   const isBannerVisible = useMemo(() => {
     if (!promoSettings || !promoSettings.enabled) return false;
     if (!banner || !banner.enabled) return false;
-    if (isBannerDismissed) return false;
     if (!isPromoAudienceMatch(banner.targetAudience, Boolean(user || userProfile))) return false;
     if (!isPromoScheduleActive(banner.startDate, banner.expiresAt, now)) return false;
     if (!banner.text && !banner.badgeText) return false;
     return true;
-  }, [promoSettings, banner, isBannerDismissed, user, userProfile, now]);
+  }, [promoSettings, banner, user, userProfile, now]);
 
   // Sync user's saved watchlist status for this specific auction
   useEffect(() => {
@@ -399,14 +344,6 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                   {banner.ctaText}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleDismissBanner}
-                aria-label="Dismiss promotional banner"
-                className="p-1 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-black/5 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
           </div>
         </div>

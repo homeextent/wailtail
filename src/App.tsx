@@ -16,7 +16,6 @@ import {
   GLOBAL_BRANDING_STORAGE_KEY,
   saveMediaConfig,
   toggleWatchAuction,
-  createNewListing,
   MAIN_AUCTION_ID, 
   BLANK_AUCTION 
 } from './services/auctionService';
@@ -240,13 +239,6 @@ const AuctionAppContent: React.FC = () => {
     (currentPath.startsWith('/dashboard/listings') || 
     currentPath.includes('/edit') || 
     currentPath.includes('#/dashboard/listings')) &&
-    !currentPath.includes('/dashboard/listings/new') &&
-    !isAdminRoute;
-
-  const isNewListingRoute = 
-    (currentPath === '/dashboard/listings/new' || 
-    currentPath.startsWith('/dashboard/listings/new') || 
-    currentPath.includes('#/dashboard/listings/new')) &&
     !isAdminRoute;
 
   const isSpecificAuctionRoute = 
@@ -260,7 +252,6 @@ const AuctionAppContent: React.FC = () => {
   const isCatalogRoute = 
     !isAdminRoute &&
     !isEditorRoute && 
-    !isNewListingRoute && 
     !isSpecificAuctionRoute;
 
   // Extract active vehicle listing ID from route if on editor or public auction detail
@@ -270,21 +261,6 @@ const AuctionAppContent: React.FC = () => {
 
   const [activeAuctionId, setActiveAuctionId] = useState<string>(routeAuctionId);
   const [allAuctions, setAllAuctions] = useState<Auction[]>([]);
-
-  // Direct Onboarding action: opens a fresh Listing Workspace
-  const handleLaunchListingWorkspace = async () => {
-    setIsConsignmentModalOpen(false);
-    try {
-      const newLot = await createNewListing('New Vehicle Listing');
-      // Optimistic state hydration for 0-lot baseline
-      setAllAuctions(prev => [...prev, newLot]);
-      setActiveAuctionId(newLot.id);
-      navigateTo(`/dashboard/listings/${newLot.id}/edit`);
-    } catch (e) {
-      console.error('Error creating new lot for workspace:', e);
-      navigateTo('/dashboard/listings/new');
-    }
-  };
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
 
@@ -342,33 +318,54 @@ const AuctionAppContent: React.FC = () => {
     }
   }, [isAdminRoute, authLoading, user, userProfile, isAdmin, currentPath]);
 
-  // Auto-create and redirect if user directly lands on /dashboard/listings/new
+  // RBAC Protection and Safe Fallback Route Guard for /dashboard/listings/*
   useEffect(() => {
-    // RBAC Protection for /dashboard/listings/*
-    const isProtectedListingRoute = currentPath.startsWith('/dashboard/listings') || currentPath.includes('#/dashboard/listings');
-    if (isProtectedListingRoute) {
-      const isAuthorized = user && (user.role === 'seller' || user.role === 'admin' || isAdmin);
-      if (!isAuthorized) {
-        setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
-        navigateTo('/');
+    if (authLoading) return;
+
+    const isProtectedListingRoute = 
+      currentPath.startsWith('/dashboard/listings') || 
+      currentPath.includes('/edit') || 
+      currentPath.includes('#/dashboard/listings');
+
+    if (!isProtectedListingRoute || isAdminRoute) return;
+
+    const isAuthorized = Boolean(
+      user && (user.role === 'seller' || user.role === 'admin' || isAdmin)
+    );
+
+    if (!isAuthorized) {
+      setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
+      navigateTo('/');
+      return;
+    }
+
+    // Extract listing ID parameter
+    const editorMatch = currentPath.match(/\/dashboard\/listings\/([^/?#]+)\/edit/);
+    const rawId = editorMatch 
+      ? editorMatch[1] 
+      : currentPath.split('/dashboard/listings/')[1]?.split('/')[0]?.split('?')[0]?.split('#')[0] || '';
+
+    // If id is 'new', empty, undefined, or missing: redirect immediately with toast
+    if (!rawId || rawId === 'new' || rawId === 'undefined' || rawId.trim() === '') {
+      const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
+      sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
+      setRouteToast('Listing lot not found');
+      navigateTo(fallbackUrl);
+      return;
+    }
+
+    // Check if lot exists in catalog once allAuctions is loaded
+    if (allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
+      const exists = allAuctions.some(a => a.id === rawId);
+      if (!exists) {
+        const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
+        sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
+        setRouteToast('Listing lot not found');
+        navigateTo(fallbackUrl);
         return;
       }
     }
-
-    if (isNewListingRoute) {
-      createNewListing('New Vehicle Listing')
-        .then((newLot) => {
-          // Optimistic state hydration for 0-lot baseline
-          setAllAuctions(prev => [...prev, newLot]);
-          setActiveAuctionId(newLot.id);
-          window.history.replaceState({}, '', `/dashboard/listings/${newLot.id}/edit`);
-          setCurrentPath(`/dashboard/listings/${newLot.id}/edit`);
-        })
-        .catch((err) => {
-          console.error('Error auto-creating new listing:', err);
-        });
-    }
-  }, [currentPath, isNewListingRoute, user, isAdmin]);
+  }, [currentPath, user, isAdmin, authLoading, allAuctions]);
 
   useEffect(() => {
     if (editorMatch && editorMatch[1] && editorMatch[1] !== activeAuctionId) {
@@ -427,6 +424,12 @@ const AuctionAppContent: React.FC = () => {
             }
           } else {
             setAuction(BLANK_AUCTION);
+            if (isEditorRoute) {
+              const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
+              sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
+              setRouteToast('Listing lot not found');
+              navigateTo(fallbackUrl);
+            }
           }
           setLoading(false);
         });
@@ -661,17 +664,6 @@ const AuctionAppContent: React.FC = () => {
   if (isCatalogRoute) {
     return (
       <div className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex flex-col font-sans selection:bg-red-700 selection:text-white">
-        {routeToast && (
-          <div className="fixed top-4 right-4 z-50 max-w-md bg-red-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-red-700 flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
-            <span>{routeToast}</span>
-            <button
-              onClick={() => setRouteToast(null)}
-              className="text-red-200 hover:text-white p-1"
-            >
-              ✕
-            </button>
-          </div>
-        )}
         <Navbar
           userProfile={userProfile}
           onOpenAuth={() => setIsAuthModalOpen(true)}
@@ -726,17 +718,6 @@ const AuctionAppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex flex-col font-sans selection:bg-red-700 selection:text-white">
-      {routeToast && (
-        <div className="fixed top-4 right-4 z-50 max-w-md bg-red-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-red-700 flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
-          <span>{routeToast}</span>
-          <button
-            onClick={() => setRouteToast(null)}
-            className="text-red-200 hover:text-white p-1"
-          >
-            ✕
-          </button>
-        </div>
-      )}
       {/* 1. Navbar */}
       <Navbar
         userProfile={userProfile}
@@ -1023,6 +1004,18 @@ const AuctionAppContent: React.FC = () => {
 
   return (
     <>
+      {routeToast && (
+        <div className="fixed top-4 right-4 z-50 max-w-md bg-red-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-red-700 flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <span>{routeToast}</span>
+          <button
+            onClick={() => setRouteToast(null)}
+            className="text-red-200 hover:text-white p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {renderRouteContent()}
 
       {/* Root Layout Hoisted Modals - Mounted Unconditionally Across All Views */}
@@ -1069,7 +1062,6 @@ const AuctionAppContent: React.FC = () => {
       <ConsignmentModal
         isOpen={isConsignmentModalOpen}
         onClose={() => setIsConsignmentModalOpen(false)}
-        onLaunchDirectListing={handleLaunchListingWorkspace}
         onOpenLegalModal={handleOpenLegalModal}
       />
 

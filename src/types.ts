@@ -497,8 +497,12 @@ export interface LotHeaderBannerConfig {
   clickCount?: number;
 }
 
+export type BannerConfig = LotHeaderBannerConfig;
+
 export interface PlatformPromoSettings {
   enabled: boolean;
+  cadenceInterval?: number;
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
+  catalogBanner?: LotHeaderBannerConfig;
 }

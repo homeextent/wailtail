@@ -13,6 +13,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.0] - 2026-10-24 — Runaway Listing Creation Loop Guard, Consignment Gating & Dual-Slot Promotional Cadence Engine
+
+### Added
+- **Configurable Catalog Grid Cadence Schema (`src/types.ts`)**: Added `cadenceInterval?: number;` to `PlatformPromoSettings` supporting admin-configurable catalog grid promotional injection (0, 6, 9, 12 lots) with safe modulo cycling.
+- **Dual-Slot Independent Banner Schema & Type Alias (`src/types.ts`)**: Extended `PlatformPromoSettings` with `catalogBanner?: LotHeaderBannerConfig;` and exported `BannerConfig` type alias (`export type BannerConfig = LotHeaderBannerConfig;`), enabling independent announcement banners for both the catalog homepage and direct single lots.
+- **Default Persistence & Safe Fallback Hydration (`src/services/auctionService.ts`)**: Added default configurations, persistence, and safe fallback hydration for `cadenceInterval` (defaulting to 6) and `catalogBanner` in `DEFAULT_PROMO_SETTINGS` and `subscribeToPromoSettings()`.
+- **Catalog Homepage Announcement Banner Control Suite (`src/components/AdminPortalPage.tsx`)**: Built a dedicated "Catalog Homepage Announcement Banner" management suite under Platform Branding in `AdminPortalPage.tsx` with master toggle, copy inputs, audience segmentation, CTA action routing, and live `'catalog_banner'` click telemetry tracking via `promo_analytics`.
+- **Full-Bleed Catalog Homepage Announcement Ribbon (`src/components/VehicleCatalogGrid.tsx`)**: Embedded a full-bleed announcement ribbon pinned flush beneath `Navbar.tsx` featuring an edge-to-edge dark slate container (`bg-slate-900 border-b border-amber-500/20`), inner `max-w-7xl` alignment, warm amber badge/CTA styling, and non-blocking telemetry logging.
+- **Listing Editor Fallback Route Guarding (`src/App.tsx`, `src/components/ListingEditorWorkspace.tsx`)**: Engineered safe fallback route guarding redirecting `'new'`, missing, or invalid listing IDs to `/catalog` (or `/admin?tab=inventory` for administrators) accompanied by a high-visibility "Listing lot not found" toast notification.
+
+### Changed
+- **Unified Catalog Cadence Injection Pipeline (`src/components/VehicleCatalogGrid.tsx`)**: Transformed catalog in-grid promotional cards from low-inventory fillers into a unified injection pipeline supporting low-inventory row padding ($\le 2$ lots) and populated cadence splicing ($> 2$ lots) at admin-selected intervals (6, 9, 12 lots).
+- **Collector Car Design System Alignment (`src/components/VehicleCatalogGrid.tsx`, `src/components/AuctionHeader.tsx`)**: Realigned homepage promotional banner aesthetics to match Wailtail's collector car design system, purging neon emerald tones in favor of slate-900 backdrops and warm amber accents.
+
+### Fixed
+- **Runaway Listing Creation Loop (`src/App.tsx`, `src/components/ListingEditorWorkspace.tsx`)**: Eradicated un-guarded programmatic `createNewListing()` `useEffect` invocations on `'new'` / invalid IDs, eliminating the recursive Firestore `onSnapshot` re-render echo that previously spawned 150+ duplicate lots.
+- **Consignment Curation Gating Bypass (`src/components/ConsignmentModal.tsx`)**: Purged the "Open Listing Workspace" CTA button and `onLaunchDirectListing` prop, restricting applicants strictly to "Close & Return to Catalog" and enforcing mandatory administrative approval before draft workspace provisioning.
+- **Permanent Client-Side Promotional Suppression (`src/components/VehicleCatalogGrid.tsx`, `src/components/AuctionHeader.tsx`)**: Completely eradicated ✕ dismiss buttons, dismissal handlers, and permanent `localStorage` caching (`wailtail_dismissed_promos`, `LOT_HEADER_BANNER_ID`), making campaign visibility 100% deterministic based on admin toggles, audience targeting, and schedule dates.
+
+---
+
 ## [1.5.0] - 2026-10-19 — Winning Bidder Settlement Loop Guard & Consignor Credential Pipeline
 
 ### Added

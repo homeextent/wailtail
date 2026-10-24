@@ -4504,6 +4504,16 @@ export async function fetchUserActivitySummary(
 
 export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
   enabled: true,
+  cadenceInterval: 6,
+  catalogBanner: {
+    enabled: false,
+    badgeText: '',
+    text: '',
+    ctaText: '',
+    ctaAction: 'consignment_modal',
+    targetAudience: 'all',
+    clickCount: 0
+  },
   lotHeaderBanner: {
     enabled: true,
     badgeText: 'LAUNCH SPECIAL',
@@ -4606,8 +4616,25 @@ export function subscribeToPromoSettings(callback: (settings: PlatformPromoSetti
       if (snap.exists()) {
         const data = snap.data();
         const rawBanner = data.lotHeaderBanner || {};
+        const rawCatalogBanner = data.catalogBanner || {};
+        const defaultCatalog = DEFAULT_PROMO_SETTINGS.catalogBanner || {
+          enabled: false,
+          badgeText: '',
+          text: '',
+          ctaText: '',
+          ctaAction: 'consignment_modal',
+          targetAudience: 'all',
+          clickCount: 0
+        };
         const settings: PlatformPromoSettings = {
           enabled: typeof data.enabled === 'boolean' ? data.enabled : DEFAULT_PROMO_SETTINGS.enabled,
+          cadenceInterval: typeof data.cadenceInterval === 'number' ? data.cadenceInterval : (DEFAULT_PROMO_SETTINGS.cadenceInterval ?? 6),
+          catalogBanner: {
+            ...defaultCatalog,
+            ...rawCatalogBanner,
+            enabled: typeof rawCatalogBanner.enabled === 'boolean' ? rawCatalogBanner.enabled : defaultCatalog.enabled,
+            targetAudience: rawCatalogBanner.targetAudience || defaultCatalog.targetAudience
+          },
           lotHeaderBanner: {
             ...DEFAULT_PROMO_SETTINGS.lotHeaderBanner,
             ...rawBanner,

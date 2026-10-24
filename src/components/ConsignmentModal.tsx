@@ -7,7 +7,6 @@ import {
   DollarSign, 
   Camera, 
   FileText, 
-  ArrowRight, 
   Send, 
   AlertCircle,
   MapPin
@@ -49,14 +48,12 @@ export const GEARBOX_OPTIONS = [
 interface ConsignmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onLaunchDirectListing?: () => void;
   onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
 }
 
 export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   isOpen,
   onClose,
-  onLaunchDirectListing,
   onOpenLegalModal
 }) => {
   const { user } = useAuth();
@@ -370,27 +367,14 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                 </ul>
               </div>
 
-              <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <div className="pt-4 flex items-center justify-center">
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white transition-colors cursor-pointer"
+                  className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white transition-colors cursor-pointer"
                 >
                   Close & Return to Catalog
                 </button>
-                {onLaunchDirectListing && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleReset();
-                      onLaunchDirectListing();
-                    }}
-                    className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <span>Open Listing Workspace</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
             </div>
           </div>

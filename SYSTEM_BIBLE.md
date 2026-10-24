@@ -10,7 +10,7 @@
 * **Static Open Graph & Twitter Card Social Metadata (`index.html`)**: Pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) tags in `index.html` targeting canonical domain (`https://www.wailtail.com/`) and 1988 Porsche 928 launch hero imagery; guarantees 100% social preview card rendering for web crawlers (`facebookexternalhit`, X, WhatsApp, iMessage) without edge SSR or client-side JavaScript execution overhead
 * **Background Push Service Worker & FCM**: Native background Service Worker (`public/firebase-messaging-sw.js`) utilizing Firebase compat SDKs and Firebase Cloud Messaging (`firebase/messaging`) Web Push API with VAPID key token exchange
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
-* **Dynamic Promotional Campaign Engine**: Launch promotional subsystem featuring responsive catalog grid card injection (`VehicleCatalogGrid.tsx`), direct-lot header notification banners (`AuctionHeader.tsx`), audience-segmented display filters, schedule windows, image asset uploader, and client dismissal tracking (`wailtail_dismissed_promos`)
+* **Dynamic Dual-Slot Promotional & Cadence Engine**: Multi-surface campaign system featuring dual-slot independent announcement banners (full-bleed Catalog Homepage Ribbon and Direct-Lot Header Banner), admin-configurable catalog grid cadence injection (0, 6, 9, 12 lots with safe modulo cycling), low-inventory row padding ($\le 2$ lots), audience segmentation, date scheduling, image uploader, and deterministic admin-driven visibility (zero client-side `localStorage` dismissal suppression)
 * **Decoupled Guest Telemetry Engine**: Atomic `promo_analytics/{promoId}` click counting using `increment(1)` writes, permitting public unauthenticated telemetry logging while securing campaign configuration
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
@@ -23,10 +23,10 @@
 
 | Route / Surface | Component / Handler | Access Level | Description |
 | :--- | :--- | :--- | :--- |
-| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and dynamic launch promotional card injection (`PromoCardConfig`) during low-inventory view states. |
+| `/` & `/catalog` | `VehicleCatalogGrid.tsx` | Public | Multi-car vehicle catalog grid acting as primary homepage; features a full-bleed top announcement ribbon pinned flush beneath `Navbar.tsx`, live CAD bid telemetry, search, category filters (`All Lots`, `Live`, `Upcoming`, `Ended`) with normalized status predicates (`isLive`, `isUpcoming`, `isEnded`), and a unified promotional injection pipeline supporting low-inventory row padding ($\le 2$ lots) and admin-configurable grid cadence splicing ($> 2$ lots at 0, 6, 9, 12 intervals). |
 | `/auctions/[id]` | `App.tsx` (Single Lot View) | Public | Focused single-car lot viewing with live anti-snipe countdown, direct-lot promotional header banner (`AuctionHeader.tsx`), sticky bid bar (`StickyBidBar.tsx`), hero carousel, showcase chapters, driving playlist, and public Q&A. |
 | `/admin` | `AdminPortalPage.tsx` | `ADMIN` only | Full-page operations portal featuring 5 command suites: Member Directory / Member Directory Management (formerly Bidder Registry), Consignment Applications, Vehicle Inventory & Lots, Live Bids Telemetry Ledger, and Platform Branding (with real-time Promotional & Launch Campaign Manager). Features deep-link auth preservation (suspends route guard during `authLoading`, caches triage parameters in `sessionStorage` key `wailtail_pending_admin_deeplink`, prompts contextual login banner, and auto-restores to target triage modal upon sign-in), Multi-Select Bulk Action Engine, 1-click email triage deep-links (`/admin?tab=consignments&id=${appId}&action=approve|reject`), and cascading deletion controls. |
-| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, seller lot dropdown filtering (`visibleAuctions`), and high-contrast ← Back to Dashboard navigation CTA button routing administrators to `/admin?tab=inventory` and sellers to `/` with the activity hub open. |
+| `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, seller lot dropdown filtering (`visibleAuctions`), and high-contrast ← Back to Dashboard navigation CTA button routing administrators to `/admin?tab=inventory` and sellers to `/` with the activity hub open. Features safe fallback route guarding that redirects `'new'`, missing, or unresolvable IDs to `/catalog` (or `/admin?tab=inventory`) with a "Listing lot not found" toast, eradicating runaway auto-creation loops. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Platform Legal Infrastructure (Modal) | `LegalModal.tsx` | Public | Tabbed modal dialog for platform Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage), triggered globally via `App.tsx` state (`isLegalModalOpen`, `legalModalTab`). |
 | Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct consignment inquiry trigger, and modal openers for Terms of Service and Privacy Policy. |
@@ -467,10 +467,14 @@ export interface LotHeaderBannerConfig {
   clickCount?: number;
 }
 
+export type BannerConfig = LotHeaderBannerConfig;
+
 export interface PlatformPromoSettings {
   enabled: boolean;
+  cadenceInterval?: number; // Configurable catalog grid promo injection interval: 0 (disabled), 6, 9, or 12 lots
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
+  catalogBanner?: LotHeaderBannerConfig;
 }
 ```
 
@@ -790,6 +794,10 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     - Snapshot listeners in `App.tsx` and `AdminPanelModal.tsx` (`subscribeToAllAuctions`) are configured to support empty states (`list || []`), removing legacy length guards to allow clean operation on a pristine database.
     - All catalog views render the actual database state without forced ternary fallbacks.
   - **"+ New Listing" Workflow & SEO Title Slugs**: Modal prompt requesting Listing Title / Vehicle Lot Name; atomically provisions a new vehicle document in Firestore (`createNewListing`) using human-readable document IDs (`${slug}-${shortHash}`, e.g., `1988-porsche-928-s4-automatic-mtur4abv`) via `slugifyTitle(title)` and `generateShortHash()`, initialized with clean placeholders and default Canadian CAD financials ($1,000 start, $250 increment, 7-day duration) without overwriting existing listings.
+  - **Runaway Listing Auto-Creation Guard & Fallback Redirection**:
+    - Programmatic auto-creation `useEffect` invocations on `'new'` or missing lot IDs have been completely eradicated from `App.tsx` and `ListingEditorWorkspace.tsx`.
+    - Eliminates the infinite recursive loop where uninitialized route states re-rendered and triggered duplicate `createNewListing()` calls against Firestore, which previously produced 150+ phantom lots.
+    - Route resolution now implements strict fallback guarding: navigating to unresolvable, missing, or `'new'` lot IDs triggers an immediate safe redirect to `/catalog` (or `/admin?tab=inventory` for administrators) accompanied by a "Listing lot not found" notification toast.
   - **Optimistic State Hydration**: Immediately appends new lot to local state upon creation to ensure instantaneous UI feedback while bridging Firestore synchronization latency.
 - **Full-Page Split-Screen Route & View Modes**:
   - Dedicated authoring workspace (`ListingEditorWorkspace.tsx`), offering 3 layout view modes:
@@ -1023,6 +1031,15 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Real-time search filtering across make, model, VIN, and location.
   - Category filter pills (`All Lots`, `Live`, `Upcoming`, `Ended`) with live lot counters synchronized with normalization predicates.
   - Rich vehicle cards featuring hero photo thumbnail, current/starting bid in CAD, reserve status pill, odometer, location, and deep link navigation to `/auctions/[id]`.
+- **Full-Bleed Catalog Homepage Announcement Ribbon**:
+  - Pinned flush beneath `Navbar.tsx`, providing an edge-to-edge dark slate container (`bg-slate-900 border-b border-amber-500/20`) with inner `max-w-7xl` content alignment matching the vehicle grid.
+  - Displays high-priority platform broadcasts with warm amber badge tags, actionable CTA buttons, and direct non-blocking telemetry logging (`recordPromoClick('catalog_banner', true)`).
+- **Unified Catalog Grid Cadence Injection Pipeline**:
+  - Operates on a unified injection pipeline supporting both low-inventory row padding ($\le 2$ lots) and populated cadence splicing ($> 2$ lots) governed by admin-configured `cadenceInterval` (0 [Disabled], 6, 9, 12 lots) using safe modulo cycling.
+  - Injected promotional cards match catalog vehicle card dimensions, preserving grid alignment across responsive breakpoints.
+- **Eradication of Client-Side Dismissal Suppression**:
+  - Purged all ✕ dismiss buttons, dismissal handlers, and permanent `localStorage` caching (`wailtail_dismissed_promos`).
+  - Promotional visibility is 100% deterministic, governed strictly by administrative enablement toggles, audience segmentation (`all`, `guests_only`, `authenticated_only`), and active scheduling dates.
 
 ### 6.8 Seller Onboarding Flow & Consignment Intake (`ConsignmentModal.tsx`)
 - **"Sell Your Vehicle" Header Action**:
@@ -1040,7 +1057,8 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Controlled unchecked checkbox requiring explicit applicant agreement to Wailtail's Terms of Service and Privacy Policy before submission.
   - The submission button remains disabled until agreement is certified, ensuring PIPEDA compliance and legal defensibility.
 - **Consignment Workflow Safeguards & Unvetted Draft Bypass Purge**:
-  - Completely purged the unvetted "Ready to draft your listing right now?" bypass card, enforcing mandatory administrative curation and approval prior to draft workspace creation.
+  - Completely purged the unvetted "Ready to draft your listing right now?" bypass card, post-submission "Open Listing Workspace" CTA button, and `onLaunchDirectListing` prop from `ConsignmentModal.tsx`.
+  - Applicants are strictly restricted to "Close & Return to Catalog", enforcing mandatory administrative curation, identity verification, and manual approval prior to draft workspace provisioning.
 - **3-Column Structured Location Panel**:
   - Clean separation into City (`locationCity`), Province / State (`locationProvince`), and Country (`locationCountry`) with automatic composite string formatting (`formattedLocation`).
 - **Option A Registered Member Auto-Link Detection (`onBlur`)**:
@@ -1110,9 +1128,15 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 The platform integrates a dynamic promotional subsystem designed to spotlight launch promotions, seller incentives, early-access membership perks, and high-visibility CTAs:
 
 1. **Centralized Campaign Control Suite (`AdminPortalPage.tsx` under Platform Branding)**:
+   - **Dual-Slot Independent Announcement Banners**:
+     - Independent control suites for **Catalog Homepage Announcement Banner** (`catalogBanner`) and **Direct-Lot Header Banner** (`lotHeaderBanner`).
+     - Each slot features independent master enablement toggles, badge text, headline/copy inputs, audience segmentation (`all`, `guests_only`, `authenticated_only`), date scheduling (`startDate`, `expiresAt`), CTA routing (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), and live click telemetry tracking.
+   - **Catalog Grid Promotional Cadence Controls**:
+     - Admin-configurable cadence selector (`cadenceInterval`: 0 [Disabled], 6, 9, 12 lots) determining how frequently promotional cards are spliced into active catalog inventory rows.
+     - Splicing utilizes safe modulo indexing (`index % cadenceInterval === 0`) ensuring promotional cards are injected at consistent intervals without layout disruption.
    - **Master Platform Switches**:
      - Global platform switch (`PlatformPromoSettings.enabled`) allows administrators to immediately activate or deactivate all promotional cards and banners across the platform.
-     - Individual lot header banner toggle (`lotHeaderBanner.enabled`) and card-level toggles (`card.enabled`) provide granular switch controls.
+     - Slot-level banner toggles (`catalogBanner.enabled`, `lotHeaderBanner.enabled`) and card-level toggles (`card.enabled`) provide granular switch controls.
    - **Card Authoring & Lifecycle Management**:
      - Interactive card creator (`handleAddPromoCard`) generating structured campaign cards with unique IDs (`promo-${Date.now()}`).
      - Expandable card accordions with real-time headline previews, badge tags, copy textarea, accent color selection (`amber`, `emerald`, `purple`, `blue`), and card deletion triggers.
@@ -1136,18 +1160,17 @@ The platform integrates a dynamic promotional subsystem designed to spotlight la
      - Displays responsive top media banners (`aspect-[16/9]`, `object-cover`) on catalog promo cards matching standard vehicle listings.
 
 2. **Catalog Grid Card Injection (`VehicleCatalogGrid.tsx`)**:
-   - **Low-Inventory Position Injection**: When catalog inventory contains 2 or fewer vehicles (`auctions.length <= 2`), the grid automatically injects active promotional cards (`promoCardsToInject`) into empty grid slots, maintaining a dense, editorial 3-column layout.
-   - **Client Dismissal Tracking (`wailtail_dismissed_promos`)**:
-     - Each injected card features an unobtrusive dismiss action (`X` button).
-     - Dismissed promo IDs are saved to `localStorage` under `wailtail_dismissed_promos`, suppressing repeat impressions for that client.
+   - **Unified In-Grid Cadence & Row Padding Pipeline**: When catalog vehicle inventory is low ($\le 2$ lots), the grid automatically injects active promotional cards (`promoCardsToInject`) into empty grid slots to maintain an editorial layout; when inventory is populated ($> 2$ lots), cards are dynamically spliced at the admin-selected cadence interval (6, 9, or 12 lots).
+   - **Complete Eradication of Client Dismissal Suppression**:
+     - Purged all ✕ dismiss buttons, dismissal handlers, and permanent `localStorage` caching (`wailtail_dismissed_promos`).
+     - Campaign impressions are 100% deterministic, governed strictly by administrative enablement toggles, audience targeting, and schedule active windows.
 
-3. **Direct-Lot Promotional Header Banners (`AuctionHeader.tsx`)**:
-   - High-contrast banner rendered directly above vehicle titles on single-car lot pages (`/auctions/[id]`).
-   - Specifically optimizes conversion for deep-linked direct traffic arriving from social channels and collector forums.
-   - Features custom badges, copy, action CTAs, dismissal persistence (`LOT_HEADER_BANNER_ID`), schedule verification, and audience matching.
+3. **Dual-Slot Announcement Banners (`VehicleCatalogGrid.tsx`, `AuctionHeader.tsx`)**:
+   - **Full-Bleed Catalog Homepage Announcement Ribbon (`VehicleCatalogGrid.tsx`)**: Pinned flush beneath `Navbar.tsx` with an edge-to-edge dark slate container (`bg-slate-900 border-b border-amber-500/20`), inner `max-w-7xl` alignment, warm amber badge/CTA styling, and non-blocking telemetry logging.
+   - **Direct-Lot Promotional Header Banner (`AuctionHeader.tsx`)**: High-contrast banner rendered directly above vehicle titles on single-car lot pages (`/auctions/[id]`), optimized for conversion from direct social/forum traffic. Dismissal persistence (`LOT_HEADER_BANNER_ID`) in `localStorage` has been eradicated in favor of 100% deterministic admin control.
 
 4. **Decoupled Guest Telemetry Engine (`promo_analytics`)**:
-   - Telemetry execution (`recordPromoClick(promoId, isBanner)`) writes directly to independent documents in the `promo_analytics` collection using atomic Firestore `increment(1)` operations.
+   - Telemetry execution (`recordPromoClick(promoId, isBanner)`) writes directly to independent documents in the `promo_analytics` collection using atomic Firestore `increment(1)` operations (`'catalog_banner'` for homepage ribbon interactions, `'lot_header_banner'` for single lot banners, and specific promo card IDs).
    - **Security Decoupling**: Solves permission errors (HTTP 403 Forbidden) for unauthenticated visitors by allowing public writes (`allow create, update: if true;`) to `promo_analytics`, while the root configuration `settings/promotions` remains locked strictly to administrators.
    - **Non-Blocking Telemetry Failover**: Wrapped in silent `try/catch` handlers to guarantee that analytics logging never degrades or blocks visitor navigation.
    - **Real-Time Staff Telemetry Feed**: `subscribeToPromoAnalytics` powers real-time click counter badges (`MousePointerClick`) in `AdminPortalPage.tsx`, displaying live interaction counts alongside each campaign asset.

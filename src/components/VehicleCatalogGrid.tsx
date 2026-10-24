@@ -13,7 +13,9 @@ import {
   recordPromoClick, 
   DEFAULT_PROMO_SETTINGS,
   updateAuctionStatus,
-  reconcileAuctionClosureAndNotifyWinner
+  reconcileAuctionClosureAndNotifyWinner,
+  isPromoAudienceMatch,
+  isPromoScheduleActive
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -24,18 +26,15 @@ import {
   Clock, 
   MapPin, 
   Gauge, 
-  ExternalLink,
-  Plus,
-  ShieldCheck,
-  Flame,
-  ChevronRight,
-  Tag,
-  Sparkles,
-  X,
-  Zap
+  ExternalLink, 
+  Plus, 
+  ShieldCheck, 
+  Flame, 
+  ChevronRight, 
+  Tag, 
+  Sparkles, 
+  Zap 
 } from 'lucide-react';
-
-const DISMISSED_PROMOS_STORAGE_KEY = 'wailtail_dismissed_promos';
 
 interface VehicleCatalogGridProps {
   auctions: Auction[];
@@ -104,7 +103,6 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'live' | 'upcoming' | 'ended'>('all');
   const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings>(DEFAULT_PROMO_SETTINGS);
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [brokenImageMap, setBrokenImageMap] = useState<Record<string, boolean>>({});
   const [now, setNow] = useState(Date.now());
 
@@ -154,21 +152,6 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     });
   }, [auctions, now]);
 
-  // Load dismissed promo IDs from localStorage on mount
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(DISMISSED_PROMOS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setDismissedIds(parsed);
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to read dismissed promos from localStorage:', err);
-    }
-  }, []);
-
   // Subscribe to promotional settings in real-time
   useEffect(() => {
     const unsub = subscribeToPromoSettings((settings) => {
@@ -176,17 +159,6 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     });
     return () => unsub();
   }, []);
-
-  const handleDismissPromo = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const next = [...dismissedIds, id];
-      setDismissedIds(next);
-      localStorage.setItem(DISMISSED_PROMOS_STORAGE_KEY, JSON.stringify(next));
-    } catch (err) {
-      console.warn('Failed to save dismissed promo:', err);
-    }
-  };
 
   const handlePromoAction = (card: PromoCardConfig) => {
     // 1. Silent non-blocking telemetry failover
@@ -236,71 +208,206 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
     }
   };
 
-  // Helper predicate: Audience matching
-  const matchesAudience = (audience: PromoAudience): boolean => {
-    if (!audience || audience === 'all') return true;
-    if (audience === 'guests_only') return !user;
-    if (audience === 'authenticated_only') return !!user;
+  const isAuthenticated = Boolean(user || userProfile);
+
+  const catalogBanner = promoSettings?.catalogBanner;
+  const isCatalogBannerVisible = useMemo(() => {
+    if (!promoSettings?.enabled || !catalogBanner?.enabled) return false;
+    if (!isPromoAudienceMatch(catalogBanner.targetAudience, isAuthenticated)) return false;
+    if (!isPromoScheduleActive(catalogBanner.startDate, catalogBanner.expiresAt, now)) return false;
+    if (!catalogBanner.text && !catalogBanner.badgeText) return false;
     return true;
+  }, [promoSettings?.enabled, catalogBanner, isAuthenticated, now]);
+
+  const handleCatalogBannerCtaClick = () => {
+    try {
+      recordPromoClick('catalog_banner', true).catch(() => {});
+    } catch {
+      // Telemetry error swallowed silently to ensure zero latency
+    }
+
+    if (!catalogBanner) return;
+    const action = catalogBanner.ctaAction;
+    if (action === 'consignment_modal') {
+      if (onOpenConsignmentModal) {
+        onOpenConsignmentModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Sell Your Vehicle') || b.textContent?.includes('Consign')
+      );
+      if (btn) btn.click();
+    } else if (action === 'auth_modal') {
+      if (onOpenAuthModal) {
+        onOpenAuthModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Sign In') || b.textContent?.includes('Register')
+      );
+      if (btn) btn.click();
+    } else if (action === 'contact_modal') {
+      if (onOpenContactModal) {
+        onOpenContactModal();
+        return;
+      }
+      const btn = Array.from(document.querySelectorAll('button')).find(
+        (b) => b.textContent?.includes('Contact') || b.textContent?.includes('Inquiry')
+      );
+      if (btn) btn.click();
+    } else if (action === 'external_url') {
+      if (catalogBanner.ctaUrl) {
+        let destination = catalogBanner.ctaUrl.trim();
+        if (!destination.startsWith('http://') && !destination.startsWith('https://')) {
+          destination = `https://${destination}`;
+        }
+        window.open(destination, '_blank', 'noopener,noreferrer');
+      }
+    }
   };
 
-  // Helper predicate: Schedule window evaluation
-  const matchesSchedule = (startDate?: string | number, expiresAt?: string | number): boolean => {
-    const now = Date.now();
-    if (startDate) {
-      const startMs = typeof startDate === 'number' ? startDate : new Date(startDate).getTime();
-      if (!isNaN(startMs) && now < startMs) return false;
-    }
-    if (expiresAt) {
-      const expireMs = typeof expiresAt === 'number' ? expiresAt : new Date(expiresAt).getTime();
-      if (!isNaN(expireMs) && now > expireMs) return false;
-    }
-    return true;
-  };
-
-  // Active promo cards filtered by enabled, audience, schedule, and client dismissal
+  // Active promo cards filtered by enabled, targetAudience, and active schedule window
   const activePromoCards = useMemo(() => {
     if (!promoSettings.enabled) return [];
     return (promoSettings.cards || []).filter((card) => {
       if (!card.enabled) return false;
-      if (dismissedIds.includes(card.id)) return false;
-      if (!matchesAudience(card.targetAudience)) return false;
-      if (!matchesSchedule(card.startDate, card.expiresAt)) return false;
+      if (!isPromoAudienceMatch(card.targetAudience, isAuthenticated)) return false;
+      if (!isPromoScheduleActive(card.startDate, card.expiresAt, now)) return false;
       return true;
     });
-  }, [promoSettings, dismissedIds, user]);
+  }, [promoSettings.enabled, promoSettings.cards, isAuthenticated, now]);
 
-  const filteredAuctions = auctions.filter((lot: Auction) => {
-    // Draft and pending_review lots are strictly excluded from public catalog views
-    if (lot.status === 'draft' || lot.status === 'pending_review') return false;
-    if (filterStatus === 'live' && !isLive(lot.status, lot.startTime, lot.endTime, now)) return false;
-    if (filterStatus === 'upcoming' && !isUpcoming(lot.status, lot.startTime, lot.endTime, now)) return false;
-    if (filterStatus === 'ended' && !isEnded(lot.status, lot.startTime, lot.endTime, now)) return false;
+  const filteredAuctions = useMemo(() => {
+    return auctions.filter((lot: Auction) => {
+      // Draft and pending_review lots are strictly excluded from public catalog views
+      if (lot.status === 'draft' || lot.status === 'pending_review') return false;
+      if (filterStatus === 'live' && !isLive(lot.status, lot.startTime, lot.endTime, now)) return false;
+      if (filterStatus === 'upcoming' && !isUpcoming(lot.status, lot.startTime, lot.endTime, now)) return false;
+      if (filterStatus === 'ended' && !isEnded(lot.status, lot.startTime, lot.endTime, now)) return false;
 
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const match =
-        (lot.title || '').toLowerCase().includes(q) ||
-        (lot.subtitle || '').toLowerCase().includes(q) ||
-        (lot.vin || '').toLowerCase().includes(q) ||
-        (lot.make || '').toLowerCase().includes(q) ||
-        (lot.model || '').toLowerCase().includes(q) ||
-        (lot.location || '').toLowerCase().includes(q);
-      if (!match) return false;
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const match =
+          (lot.title || '').toLowerCase().includes(q) ||
+          (lot.subtitle || '').toLowerCase().includes(q) ||
+          (lot.vin || '').toLowerCase().includes(q) ||
+          (lot.make || '').toLowerCase().includes(q) ||
+          (lot.model || '').toLowerCase().includes(q) ||
+          (lot.location || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [auctions, filterStatus, now, searchTerm]);
+
+  const publicAuctions = useMemo(
+    () => auctions.filter((a: Auction) => a.status !== 'draft' && a.status !== 'pending_review'),
+    [auctions]
+  );
+
+  // Unified grid injection pipeline
+  const gridItems = useMemo(() => {
+    // Low Inventory (<= 2 lots): Maintain current padding behavior by appending active promo cards
+    // to trailing slots to preserve a full 3-card desktop row.
+    if (publicAuctions.length <= 2) {
+      const items: Array<{ kind: 'auction'; lot: Auction } | { kind: 'promo'; card: PromoCardConfig }> =
+        filteredAuctions.map((lot) => ({ kind: 'auction', lot }));
+
+      if (promoSettings.enabled && activePromoCards.length > 0) {
+        if (filteredAuctions.length > 0) {
+          const promoSlotsCount = Math.max(0, 3 - filteredAuctions.length);
+          const trailingPromos = activePromoCards.slice(0, promoSlotsCount);
+          trailingPromos.forEach((card) => {
+            items.push({ kind: 'promo', card });
+          });
+        } else if (!searchTerm.trim() && filterStatus === 'all') {
+          // Zero catalog lots and unfiltered view: populate up to 3 cards
+          activePromoCards.slice(0, 3).forEach((card) => {
+            items.push({ kind: 'promo', card });
+          });
+        }
+      }
+      return items;
     }
-    return true;
-  });
 
-  // Calculate promotional card slots when catalog non-draft auctions count <= 2
-  const publicAuctions = auctions.filter((a: Auction) => a.status !== 'draft' && a.status !== 'pending_review');
-  const shouldInjectPromos = promoSettings.enabled && publicAuctions.length <= 2 && activePromoCards.length > 0;
-  const promoSlotsCount = shouldInjectPromos ? Math.max(1, 3 - filteredAuctions.length) : 0;
-  const promoCardsToInject = shouldInjectPromos ? activePromoCards.slice(0, promoSlotsCount) : [];
+    // Populated Inventory (> 2 lots):
+    // If cadenceInterval > 0 and active promo cards exist, splice qualifying cards into the grid at every N-th position
+    // (e.g., if interval is 6, insert at index 5, index 11, etc.), sequentially cycling through available active promo cards.
+    // If cadenceInterval === 0, undefined, or no promo cards qualify, render vehicle listings only.
+    const cadenceInterval = promoSettings.cadenceInterval ?? 6;
+    if (!promoSettings.enabled || cadenceInterval <= 0 || activePromoCards.length === 0) {
+      return filteredAuctions.map((lot) => ({ kind: 'auction' as const, lot }));
+    }
+
+    const items: Array<{ kind: 'auction'; lot: Auction } | { kind: 'promo'; card: PromoCardConfig }> = [];
+    let promoIndex = 0;
+    let lotIndex = 0;
+
+    while (lotIndex < filteredAuctions.length) {
+      if ((items.length + 1) % cadenceInterval === 0) {
+        const promoCard = activePromoCards[promoIndex % activePromoCards.length];
+        items.push({
+          kind: 'promo',
+          card: promoCard
+        });
+        promoIndex++;
+      } else {
+        items.push({
+          kind: 'auction',
+          lot: filteredAuctions[lotIndex]
+        });
+        lotIndex++;
+      }
+    }
+
+    return items;
+  }, [
+    publicAuctions.length,
+    filteredAuctions,
+    promoSettings.enabled,
+    promoSettings.cadenceInterval,
+    activePromoCards,
+    searchTerm,
+    filterStatus
+  ]);
 
   return (
-    <div className="w-full bg-[#f8f9fa] text-zinc-900 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Catalog Banner & Title */}
+    <div className="w-full bg-[#f8f9fa] text-zinc-900">
+      {/* Edge-to-Edge Catalog Announcement Ribbon (Flush directly beneath Navbar) */}
+      {isCatalogBannerVisible && catalogBanner && (
+        <div className="w-full border-b border-slate-800 bg-slate-900/95 backdrop-blur-md py-2 sm:py-2.5 relative z-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap min-w-0">
+              {catalogBanner.badgeText && catalogBanner.badgeText.trim() !== '' && (
+                <span className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                  {catalogBanner.badgeText}
+                </span>
+              )}
+              {catalogBanner.text && (
+                <span className="text-xs sm:text-sm text-slate-200 font-normal leading-relaxed">
+                  {catalogBanner.text}
+                </span>
+              )}
+            </div>
+
+            {catalogBanner.ctaText && (
+              <button
+                type="button"
+                onClick={handleCatalogBannerCtaClick}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-lg shadow-sm transition-colors flex items-center gap-1.5 shrink-0 self-end sm:self-auto cursor-pointer"
+              >
+                <span>{catalogBanner.ctaText}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Catalog Container */}
+      <div className="w-full pt-6 pb-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Catalog Banner & Title */}
         <div className="bg-[#121619] rounded-2xl text-white p-6 sm:p-8 border border-zinc-800 shadow-xl relative overflow-hidden">
           {/* Subtle background glow */}
           <div className="absolute -right-20 -top-20 w-80 h-80 bg-red-700/10 rounded-full blur-3xl pointer-events-none" />
@@ -411,7 +518,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
         </div>
 
         {/* Vehicle Catalog Grid */}
-        {filteredAuctions.length === 0 && promoCardsToInject.length === 0 ? (
+        {gridItems.length === 0 ? (
           <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center space-y-3 shadow-xs">
             <Car className="w-12 h-12 text-zinc-400 mx-auto" />
             <h3 className="text-base font-bold text-zinc-800">No vehicle listings match your filter</h3>
@@ -431,20 +538,22 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredAuctions.map((lot) => (
-              <CatalogCard
-                key={lot.id}
-                lot={lot}
-                isActive={lot.id === activeAuctionId}
-                onSelectAuction={onSelectAuction}
-                onOpenListingEditor={onOpenListingEditor}
-                onOpenConsignmentModal={onOpenConsignmentModal}
-                isAdmin={isAdmin}
-              />
-            ))}
+            {gridItems.map((item, index) => {
+              if (item.kind === 'auction') {
+                return (
+                  <CatalogCard
+                    key={item.lot.id}
+                    lot={item.lot}
+                    isActive={item.lot.id === activeAuctionId}
+                    onSelectAuction={onSelectAuction}
+                    onOpenListingEditor={onOpenListingEditor}
+                    onOpenConsignmentModal={onOpenConsignmentModal}
+                    isAdmin={isAdmin}
+                  />
+                );
+              }
 
-            {/* Injected Promotional Campaign Cards */}
-            {promoCardsToInject.map((card) => {
+              const card = item.card;
               const themeStyles = {
                 amber: {
                   container: 'border-amber-500/30 hover:border-amber-500/60 bg-gradient-to-b from-[#1c1813] via-[#141619] to-[#0e1114]',
@@ -476,22 +585,12 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
 
               return (
                 <div
-                  key={card.id}
+                  key={`${card.id}-${index}`}
                   className={`rounded-2xl border flex flex-col justify-between relative shadow-xl overflow-hidden transition-all duration-300 hover:shadow-2xl group ${themeStyles.container}`}
                   style={{ minHeight: '380px' }}
                 >
                   {/* Atmospheric Glow */}
                   <div className={`absolute -right-16 -top-16 w-56 h-56 rounded-full blur-3xl pointer-events-none ${themeStyles.glow}`} />
-
-                  {/* Dismiss Button (✕) */}
-                  <button
-                    type="button"
-                    onClick={(e) => handleDismissPromo(card.id, e)}
-                    className="absolute top-4 right-4 z-20 p-1.5 rounded-full bg-black/40 hover:bg-black/80 text-zinc-400 hover:text-white transition-all cursor-pointer backdrop-blur-xs"
-                    title="Dismiss offer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
 
                   {/* Top Media Header */}
                   {hasMedia && (
@@ -552,6 +651,7 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
         )}
       </div>
     </div>
+  </div>
   );
 };
 

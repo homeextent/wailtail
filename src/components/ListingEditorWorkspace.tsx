@@ -264,6 +264,28 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const { user, userProfile } = useAuth();
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
 
+  // Safe fallback for invalid workspace parameters: if id is 'new' or lot document does not exist
+  useEffect(() => {
+    const rawId = auction?.id?.trim();
+    const isInvalidId = !rawId || rawId === 'new' || rawId === 'undefined';
+    const isNonExistentInCatalog = Boolean(
+      allAuctions &&
+      allAuctions.length > 0 &&
+      rawId &&
+      rawId !== MAIN_AUCTION_ID &&
+      !allAuctions.some((lot) => lot.id === rawId)
+    );
+
+    if (isInvalidId || isNonExistentInCatalog) {
+      const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
+      try {
+        sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
+      } catch {}
+      window.history.pushState({}, '', fallbackUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  }, [auction?.id, allAuctions, isAdmin]);
+
   const handleBackToDashboard = () => {
     if (onBackToDashboard) {
       onBackToDashboard();

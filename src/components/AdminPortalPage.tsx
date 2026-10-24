@@ -1019,7 +1019,10 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
   useEffect(() => {
     const unsub = subscribeToPromoSettings((settings) => {
-      setPromoSettings(settings);
+      setPromoSettings({
+        ...settings,
+        cadenceInterval: typeof settings.cadenceInterval === 'number' ? settings.cadenceInterval : 6
+      });
     });
     return () => unsub();
   }, []);
@@ -1037,6 +1040,11 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     try {
       const mergedSettings: PlatformPromoSettings = {
         ...promoSettings,
+        cadenceInterval: typeof promoSettings.cadenceInterval === 'number' ? promoSettings.cadenceInterval : 6,
+        catalogBanner: promoSettings.catalogBanner ? {
+          ...promoSettings.catalogBanner,
+          clickCount: promoAnalytics['catalog_banner'] ?? promoSettings.catalogBanner?.clickCount ?? 0
+        } : undefined,
         lotHeaderBanner: {
           ...promoSettings.lotHeaderBanner,
           clickCount: promoAnalytics['lot_header_banner'] ?? promoSettings.lotHeaderBanner?.clickCount ?? 0
@@ -1094,6 +1102,24 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       ...prev,
       lotHeaderBanner: {
         ...prev.lotHeaderBanner,
+        ...updates
+      }
+    }));
+  };
+
+  const handleUpdateCatalogBanner = (updates: Partial<LotHeaderBannerConfig>) => {
+    setPromoSettings((prev) => ({
+      ...prev,
+      catalogBanner: {
+        ...(prev.catalogBanner || {
+          enabled: false,
+          badgeText: '',
+          text: '',
+          ctaText: '',
+          ctaAction: 'consignment_modal',
+          targetAudience: 'all',
+          clickCount: 0
+        }),
         ...updates
       }
     }));
@@ -3005,39 +3031,212 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </div>
               </div>
 
-              {/* Master Platform Promotional Toggle */}
-              <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-bold text-white flex items-center gap-2">
-                    <span>Promotional Subsystem Master Switch</span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                        promoSettings.enabled
-                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                      }`}
-                    >
-                      {promoSettings.enabled ? 'ACTIVE' : 'DISABLED'}
-                    </span>
+              {/* Master Platform Promotional Toggle & Catalog Grid Cadence */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Master Platform Promotional Toggle */}
+                <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>Promotional Subsystem Master Switch</span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          promoSettings.enabled
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                        }`}
+                      >
+                        {promoSettings.enabled ? 'ACTIVE' : 'DISABLED'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Controls all client-facing catalog injection cards and direct-lot promotional banners globally.
+                    </p>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Controls all client-facing catalog injection cards and direct-lot promotional banners globally.
-                  </p>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0 ml-4">
+                    <input
+                      type="checkbox"
+                      checked={!!promoSettings.enabled}
+                      onChange={(e) =>
+                        setPromoSettings((prev) => ({
+                          ...prev,
+                          enabled: e.target.checked
+                        }))
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!!promoSettings.enabled}
-                    onChange={(e) =>
-                      setPromoSettings((prev) => ({
-                        ...prev,
-                        enabled: e.target.checked
-                      }))
-                    }
-                    className="sr-only peer"
+
+                {/* Catalog Grid Cadence */}
+                <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800 flex flex-col justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <label htmlFor="catalog-grid-cadence" className="text-sm font-bold text-white block cursor-pointer">
+                        Catalog Grid Cadence
+                      </label>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Injection rhythm for promotional cards across populated vehicle catalog grids.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <select
+                      id="catalog-grid-cadence"
+                      value={promoSettings.cadenceInterval ?? 6}
+                      onChange={(e) =>
+                        setPromoSettings((prev) => ({
+                          ...prev,
+                          cadenceInterval: Number(e.target.value)
+                        }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                    >
+                      <option value={0}>Low Inventory Only (&le; 2 Lots)</option>
+                      <option value={6}>Every 6 Lots (2 Rows — High Visibility)</option>
+                      <option value={9}>Every 9 Lots (3 Rows — Balanced Editorial)</option>
+                      <option value={12}>Every 12 Lots (4 Rows — Low Frequency)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Catalog Homepage Banner Configuration */}
+              <div className="p-5 rounded-xl bg-[#121619] border border-zinc-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Catalog Homepage Announcement Banner</h4>
+                      <p className="text-[11px] text-zinc-400">
+                        Top banner pinned directly above the main vehicle catalog header
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-300">
+                      <MousePointerClick className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{(promoAnalytics['catalog_banner'] ?? promoSettings.catalogBanner?.clickCount) || 0} clicks</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!promoSettings.catalogBanner?.enabled}
+                        onChange={(e) => handleUpdateCatalogBanner({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Badge Text (Optional)</label>
+                    <input
+                      type="text"
+                      value={promoSettings.catalogBanner?.badgeText || ''}
+                      onChange={(e) => handleUpdateCatalogBanner({ badgeText: e.target.value })}
+                      placeholder="e.g. SPECIAL ANNOUNCEMENT"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Target Audience</label>
+                    <select
+                      value={promoSettings.catalogBanner?.targetAudience || 'all'}
+                      onChange={(e) => handleUpdateCatalogBanner({ targetAudience: e.target.value as PromoAudience })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    >
+                      <option value="all">All Visitors (Guests & Registered)</option>
+                      <option value="guests_only">Guests Only (Unauthenticated)</option>
+                      <option value="authenticated_only">Registered Members Only</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-zinc-400">Banner Announcement Copy</label>
+                  <textarea
+                    rows={2}
+                    value={promoSettings.catalogBanner?.text || ''}
+                    onChange={(e) => handleUpdateCatalogBanner({ text: e.target.value })}
+                    placeholder="e.g. Zero buyer premiums & $0 seller fees for our inaugural catalog launch."
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white resize-y"
                   />
-                  <div className="w-11 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">CTA Button Text</label>
+                    <input
+                      type="text"
+                      value={promoSettings.catalogBanner?.ctaText || ''}
+                      onChange={(e) => handleUpdateCatalogBanner({ ctaText: e.target.value })}
+                      placeholder="e.g. Consign Vehicle"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">CTA Action Route</label>
+                    <select
+                      value={promoSettings.catalogBanner?.ctaAction || 'consignment_modal'}
+                      onChange={(e) => handleUpdateCatalogBanner({ ctaAction: e.target.value as PromoCtaAction })}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    >
+                      <option value="consignment_modal">Consignment Modal</option>
+                      <option value="auth_modal">Authentication / Login Modal</option>
+                      <option value="contact_modal">Seller Contact Modal</option>
+                      <option value="external_url">External Web Link</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">External URL (if selected)</label>
+                    <input
+                      type="text"
+                      disabled={promoSettings.catalogBanner?.ctaAction !== 'external_url'}
+                      value={promoSettings.catalogBanner?.ctaUrl || ''}
+                      onChange={(e) => handleUpdateCatalogBanner({ ctaUrl: e.target.value })}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white disabled:opacity-40"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Start Date / Window (Optional)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(promoSettings.catalogBanner?.startDate)}
+                      onChange={(e) =>
+                        handleUpdateCatalogBanner({
+                          startDate: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-zinc-500" />
+                      <span>Expiration Date (Optional)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={toDateTimeLocalValue(promoSettings.catalogBanner?.expiresAt)}
+                      onChange={(e) =>
+                        handleUpdateCatalogBanner({
+                          expiresAt: e.target.value ? new Date(e.target.value).toISOString() : undefined
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white font-mono"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Lot View Header Banner Configuration */}
