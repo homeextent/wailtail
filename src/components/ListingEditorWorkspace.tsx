@@ -81,7 +81,8 @@ import {
   Gavel,
   Mail,
   Wand2,
-  Rocket
+  Rocket,
+  ImageOff
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 
@@ -364,6 +365,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   } | null>(null);
   const [pickerSearchTerm, setPickerSearchTerm] = useState('');
   const [pickerFilterCategory, setPickerFilterCategory] = useState<string>('all');
+  const [pickerBrokenImages, setPickerBrokenImages] = useState<Record<string, boolean>>({});
 
   // Video metadata status
   const [metadataFetchSuccess, setMetadataFetchSuccess] = useState<string | null>(null);
@@ -4131,35 +4133,87 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             </div>
 
             {/* Photos Grid */}
-            <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-4 gap-3 py-2">
-              {[
-                ...heroImages.map((hUrl, idx) => ({ id: `hero-${idx}`, url: hUrl, title: `Hero Photo #${idx + 1}`, category: 'exterior' as const })),
-                ...galleryImages
-              ]
-                .filter((item) => {
+            <div className="flex-1 overflow-y-auto max-h-[60vh] p-1 custom-scrollbar">
+              {(() => {
+                const filteredItems = [
+                  ...heroImages.map((hUrl, idx) => ({ id: `hero-${idx}`, url: hUrl, title: `Hero Photo #${idx + 1}`, caption: '', category: 'exterior' as const, isPdf: false })),
+                  ...galleryImages
+                ].filter((item) => {
                   if (!item.url || !item.url.trim()) return false;
-                  if (pickerFilterCategory !== 'all' && item.category !== pickerFilterCategory) return false;
-                  if (pickerSearchTerm && !item.title.toLowerCase().includes(pickerSearchTerm.toLowerCase())) return false;
+                  // Exclude non-image PDF inspection documents from selectable options
+                  const isPdfAsset = item.isPdf === true || item.url.toLowerCase().endsWith('.pdf') || item.url.toLowerCase().includes('.pdf');
+                  if (isPdfAsset) return false;
+                  // Category filter
+                  if (pickerFilterCategory !== 'all') {
+                    const normalizedCat = item.category === 'underside' ? 'underbody' : (item.category === 'docs' ? 'documentation' : item.category);
+                    const normalizedFilter = pickerFilterCategory === 'docs' ? 'documentation' : pickerFilterCategory;
+                    if (normalizedCat !== normalizedFilter) return false;
+                  }
+                  // Search query filter (title or caption, case-insensitively)
+                  if (pickerSearchTerm) {
+                    const term = pickerSearchTerm.toLowerCase();
+                    const matchesTitle = item.title ? item.title.toLowerCase().includes(term) : false;
+                    const matchesCaption = item.caption ? item.caption.toLowerCase().includes(term) : false;
+                    if (!matchesTitle && !matchesCaption) return false;
+                  }
                   return true;
-                })
-                .map((item, idx) => (
-                  <div
-                    key={item.id || idx}
-                    onClick={() => handleSelectFromGallery(item.url)}
-                    className="group relative rounded-xl overflow-hidden border border-zinc-700 hover:border-red-500 bg-zinc-900 cursor-pointer aspect-[4/3] shadow-sm hover:scale-[1.02] transition-all"
-                  >
-                    <img
-                      src={item.url}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between text-white text-xs">
-                      <span className="font-bold text-[11px] line-clamp-2">{item.title}</span>
-                      <span className="self-end px-2 py-0.5 rounded bg-red-700 text-[10px] font-bold">Select Photo</span>
+                });
+
+                if (filteredItems.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-3">
+                        <ImageIcon className="w-6 h-6" />
+                      </div>
+                      <p className="text-sm font-semibold text-slate-300">No photographs found matching your filter</p>
+                      <p className="text-xs text-slate-500 mt-1">Try searching with different keywords or choosing another category.</p>
                     </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {filteredItems.map((item, idx) => {
+                      const isBroken = pickerBrokenImages[item.url];
+                      return (
+                        <button
+                          key={item.id || idx}
+                          type="button"
+                          onClick={() => handleSelectFromGallery(item.url)}
+                          className="relative group w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500 bg-slate-950 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all duration-200 cursor-pointer"
+                        >
+                          {!isBroken ? (
+                            <img
+                              src={item.url}
+                              alt={item.title || 'Gallery Photograph'}
+                              onError={() => setPickerBrokenImages(prev => ({ ...prev, [item.url]: true }))}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-2 text-slate-500 bg-slate-900">
+                              <ImageOff className="w-6 h-6 text-slate-500 mb-1" />
+                              <span className="text-[10px] text-slate-400 font-medium text-center">Failed to load</span>
+                            </div>
+                          )}
+
+                          {/* Floating Category Badge Pill on Hover */}
+                          <div className="absolute top-2 left-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-md bg-slate-900/90 backdrop-blur-md border border-slate-700/70 text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none shadow-md z-10">
+                            {item.category || 'Gallery'}
+                          </div>
+
+                          {/* Bottom Gradient Scrim with Photo Caption/Title on Hover */}
+                          <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                            <p className="text-[11px] text-slate-200 truncate font-medium text-left">
+                              {item.caption || item.title || 'Untitled Photograph'}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
+                );
+              })()}
             </div>
           </div>
         </div>
