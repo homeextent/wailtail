@@ -8,9 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- *No unreleased changes.*
+
+---
+
+## [1.7.0] - 2026-10-25 — Provenance Cloud Dossiers, PDF Canvas Overhaul & Pinned Announcements
+
 ### Added
-- **Knowledge Base Sync Post-Commit Hook (`scripts/post-commit`)**: Tracked repository post-commit hook script that mirrors core documentation files (`README.md`, `CHANGELOG.md`, `SYSTEM_BIBLE.md`) and database security rules (`firestore.rules`) to the local Google Drive Knowledge Base ingestion directory (`/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`) with non-blocking error tolerance (`2>/dev/null || true`).
+- **`serviceRecordsUrl` Property on Auction and ListingDraftSchema (`src/types.ts`)**: Added optional `serviceRecordsUrl?: string;` property on `Auction` and `ListingDraftSchema` interfaces for external service records and provenance documentation.
+- **Section 1 Cloud Dossier Authoring Controls (`src/components/ListingEditorWorkspace.tsx`, `src/components/AdminPanelModal.tsx`)**: Authoring inputs in Section 1 (Row 10) for external cloud dossiers (Google Drive, Dropbox, OneDrive) with complete form state hydration, URL protocol sanitization via `formatExternalUrl()`, and JSON import/export roundtripping.
+- **Featured Cloud Dossier Card in Gallery Records Tab (`src/components/PhotoGalleryGrid.tsx`)**: Dedicated high-contrast featured card in Section 5 ("Records & Title") with external provider detection (Google Drive, Dropbox, OneDrive, or generic cloud storage) and direct `target="_blank"` external navigation.
+- **Public Vehicle Highlights Cloud Dossier Button (`src/App.tsx`)**: Synchronized "Historical Records & Invoices (Cloud Dossier) ↗" button in the public Vehicle Highlights sidebar specs card matching the listing editor preview pane.
+- **Client-Side Upload Guards (`src/components/ListingEditorWorkspace.tsx`, `src/components/AdminPanelModal.tsx`)**: Implemented pre-flight file size upload guards enforcing a strict 25MB limit on PDF inspection documents and 20MB limit on raw photo uploads before network transmission.
+- **Pinned Comment Metadata & Single-Pin Constraint (`src/types.ts`, `src/services/auctionService.ts`, `src/components/CommentSection.tsx`)**: Extended `Comment` schema with `isPinned?: boolean;`, `pinnedAt?: number;`, and `pinnedBy?: string;`. Enforced single-pinned announcement constraint in Firestore (`pinComment()` atomically unpinning existing pinned comments on the lot) and prioritized sorting lifting pinned announcements to the top of the discussion feed with high-contrast styling and an unpin trigger.
+- **Discussion Stream Regex URL Linkifier (`src/components/CommentSection.tsx`)**: Regex linkifier helper (`renderLinkedText`) converting raw HTTP/HTTPS URLs within community comments into secure, clickable hyperlinks (`target="_blank"`, `rel="noopener noreferrer"`).
+- **Repository Knowledge Base Sync Post-Commit Hook (`scripts/post-commit`)**: Tracked repository post-commit hook script that mirrors core documentation files (`README.md`, `CHANGELOG.md`, `SYSTEM_BIBLE.md`) and database security rules (`firestore.rules`) to the local Google Drive Knowledge Base ingestion directory (`/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`) with non-blocking error tolerance (`2>/dev/null || true`).
 - **Knowledge Base Ingestion Pipeline Documentation (`README.md`, `SYSTEM_BIBLE.md`)**: Documented the Git post-commit hook activation workflow (`cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit`), the operational distinction between continuous Google Drive syncing and session-frozen Gemini Gem Knowledge Bases, and the clear separation between local Knowledge Base mirroring and live database security rule deployments (`npm run deploy:rules`).
+
+### Changed
+- **Top Header Ergonomics (`src/components/AuctionHeader.tsx`)**: Removed the Cloud Dossier button from `AuctionHeader.tsx` LOT ACTIONS to eliminate mobile clutter and preserve above-the-fold bidding telemetry.
+- **Lightbox Document Canvas Maximization (`src/components/PhotoGalleryGrid.tsx`, `src/components/ListingEditorWorkspace.tsx`)**: Expanded the PDF inspection report lightbox canvas across `PhotoGalleryGrid.tsx` and `ListingEditorWorkspace.tsx` to `max-w-5xl` / `max-w-6xl` at `h-[78vh]`.
+- **Consolidated PDF Utility Toolbar (`src/components/PhotoGalleryGrid.tsx`, `src/components/ListingEditorWorkspace.tsx`)**: Collapsed 4-row vertical header and detached bottom buttons into a single unified horizontal top bar featuring document icon, truncated title, category badge, ghost "Open in New Tab" link, and amber "Download" CTA.
+- **Native PDF Viewport Parameters (`src/components/PhotoGalleryGrid.tsx`, `src/components/ListingEditorWorkspace.tsx`)**: Injected `#toolbar=1&navpanes=0&view=FitH` URL parameters into embedded iframe URLs for automatic container width fitting and native browser zoom controls.
+
+### Fixed
+- **Gallery Image Picker Aspect Ratio (`src/components/ListingEditorWorkspace.tsx`, `src/components/AdminPanelModal.tsx`)**: Restructured cards in photo picker modals to `aspect-[4/3]` with `object-cover`, eliminating vertical squishing and image distortion.
+- **Floating Category Badges & Caption Scrims (`src/components/ListingEditorWorkspace.tsx`, `src/components/AdminPanelModal.tsx`)**: Added floating category badge pills and bottom caption scrim overlays on gallery picker hover states.
+- **Filtered Non-Image PDF Documents from Photo Pickers (`src/components/ListingEditorWorkspace.tsx`, `src/components/AdminPanelModal.tsx`)**: Excluded PDF documents from photo picker modals, ensuring only valid image assets can be selected for hero and showcase covers.
+- **Category Lightbox Scoping (`src/components/PhotoGalleryGrid.tsx`)**: Scoped photo cycling, thumbnail strip navigation, and counter metrics (Photo X of [subset]) strictly to the active category subset in `PhotoGalleryGrid.tsx`.
 
 ---
 

@@ -76,6 +76,7 @@ interface Auction {
   distanceUnit: 'km' | 'mi'; // Canadian standard default is 'km'
   highlightsBadge?: string; // Header badge on specs card (e.g. "1978 911")
   hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
+  serviceRecordsUrl?: string; // Optional direct URL to external provenance cloud dossier (Google Drive, Dropbox, OneDrive)
   location: string;
   sellerName: string;
   sellerEmail?: string; // Optional consignor contact email for winning bidder settlement
@@ -147,6 +148,9 @@ interface Comment {
   timestamp: number;
   upvotes: number;
   flagged?: boolean;
+  isPinned?: boolean; // Pinned seller/admin announcement indicator
+  pinnedAt?: number; // Unix timestamp when pinned
+  pinnedBy?: string; // UID of user/admin who pinned the comment
 }
 ```
 
@@ -624,23 +628,26 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ## 5. Media & Asset Pipeline
 
-### 5.1 Cloud Storage Asset Pipeline & 900KB Document Size Guard
+### 5.1 Cloud Storage Asset Pipeline, Client-Side Upload Guards & PDF Viewer Architecture
 1. **Firebase Cloud Storage HTTPS Pipeline**:
    - All uploaded vehicle photos, hero banners, and inspection documents are streamed directly to Firebase Cloud Storage (`gs://wailtail`) via `uploadImageToStorage()`.
    - Cloud Storage returns public HTTPS download URLs (`https://firebasestorage.googleapis.com/...`), taking ~120 bytes of text per photo inside Firestore documents.
    - Eliminates Firestore's 1MB per-document payload ceiling, allowing listings to host 100+ high-resolution vehicle photos.
-2. **Client-Side Micro-Compression Engine (`compressImageDataUrl`)**:
-   - Prior to bucket dispatch, raw image Data URLs undergo client-side HTML5 canvas micro-compression, scaling down excessively oversized imagery (max dimension 1200px, 75% quality JPEG).
-   - Serves as an essential fallback mechanism if non-storage or cached payloads are passed through form state.
+2. **Client-Side Upload Guards & Micro-Compression Engine**:
+   - **Client-Side 25MB PDF Document Guard**: Enforces an explicit 25MB client-side file size ceiling (`file.size <= 25 * 1024 * 1024`) on inspection document uploads across `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx`. Rejects oversized PDF files with an immediate error toast before network transmission.
+   - **Client-Side 20MB Raw Photo Guard**: Enforces a 20MB client-side limit on raw photo uploads before processing.
+   - **Micro-Compression Engine (`compressImageDataUrl`)**: Prior to bucket dispatch, raw image Data URLs undergo client-side HTML5 canvas micro-compression, scaling down excessively oversized imagery (max dimension 1200px, 75% quality JPEG). Serves as an essential fallback mechanism if non-storage or cached payloads are passed through form state.
 3. **900KB Document Payload Size Cap (`saveMediaConfig`)**:
    - `saveMediaConfig()` in `auctionService.ts` executes rigorous pre-flight payload sanitization and size enforcement.
    - Sets a strict internal threshold of 900KB (below Firestore's hard 1,048,576 byte limit) for serialized documents, guaranteeing zero `FirebaseError: Payload exceeds maximum allowed size` exceptions.
 4. **Hero Carousel & Root Auction Lead Hero Sync**:
    - Ordered image array rendered in Bring-a-Trailer style carousel format with drag-and-drop reordering (`onDragStart`, `onDrop`) and positional nudges (`← Left` / `Right →`).
    - Automatically mirrors `leadHeroImage` to the root `auctions/{id}` document during master save operations to power catalog card thumbnails.
-5. **Categorized Photo Grid & Documents**:
+5. **Categorized Photo Grid & Maximized PDF Canvas Overhaul**:
    - 6 categorized sub-galleries: `exterior`, `interior`, `engine`, `underbody`, `docs`, `documentation`.
-   - Native support for PDF vehicle inspection reports with high-contrast document badges and full-screen lightbox inspection.
+   - **Maximized PDF Viewer Canvas**: Expanded inspection report lightbox canvas across `PhotoGalleryGrid.tsx` and `ListingEditorWorkspace.tsx` to `max-w-5xl` / `max-w-6xl` at `h-[78vh]`, providing an expansive viewport for multi-page historical documents and inspection certificates.
+   - **Consolidated Single-Row Control Toolbar**: Collapsed fragmented multi-row headers and detached bottom CTAs into a single unified horizontal top toolbar containing file icon, truncated document title, category badge, ghost "Open in New Tab" link, and prominent amber "Download" CTA.
+   - **Native `#view=FitH` Embedding**: Appends `#toolbar=1&navpanes=0&view=FitH` URL parameters to embedded iframe sources, ensuring inspection PDFs automatically fit container width and present native browser zoom/pagination controls without manual user zooming.
 
 ### 5.2 Serverless YouTube Video Ingestion Pipeline
 1. **Vercel Serverless Proxy Endpoint (`api/youtube-playlist.ts`)**:
@@ -775,6 +782,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 * **8-Photo Initial Grid (2x4)**: To eliminate mobile scroll fatigue and optimize rendering performance for lots with 100+ images, mobile viewports truncate the thumbnail display to an initial 8 items (`filteredImages.slice(0, 8)`).
 * **`isMobileExpanded` Toggle Engine**: Controlled via `isMobileExpanded` state. Renders a full-width high-contrast toggle button ("Show All [X] Photos" with grid icon / "Collapse Gallery") below the grid on mobile (`sm:hidden`).
 * **Unbroken Full-Archive Lightbox Navigation**: Truncation applies strictly to the initial grid view. When any thumbnail is clicked, the full lightbox modal launches with access to the complete filtered image array (`validImages.length`). Mobile users can swipe through all vehicle photos in full resolution without needing to expand the thumbnail grid first.
+* **Category Lightbox Scoping**: Scopes photo cycling (`prevPhoto`, `nextPhoto`), thumbnail strip navigation, and counter telemetry ("Photo X of [subset]") strictly to the active category subset in `PhotoGalleryGrid.tsx`. When a user filters by a category (e.g., Exterior, Interior, Engine) and opens the lightbox, navigation remains scoped within that category rather than bleeding across unrelated categories.
 
 #### 4. Showcase Chapter Lightbox Isolation & Gallery Index Safeguard (`InlineShowcaseSection.tsx` & `App.tsx`)
 * **Dedicated Chapter Lightbox State (`activeLightboxPhoto`)**: `InlineShowcaseSection.tsx` maintains its own dedicated internal lightbox state (`activeLightboxPhoto`), allowing high-resolution showcase chapter photos and captions to render independently of `fullGallery`. Directly uploaded chapter photos (outside `fullGallery`) enlarge cleanly with caption and title presentation, dark backdrop blur, Escape key dismissal listener, and window scroll locking (`document.body.style.overflow = 'hidden'`).
@@ -886,6 +894,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       sellerPhone?: string;
       highlightsBadge: string;
       hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
+      serviceRecordsUrl?: string; // Optional direct URL to external provenance cloud dossier (Google Drive, Dropbox, OneDrive)
       
       // Section 2: Overview Narrative & Provenance
       overviewHeading: string;
@@ -915,8 +924,8 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       };
     }
     ```
-  - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections (including `hagertyValuationUrl`).
-  - "Export JSON" action copying active listing state directly to clipboard as formatted JSON (including `hagertyValuationUrl`).
+  - "Import JSON" modal with syntax validation, schema key checks, and atomic state hydration across all sections (including `hagertyValuationUrl` and `serviceRecordsUrl`).
+  - "Export JSON" action copying active listing state directly to clipboard as formatted JSON (including `hagertyValuationUrl` and `serviceRecordsUrl`).
 
 ### 6.3 Full-Page Admin Operations Portal (`/admin` via `AdminPortalPage.tsx`)
 - **Dedicated Route & Access Control**:
@@ -1027,8 +1036,15 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **Platform Branding & Global Settings**: Logo, site name, and global auction defaults.
 - Integrated "Open Listing Editor →" button allowing immediate navigation into the authoring workspace.
 
-### 6.6 Public Q&A Thread & Official Seller / Admin Replies (`CommentSection.tsx`)
+### 6.6 Public Q&A Thread, Pinned Seller Announcements & URL Linkifier (`CommentSection.tsx`)
 - High-visibility public discussion stream for vehicle inquiries, questions, and provenance notes.
+- **Pinned Seller Announcement Subsystem**:
+  - Allows verified sellers and platform administrators to pin an official announcement or provenance note directly to the top of the comment feed.
+  - **Single-Pinned Constraint**: Enforced at the service layer in Firestore via `pinComment(auctionId, commentId, adminUid)`. Atomically iterates through active comments to unpin existing pinned entries before committing `isPinned: true`, `pinnedAt: Date.now()`, and `pinnedBy: adminUid`, ensuring strictly one pinned announcement per lot.
+  - **Prioritized Feed Sorting & Visual Treatment**: Comments are sorted with pinned comments lifted to the very top, styled with amber borders, a prominent `📌 PINNED ANNOUNCEMENT` header badge, and an unpin action trigger for authorized sellers/admins (`unpinComment`).
+- **Discussion Stream Regex URL Linkifier (`renderLinkedText`)**:
+  - Comments dynamically parse raw text and convert HTTP and HTTPS URLs into styled, secure hyperlinks (`target="_blank"`, `rel="noopener noreferrer"`, `text-amber-400 hover:underline`).
+  - Supports non-link text preservation and safe rendering of community documentation links.
 - **Nested Official Responses**: Verified consignors/sellers and platform administrators can reply directly to any question via an inline reply trigger.
 - Official replies render directly beneath the target question, decorated with prominent `SELLER` or `STAFF / ADMIN` badges, distinct border styling, and verified timestamps.
 
@@ -1115,8 +1131,14 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Generates a branded HTML table digest forwarding prospective buyer details to administrative and curation inboxes with zero client-side credential exposure.
   - Built-in error isolation ensures the inquiry dialog succeeds cleanly with user feedback even if email dispatch encounters network latency.
 
-### 6.11 Lot-Level Action Controls (`AuctionHeader.tsx`)
-- Contextual "Watch" and "Share" buttons relocated from the global navigation bar (`Navbar.tsx`) directly into the single-lot view header (`AuctionHeader.tsx`) alongside anti-snipe countdown timers and financial telemetry.
+### 6.11 Lot-Level Action Controls & Provenance Cloud Dossier Placement (`AuctionHeader.tsx`, `App.tsx`, `PhotoGalleryGrid.tsx`)
+- Contextual action controls in `AuctionHeader.tsx` streamlined to focus on "Watch", "Share", and Hagerty Canada Valuation, keeping mobile headers uncluttered and preserving above-the-fold anti-snipe countdown timers and financial telemetry.
+- **Top Header Ergonomics**:
+  - The external Cloud Dossier button was removed from `AuctionHeader.tsx` LOT ACTIONS to eliminate mobile clutter and prevent visual noise in the bidding telemetry bar.
+- **Dual-Surface Cloud Dossier Architecture**:
+  - External cloud service records and provenance dossiers (`serviceRecordsUrl`) are seamlessly surfaced across two high-context locations:
+    1. **Public Vehicle Highlights Sidebar Card (`App.tsx`)**: Prominent "Historical Records & Invoices (Cloud Dossier) ↗" button placed beneath the core technical specifications card, matching the listing editor workspace preview pane.
+    2. **Featured Cloud Dossier Card in Gallery Records Tab (`PhotoGalleryGrid.tsx`)**: Dedicated high-contrast featured card in Section 5 ("Records & Title") with external provider detection (Google Drive, Dropbox, OneDrive, or generic cloud storage) and direct `target="_blank"` external navigation.
 - **Interactive Watch Toggle ("★ Watch" / "★ Watching")**:
   - Real-time watch state (`isWatching`) synchronized with `userProfile.watchlist` array.
   - Clicking invokes `toggleWatchlistLot(user.uid, auction.id)`, updating Firestore `users/{uid}` and `bidders/{uid}` documents and syncing aggregate lot watch tallies via `toggleWatchAuction`.
@@ -1392,6 +1414,17 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
      # Executes: firebase deploy --only firestore:rules
      ```
    - Automatically compiles, validates, and deploys `firestore.rules` to Google Cloud Firestore with real-time CLI status verification.
+
+4. **Git Post-Commit Hook Pipeline & Knowledge Base Synchronization (`scripts/post-commit`)**:
+   - To maintain an automated, zero-drift documentation mirror for external AI tools and the Gemini Gem Knowledge Base, the repository includes a tracked post-commit hook at `scripts/post-commit`.
+   - **Activation**:
+     ```bash
+     cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+     ```
+   - **Mirrored Artifacts**: Automatically mirrors `README.md`, `CHANGELOG.md`, `SYSTEM_BIBLE.md`, and `firestore.rules` to the local Google Drive Knowledge Base directory (`/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`) upon every successful commit with non-blocking error tolerance (`2>/dev/null || true`).
+   - **Operational Distinctions**:
+     - *Google Drive Sync vs. Gemini Gem*: Drive synchronization occurs continuously on commit. Gemini Gem Knowledge Bases freeze context upon session launch; new chat sessions must be created to mount updated context.
+     - *Local Mirroring vs. Live Rules Deployment*: Mirroring `firestore.rules` to Google Drive does not deploy rules to production. Live Firestore rules deployment must be executed explicitly via `npm run deploy:rules`.
 
 ### 7.5 Serverless Edge & Auth Deletion Architecture (`/api/admin-delete-user.ts`)
 
