@@ -12,11 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+<<<<<<< HEAD
 ## [1.6.2] - 2026-10-25 — AuthModal Password Visibility & Backup Infrastructure
 
 ### Added
 - **AuthModal Password Visibility Toggle (`src/components/AuthModal.tsx`)**: Implementation of the `Eye`/`EyeOff` (`lucide-react`) toggle for password inputs with `tabIndex={-1}` for ergonomic tabbing, dynamic `type="password"|"text"` binding, and automatic hidden-state resets on tab switching and modal closure.
 - **Production Backup & Disaster Recovery Posture**: Activation of native Google Cloud safeguards on project `studio-apps-483721`, including 7-day Firestore Point-in-Time Recovery (PITR), 30-day automated daily Firestore backup schedules, and Firebase Cloud Storage Object Versioning (14-day expiration, max 2 versions).
+=======
+## [1.6.1] - 2026-10-24 — Brand Favicon & Reactive Document Title Synchronization
+
+### Added
+- **Brand Favicon Asset (`public/favicon.svg`)**: Extraction of the canonical whale-tail vector path into a standalone high-contrast SVG asset, with a `?v=2` cache-busting query parameter in `index.html`.
+
+### Changed
+- **Reactive Route Title Synchronization (`src/App.tsx`)**: Implementation of a dynamic `useEffect` hook to synchronize `document.title` across Catalog (*Wailtail — Curated Collector Car Auctions*), Single Lot Detail (`${year} ${make} ${model} — Wailtail`), Admin Portal, and Listing Editor Workspace views, eliminating the legacy 1988 Porsche 928 hardcoded fallback.
+>>>>>>> main
 
 ---
 
