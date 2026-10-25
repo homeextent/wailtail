@@ -1,0 +1,4 @@
+#!/bin/sh
+TARGET="/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction"
+mkdir -p "$TARGET"
+cp README.md CHANGELOG.md SYSTEM_BIBLE.md firestore.rules "$TARGET/" 2>/dev/null || true

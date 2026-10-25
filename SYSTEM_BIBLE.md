@@ -1442,6 +1442,44 @@ The platform implements multi-layer session defense mechanisms in `src/context/A
    - **Ban Enforcement**: Checks `profile.isBanned || profile.bannedFromBidding`, triggering immediate sign-out (`fbSignOut`) and error rejection if the member has been restricted.
    - **Admin Privileges Assignment**: Cross-references user email against `ADMIN_EMAILS`, provisioning `role: 'admin'` for authorized staff and default `role: 'bidder'` for standard members.
 
+### 7.7 Continuous Knowledge Base Ingestion Pipeline
+
+To provide external AI coding assistants and the Gemini Gem Knowledge Base with immediate, accurate architectural and rule context, the repository implements an automated post-commit documentation mirror pipeline.
+
+1. **Local Git Hook Script (`scripts/post-commit`)**:
+   Because `.git/hooks/` configurations are local to each clone and intentionally untracked by Git, the canonical hook script is maintained in source control at `scripts/post-commit`:
+   ```sh
+   #!/bin/sh
+   TARGET="/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction"
+   mkdir -p "$TARGET"
+   cp README.md CHANGELOG.md SYSTEM_BIBLE.md firestore.rules "$TARGET/" 2>/dev/null || true
+   ```
+   Developers activate the hook locally via:
+   ```bash
+   cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+   ```
+
+2. **Mirrored Knowledge Base Assets**:
+   On every successful local commit, the hook copies four foundational repository files to Google Drive:
+   - `README.md` — Quickstart, developer workflows, and feature overview.
+   - `CHANGELOG.md` — Version history, recent releases, and unreleased platform updates.
+   - `SYSTEM_BIBLE.md` — Definitive ground-truth system architecture, workflows, and schemas.
+   - `firestore.rules` — Production Firestore security rules and RBAC helpers.
+
+3. **Target Ingestion Directory**:
+   `/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`
+
+4. **Architectural Distinction: Local Knowledge Base Ingestion vs. Live Database Rule Deployment**:
+   - **Local Knowledge Base Ingestion**: The `scripts/post-commit` hook copies files locally to the Google Drive directory strictly for AI context ingestion and documentation continuity. **Committing changes and mirroring `firestore.rules` does NOT deploy rules to Firebase Cloud.**
+   - **Live Database Rule Deployment**: Deploying `firestore.rules` to live Google Cloud Firestore (GCP project `studio-apps-483721`, named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`) must still be executed explicitly via:
+     ```bash
+     npm run deploy:rules
+     ```
+     This triggers `firebase deploy --only firestore:rules` via `firebase-tools`, validating syntax and uploading rules directly to the production cloud database.
+
+5. **Operational Behavior with Gemini Gem Sessions**:
+   Google Drive mirrors files continuously in real time. However, Gemini Gem Knowledge Bases freeze context per chat session upon initialization. Newly synced updates in Google Drive become visible to Gemini Gems only upon starting a new chat session.
+
 ---
 
 ## 8. Progressive Web App (PWA), Social Metadata & FCM Engine Architecture

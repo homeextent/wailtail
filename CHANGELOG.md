@@ -8,7 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-- *No unreleased changes.*
+### Added
+- **Knowledge Base Sync Post-Commit Hook (`scripts/post-commit`)**: Tracked repository post-commit hook script that mirrors core documentation files (`README.md`, `CHANGELOG.md`, `SYSTEM_BIBLE.md`) and database security rules (`firestore.rules`) to the local Google Drive Knowledge Base ingestion directory (`/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`) with non-blocking error tolerance (`2>/dev/null || true`).
+- **Knowledge Base Ingestion Pipeline Documentation (`README.md`, `SYSTEM_BIBLE.md`)**: Documented the Git post-commit hook activation workflow (`cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit`), the operational distinction between continuous Google Drive syncing and session-frozen Gemini Gem Knowledge Bases, and the clear separation between local Knowledge Base mirroring and live database security rule deployments (`npm run deploy:rules`).
 
 ---
 

@@ -69,6 +69,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   ├── send-consignment-email.ts   # Serverless multi-template email dispatcher (consignments, receipts, welcomes, inquiries) via Resend API
 │   └── youtube-playlist.ts         # Serverless CORS proxy for YouTube RSS playlist ingestion
 ├── firestore.rules                     # Production Firestore security rules & RBAC helper functions
+├── scripts/
+│   └── post-commit                 # Git post-commit hook mirroring core docs and rules to Google Drive KB
 ├── public/
 │   ├── firebase-messaging-sw.js        # Background Service Worker for FCM Web Push outbid alerts
 │   └── icons/                          # PWA maskable application icons (192x192 & 512x512)
@@ -325,6 +327,29 @@ The application relies on the following environment variables (configured in `.e
 | `RESEND_API_KEY` | **Required** (Email Dispatch) | Secret API key for Vercel serverless email dispatch via Resend (`/api/send-consignment-email.ts`). |
 | `GEMINI_API_KEY` | Optional | API secret for Gemini AI narrative assistance. |
 | `APP_URL` | Optional | Deployment host URL used for self-referential links, OAuth callbacks, and API routing. |
+
+### Knowledge Base Sync & Git Post-Commit Hook
+
+The repository maintains an automated documentation and security rule mirror pipeline to keep external AI assistants and the Gemini Gem Knowledge Base synchronized with project architecture.
+
+Because Git hooks inside `.git/hooks/` are local to the environment and untracked by Git, the canonical hook script is version-controlled at `scripts/post-commit`. Developers and contributors can activate the hook locally with a single command:
+
+```bash
+cp scripts/post-commit .git/hooks/post-commit && chmod +x .git/hooks/post-commit
+```
+
+Once activated, every successful `git commit` automatically mirrors four core files:
+- `README.md` — Platform overview, stack details, and quickstart documentation.
+- `CHANGELOG.md` — Detailed changelog history and unreleased feature notes.
+- `SYSTEM_BIBLE.md` — Master system architecture, data models, and component specifications.
+- `firestore.rules` — Production Cloud Firestore database security rules.
+
+**Target Directory**:
+`/home/jeremy/GoogleDrive/06_WEBSITES/WailTail.com/auction`
+
+**Operational Guidelines & Distinctions**:
+- **Continuous Drive Sync vs. Frozen Chat Sessions**: Google Drive sync is continuous, copying files immediately upon commit. However, Gemini Gem Knowledge Bases freeze context per active chat session. To mount and reference newly synced updates, launch a new chat session in the Gemini Gem interface.
+- **Local Mirroring vs. Live Rules Deployment**: Committing changes and mirroring `firestore.rules` to Google Drive **does not** deploy rules to Firebase Cloud. Live Firestore security rules deployment to GCP project `studio-apps-483721` must still be executed explicitly via `npm run deploy:rules`.
 
 
 ---
