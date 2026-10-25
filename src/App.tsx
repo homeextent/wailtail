@@ -972,6 +972,7 @@ const AuctionAppContent: React.FC = () => {
         {/* 7. Section B: Full Photo Gallery Grid & Lightbox */}
         <PhotoGalleryGrid
           images={currentMedia.fullGallery}
+          serviceRecordsUrl={auction?.serviceRecordsUrl}
           selectedImageIndex={selectedLightboxIndex}
           onOpenLightbox={(idx) => setSelectedLightboxIndex(idx)}
           onCloseLightbox={() => setSelectedLightboxIndex(null)}

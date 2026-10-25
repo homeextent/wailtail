@@ -24,7 +24,7 @@ import {
   MAIN_AUCTION_ID
 } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
-import { formatCurrency, formatDateTime } from '../utils/formatters';
+import { formatCurrency, formatDateTime, formatExternalUrl } from '../utils/formatters';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { WailtailLogo } from './WailtailLogo';
 import { 
@@ -317,6 +317,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus || 'Clean Registration');
   const [customTitleStatus, setCustomTitleStatus] = useState('');
   const [distanceUnit, setDistanceUnit] = useState<'km' | 'mi'>(auction.distanceUnit || 'km');
+  const [serviceRecordsUrl, setServiceRecordsUrl] = useState<string>(auction.serviceRecordsUrl ?? '');
 
   // Structured Location state (City, Province / State, Country)
   const [locationCity, setLocationCity] = useState(() => {
@@ -954,6 +955,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setTitleStatus(auction.titleStatus || 'Clean Registration');
     setCustomTitleStatus('');
     setDistanceUnit(auction.distanceUnit || 'km');
+    setServiceRecordsUrl(auction.serviceRecordsUrl ?? '');
 
     const nextEffectiveMake = mState.dropdown === TAXONOMY_OTHER_CUSTOM ? mState.custom : nextMake;
     const nextEffectiveModel = modState.dropdown === TAXONOMY_OTHER_CUSTOM ? modState.custom : nextModel;
@@ -1184,6 +1186,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         exteriorColor,
         interior,
         titleStatus: finalTitleStatus,
+        serviceRecordsUrl: serviceRecordsUrl.trim() ? formatExternalUrl(serviceRecordsUrl.trim()) : undefined,
         currency: 'CAD',
         reserveAmount: Number(reserveAmount),
         minimumIncrement: Number(minimumIncrement),
@@ -1259,21 +1262,25 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
     const files: File[] = Array.from(fileList);
     const validFiles: File[] = [];
-    const oversizedFiles: string[] = [];
+    const oversizedErrors: string[] = [];
 
     for (const f of files) {
-      if (f.size > 12 * 1024 * 1024) {
-        oversizedFiles.push(f.name);
+      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+      if (isPdf && f.size > 25 * 1024 * 1024) {
+        oversizedErrors.push(`Document ${f.name} exceeds the 25MB limit. Please compress the file or provide a cloud link (Google Drive / Dropbox) under Vehicle Identity.`);
+      } else if (!isPdf && f.size > 20 * 1024 * 1024) {
+        oversizedErrors.push(`Image ${f.name} exceeds the 20MB raw limit. Please compress the image prior to upload.`);
       } else {
         validFiles.push(f);
       }
     }
 
-    if (oversizedFiles.length > 0) {
+    if (oversizedErrors.length > 0) {
       setMessage({
         type: 'error',
-        text: `${oversizedFiles.length} file(s) exceeded 12MB limit: ${oversizedFiles.slice(0, 2).join(', ')}...`
+        text: oversizedErrors.join(' | ')
       });
+      setTimeout(() => setMessage(null), 7000);
       if (validFiles.length === 0) return;
     }
 
@@ -2364,6 +2371,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         Top-right badge on the Vehicle Highlights card (auto-synced from specs, editable)
                       </span>
                     </div>
+                  </div>
+
+                  {/* Row 10: External Service Records / Cloud Dossier */}
+                  <div className="pt-2">
+                    <label className="block font-bold text-zinc-700 mb-1">
+                      External Service Records / Cloud Dossier (Google Drive, Dropbox, OneDrive)
+                    </label>
+                    <input
+                      type="url"
+                      value={serviceRecordsUrl}
+                      onChange={(e) => setServiceRecordsUrl(e.target.value)}
+                      placeholder="https://drive.google.com/drive/folders/..."
+                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                    />
+                    <span className="text-[10px] text-zinc-500 mt-1 block">
+                      For comprehensive documentation binders exceeding 25MB. Ensure sharing permissions are set to 'Anyone with the link can view'.
+                    </span>
                   </div>
                 </div>
               </section>

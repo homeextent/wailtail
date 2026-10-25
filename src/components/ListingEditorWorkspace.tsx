@@ -82,7 +82,8 @@ import {
   Mail,
   Wand2,
   Rocket,
-  ImageOff
+  ImageOff,
+  FolderArchive
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 
@@ -449,6 +450,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [sellerEmail, setSellerEmail] = useState(auction.sellerEmail ?? '');
   const [sellerPhone, setSellerPhone] = useState(auction.sellerPhone ?? '');
   const [hagertyValuationUrl, setHagertyValuationUrl] = useState(auction.hagertyValuationUrl ?? '');
+  const [serviceRecordsUrl, setServiceRecordsUrl] = useState(auction.serviceRecordsUrl ?? '');
 
   // Structured Location state (City, Province/State, Country)
   const [locationCity, setLocationCity] = useState(() => {
@@ -893,6 +895,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setSellerEmail(auction.sellerEmail ?? '');
     setSellerPhone(auction.sellerPhone ?? '');
     setHagertyValuationUrl(auction.hagertyValuationUrl ?? '');
+    setServiceRecordsUrl(auction.serviceRecordsUrl ?? '');
 
     const parts = (auction.location ?? (isMain ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
     setLocationCity(parts[0] ?? (isMain ? 'Vancouver' : ''));
@@ -1019,6 +1022,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         titleStatus: finalTitleStatus,
         highlightsBadge,
         hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
+        serviceRecordsUrl: serviceRecordsUrl.trim() ? formatExternalUrl(serviceRecordsUrl.trim()) : undefined,
         currency: 'CAD',
         startingBid: effectiveStartingBid,
         ...(isZeroBids ? { currentBid: effectiveStartingBid } : {}),
@@ -1116,6 +1120,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       sellerPhone: sellerPhone.trim() || undefined,
       highlightsBadge,
       hagertyValuationUrl: hagertyValuationUrl.trim() || undefined,
+      serviceRecordsUrl: serviceRecordsUrl.trim() ? formatExternalUrl(serviceRecordsUrl.trim()) : undefined,
       overviewHeading,
       overviewNarrative: paragraphs,
       specifications: compiledOverviewSpecs,
@@ -1253,6 +1258,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.distanceUnit) setDistanceUnit(parsed.distanceUnit);
       if (parsed.highlightsBadge) setHighlightsBadge(parsed.highlightsBadge);
       if (parsed.hagertyValuationUrl !== undefined) setHagertyValuationUrl(parsed.hagertyValuationUrl || '');
+      if (parsed.serviceRecordsUrl !== undefined) setServiceRecordsUrl(parsed.serviceRecordsUrl ? formatExternalUrl(parsed.serviceRecordsUrl) : '');
       if (parsed.engine) setEngine(parsed.engine);
       if (parsed.exteriorColor) setExteriorColor(parsed.exteriorColor);
       if (parsed.interior) setInterior(parsed.interior);
@@ -1370,7 +1376,28 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     if (!fileList || fileList.length === 0 || !activeUploadTarget) return;
 
     const files: File[] = Array.from(fileList);
-    const validFiles: File[] = files.filter(f => f.size <= 12 * 1024 * 1024);
+    const validFiles: File[] = [];
+    const oversizedErrors: string[] = [];
+
+    for (const f of files) {
+      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+      if (isPdf && f.size > 25 * 1024 * 1024) {
+        oversizedErrors.push(`Document ${f.name} exceeds the 25MB limit. Please compress the file or provide a cloud link (Google Drive / Dropbox) under Vehicle Identity.`);
+      } else if (!isPdf && f.size > 20 * 1024 * 1024) {
+        oversizedErrors.push(`Image ${f.name} exceeds the 20MB raw limit. Please compress the image prior to upload.`);
+      } else {
+        validFiles.push(f);
+      }
+    }
+
+    if (oversizedErrors.length > 0) {
+      setMessage({
+        type: 'error',
+        text: oversizedErrors.join(' | ')
+      });
+      setTimeout(() => setMessage(null), 7000);
+      if (validFiles.length === 0) return;
+    }
 
     try {
       const readResults = await Promise.all(
@@ -2442,16 +2469,31 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </div>
                   </div>
 
-                  {/* Row 10: Hagerty Canada Valuation Link */}
-                  <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Hagerty Canada Valuation Link (Optional)</label>
-                    <input
-                      type="url"
-                      value={hagertyValuationUrl}
-                      onChange={(e) => setHagertyValuationUrl(e.target.value)}
-                      placeholder="https://www.hagerty.ca/valuation-tools/..."
-                      className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
-                    />
+                  {/* Row 10: Hagerty Canada Valuation Link & External Service Records Cloud Dossier */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block font-bold text-zinc-300 mb-1">Hagerty Canada Valuation Link (Optional)</label>
+                      <input
+                        type="url"
+                        value={hagertyValuationUrl}
+                        onChange={(e) => setHagertyValuationUrl(e.target.value)}
+                        placeholder="https://www.hagerty.ca/valuation-tools/..."
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-zinc-300 mb-1">External Service Records / Cloud Dossier (Google Drive, Dropbox, OneDrive)</label>
+                      <input
+                        type="url"
+                        value={serviceRecordsUrl}
+                        onChange={(e) => setServiceRecordsUrl(e.target.value)}
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                      />
+                      <span className="text-[10px] text-zinc-400 mt-1 block">
+                        For comprehensive documentation binders exceeding 25MB. Ensure sharing permissions are set to 'Anyone with the link can view'.
+                      </span>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -3861,6 +3903,21 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       >
                         <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
                         <span>Hagerty® Valuation Report ↗</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* External Service Records / Cloud Dossier CTA Button (Preview) */}
+                  {serviceRecordsUrl && serviceRecordsUrl.trim() !== '' && (
+                    <div className="pt-2 border-t border-zinc-200">
+                      <a
+                        href={formatExternalUrl(serviceRecordsUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm bg-slate-900/90 hover:bg-slate-800 text-amber-400 border border-amber-500/30 hover:border-amber-500 transition-all shadow-md"
+                      >
+                        <FolderArchive className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Historical Records & Invoices (Cloud Dossier) ↗</span>
                       </a>
                     </div>
                   )}

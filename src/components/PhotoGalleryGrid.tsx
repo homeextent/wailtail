@@ -12,11 +12,14 @@ import {
   FileText,
   Download,
   ExternalLink,
-  AlertTriangle
+  AlertTriangle,
+  FolderArchive
 } from 'lucide-react';
+import { formatExternalUrl } from '../utils/formatters';
 
 interface PhotoGalleryGridProps {
   images: GalleryImage[];
+  serviceRecordsUrl?: string;
   selectedImageIndex: number | null;
   onOpenLightbox: (index: number) => void;
   onCloseLightbox: () => void;
@@ -24,6 +27,7 @@ interface PhotoGalleryGridProps {
 
 export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
   images,
+  serviceRecordsUrl,
   selectedImageIndex,
   onOpenLightbox,
   onCloseLightbox
@@ -46,40 +50,26 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
     (img) => Boolean(img && img.url && typeof img.url === 'string' && img.url.trim() !== '')
   );
 
-  // Keyboard navigation for lightbox
-  useEffect(() => {
-    if (selectedImageIndex === null) return;
+  const isRecordsTab = 
+    activeCategory === 'docs' || 
+    activeCategory === 'documentation' || 
+    activeCategory.toLowerCase().includes('record');
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseLightbox();
-      } else if (e.key === 'ArrowRight' && validImages.length > 0) {
-        const next = (selectedImageIndex + 1) % validImages.length;
-        onOpenLightbox(next);
-      } else if (e.key === 'ArrowLeft' && validImages.length > 0) {
-        const prev = (selectedImageIndex - 1 + validImages.length) % validImages.length;
-        onOpenLightbox(prev);
-      }
-    };
+  const formattedDossierUrl = serviceRecordsUrl?.trim() ? formatExternalUrl(serviceRecordsUrl.trim()) : '';
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedImageIndex, validImages.length, onCloseLightbox, onOpenLightbox]);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartX(e.touches[0].clientX);
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX === null) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
-    if (diff > 50 && validImages.length > 0 && selectedImageIndex !== null) {
-      onOpenLightbox((selectedImageIndex + 1) % validImages.length);
-    } else if (diff < -50 && validImages.length > 0 && selectedImageIndex !== null) {
-      onOpenLightbox((selectedImageIndex - 1 + validImages.length) % validImages.length);
+  const getDossierHostBadge = (url: string) => {
+    try {
+      const lower = url.toLowerCase();
+      if (lower.includes('drive.google.com')) return 'Google Drive';
+      if (lower.includes('dropbox.com')) return 'Dropbox';
+      if (lower.includes('onedrive') || lower.includes('1drv.ms') || lower.includes('sharepoint')) return 'OneDrive';
+      if (lower.includes('box.com')) return 'Box';
+      if (lower.includes('icloud.com')) return 'iCloud';
+      const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+      return parsed.hostname.replace(/^www\./, '');
+    } catch {
+      return 'Cloud Storage';
     }
-    setTouchStartX(null);
   };
 
   const categories = [
@@ -89,14 +79,61 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
     { id: 'engine', label: 'Engine Bay', count: validImages.filter(i => i.category === 'engine').length },
     { id: 'underside', label: 'Underside & Chassis', count: validImages.filter(i => i.category === 'underside').length },
     { id: 'detail', label: 'Details & Wheels', count: validImages.filter(i => i.category === 'detail').length },
-    { id: 'documentation', label: 'Records & Title', count: validImages.filter(i => i.category === 'documentation').length }
+    { 
+      id: 'documentation', 
+      label: 'Records & Title', 
+      count: validImages.filter(i => i.category === 'documentation').length + (formattedDossierUrl ? 1 : 0)
+    }
   ].filter(c => c.count > 0 || c.id === 'all');
 
   const filteredImages = activeCategory === 'all'
     ? validImages
     : validImages.filter(img => img.category === activeCategory);
 
-  const activeImage = selectedImageIndex !== null && validImages[selectedImageIndex] ? validImages[selectedImageIndex] : null;
+  // Clamp or guard selected index within filtered images
+  const clampedFilteredIndex = selectedImageIndex !== null
+    ? Math.max(0, Math.min(selectedImageIndex, filteredImages.length - 1))
+    : null;
+
+  const activeImage = clampedFilteredIndex !== null && filteredImages[clampedFilteredIndex] 
+    ? filteredImages[clampedFilteredIndex] 
+    : null;
+
+  // Keyboard navigation for lightbox restricted to filtered category dataset
+  useEffect(() => {
+    if (clampedFilteredIndex === null || filteredImages.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCloseLightbox();
+      } else if (e.key === 'ArrowRight' && filteredImages.length > 0) {
+        const next = (clampedFilteredIndex + 1) % filteredImages.length;
+        onOpenLightbox(next);
+      } else if (e.key === 'ArrowLeft' && filteredImages.length > 0) {
+        const prev = (clampedFilteredIndex - 1 + filteredImages.length) % filteredImages.length;
+        onOpenLightbox(prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clampedFilteredIndex, filteredImages.length, onCloseLightbox, onOpenLightbox]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null || clampedFilteredIndex === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (diff > 50 && filteredImages.length > 0) {
+      onOpenLightbox((clampedFilteredIndex + 1) % filteredImages.length);
+    } else if (diff < -50 && filteredImages.length > 0) {
+      onOpenLightbox((clampedFilteredIndex - 1 + filteredImages.length) % filteredImages.length);
+    }
+    setTouchStartX(null);
+  };
 
   return (
     <section id="gallery" className="bg-white rounded-xl border border-zinc-200/90 shadow-sm overflow-hidden scroll-mt-24">
@@ -143,16 +180,54 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
 
       {/* Photo Grid */}
       <div className="p-4 sm:p-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Section 5 Cloud Dossier Card Injection for Records & Title */}
+        {isRecordsTab && formattedDossierUrl && (
+          <a
+            href={formattedDossierUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative aspect-[4/3] rounded-lg overflow-hidden bg-slate-900 border-2 border-amber-500/30 hover:border-amber-500 cursor-pointer shadow-sm hover:shadow-md transition-all p-3.5 flex flex-col justify-between text-left"
+          >
+            <div className="flex items-center justify-between">
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border border-amber-500/40">
+                <FolderArchive className="w-3 h-3 text-amber-400" />
+                Cloud Dossier
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[9px] uppercase font-bold tracking-wider bg-slate-800 text-amber-400 border border-slate-700">
+                {getDossierHostBadge(formattedDossierUrl)}
+              </span>
+            </div>
+
+            <div className="text-center py-2">
+              <div className="w-12 h-12 mx-auto rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+                <FolderArchive className="w-6 h-6" />
+              </div>
+              <h4 className="text-xs font-bold text-white mt-2 line-clamp-2 px-1">
+                Historical Records & Invoices (Cloud Dossier)
+              </h4>
+              <p className="text-[10px] text-zinc-400 mt-0.5">
+                Complete Document Archive
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px] font-bold text-amber-400 group-hover:text-amber-300">
+              <span className="flex items-center gap-1">
+                <span>Open Archive in New Tab</span>
+              </span>
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </a>
+        )}
+
         {filteredImages.map((img, index) => {
-          const targetIndex = validImages.findIndex(i => i.id === img.id);
           const isPdf = isPdfDocument(img);
-          const isHiddenOnMobile = !isMobileExpanded && index >= 8;
+          const isHiddenOnMobile = !isMobileExpanded && (isRecordsTab && formattedDossierUrl ? index >= 7 : index >= 8);
 
           if (isPdf) {
             return (
               <div
                 key={img.id}
-                onClick={() => onOpenLightbox(targetIndex >= 0 ? targetIndex : 0)}
+                onClick={() => onOpenLightbox(index)}
                 className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-gradient-to-b from-zinc-50 to-zinc-100 border-2 border-red-200/80 hover:border-red-500 cursor-pointer shadow-sm hover:shadow-md transition-all p-3.5 flex-col justify-between ${
                   isHiddenOnMobile ? 'hidden sm:flex' : 'flex'
                 }`}
@@ -201,7 +276,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
           return (
             <div
               key={img.id}
-              onClick={() => onOpenLightbox(targetIndex >= 0 ? targetIndex : 0)}
+              onClick={() => onOpenLightbox(index)}
               className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-zinc-100 border border-zinc-200 cursor-pointer shadow-sm hover:shadow-md transition-all ${
                 isHiddenOnMobile ? 'hidden sm:block' : 'block'
               }`}
@@ -260,7 +335,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
       )}
 
       {/* Lightbox Modal */}
-      {selectedImageIndex !== null && activeImage && (
+      {clampedFilteredIndex !== null && activeImage && (
         <div 
           onClick={onCloseLightbox}
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-200 select-none"
@@ -269,7 +344,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
           <div className="flex items-center justify-between text-white z-10">
             <div className="flex items-center gap-3">
               <span className="px-3 py-1 rounded-full bg-zinc-800 text-xs font-bold border border-zinc-700">
-                Photo {selectedImageIndex + 1} of {validImages.length}
+                Photo {clampedFilteredIndex + 1} of {filteredImages.length}
               </span>
               <span className="text-sm font-semibold text-zinc-300 hidden sm:inline">
                 {activeImage.title}
@@ -308,7 +383,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
             {/* Prev Arrow */}
             <button
               onClick={() => {
-                const prev = (selectedImageIndex - 1 + validImages.length) % validImages.length;
+                const prev = (clampedFilteredIndex - 1 + filteredImages.length) % filteredImages.length;
                 onOpenLightbox(prev);
               }}
               className="absolute left-2 sm:left-6 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all hover:scale-110 shadow-lg"
@@ -320,7 +395,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
             {/* Next Arrow */}
             <button
               onClick={() => {
-                const next = (selectedImageIndex + 1) % validImages.length;
+                const next = (clampedFilteredIndex + 1) % filteredImages.length;
                 onOpenLightbox(next);
               }}
               className="absolute right-2 sm:right-6 z-20 w-12 h-12 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 transition-all hover:scale-110 shadow-lg"
@@ -468,7 +543,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
 
             {/* Micro thumbnail strip */}
             <div className="flex items-center justify-center gap-1.5 overflow-x-auto pb-1">
-              {validImages.map((img, idx) => (
+              {filteredImages.map((img, idx) => (
                 <button
                   key={img.id}
                   onClick={() => {
@@ -476,7 +551,7 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
                     onOpenLightbox(idx);
                   }}
                   className={`w-10 sm:w-14 aspect-[4/3] rounded overflow-hidden border-2 transition-all flex-shrink-0 ${
-                    selectedImageIndex === idx
+                    clampedFilteredIndex === idx
                       ? 'border-red-500 scale-105 shadow'
                       : 'border-zinc-700 opacity-40 hover:opacity-100'
                   }`}

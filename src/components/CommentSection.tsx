@@ -2,7 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Comment, Auction } from '../types';
 import { postComment, toggleUpvoteComment, editComment, deleteComment } from '../services/auctionService';
-import { formatCurrency, formatRelativeTime } from '../utils/formatters';
+import { formatCurrency, formatRelativeTime, formatExternalUrl } from '../utils/formatters';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { 
   MessageSquare, 
   ThumbsUp, 
@@ -19,7 +21,9 @@ import {
   Check,
   X,
   CheckCircle2,
-  CornerDownRight
+  CornerDownRight,
+  Pin,
+  PinOff
 } from 'lucide-react';
 
 interface CommentSectionProps {
@@ -27,6 +31,30 @@ interface CommentSectionProps {
   comments: Comment[];
   onOpenAuth: () => void;
 }
+
+const renderLinkedText = (text: string) => {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      const formattedUrl = formatExternalUrl(part);
+      return (
+        <a
+          key={index}
+          href={formattedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-amber-400 hover:text-amber-300 underline underline-offset-2 break-all inline-flex items-center gap-0.5"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+};
 
 export const CommentSection: React.FC<CommentSectionProps> = ({
   auction,
@@ -62,6 +90,49 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   );
   const isSellerOrAdmin = Boolean(user && (isAdmin || isSeller || user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com'));
 
+  // Check if current user has pin privileges
+  const canPinComment = Boolean(
+    user && (
+      user.uid === auction?.sellerId ||
+      user.email?.toLowerCase() === auction?.sellerEmail?.toLowerCase() ||
+      userProfile?.role?.toUpperCase() === 'ADMIN' ||
+      isAdmin ||
+      user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com'
+    )
+  );
+
+  // Pin / Unpin comment handler with single-pinned enforcement
+  const handleTogglePin = async (targetComment: Comment) => {
+    if (!canPinComment || !user) return;
+    const nextPinned = !targetComment.isPinned;
+
+    try {
+      if (nextPinned) {
+        // Unpin any other existing pinned comment for this auction lot
+        const currentlyPinned = comments.filter((c) => c.isPinned && c.id !== targetComment.id);
+        await Promise.all(
+          currentlyPinned.map((c) =>
+            updateDoc(doc(db, 'comments', c.id), {
+              isPinned: false
+            })
+          )
+        );
+      }
+
+      await updateDoc(doc(db, 'comments', targetComment.id), {
+        isPinned: nextPinned,
+        pinnedAt: nextPinned ? Date.now() : null,
+        pinnedBy: nextPinned ? user.uid : null
+      });
+
+      setActionNotice(nextPinned ? 'Comment pinned to top of discussion.' : 'Comment unpinned.');
+      setTimeout(() => setActionNotice(null), 3000);
+    } catch (err: any) {
+      console.error('Error toggling pin on comment:', err);
+      alert('Failed to update pin status: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   // Group comments into top-level items and nested replies
   const { topLevelItems, repliesByParentId } = useMemo(() => {
     const repliesMap = new Map<string, Comment[]>();
@@ -76,6 +147,13 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
       } else {
         topLevel.push(c);
       }
+    });
+
+    // Lift pinned comments directly to the top of the discussion stream
+    topLevel.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return 0;
     });
 
     return { topLevelItems: topLevel, repliesByParentId: repliesMap };
@@ -322,7 +400,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                           </span>
                         </div>
                         <p className="text-xs text-zinc-300 mt-0.5">
-                          {item.text}
+                          {renderLinkedText(item.text)}
                         </p>
                       </div>
                     </div>
@@ -374,14 +452,39 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
             const isItemSeller = item.userBadge === 'Seller' || item.userName.toLowerCase().includes('seller');
             const isItemAdmin = item.userBadge === 'Admin';
             const isItemHighBidder = item.userBadge === 'High Bidder';
+            const isPinned = Boolean(item.isPinned);
 
             return (
               <div 
                 key={item.id} 
-                className={`pt-4 first:pt-0 ${
-                  isItemSeller ? 'bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 my-2' : ''
+                className={`pt-4 first:pt-0 transition-all ${
+                  isPinned
+                    ? 'border-2 border-amber-500/40 bg-amber-500/5 p-4 rounded-xl shadow-sm my-3'
+                    : isItemSeller
+                    ? 'bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 my-2'
+                    : ''
                 }`}
               >
+                {/* Prominent Top Badge for Pinned Comment */}
+                {isPinned && (
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-amber-500/20">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider bg-amber-500 text-black shadow-xs">
+                      <Pin className="w-3.5 h-3.5 fill-current" />
+                      <span>{isItemAdmin ? '📌 Pinned Staff Announcement' : '📌 Pinned Seller Announcement'}</span>
+                    </span>
+                    {canPinComment && (
+                      <button
+                        onClick={() => handleTogglePin(item)}
+                        className="text-[11px] font-bold text-amber-600 hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Unpin Announcement"
+                      >
+                        <PinOff className="w-3.5 h-3.5" />
+                        <span>Unpin</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex items-start justify-between gap-3">
                   {/* Left: Author info & Text */}
                   <div className="space-y-1.5 flex-1">
@@ -456,7 +559,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                       </div>
                     ) : (
                       <p className="text-zinc-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">
-                        {item.text}
+                        {renderLinkedText(item.text)}
                       </p>
                     )}
                   </div>
@@ -506,41 +609,60 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                       </button>
                     )}
 
-                    {/* Moderation Controls (Author or Admin) */}
-                    {canModerate && !isEditing && (
+                    {/* Moderation Controls (Author or Admin) & Pin Action */}
+                    {(canModerate || canPinComment) && !isEditing && (
                       <div className="flex items-center gap-1 pl-1 border-l border-zinc-200">
-                        <button
-                          onClick={() => handleStartEdit(item)}
-                          className="p-1.5 rounded text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer"
-                          title="Edit Comment"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-
-                        {isConfirmingDelete ? (
-                          <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200 text-[10px]">
-                            <span className="text-red-700 font-semibold">Delete?</span>
-                            <button
-                              onClick={() => handleDelete(item.id)}
-                              className="px-1.5 py-0.5 rounded bg-red-600 text-white font-bold hover:bg-red-700 cursor-pointer"
-                            >
-                              Yes
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 cursor-pointer"
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
+                        {/* 1-click Pin Toggle Button for authorized users */}
+                        {canPinComment && (
                           <button
-                            onClick={() => setConfirmDeleteId(item.id)}
-                            className="p-1.5 rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                            title="Delete Comment"
+                            onClick={() => handleTogglePin(item)}
+                            className={`p-1.5 rounded transition-colors cursor-pointer ${
+                              item.isPinned
+                                ? 'text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100'
+                                : 'text-zinc-400 hover:text-amber-600 hover:bg-zinc-100'
+                            }`}
+                            title={item.isPinned ? 'Unpin Announcement from Top' : 'Pin Announcement to Top'}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {item.isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
                           </button>
+                        )}
+
+                        {canModerate && (
+                          <>
+                            <button
+                              onClick={() => handleStartEdit(item)}
+                              className="p-1.5 rounded text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer"
+                              title="Edit Comment"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+
+                            {isConfirmingDelete ? (
+                              <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200 text-[10px]">
+                                <span className="text-red-700 font-semibold">Delete?</span>
+                                <button
+                                  onClick={() => handleDelete(item.id)}
+                                  className="px-1.5 py-0.5 rounded bg-red-600 text-white font-bold hover:bg-red-700 cursor-pointer"
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 cursor-pointer"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteId(item.id)}
+                                className="p-1.5 rounded text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                title="Delete Comment"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -691,7 +813,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
                                 </div>
                               ) : (
                                 <p className="text-zinc-800 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap pl-5 sm:pl-6">
-                                  {reply.text}
+                                  {renderLinkedText(reply.text)}
                                 </p>
                               )}
                             </div>

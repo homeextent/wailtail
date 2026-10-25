@@ -31,6 +31,7 @@ export interface Auction {
   heroImages?: string[];
   highlightsBadge?: string;
   hagertyValuationUrl?: string;
+  serviceRecordsUrl?: string;
   watchCount?: number;
   startTime: number;
   endTime: number;
@@ -83,6 +84,9 @@ export interface Comment {
   bidAmount?: number;
   isEdited?: boolean;
   editedAt?: number;
+  isPinned?: boolean;
+  pinnedAt?: number;
+  pinnedBy?: string;
 }
 
 export type UserRole = 'ADMIN' | 'SELLER' | 'BIDDER';
@@ -265,6 +269,7 @@ export interface ListingDraftSchema {
   sellerPhone?: string;
   highlightsBadge: string;
   hagertyValuationUrl?: string;
+  serviceRecordsUrl?: string;
 
   // Section 2: Overview Narrative & Provenance
   overviewHeading: string;
