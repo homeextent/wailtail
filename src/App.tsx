@@ -55,8 +55,11 @@ import {
   Wrench, 
   ExternalLink,
   ChevronDown,
-  Mail
+  Mail,
+  TrendingUp,
+  FolderArchive
 } from 'lucide-react';
+import { formatExternalUrl } from './utils/formatters';
 
 const AuctionAppContent: React.FC = () => {
   const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin } = useAuth();
@@ -951,6 +954,32 @@ const AuctionAppContent: React.FC = () => {
                   Inquiries, inspection booking & transport logistics
                 </p>
               </div>
+
+              {/* Hagerty Valuation Report CTA Button */}
+              {auction.hagertyValuationUrl && auction.hagertyValuationUrl.trim() !== '' && (
+                <a
+                  href={formatExternalUrl(auction.hagertyValuationUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-sky-500/30 hover:border-sky-500 transition-all shadow-md mt-2"
+                >
+                  <TrendingUp className="w-4 h-4 text-sky-400" />
+                  <span>Hagerty® Valuation Report ↗</span>
+                </a>
+              )}
+
+              {/* External Service Records / Cloud Dossier CTA Button */}
+              {auction.serviceRecordsUrl && auction.serviceRecordsUrl.trim() !== '' && (
+                <a
+                  href={formatExternalUrl(auction.serviceRecordsUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm bg-slate-900/90 hover:bg-slate-800 text-amber-400 border border-amber-500/30 hover:border-amber-500 transition-all shadow-md mt-2"
+                >
+                  <FolderArchive className="w-4 h-4 text-amber-500" />
+                  <span>Historical Records & Invoices (Cloud Dossier) ↗</span>
+                </a>
+              )}
             </div>
           </div>
         </section>
