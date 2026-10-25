@@ -39,6 +39,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Serverless YouTube Ingestion (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
 - **Firebase Cloud Storage Asset Pipeline**: Direct Storage URL streaming (`uploadImageToStorage`) with client-side canvas micro-compression (`compressImageDataUrl`) and a 900KB serialized payload size cap in `saveMediaConfig()`.
 - **Firebase CLI Named Database Deployment**: `firebase.json` mapping bound explicitly to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), and terminal deployment pipeline (`npm run deploy:rules`) executing direct rules deployment via `firebase-tools`.
+- **Disaster Recovery & Backup Posture**: Native multi-layer protection active on GCP project `studio-apps-483721` securing live production database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` and storage bucket `gs://wailtail`, featuring 7-day continuous microsecond Point-in-Time Recovery (PITR), 30-day automated daily cold backup schedules, and Cloud Storage Object Versioning (14-day noncurrent expiration lifecycle capped at a maximum of 2 versions) to guard against logical corruption and accidental asset deletions without storage bloat.
 
 ### Firebase Backend Services
 - **Cloud Firestore**:

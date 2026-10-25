@@ -8,8 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Added
 - *No unreleased changes.*
+
+---
+
+## [1.6.2] - 2026-10-25 — AuthModal Password Visibility & Backup Infrastructure
+
+### Added
+- **AuthModal Password Visibility Toggle (`src/components/AuthModal.tsx`)**: Implementation of the `Eye`/`EyeOff` (`lucide-react`) toggle for password inputs with `tabIndex={-1}` for ergonomic tabbing, dynamic `type="password"|"text"` binding, and automatic hidden-state resets on tab switching and modal closure.
+- **Production Backup & Disaster Recovery Posture**: Activation of native Google Cloud safeguards on project `studio-apps-483721`, including 7-day Firestore Point-in-Time Recovery (PITR), 30-day automated daily Firestore backup schedules, and Firebase Cloud Storage Object Versioning (14-day expiration, max 2 versions).
 
 ---
 

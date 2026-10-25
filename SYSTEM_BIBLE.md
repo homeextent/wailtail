@@ -35,6 +35,17 @@
 | `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
 | `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
 
+### 1.2 Disaster Recovery & Backup Posture
+
+To protect platform continuity, audit integrity, and high-value catalog transaction records against logical corruption, developer error, or infrastructure disaster, Wailtail implements a defense-in-depth recovery posture across 4 distinct layers:
+
+| Layer | Protection Mechanism | Retention / Window | Recovery Objective / Scope |
+| :--- | :--- | :--- | :--- |
+| **Application Code** | Git / GitHub + Vercel Deployments | Continuous history | Instant rollbacks to previous immutable production deployment hashes. |
+| **Database State (Logical Corruption)** | Cloud Firestore Point-in-Time Recovery (PITR) | 7-day continuous window | Microsecond-granularity database restoration against accidental bulk deletions, botched migrations, or data corruption on `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`. |
+| **Cold Snapshots** | Firestore Scheduled Backups | 30-day retention | Automated daily cold snapshot exports stored in Google Cloud Storage for disaster recovery and long-term compliance audits. |
+| **Media Assets & PDFs** | Cloud Storage Object Versioning | 14-day noncurrent retention (max 2 versions) | Automated lifecycle management on `gs://wailtail` preserving previous versions of overwritten or deleted inspection documents and vehicle media while preventing storage bloat. |
+
 ---
 
 ## 2. Core Firestore Data Schemas
