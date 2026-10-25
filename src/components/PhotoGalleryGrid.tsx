@@ -11,7 +11,8 @@ import {
   ZoomOut,
   FileText,
   Download,
-  ExternalLink
+  ExternalLink,
+  AlertTriangle
 } from 'lucide-react';
 
 interface PhotoGalleryGridProps {
@@ -329,55 +330,114 @@ export const PhotoGalleryGrid: React.FC<PhotoGalleryGridProps> = ({
             </button>
 
             {isPdfDocument(activeImage) ? (
-              <div className="w-full max-w-3xl bg-zinc-900 border border-zinc-700 rounded-2xl p-6 sm:p-8 flex flex-col items-center text-center shadow-2xl space-y-5">
-                <div className="w-16 h-16 rounded-2xl bg-red-950/80 border border-red-700 text-red-400 flex items-center justify-center shadow-inner">
-                  <FileText className="w-8 h-8" />
+              <div className="w-full max-w-5xl lg:max-w-6xl mx-auto flex flex-col h-[72vh] md:h-[78vh] rounded-xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950">
+                {/* Consolidated Top Control Toolbar */}
+                <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-slate-900 border-b border-slate-800 z-10 flex-shrink-0 gap-2">
+                  {/* Left Cluster */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-red-950/80 border border-red-700/60 text-red-400 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex items-center gap-2">
+                      <h3 className="text-sm md:text-base font-semibold text-white truncate max-w-xs sm:max-w-sm md:max-w-lg">
+                        {activeImage.title}
+                      </h3>
+                      <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">
+                        {activeImage.category || 'Documentation'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right Cluster */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <a
+                      href={activeImage.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      title="Open PDF in New Tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Open in New Tab</span>
+                    </a>
+
+                    <a
+                      href={activeImage.url}
+                      download={activeImage.title.endsWith('.pdf') ? activeImage.title : `${activeImage.title}.pdf`}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 font-semibold text-slate-950 text-xs flex items-center gap-1.5 transition-colors shadow-xs"
+                      title="Download PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Download</span>
+                    </a>
+                  </div>
                 </div>
 
-                <div>
-                  <span className="px-2.5 py-1 rounded bg-red-900/60 text-red-200 text-xs font-bold uppercase tracking-wider border border-red-700/60 inline-block mb-2">
-                    PDF Document Archive
-                  </span>
-                  <h3 className="text-lg sm:text-xl font-bold text-white font-serif">
-                    {activeImage.title}
-                  </h3>
-                  {activeImage.caption && (
-                    <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-md mx-auto">
-                      {activeImage.caption}
-                    </p>
-                  )}
-                </div>
-
-                {/* PDF Object preview if supported */}
-                <div className="w-full h-64 sm:h-96 rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 relative flex items-center justify-center">
+                {/* Canvas Container & Embed */}
+                <div className="relative w-full flex-1 rounded-b-xl bg-slate-950 overflow-hidden flex flex-col">
+                  {/* Desktop / Tablet Embed */}
                   {activeImage.url && activeImage.url.trim() !== '' ? (
-                    <iframe
-                      src={`${activeImage.url}#toolbar=0`}
-                      title={activeImage.title}
-                      className="w-full h-full border-0"
-                    />
-                  ) : null}
-                </div>
+                    <div className="hidden sm:flex w-full h-full flex-col">
+                      <iframe
+                        src={`${activeImage.url}${activeImage.url.includes('#') ? '&' : '#'}toolbar=1&navpanes=0&view=FitH`}
+                        title={activeImage.title}
+                        className="w-full flex-1 border-0"
+                      />
+                    </div>
+                  ) : (
+                    /* Graceful error / fallback card */
+                    <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center">
+                      <AlertTriangle className="w-10 h-10 text-amber-500 mb-3" />
+                      <h4 className="text-sm font-bold text-white mb-1">Document Unavailable</h4>
+                      <p className="text-xs text-zinc-400 max-w-sm mb-4">The requested document could not be previewed directly.</p>
+                      {activeImage.url && (
+                        <a
+                          href={activeImage.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-semibold hover:bg-slate-700 transition-colors"
+                        >
+                          Try Direct Link
+                        </a>
+                      )}
+                    </div>
+                  )}
 
-                <div className="flex items-center gap-3 pt-2">
-                  <a
-                    href={activeImage.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Open in New Tab</span>
-                  </a>
+                  {/* Mobile Viewport Fallback (< 640px) */}
+                  <div className="sm:hidden flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
+                    <div className="w-16 h-16 rounded-2xl bg-red-950/60 border border-red-700/50 text-red-400 flex items-center justify-center shadow-lg">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 inline-block">
+                        {activeImage.category || 'Documentation'}
+                      </span>
+                      <h4 className="text-base font-bold text-white">{activeImage.title}</h4>
+                      {activeImage.caption && (
+                        <p className="text-xs text-zinc-400 max-w-xs mx-auto line-clamp-2">{activeImage.caption}</p>
+                      )}
+                    </div>
 
-                  <a
-                    href={activeImage.url}
-                    download={activeImage.title.endsWith('.pdf') ? activeImage.title : `${activeImage.title}.pdf`}
-                    className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-800 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download PDF Document</span>
-                  </a>
+                    <div className="flex flex-col w-full max-w-xs gap-2 pt-2">
+                      <a
+                        href={activeImage.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-2 border border-slate-700 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open PDF in Full Screen</span>
+                      </a>
+                      <a
+                        href={activeImage.url}
+                        download={activeImage.title.endsWith('.pdf') ? activeImage.title : `${activeImage.title}.pdf`}
+                        className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-md"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download Document</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (

@@ -4220,34 +4220,147 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       )}
 
       {/* =================================================================== */}
-      {/* PREVIEW SINGLE-PHOTO LIGHTBOX MODAL */}
+      {/* PREVIEW SINGLE-PHOTO / PDF LIGHTBOX MODAL */}
       {/* =================================================================== */}
-      {previewLightboxUrl && (
-        <div 
-          onClick={() => setPreviewLightboxUrl(null)}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 animate-in fade-in"
-        >
+      {previewLightboxUrl && (() => {
+        const isPdfUrl = 
+          previewLightboxUrl.toLowerCase().endsWith('.pdf') ||
+          previewLightboxUrl.startsWith('data:application/pdf') ||
+          previewLightboxUrl.toLowerCase().includes('.pdf');
+
+        return (
           <div 
-            onClick={(e) => e.stopPropagation()}
-            className="relative max-w-5xl max-h-[90vh] flex flex-col items-center"
+            onClick={() => setPreviewLightboxUrl(null)}
+            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in"
           >
-            <button
-              type="button"
-              onClick={() => setPreviewLightboxUrl(null)}
-              className="absolute -top-10 right-0 text-white hover:text-zinc-300 p-1 cursor-pointer flex items-center gap-1 text-xs font-semibold"
-            >
-              <X className="w-5 h-5" />
-              <span>Close</span>
-            </button>
-            <img 
-              src={previewLightboxUrl} 
-              alt="Preview Zoom" 
-              className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-zinc-700" 
-              referrerPolicy="no-referrer"
-            />
+            {isPdfUrl ? (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-5xl lg:max-w-6xl mx-auto flex flex-col h-[72vh] md:h-[78vh] rounded-xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950"
+              >
+                {/* Consolidated Top Control Toolbar */}
+                <div className="flex items-center justify-between px-3 sm:px-4 py-2 bg-slate-900 border-b border-slate-800 z-10 flex-shrink-0 gap-2">
+                  {/* Left Cluster */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-red-950/80 border border-red-700/60 text-red-400 flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex items-center gap-2">
+                      <h3 className="text-sm md:text-base font-semibold text-white truncate max-w-xs sm:max-w-sm md:max-w-lg">
+                        Vehicle Inspection Report / Document
+                      </h3>
+                      <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">
+                        DOCUMENTATION
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right Cluster */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <a
+                      href={previewLightboxUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      title="Open PDF in New Tab"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Open in New Tab</span>
+                    </a>
+
+                    <a
+                      href={previewLightboxUrl}
+                      download="inspection-report.pdf"
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 font-semibold text-slate-950 text-xs flex items-center gap-1.5 transition-colors shadow-xs"
+                      title="Download PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Download</span>
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={() => setPreviewLightboxUrl(null)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-700 text-slate-300 hover:text-white transition-colors ml-1"
+                      title="Close Preview"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Canvas Container & Embed */}
+                <div className="relative w-full flex-1 rounded-b-xl bg-slate-950 overflow-hidden flex flex-col">
+                  {/* Desktop / Tablet Embed */}
+                  <div className="hidden sm:flex w-full h-full flex-col">
+                    <iframe
+                      src={`${previewLightboxUrl}${previewLightboxUrl.includes('#') ? '&' : '#'}toolbar=1&navpanes=0&view=FitH`}
+                      title="PDF Preview Document"
+                      className="w-full flex-1 border-0"
+                    />
+                  </div>
+
+                  {/* Mobile Viewport Fallback (< 640px) */}
+                  <div className="sm:hidden flex flex-col items-center justify-center h-full p-6 text-center space-y-4">
+                    <div className="w-16 h-16 rounded-2xl bg-red-950/60 border border-red-700/50 text-red-400 flex items-center justify-center shadow-lg">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 inline-block">
+                        DOCUMENTATION
+                      </span>
+                      <h4 className="text-base font-bold text-white">Inspection Report / PDF</h4>
+                      <p className="text-xs text-zinc-400 max-w-xs mx-auto line-clamp-2">
+                        Preview document archive attachment
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col w-full max-w-xs gap-2 pt-2">
+                      <a
+                        href={previewLightboxUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center justify-center gap-2 border border-slate-700 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Open PDF in Full Screen</span>
+                      </a>
+                      <a
+                        href={previewLightboxUrl}
+                        download="inspection-report.pdf"
+                        className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-md"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Download Document</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="relative max-w-5xl max-h-[90vh] flex flex-col items-center"
+              >
+                <button
+                  type="button"
+                  onClick={() => setPreviewLightboxUrl(null)}
+                  className="absolute -top-10 right-0 text-white hover:text-zinc-300 p-1 cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                >
+                  <X className="w-5 h-5" />
+                  <span>Close</span>
+                </button>
+                <img 
+                  src={previewLightboxUrl} 
+                  alt="Preview Zoom" 
+                  className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-zinc-700" 
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
