@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Auction } from '../types';
 import { placeBid, isTransientContentionError } from '../services/auctionService';
 import { formatCurrency } from '../utils/formatters';
+import { trackBidPlaced } from '../utils/analytics';
 import confetti from 'canvas-confetti';
 import { 
   X, 
@@ -145,6 +146,7 @@ export const BidModal: React.FC<BidModalProps> = ({
           antiSniped: result.antiSniped,
           reserveMet: bidAmount >= auction.reserveAmount || auction.isReserveMet
         });
+        trackBidPlaced(auction.id, auction.title, bidAmount);
         setStep('success');
         return;
       } catch (err: any) {

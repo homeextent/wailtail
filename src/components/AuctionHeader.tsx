@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
+import { trackProvenanceClick } from '../utils/analytics';
 import { useAuth } from '../context/AuthContext';
 import { 
   toggleWatchlistLot,
@@ -569,6 +570,7 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                       href={formatExternalUrl(auction.hagertyValuationUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => trackProvenanceClick(auction.id, 'hagerty_valuation')}
                       className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-950/80 hover:bg-rose-900/90 text-rose-200 border border-rose-700/70 hover:border-rose-500 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm hover:text-white shrink-0"
                       title="Verified Hagerty Canada Valuation Appraisal Report"
                     >

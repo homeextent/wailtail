@@ -60,6 +60,7 @@ import {
   FolderArchive
 } from 'lucide-react';
 import { formatExternalUrl } from './utils/formatters';
+import { trackPageView, trackProvenanceClick } from './utils/analytics';
 
 const AuctionAppContent: React.FC = () => {
   const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin } = useAuth();
@@ -269,16 +270,21 @@ const AuctionAppContent: React.FC = () => {
 
   // Synchronize document.title dynamically with route, view state, and active auction
   useEffect(() => {
+    // Avoid redundant pageview events during brief intermediary authentication loading states
+    if (authLoading) return;
+
     const DEFAULT_TITLE = 'Wailtail — Curated Collector Car Auctions';
 
     if (isAdminRoute) {
       document.title = 'Admin Operations Portal — Wailtail';
+      trackPageView(window.location.pathname + window.location.search, document.title);
       return;
     }
 
     if (isEditorRoute) {
       const displayTitle = auction?.title?.trim() || 'Draft Listing';
       document.title = `Listing Editor: ${displayTitle} — Wailtail`;
+      trackPageView(window.location.pathname + window.location.search, document.title);
       return;
     }
 
@@ -292,11 +298,13 @@ const AuctionAppContent: React.FC = () => {
       } else {
         document.title = DEFAULT_TITLE;
       }
+      trackPageView(window.location.pathname + window.location.search, document.title);
       return;
     }
 
     // Default: Catalog Homepage (/ or /catalog) and fallback
     document.title = DEFAULT_TITLE;
+    trackPageView(window.location.pathname + window.location.search, document.title);
 
     return () => {
       document.title = DEFAULT_TITLE;
@@ -305,6 +313,7 @@ const AuctionAppContent: React.FC = () => {
     isAdminRoute, 
     isEditorRoute, 
     isSpecificAuctionRoute, 
+    authLoading,
     auction?.year, 
     auction?.make, 
     auction?.model, 
@@ -961,6 +970,7 @@ const AuctionAppContent: React.FC = () => {
                   href={formatExternalUrl(auction.hagertyValuationUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackProvenanceClick(auction.id, 'hagerty_valuation')}
                   className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm bg-slate-900/90 hover:bg-slate-800 text-sky-400 border border-sky-500/30 hover:border-sky-500 transition-all shadow-md mt-2"
                 >
                   <TrendingUp className="w-4 h-4 text-sky-400" />
@@ -974,6 +984,7 @@ const AuctionAppContent: React.FC = () => {
                   href={formatExternalUrl(auction.serviceRecordsUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => trackProvenanceClick(auction.id, 'cloud_dossier')}
                   className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm bg-slate-900/90 hover:bg-slate-800 text-amber-400 border border-amber-500/30 hover:border-amber-500 transition-all shadow-md mt-2"
                 >
                   <FolderArchive className="w-4 h-4 text-amber-500" />

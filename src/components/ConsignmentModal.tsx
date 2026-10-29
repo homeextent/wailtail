@@ -15,6 +15,7 @@ import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 import { ConsignmentApplication, UserRole } from '../types';
 import { submitConsignmentApplication, checkUserAccountByEmail } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
+import { trackConsignmentSubmitted } from '../utils/analytics';
 
 interface TaxonomyModel {
   name: string;
@@ -251,6 +252,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       });
 
       setSubmitted(true);
+      trackConsignmentSubmitted(year.trim(), effectiveMake, effectiveModel);
     } catch (err: any) {
       console.error('Error submitting consignment application:', err);
       setErrorMsg(err.message || 'Failed to submit consignment. Please check your connection and try again.');
