@@ -12,6 +12,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.0] - 2026-10-29 — Google Analytics 4 (GA4) SPA Telemetry & High-Intent Conversion Pipeline
+
+### Added
+- **Google Analytics 4 Global Bootstrap (`index.html`)**: Asynchronous `gtag.js` script bootstrap targeting Measurement ID `G-GQZ2L1RQ9M` initialized with `{ send_page_view: false }` to prevent duplicate, unhydrated landing hits in a single-page application.
+- **Typed Telemetry Service Utility (`src/utils/analytics.ts`)**: Built `trackPageView()`, `trackBidPlaced()`, `trackConsignmentSubmitted()`, and `trackProvenanceClick()` with safe window typing, fail-open ad-blocker checks, and `import.meta.env.DEV` routing isolation (diverting local and staging traffic to console debug logs to prevent test inflation of production metrics).
+- **Reactive SPA Route Tracking Lifecycle (`src/App.tsx`)**: Bound `trackPageView()` directly beneath `App.tsx`'s centralized `document.title` synchronization `useEffect`, with `authLoading` suppression filtering to ensure real-time lot inspection pageviews capture fully hydrated vehicle titles (e.g., 1988 Porsche 928 S4 — Wailtail) across all navigation transitions.
+- **High-Intent Collector Conversion Tracking**:
+  - `bid_placed`: Instrumented in `src/components/BidModal.tsx` upon successful bid submission, capturing lot ID, vehicle title, and CAD financial value.
+  - `consignment_submitted`: Instrumented in `src/components/ConsignmentModal.tsx` capturing vehicle year, make, and model dimensions on completed intake applications.
+  - `provenance_view`: Instrumented in `src/components/AuctionHeader.tsx` and `src/App.tsx` tracking high-intent outbound clicks to external cloud service dossiers and Hagerty Canada market appraisal reports.
+
+---
+
 ## [1.7.0] - 2026-10-25 — Provenance Cloud Dossiers, PDF Canvas Overhaul & Pinned Announcements
 
 ### Added

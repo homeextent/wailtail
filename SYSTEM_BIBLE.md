@@ -13,6 +13,7 @@
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
 * **Dynamic Dual-Slot Promotional & Cadence Engine**: Multi-surface campaign system featuring dual-slot independent announcement banners (full-bleed Catalog Homepage Ribbon and Direct-Lot Header Banner), admin-configurable catalog grid cadence injection (0, 6, 9, 12 lots with safe modulo cycling), low-inventory row padding ($\le 2$ lots), audience segmentation, date scheduling, image uploader, and deterministic admin-driven visibility (zero client-side `localStorage` dismissal suppression)
 * **Decoupled Guest Telemetry Engine**: Atomic `promo_analytics/{promoId}` click counting using `increment(1)` writes, permitting public unauthenticated telemetry logging while securing campaign configuration
+* **Google Analytics 4 (GA4) SPA Telemetry Engine**: `gtag.js` asynchronous bootstrap (`index.html`), reactive `document.title` pageview dispatching (`src/App.tsx`), `import.meta.env.DEV` development isolation, and collector conversion tracking (`src/utils/analytics.ts`)
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
@@ -1664,5 +1665,43 @@ The static head payload in `index.html` specifies canonical Open Graph and Twitt
 | `twitter:description` | `Bid on this 1988 Porsche 928. Transparent CAD bidding, 2-minute soft-close anti-sniping protection, and zero buyer fees on Wailtail.` | Matches Open Graph description providing key auction terms in Twitter link previews. |
 | `twitter:image` | `https://firebasestorage.googleapis.com/.../hero/1788998248225-j943x.jpg` | High-resolution hero image asset mapped to X/Twitter card preview containers. |
 | `twitter:image:alt` | `1988 Porsche 928 Collector Car Auction` | Accessible image description ensuring compliance across Twitter clients. |
+
+### 8.8 Google Analytics 4 (GA4) SPA Telemetry & Conversion Pipeline
+
+The platform incorporates an enterprise-grade Google Analytics 4 (GA4) telemetry engine architected specifically for single-page applications (SPAs), pairing client-side route tracking with high-intent collector conversion attribution.
+
+#### 1. Data Stream Configuration & Global Bootstrap (`index.html`)
+- **Canonical Measurement ID**: `G-GQZ2L1RQ9M`
+- **Asynchronous Script Ingestion**: Loaded asynchronously in `<head>` via Google Tag Manager (`googletagmanager.com/gtag/js?id=G-GQZ2L1RQ9M`) to ensure non-blocking page execution.
+- **Suppression of Default Pageviews**: The initialization snippet explicitly sets `{ send_page_view: false }`:
+  ```javascript
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-GQZ2L1RQ9M', { send_page_view: false });
+  ```
+  In a client-side Vite React application, allowing the default `gtag` script to emit an automatic `page_view` triggers an unhydrated landing hit before React completes routing resolution and state hydration. This leads to duplicate hits, mismatched titles, and distorted bounce metrics.
+
+#### 2. SPA Tracking Mechanics & Reactive Document Title Synchronization (`src/App.tsx`)
+In modern SPAs, navigation occurs via virtual DOM reconciliation and HTML5 History API (`pushState` / `replaceState`) without full-document browser reloads. To achieve accurate analytics:
+- **Lifecycle Binding**: `trackPageView(path, title)` is dispatched directly beneath `App.tsx`'s centralized `document.title` synchronization `useEffect`.
+- **Title Hydration Guarantee**: By executing immediately following `document.title` resolution, route pageviews capture fully hydrated, SEO-optimized titles (e.g. `1988 Porsche 928 S4 — Wailtail`, `Admin Operations Portal — Wailtail`, `Listing Editor: ... — Wailtail`, or `Wailtail — Curated Collector Car Auctions`) across all route transitions.
+- **Authentication Guarding**: Pageview dispatching coordinates with `authLoading` suppression filtering to avoid registering transitional loading states as standalone page views.
+
+#### 3. Telemetry Service Architecture (`src/utils/analytics.ts`)
+The telemetry service wraps Google Analytics interactions in a typed, resilient utility layer:
+- **Safe Window Typing**: Declares global `Window` interface extensions for `dataLayer?: any[]` and `gtag?: (...args: any[]) => void`.
+- **Fail-Open Ad-Blocker Guards**: Every dispatch operation safely checks `typeof window !== 'undefined' && typeof window.gtag === 'function'` within `try/catch` wrappers. If ad-blockers, tracking blockers, or strict privacy network shields block `gtag.js`, the platform fails open silently with non-blocking warnings, preventing any impact on bidding, consignment, or browsing.
+- **Development & Staging Isolation**: Evaluates `import.meta.env.DEV` to divert local and staging telemetry into structured console debug logs (`console.debug('[GA4 Telemetry]', eventName, params)`), preventing developer actions and automated staging tests from contaminating production GA4 properties.
+
+#### 4. Custom Event Payload Schemas
+High-intent collector actions are instrumented across core conversion funnels:
+
+| Event Name | Trigger Location | Purpose & Conversion Value | Payload Schema |
+| :--- | :--- | :--- | :--- |
+| `bid_placed` | `src/components/BidModal.tsx` | Dispatched immediately upon successful Firestore bid submission, capturing active buyer intent, lot association, and financial volume in CAD. | `{ auction_id: string, vehicle_title: string, value: number, currency: 'CAD' }` |
+| `consignment_submitted` | `src/components/ConsignmentModal.tsx` | Dispatched on successful intake form submission, capturing seller inventory pipeline volume and vehicle dimensions. | `{ vehicle_year: string \| number, vehicle_make: string, vehicle_model: string }` |
+| `provenance_view` | `src/components/AuctionHeader.tsx`, `src/App.tsx` | Dispatched when a collector clicks high-intent external provenance verification dossiers (cloud service folders or Hagerty Canada valuation reports). | `{ auction_id: string, link_type: 'cloud_dossier' \| 'hagerty_valuation' }` |
+
 
 
