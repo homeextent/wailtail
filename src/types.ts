@@ -511,3 +511,42 @@ export interface PlatformPromoSettings {
   lotHeaderBanner: LotHeaderBannerConfig;
   catalogBanner?: LotHeaderBannerConfig;
 }
+
+export type AiAssistantAction = 'generate_interview' | 'synthesize_full_draft' | 'refine_section';
+
+export interface AiInterviewRequest {
+  year: string | number;
+  make: string;
+  model: string;
+  generation?: string;
+}
+
+export interface AiSynthesizeDraftRequest {
+  notes: string;
+  documents?: Array<{
+    name: string;
+    mimeType: string;
+    dataBase64: string;
+  }>;
+  interviewAnswers?: Record<string, string>;
+  baseDraft?: Partial<ListingDraftSchema>;
+}
+
+export interface AiRefineSectionRequest {
+  targetSection: 'overviewNarrative' | 'showcaseChapters';
+  contextSpecs: Partial<ListingDraftSchema>;
+  instructions?: string;
+  prompt?: string;
+}
+
+export type AiAssistantPayload =
+  | ({ action: 'generate_interview' } & AiInterviewRequest)
+  | ({ action: 'synthesize_full_draft' } & AiSynthesizeDraftRequest)
+  | ({ action: 'refine_section' } & AiRefineSectionRequest);
+
+export interface AiAssistantResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
