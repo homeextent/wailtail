@@ -12,6 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.1] - 2026-10-30 — Bi-Directional Seller Attribution & Member Inventory Ledger
+
+### Added
+- **Auction.sellerId Typing (`src/types.ts`)**: Confirmed `sellerId?: string;` on the core `Auction` interface alongside `sellerEmail` and `sellerPhone`.
+- **In-Memory Seller Portfolio Resolution (`src/components/AdminPortalPage.tsx`)**: Built `getSellerLots(memberUid, memberEmail)` performing zero-read in-memory filtering against resident inventory state matching `lot.sellerId === memberUid` or normalized `lot.sellerEmail.toLowerCase() === memberEmail.toLowerCase()`.
+- **Inventory Table Seller Attribution & Cross-Tab Deep-Linking (`src/components/AdminPortalPage.tsx`)**: Appended clickable seller attribution sub-line (`Seller: ${sellerName || sellerEmail}`) beneath VIN in the SPECIFICATIONS column of the Vehicle Inventory & Lots table that switches `activeTab` to `'bidders'`, seeds the search input with seller credentials, and scrolls into view, with a fallback for unassigned lots (`Seller: Direct / Wailtail`).
+- **Member Directory Vehicle Portfolio Ledger (`src/components/AdminPortalPage.tsx`)**: Added interactive `🚗 Lots (${sellerLots.length})` accordion button in member rows beside the bid ledger trigger, backed by independent `expandedSellerLotUids` reactive Set state, expanding an inline vehicle portfolio drawer with thumbnail, vehicle title, VIN, CAD financial metrics, status pills, and direct CTA actions (`Open in Listing Editor →` and `View in Inventory ↗`).
+
+---
+
 ## [1.9.0] - 2026-10-29 — AI Listing Writing Assistant & Editorial Synthesis Engine
 
 ### Added

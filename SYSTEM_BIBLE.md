@@ -80,6 +80,7 @@ interface Auction {
   hagertyValuationUrl?: string; // Optional direct URL to Hagerty Canada valuation report
   serviceRecordsUrl?: string; // Optional direct URL to external provenance cloud dossier (Google Drive, Dropbox, OneDrive)
   location: string;
+  sellerId?: string; // Resolved UID of seller owning this auction lot
   sellerName: string;
   sellerEmail?: string; // Optional consignor contact email for winning bidder settlement
   sellerPhone?: string; // Optional consignor contact phone for winning bidder settlement
@@ -961,12 +962,14 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **5 Command Suites & Management Tabs**:
   - **1. Member Directory Tab** (`bidders` — Member Directory Management): Server-assisted paginated search (`fetchPaginatedBidders`) querying across `users` with client-side query filtering by display name, email, and UID. Configurable page limits with previous/next pagination controls. Includes a role filter dropdown (`ALL`, `ADMIN`, `SELLER`, `BIDDER`) for refined directory segmentation.
     - **Expandable Member Bid Ledger**: Click-to-expand bid history accordion displaying all historical bids placed by the user, breakdown counters for active vs. retracted bids, and an inline administrative "Retract" moderation button.
+    - **Expandable Vehicle Portfolio Ledger (`🚗 Lots (N)`)**: Interactive accordion button beside the bid ledger trigger expanding an inline vehicle portfolio drawer for the member. Resolves associated vehicle lots with zero extra database reads via `getSellerLots(memberUid, memberEmail)`, matching resident inventory state by `lot.sellerId === memberUid` or normalized `lot.sellerEmail.toLowerCase() === memberEmail.toLowerCase()`. State isolation is maintained via an independent `expandedSellerLotUids` reactive Set state. Each lot card in the portfolio drawer displays vehicle thumbnail, title, VIN, CAD financial metrics (current bid/reserve status), status badge pills, and direct CTA action hooks (`Open in Listing Editor →` and `View in Inventory ↗`).
   - **2. Consignment Applications Tab** (`consignments`): Server-assisted paginated search (`fetchPaginatedConsignments`) querying `consignment_applications` with text filtering across applicant name, email, phone, make, model, and status filter pills (`all`, `pending`, `approved`, `declined`).
   - **3. Vehicle Inventory & Lots Tab** (`inventory` — 5th Admin Tab): Comprehensive full-width vehicle inventory management suite displaying active catalog lots, editable vehicle specifications, and status lifecycles.
     - Status filtering pills: `All`, `Draft`, `Preview`, `Upcoming`, `Live`, and `Ended`.
     - Real-time lot search filtering across make, model, VIN, and title.
     - Server-assisted client pagination (configurable page size with previous/next navigation).
     - Row-level controls: quick status dropdown switcher, live CAD high bid tracking, direct authoring workspace launch links (`/dashboard/listings/${id}/edit`), and single-lot deletion triggers.
+    - **Seller Attribution & Cross-Tab Deep-Linking**: A dedicated 3rd sub-line in the SPECIFICATIONS table cell beneath the VIN displaying clickable seller attribution (`Seller: ${sellerName || sellerEmail}`). Clicking the attribution switches `activeTab` to `'bidders'`, seeds the directory search input with the seller credentials, and smoothly scrolls the matched member row into view. Displays fallback attribution (`Seller: Direct / Wailtail`) for unassigned direct platform listings.
   - **4. Live Bids Telemetry Ledger Tab** (`ledger`): Real-time streaming audit trail of all placed bids with bidder handles, lot titles, timestamps, and currency amounts. Includes active/retracted summary pill counts, strike-through formatting on retracted bids, hoverable audit popovers displaying retraction reasons/timestamps/moderators, and administrative retraction actions.
   - **5. Platform Branding Tab** (`branding`): Global platform identity configuration for site logo, name, and tagline alongside the full-featured **Promotional & Launch Campaign Manager** controlling dynamic promo cards and direct-lot banners with master switches, real-time analytics telemetry, image asset uploading, and CTA action routing.
 - **Option B Administrative Soft Bid Retractions (`retractBid` in `auctionService.ts`)**:
