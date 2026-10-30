@@ -8,6 +8,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 
 ### Frontend & Application Stack
 - **Framework**: React 19 + TypeScript + Vite
+- **AI Listing Writing Assistant & Editorial Synthesis Engine (`AiAssistantModal.tsx`, `api/ai-assistant.ts`)**: 3-step authoring wizard (Ingestion, Chassis Interview, Editorial Hydration) integrating multimodal document intake (PDFs and vehicle paperwork photos), client-side HTML5 canvas micro-compression (downscaling to max 1200px at 75% quality JPEG to compress 5MB camera snapshots to ~150KB), 3.0MB cumulative intake budgeting, and unified 3-tier vehicle taxonomy integration with safe draft hydration.
 - **Platform Legal Infrastructure & PIPEDA Compliance (`LegalModal.tsx`, `Footer.tsx`)**: Global modal dialog providing tabbed access to Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and PIPEDA-compliant Privacy Policy (winner contact disclosures, FCM push token lifecycle) triggered via global `App.tsx` state.
 - **Mandatory Clickwrap Agreement Checkboxes (`BidModal.tsx`, `ConsignmentModal.tsx`)**: Un-checked controlled checkboxes requiring explicit agreement to Wailtail Terms of Service and Privacy Policy before bidding or submitting consignment intake inquiries, disabling submission buttons until checked.
 - **Universal Automotive Gearbox Taxonomy**: Standardized 12-entry transmission taxonomy (4-Speed Manual, 5-Speed Manual, 6-Speed Manual, 7-Speed Manual, Automatic / Torque Converter, Dual-Clutch Automatic (DCT), Automated Manual (SMG/F1/E-Gear), Continuously Variable Transmission (CVT), Single-Speed Direct Drive (EV), Sequential / Dog-Leg, Preselector / Semi-Automatic, Other / Custom Gearbox...) across consignment intake and workspace authoring.
@@ -41,6 +42,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - **Category Lightbox Scoping & Gallery Picker Ergonomics**: Scoped photo lightbox navigation, cycling, and counter metrics strictly to the active category subset in `PhotoGalleryGrid.tsx`. Photo picker modals in `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx` feature responsive `aspect-[4/3]` cover cards with floating category pills and hover caption scrims, with PDF documents filtered out.
 
 ### Serverless & Cloud Infrastructure
+- **Serverless AI Writing Assistant (`api/ai-assistant.ts`)**: Vercel serverless function routing to `gemini-2.5-flash` with resilient model fallbacks (`gemini-flash-latest`, `gemini-2.0-flash`), extended 60-second execution budget (`maxDuration = 60`), 8192 token output capacity, and edge `bodyParser` expanded to `sizeLimit: '4.5mb'` to support multi-page PDF ingestion without HTTP 413 drops.
 - **Serverless User Deletion (`api/admin-delete-user.ts`)**: Vercel serverless function leveraging `firebase-admin` SDK with ESM interop resolution (`(admin as any).default || admin`) and private key newline unescaping (`replace(/\\n/g, '\n')`) to securely purge user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`), with self-deletion guards and Firestore batch document purging.
 - **Serverless Email Proxy (`api/send-consignment-email.ts`)**: Multi-template Vercel serverless function dispatching structured and dual-branded HTML notifications for consignment intake (`type: 'consignment'`), private buyer inquiries (`type: 'inquiry'`), seller consignment receipts (`type: 'consignment_receipt'`), consignment approval notices with seller claim onboarding (`type: 'consignment_approved'`), consignment rejection notifications (`type: 'consignment_rejected'`), outbid alerts (`type: 'outbid_notification'`), winning bidder confirmations (`type: 'winning_bid_confirmation'`), and newly verified bidder welcomes (`type: 'welcome_bidder'`) via Resend API (with SendGrid fallback). Equipped with actionable 1-click triage deep links (`/admin?tab=consignments&id=${appId}&action=approve|reject`) and case-insensitive admin recipient deduplication.
 - **Serverless YouTube Ingestion (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
@@ -71,6 +73,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 ├── firebase.json                       # Firebase CLI configuration mapping firestore.rules to named database instance
 ├── api/
 │   ├── admin-delete-user.ts        # Serverless Firebase Admin user authentication identity deletion endpoint
+│   ├── ai-assistant.ts             # Serverless Gemini 2.5 Flash AI writing assistant & multimodal synthesis engine
 │   ├── send-consignment-email.ts   # Serverless multi-template email dispatcher (consignments, receipts, welcomes, inquiries) via Resend API
 │   └── youtube-playlist.ts         # Serverless CORS proxy for YouTube RSS playlist ingestion
 ├── firestore.rules                     # Production Firestore security rules & RBAC helper functions
@@ -83,6 +86,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 │   ├── components/
 │   │   ├── AdminPanelModal.tsx         # Secondary host operations drawer
 │   │   ├── AdminPortalPage.tsx         # Full-page /admin operations portal & user moderation
+│   │   ├── AiAssistantModal.tsx        # 3-step AI listing synthesis wizard with canvas micro-compression
 │   │   ├── AuctionHeader.tsx           # Sticky/hero auction title, anti-snipe countdown, and lot-level Watch/Share actions
 │   │   ├── AuthModal.tsx               # Firebase email/password & Google OAuth modal
 │   │   ├── BidModal.tsx                # Real-time anti-snipe CAD bid submission dialog

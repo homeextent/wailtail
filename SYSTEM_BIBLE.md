@@ -18,7 +18,7 @@
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
 * **Host & Infrastructure**: Cloud Run containerized deployment, reverse proxied on port 3000
-* **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`, `/api/admin-delete-user`)
+* **Serverless Edge Layer**: Vercel Serverless Functions (`/api/send-consignment-email`, `/api/youtube-playlist`, `/api/admin-delete-user`, `/api/ai-assistant` with Gemini 2.5 Flash)
 * **Firebase Infrastructure & Named Database CLI Deployment**: `firebase.json` configuration binding explicitly to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), synchronized production `firestore.rules`, and zero-drift terminal deployment pipeline via `npm run deploy:rules` (`firebase deploy --only firestore:rules`)
 
 ### 1.1 Platform Architecture & Routing Map
@@ -36,6 +36,7 @@
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
 | `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
 | `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
+| `/api/ai-assistant` | `api/ai-assistant.ts` | Authenticated (`ADMIN`, `SELLER`) / Serverless | Vercel serverless AI writing assistant and editorial synthesis engine leveraging Google Gemini 2.5 Flash with fallback candidate models, 4.5MB payload capacity, and 60-second execution budget. |
 
 #### Reactive Document Title Synchronization (`src/App.tsx`)
 The platform implements a centralized, reactive `useEffect` lifecycle hook in `App.tsx` that dynamically synchronizes `document.title` to the active application route and listing entity state, replacing legacy hardcoded fallbacks with structured branding:
@@ -281,6 +282,7 @@ The form input workflow follows a reactive cascading pipeline:
 * Every tier provides an `"Other / Custom..."` (`TAXONOMY_OTHER_CUSTOM = '__OTHER_CUSTOM__'`) option.
 * When selected at any tier (Make, Model, or Generation), a companion text input immediately surfaces, permitting unconstrained custom text entry.
 * The system transparently resolves the effective value between the selected preset and the custom text string, ensuring rare, one-off, or bespoke coachbuilt listings are fully supported without schema constraints.
+* **Shared Canonical AI Modal Integration (`AiAssistantModal.tsx`)**: The AI Listing Writing Assistant (`AiAssistantModal.tsx`) also shares this canonical `vehicleTaxonomy.json` dataset and cascading pipeline, ensuring consistent Year/Make/Model/Generation validation during AI intake and guaranteeing seamless, 1:1 form hydration into Section 1 of the Listing Editor Workspace without data loss or mismatched taxonomy keys.
 
 ### 2.7 `consignment_applications` Collection Schema Extensions
 
@@ -638,6 +640,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - **Client-Side 25MB PDF Document Guard**: Enforces an explicit 25MB client-side file size ceiling (`file.size <= 25 * 1024 * 1024`) on inspection document uploads across `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx`. Rejects oversized PDF files with an immediate error toast before network transmission.
    - **Client-Side 20MB Raw Photo Guard**: Enforces a 20MB client-side limit on raw photo uploads before processing.
    - **Micro-Compression Engine (`compressImageDataUrl`)**: Prior to bucket dispatch, raw image Data URLs undergo client-side HTML5 canvas micro-compression, scaling down excessively oversized imagery (max dimension 1200px, 75% quality JPEG). Serves as an essential fallback mechanism if non-storage or cached payloads are passed through form state.
+   - **AI Assistant Canvas Micro-Compression Engine (`AiAssistantModal.tsx`)**: In addition to standard photo gallery compression, the AI Writing Assistant incorporates an automated client-side HTML5 canvas micro-compression pipeline for uploaded document and paperwork photos (scaling down to max dimension 1200px at 75% quality JPEG). This crushes ~5MB smartphone snapshots down to ~150KB, operating alongside a strict 3.0MB cumulative limit guard across all AI intake documents to safely fit within serverless request boundaries.
 3. **900KB Document Payload Size Cap (`saveMediaConfig`)**:
    - `saveMediaConfig()` in `auctionService.ts` executes rigorous pre-flight payload sanitization and size enforcement.
    - Sets a strict internal threshold of 900KB (below Firestore's hard 1,048,576 byte limit) for serialized documents, guaranteeing zero `FirebaseError: Payload exceeds maximum allowed size` exceptions.
@@ -788,6 +791,24 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 #### 4. Showcase Chapter Lightbox Isolation & Gallery Index Safeguard (`InlineShowcaseSection.tsx` & `App.tsx`)
 * **Dedicated Chapter Lightbox State (`activeLightboxPhoto`)**: `InlineShowcaseSection.tsx` maintains its own dedicated internal lightbox state (`activeLightboxPhoto`), allowing high-resolution showcase chapter photos and captions to render independently of `fullGallery`. Directly uploaded chapter photos (outside `fullGallery`) enlarge cleanly with caption and title presentation, dark backdrop blur, Escape key dismissal listener, and window scroll locking (`document.body.style.overflow = 'hidden'`).
 * **Parent Gallery Index Safeguard (`idx !== -1` Check in `App.tsx`)**: In `App.tsx`, `handleOpenLightboxByUrl()` verifies that the target image exists within `currentMedia.fullGallery` (`const idx = (currentMedia.fullGallery || []).findIndex((img) => img.url === url); if (idx !== -1) { setSelectedLightboxIndex(idx); }`). This prevents accidental gallery index fallbacks or resets to photo index 0 in the primary `PhotoGalleryGrid` lightbox modal when users click isolated chapter images uploaded directly via Section 4 rather than picked from `fullGallery`.
+
+### 5.6 Serverless AI Writing Assistant & Editorial Synthesis Engine (`/api/ai-assistant`)
+1. **Endpoint Architecture & Gemini 2.5 Flash Migration**:
+   - Vercel Serverless Function hosted at `/api/ai-assistant` (`api/ai-assistant.ts`) powering Wailtail's AI Editorial Assistant modal (`AiAssistantModal.tsx`).
+   - Integrated with Google Gemini generative AI using `gemini-2.5-flash` as primary synthesis engine, supported by a resilient candidate model fallback array (`gemini-flash-latest`, `gemini-2.0-flash`) that automatically cascades if rate-limiting or service deprecations occur.
+   - Configured with `maxDuration = 60` (60-second Vercel execution timeout extension) and `maxOutputTokens: 8192` to accommodate deep, multi-paragraph vehicle history synthesis and complete 7-section listing draft generations.
+2. **Serverless Payload Expansion & Edge BodyParser**:
+   - Explicitly configured Vercel serverless edge body parser with `sizeLimit: '4.5mb'` (`export const config = { api: { bodyParser: { sizeLimit: '4.5mb' } } }`).
+   - Accommodates multi-page PDF documents and high-resolution paperwork photos transmitted as Base64 data without encountering HTTP 413 "Request Entity Too Large" edge drops.
+3. **Multi-Action Request Router**:
+   - Supports 3 core operations via `action`:
+     - `generate_interview`: Analyzes vehicle identity (Year/Make/Model/Chassis) and uploaded paperwork to formulate 3 targeted chassis-specific technical interview questions.
+     - `synthesize_draft`: Synthesizes comprehensive listing drafts (title, subtitle, Section 1 specs, Section 3 technical details, and rich Section 4 editorial narrative chapters) from vehicle particulars, interview answers, and multimodal document context.
+     - `refine_section`: Executes targeted editorial enhancements on individual listing sections (e.g. rewriting narrative chapters, summarizing documentation).
+4. **Client-Side Integration, Gateway Error Normalization & Budgeting**:
+   - Integrated via `src/services/aiService.ts` and `src/components/AiAssistantModal.tsx`.
+   - Hardened HTTP fetch interceptors normalize edge 413 and 502 gateway responses before JSON parsing, cleanly presenting user-friendly actionable error messaging and preventing unhandled `JSON.parse` syntax exceptions (`Unexpected token 'R'`).
+   - Client-side intake enforces a 3.0MB cumulative document limit guard and client-side canvas micro-compression (1200px max dimension at 75% quality JPEG) before payload transmission.
 
 ---
 

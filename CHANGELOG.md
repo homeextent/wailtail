@@ -12,6 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.0] - 2026-10-29 — AI Listing Writing Assistant & Editorial Synthesis Engine
+
+### Added
+- **Vercel Serverless AI Gateway Migration (`api/ai-assistant.ts`)**: Migrated to `gemini-2.5-flash` with a resilient fallback chain (`gemini-flash-latest`, `gemini-2.0-flash`). Configured `maxDuration = 60` and `maxOutputTokens: 8192`.
+- **Serverless Payload Expansion (`api/ai-assistant.ts`)**: Configured Vercel edge `bodyParser` to `sizeLimit: '4.5mb'` to support multi-page PDF ingestion without HTTP 413 constraints.
+- **Client Canvas Micro-Compression (`src/components/AiAssistantModal.tsx`)**: Automated client-side HTML5 canvas downscaling (max 1200px, 75% quality JPEG) for uploaded document photos, crushing 5MB smartphone snapshots to ~150KB.
+- **Cumulative Payload Budgeting (`src/components/AiAssistantModal.tsx`)**: Enforced a strict 3.0MB cumulative limit guard across all AI intake documents to safely clear Vercel's Base64 expansion threshold.
+- **3-Tier Vehicle Taxonomy Integration (`src/components/AiAssistantModal.tsx`)**: Replaced free-text AI intake fields with cascading dropdowns (Year, Make, Model, Generation) backed by `src/data/vehicleTaxonomy.json` with `TAXONOMY_OTHER_CUSTOM` text fallbacks and safe draft hydration.
+
+### Changed
+- **Vehicle Context UI Repositioning**: Moved "Vehicle Identification & Details" to the permanent top of Step 1, removing conditional unmounting bugs that previously destroyed input state.
+- **Intake Dropzone Guidance**: Added an explicit Section 5 Photo Gallery redirection banner to prevent users from uploading oversized vehicle exterior photography to the AI assistant.
+- **Gateway HTTP Error Normalization (`src/services/aiService.ts`)**: Hardened fetch interceptors to catch HTTP 413 ("Request Entity Too Large") and 502 gateway errors, preventing unhandled `JSON.parse` exceptions (Unexpected token 'R').
+
+---
+
 ## [1.8.0] - 2026-10-29 — Google Analytics 4 (GA4) SPA Telemetry & High-Intent Conversion Pipeline
 
 ### Added
