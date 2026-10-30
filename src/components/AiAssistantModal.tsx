@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sparkles,
   X,
@@ -21,6 +21,114 @@ import {
   generateChassisInterview,
   synthesizeListingDraft
 } from '../services/aiService';
+import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
+
+interface TaxonomyModel {
+  name: string;
+  generations?: string[];
+}
+
+interface TaxonomyMake {
+  models: TaxonomyModel[];
+}
+
+const vehicleTaxonomy: Record<string, TaxonomyMake> = vehicleTaxonomyRaw as Record<string, TaxonomyMake>;
+export const TAXONOMY_OTHER_CUSTOM = '__OTHER_CUSTOM__';
+export const AVAILABLE_MAKES = Object.keys(vehicleTaxonomy).sort((a, b) => a.localeCompare(b));
+export const YEARS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) => String(2026 - i));
+
+const isCustomValue = (val: string | undefined | null) =>
+  val === TAXONOMY_OTHER_CUSTOM || val === 'OTHER_CUSTOM';
+
+const getAvailableModels = (makeKey: string): string[] => {
+  if (!makeKey || isCustomValue(makeKey)) return [];
+  const entry = vehicleTaxonomy[makeKey];
+  if (!entry) return [];
+  if (Array.isArray(entry.models)) {
+    return entry.models.map((m: any) => (typeof m === 'string' ? m : m.name));
+  }
+  if (typeof entry === 'object') {
+    return Object.keys(entry);
+  }
+  return [];
+};
+
+const getAvailableGenerations = (makeKey: string, modelKey: string): string[] => {
+  if (!makeKey || isCustomValue(makeKey) || !modelKey || isCustomValue(modelKey)) return [];
+  const entry = vehicleTaxonomy[makeKey];
+  if (!entry) return [];
+  if (Array.isArray(entry.models)) {
+    const modelObj = entry.models.find(
+      (m: any) => (typeof m === 'string' ? m : m.name).toLowerCase() === modelKey.toLowerCase()
+    );
+    if (modelObj && Array.isArray(modelObj.generations)) {
+      return modelObj.generations;
+    }
+  }
+  if ((entry as any)[modelKey] && Array.isArray((entry as any)[modelKey])) {
+    return (entry as any)[modelKey];
+  }
+  return [];
+};
+
+export const resolveMakeState = (rawMake: string | undefined | null) => {
+  const trimmed = (rawMake ?? '').trim();
+  if (!trimmed || isCustomValue(trimmed)) {
+    return { dropdown: trimmed ? TAXONOMY_OTHER_CUSTOM : '', custom: '' };
+  }
+  if (vehicleTaxonomy[trimmed]) {
+    return { dropdown: trimmed, custom: '' };
+  }
+  const matchedKey = Object.keys(vehicleTaxonomy).find(
+    (k) => k.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (matchedKey) {
+    return { dropdown: matchedKey, custom: '' };
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+export const resolveModelState = (
+  selectedMakeDropdown: string,
+  rawModel: string | undefined | null
+) => {
+  const trimmed = (rawModel ?? '').trim();
+  if (!trimmed || isCustomValue(trimmed)) {
+    return { dropdown: trimmed ? TAXONOMY_OTHER_CUSTOM : '', custom: '' };
+  }
+  if (selectedMakeDropdown && !isCustomValue(selectedMakeDropdown)) {
+    const models = getAvailableModels(selectedMakeDropdown);
+    const match = models.find((m) => m.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
+
+export const resolveGenerationState = (
+  selectedMakeDropdown: string,
+  selectedModelDropdown: string,
+  rawGeneration: string | undefined | null
+) => {
+  const trimmed = (rawGeneration ?? '').trim();
+  if (!trimmed || isCustomValue(trimmed)) {
+    return { dropdown: trimmed ? TAXONOMY_OTHER_CUSTOM : '', custom: '' };
+  }
+  if (
+    selectedMakeDropdown &&
+    !isCustomValue(selectedMakeDropdown) &&
+    selectedModelDropdown &&
+    !isCustomValue(selectedModelDropdown)
+  ) {
+    const generations = getAvailableGenerations(selectedMakeDropdown, selectedModelDropdown);
+    const match = generations.find((g) => g.toLowerCase() === trimmed.toLowerCase());
+    if (match) {
+      return { dropdown: match, custom: '' };
+    }
+  }
+  return { dropdown: TAXONOMY_OTHER_CUSTOM, custom: trimmed };
+};
 
 export interface AiAssistantModalProps {
   isOpen: boolean;
@@ -142,19 +250,72 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   const [isLoadingInterview, setIsLoadingInterview] = useState<boolean>(false);
   const [interviewError, setInterviewError] = useState<string | null>(null);
 
-  // Dedicated Vehicle Context State
-  const [vehicleContext, setVehicleContext] = useState<{
-    year: string;
-    make: string;
-    model: string;
-    generation: string;
-  }>({
-    year: currentDraftContext?.year ? String(currentDraftContext.year) : '',
-    make: currentDraftContext?.make || '',
-    model: currentDraftContext?.model || '',
-    generation: currentDraftContext?.generation || ''
-  });
+  // Dedicated Vehicle Context Cascading Dropdown State & Custom Fallbacks
+  const initialMake = resolveMakeState(currentDraftContext?.make);
+  const initialModel = resolveModelState(initialMake.dropdown, currentDraftContext?.model);
+  const initialGen = resolveGenerationState(initialMake.dropdown, initialModel.dropdown, currentDraftContext?.generation);
+
+  const [selectedYear, setSelectedYear] = useState<string>(() =>
+    currentDraftContext?.year ? String(currentDraftContext.year).trim() : ''
+  );
+  const [selectedMake, setSelectedMake] = useState<string>(initialMake.dropdown);
+  const [customMake, setCustomMake] = useState<string>(initialMake.custom);
+  const [selectedModel, setSelectedModel] = useState<string>(initialModel.dropdown);
+  const [customModel, setCustomModel] = useState<string>(initialModel.custom);
+  const [selectedGeneration, setSelectedGeneration] = useState<string>(initialGen.dropdown);
+  const [customGeneration, setCustomGeneration] = useState<string>(initialGen.custom);
   const [vehicleContextError, setVehicleContextError] = useState<string | null>(null);
+
+  // Available options derived dynamically from vehicleTaxonomy
+  const availableModels = useMemo(() => {
+    return getAvailableModels(selectedMake);
+  }, [selectedMake]);
+
+  const availableGenerations = useMemo(() => {
+    return getAvailableGenerations(selectedMake, selectedModel);
+  }, [selectedMake, selectedModel]);
+
+  // Derived canonical effective vehicle context
+  const effectiveVehicleContext = useMemo(() => {
+    const year = selectedYear.trim();
+    const make = selectedMake === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : selectedMake.trim();
+    const model = selectedModel === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : selectedModel.trim();
+    const generation = selectedGeneration === TAXONOMY_OTHER_CUSTOM ? customGeneration.trim() : selectedGeneration.trim();
+    return {
+      year,
+      make,
+      model,
+      generation
+    };
+  }, [selectedYear, selectedMake, customMake, selectedModel, customModel, selectedGeneration, customGeneration]);
+
+  const handleMakeChange = (newMake: string) => {
+    setSelectedMake(newMake);
+    if (vehicleContextError) setVehicleContextError(null);
+    if (newMake === TAXONOMY_OTHER_CUSTOM) {
+      setCustomMake('');
+      setSelectedModel(TAXONOMY_OTHER_CUSTOM);
+      setCustomModel('');
+      setSelectedGeneration(TAXONOMY_OTHER_CUSTOM);
+      setCustomGeneration('');
+    } else {
+      setCustomMake('');
+      setSelectedModel('');
+      setCustomModel('');
+      setSelectedGeneration('');
+      setCustomGeneration('');
+    }
+  };
+
+  const handleModelChange = (newModel: string) => {
+    setSelectedModel(newModel);
+    if (vehicleContextError) setVehicleContextError(null);
+    if (newModel !== TAXONOMY_OTHER_CUSTOM) {
+      setCustomModel('');
+    }
+    setSelectedGeneration(newModel === TAXONOMY_OTHER_CUSTOM ? TAXONOMY_OTHER_CUSTOM : '');
+    setCustomGeneration('');
+  };
 
   // Step 3: Synthesis & Hydration State
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
@@ -176,14 +337,18 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   // Reset or initialize when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (currentDraftContext) {
-        setVehicleContext({
-          year: currentDraftContext.year ? String(currentDraftContext.year) : '',
-          make: currentDraftContext.make || '',
-          model: currentDraftContext.model || '',
-          generation: currentDraftContext.generation || ''
-        });
-      }
+      const yearVal = currentDraftContext?.year ? String(currentDraftContext.year).trim() : '';
+      const makeVal = resolveMakeState(currentDraftContext?.make);
+      const modelVal = resolveModelState(makeVal.dropdown, currentDraftContext?.model);
+      const genVal = resolveGenerationState(makeVal.dropdown, modelVal.dropdown, currentDraftContext?.generation);
+
+      setSelectedYear(yearVal);
+      setSelectedMake(makeVal.dropdown);
+      setCustomMake(makeVal.custom);
+      setSelectedModel(modelVal.dropdown);
+      setCustomModel(modelVal.custom);
+      setSelectedGeneration(genVal.dropdown);
+      setCustomGeneration(genVal.custom);
     } else {
       // Clean state on modal close
       setStep(1);
@@ -351,12 +516,15 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
 
   // Trigger Chassis Interview generation
   const handleProceedToInterview = async () => {
-    const trimmedYear = vehicleContext.year.trim();
-    const trimmedMake = vehicleContext.make.trim();
-    const trimmedModel = vehicleContext.model.trim();
+    const trimmedYear = effectiveVehicleContext.year;
+    const trimmedMake = effectiveVehicleContext.make;
+    const trimmedModel = effectiveVehicleContext.model;
 
     if (!trimmedYear || !trimmedMake || !trimmedModel) {
       setVehicleContextError('Year, Make, and Model are required to proceed to the interview.');
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
       return;
     }
 
@@ -374,7 +542,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
         year: trimmedYear,
         make: trimmedMake,
         model: trimmedModel,
-        generation: vehicleContext.generation.trim() || undefined
+        generation: effectiveVehicleContext.generation || undefined
       });
       setInterviewQuestions(questions && questions.length > 0 ? questions : [
         'What major mechanical or cosmetic services have been completed during your ownership?',
@@ -429,13 +597,13 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
           dataBase64: f.dataBase64!
         }));
 
-      // Augment base draft with finalized vehicleContext
+      // Augment base draft with finalized effectiveVehicleContext
       const baseDraft: Partial<ListingDraftSchema> = {
         ...(currentDraftContext || {}),
-        year: vehicleContext.year.trim() || currentDraftContext?.year || '',
-        make: vehicleContext.make.trim() || currentDraftContext?.make || '',
-        model: vehicleContext.model.trim() || currentDraftContext?.model || '',
-        generation: vehicleContext.generation.trim() || currentDraftContext?.generation || ''
+        year: effectiveVehicleContext.year || currentDraftContext?.year || '',
+        make: effectiveVehicleContext.make || currentDraftContext?.make || '',
+        model: effectiveVehicleContext.model || currentDraftContext?.model || '',
+        generation: effectiveVehicleContext.generation || currentDraftContext?.generation || ''
       };
 
       const result = await synthesizeListingDraft({
@@ -613,64 +781,193 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* Column 1: Year */}
                   <div>
                     <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
                       Year *
                     </label>
-                    <input
-                      type="text"
-                      value={vehicleContext.year}
+                    <select
+                      value={selectedYear}
                       onChange={(e) => {
-                        setVehicleContext((prev) => ({ ...prev, year: e.target.value }));
+                        setSelectedYear(e.target.value);
                         if (vehicleContextError) setVehicleContextError(null);
                       }}
-                      placeholder="e.g. 1998"
-                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
-                    />
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">Select Year...</option>
+                      {selectedYear && !YEARS.includes(selectedYear) && (
+                        <option value={selectedYear}>{selectedYear}</option>
+                      )}
+                      {YEARS.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+
+                  {/* Column 2: Make */}
                   <div>
                     <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
                       Make *
                     </label>
-                    <input
-                      type="text"
-                      value={vehicleContext.make}
-                      onChange={(e) => {
-                        setVehicleContext((prev) => ({ ...prev, make: e.target.value }));
-                        if (vehicleContextError) setVehicleContextError(null);
-                      }}
-                      placeholder="e.g. Porsche"
-                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
-                    />
+                    <select
+                      value={selectedMake}
+                      onChange={(e) => handleMakeChange(e.target.value)}
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none cursor-pointer"
+                    >
+                      <option value="">Select Make...</option>
+                      {AVAILABLE_MAKES.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom...</option>
+                    </select>
+                    {selectedMake === TAXONOMY_OTHER_CUSTOM && (
+                      <input
+                        type="text"
+                        placeholder="Enter custom make..."
+                        value={customMake}
+                        onChange={(e) => {
+                          setCustomMake(e.target.value);
+                          if (vehicleContextError) setVehicleContextError(null);
+                        }}
+                        className="w-full mt-2 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                      />
+                    )}
                   </div>
+
+                  {/* Column 3: Model */}
                   <div>
                     <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
                       Model *
                     </label>
-                    <input
-                      type="text"
-                      value={vehicleContext.model}
-                      onChange={(e) => {
-                        setVehicleContext((prev) => ({ ...prev, model: e.target.value }));
-                        if (vehicleContextError) setVehicleContextError(null);
-                      }}
-                      placeholder="e.g. 911 Carrera"
-                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
-                    />
+                    {selectedMake === TAXONOMY_OTHER_CUSTOM ? (
+                      <input
+                        type="text"
+                        placeholder="Enter custom model..."
+                        value={customModel}
+                        onChange={(e) => {
+                          setCustomModel(e.target.value);
+                          setSelectedGeneration(TAXONOMY_OTHER_CUSTOM);
+                          setCustomGeneration('');
+                          if (vehicleContextError) setVehicleContextError(null);
+                        }}
+                        className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                      />
+                    ) : (
+                      <div>
+                        <select
+                          value={selectedModel}
+                          onChange={(e) => handleModelChange(e.target.value)}
+                          disabled={!selectedMake}
+                          className={`w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none ${
+                            !selectedMake ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
+                        >
+                          <option value="">{selectedMake ? 'Select Model...' : 'Select Make first...'}</option>
+                          {availableModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                          {selectedMake && (
+                            <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom...</option>
+                          )}
+                        </select>
+                        {selectedModel === TAXONOMY_OTHER_CUSTOM && (
+                          <input
+                            type="text"
+                            placeholder="Enter custom model..."
+                            value={customModel}
+                            onChange={(e) => {
+                              setCustomModel(e.target.value);
+                              setSelectedGeneration(TAXONOMY_OTHER_CUSTOM);
+                              setCustomGeneration('');
+                              if (vehicleContextError) setVehicleContextError(null);
+                            }}
+                            className="w-full mt-2 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Column 4: Generation / Chassis Code */}
                   <div>
                     <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
                       Generation / Chassis Code
                     </label>
-                    <input
-                      type="text"
-                      value={vehicleContext.generation}
-                      onChange={(e) => {
-                        setVehicleContext((prev) => ({ ...prev, generation: e.target.value }));
-                      }}
-                      placeholder="e.g. 993"
-                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
-                    />
+                    {!selectedMake || (!selectedModel && selectedMake !== TAXONOMY_OTHER_CUSTOM) ? (
+                      <select
+                        disabled
+                        className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-slate-500 rounded-lg px-3 py-2 text-sm opacity-50 cursor-not-allowed focus:outline-none"
+                      >
+                        <option value="">Select Model first...</option>
+                      </select>
+                    ) : selectedMake === TAXONOMY_OTHER_CUSTOM || selectedModel === TAXONOMY_OTHER_CUSTOM ? (
+                      <input
+                        type="text"
+                        placeholder="Enter custom generation..."
+                        value={customGeneration}
+                        onChange={(e) => {
+                          setCustomGeneration(e.target.value);
+                          setSelectedGeneration(TAXONOMY_OTHER_CUSTOM);
+                        }}
+                        className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                      />
+                    ) : availableGenerations.length === 0 ? (
+                      <div>
+                        <select
+                          disabled
+                          className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-slate-500 rounded-lg px-3 py-2 text-sm opacity-50 cursor-not-allowed focus:outline-none"
+                        >
+                          <option value="">N/A (No generations defined)</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Optional custom generation..."
+                          value={customGeneration}
+                          onChange={(e) => {
+                            setCustomGeneration(e.target.value);
+                            setSelectedGeneration(TAXONOMY_OTHER_CUSTOM);
+                          }}
+                          className="w-full mt-2 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <select
+                          value={selectedGeneration}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSelectedGeneration(val);
+                            if (val !== TAXONOMY_OTHER_CUSTOM) {
+                              setCustomGeneration('');
+                            }
+                          }}
+                          className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none cursor-pointer"
+                        >
+                          <option value="">Select Generation...</option>
+                          {availableGenerations.map((g) => (
+                            <option key={g} value={g}>
+                              {g}
+                            </option>
+                          ))}
+                          <option value={TAXONOMY_OTHER_CUSTOM}>Other / Custom...</option>
+                        </select>
+                        {selectedGeneration === TAXONOMY_OTHER_CUSTOM && (
+                          <input
+                            type="text"
+                            placeholder="Enter custom generation..."
+                            value={customGeneration}
+                            onChange={(e) => setCustomGeneration(e.target.value)}
+                            className="w-full mt-2 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/80 focus:outline-none"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -827,7 +1124,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                   <p className="text-xs text-slate-400 mt-0.5">
                     Targeted provenance questions tailored for{' '}
                     <span className="text-amber-400 font-medium">
-                      {[vehicleContext.year, vehicleContext.make, vehicleContext.model, vehicleContext.generation ? `(${vehicleContext.generation})` : '']
+                      {[effectiveVehicleContext.year, effectiveVehicleContext.make, effectiveVehicleContext.model, effectiveVehicleContext.generation ? `(${effectiveVehicleContext.generation})` : '']
                         .filter(Boolean)
                         .join(' ') || 'Collector Vehicle'}
                     </span>
@@ -859,7 +1156,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                     Formulating chassis-specific provenance questions...
                   </p>
                   <p className="text-xs text-slate-400 max-w-sm">
-                    Analyzing model history, vulnerable components, and collector nuances for {vehicleContext.make} {vehicleContext.model}.
+                    Analyzing model history, vulnerable components, and collector nuances for {effectiveVehicleContext.make} {effectiveVehicleContext.model}.
                   </p>
                 </div>
               ) : (
