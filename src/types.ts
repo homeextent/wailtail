@@ -506,7 +506,7 @@ export type BannerConfig = LotHeaderBannerConfig;
 
 export interface PlatformPromoSettings {
   enabled: boolean;
-  cadenceInterval?: number;
+  cadenceInterval?: number; // Configurable catalog grid promo injection interval: -1 (Launch Mode: Show All Active Cards), 0 (Low Inventory Only), 6, 9, or 12 lots
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
   catalogBanner?: LotHeaderBannerConfig;

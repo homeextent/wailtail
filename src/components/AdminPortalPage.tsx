@@ -3330,11 +3330,12 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                       onChange={(e) =>
                         setPromoSettings((prev) => ({
                           ...prev,
-                          cadenceInterval: Number(e.target.value)
+                          cadenceInterval: parseInt(e.target.value, 10)
                         }))
                       }
                       className="w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                     >
+                      <option value={-1}>Show All Active Cards (Launch Mode)</option>
                       <option value={0}>Low Inventory Only (&le; 2 Lots)</option>
                       <option value={6}>Every 6 Lots (2 Rows — High Visibility)</option>
                       <option value={9}>Every 9 Lots (3 Rows — Balanced Editorial)</option>

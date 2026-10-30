@@ -307,7 +307,56 @@ export const VehicleCatalogGrid: React.FC<VehicleCatalogGridProps> = ({
 
   // Unified grid injection pipeline
   const gridItems = useMemo(() => {
-    // Low Inventory (<= 2 lots): Maintain current padding behavior by appending active promo cards
+    const isLaunchMode = promoSettings?.cadenceInterval === -1;
+
+    // Launch Mode (cadenceInterval === -1):
+    // Inject all eligible active promo cards without slot-capping.
+    if (isLaunchMode && promoSettings.enabled && activePromoCards.length > 0) {
+      if (publicAuctions.length <= 2) {
+        // Low Inventory (<= 2 lots):
+        // Bypass the slice(0, Math.max(0, 3 - auctions.length)) slot-capping math.
+        // Inject all eligible, active, audience-matched promo cards into the grid
+        // so they wrap naturally into subsequent grid rows alongside active vehicle cards.
+        const items: Array<{ kind: 'auction'; lot: Auction } | { kind: 'promo'; card: PromoCardConfig }> =
+          filteredAuctions.map((lot) => ({ kind: 'auction', lot }));
+
+        activePromoCards.forEach((card) => {
+          items.push({ kind: 'promo', card });
+        });
+        return items;
+      }
+
+      // Populated Inventory (> 2 lots):
+      // Interleave all eligible promo cards evenly throughout inventory rows
+      // to ensure 100% impression visibility for all active cards.
+      const items: Array<{ kind: 'auction'; lot: Auction } | { kind: 'promo'; card: PromoCardConfig }> = [];
+      const totalAuctions = filteredAuctions.length;
+      const totalPromos = activePromoCards.length;
+      const interval = Math.max(1, Math.floor(totalAuctions / totalPromos));
+
+      let promoIndex = 0;
+      filteredAuctions.forEach((lot, index) => {
+        items.push({ kind: 'auction', lot });
+        if (
+          promoIndex < totalPromos &&
+          ((index + 1) % interval === 0 || index === totalAuctions - 1)
+        ) {
+          items.push({ kind: 'promo', card: activePromoCards[promoIndex] });
+          promoIndex++;
+        }
+      });
+
+      // Append any remaining promo cards if not yet injected
+      while (promoIndex < totalPromos) {
+        items.push({ kind: 'promo', card: activePromoCards[promoIndex] });
+        promoIndex++;
+      }
+
+      return items;
+    }
+
+    // Standard Mode (isLaunchMode === false):
+    // Low Inventory (<= 2 lots): Maintain padding behavior by appending active promo cards
     // to trailing slots to preserve a full 3-card desktop row.
     if (publicAuctions.length <= 2) {
       const items: Array<{ kind: 'auction'; lot: Auction } | { kind: 'promo'; card: PromoCardConfig }> =
