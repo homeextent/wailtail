@@ -500,7 +500,7 @@ export type BannerConfig = LotHeaderBannerConfig;
 
 export interface PlatformPromoSettings {
   enabled: boolean;
-  cadenceInterval?: number; // Configurable catalog grid promo injection interval: 0 (disabled), 6, 9, or 12 lots
+  cadenceInterval?: number; // Configurable catalog grid promo injection interval: -1 (Launch Mode: Show All Active Cards), 0 (Low Inventory Only), 6, 9, or 12 lots.
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
   catalogBanner?: LotHeaderBannerConfig;
@@ -1200,8 +1200,9 @@ The platform integrates a dynamic promotional subsystem designed to spotlight la
      - Independent control suites for **Catalog Homepage Announcement Banner** (`catalogBanner`) and **Direct-Lot Header Banner** (`lotHeaderBanner`).
      - Each slot features independent master enablement toggles, badge text, headline/copy inputs, audience segmentation (`all`, `guests_only`, `authenticated_only`), date scheduling (`startDate`, `expiresAt`), CTA routing (`consignment_modal`, `auth_modal`, `contact_modal`, `external_url`), and live click telemetry tracking.
    - **Catalog Grid Promotional Cadence Controls**:
-     - Admin-configurable cadence selector (`cadenceInterval`: 0 [Disabled], 6, 9, 12 lots) determining how frequently promotional cards are spliced into active catalog inventory rows.
-     - Splicing utilizes safe modulo indexing (`index % cadenceInterval === 0`) ensuring promotional cards are injected at consistent intervals without layout disruption.
+     - Admin-configurable cadence selector (`cadenceInterval`: -1 [Launch Mode: Show All Active Cards], 0 [Low Inventory Only], 6, 9, 12 lots) determining how frequently promotional cards are spliced into active catalog inventory rows.
+     - Launch Mode (`cadenceInterval: -1`) overrides the low-inventory row-padding slot cap ($\le 2$ lots), allowing all active audience-matched promotional cards to be displayed concurrently and wrap naturally into multi-row grid layouts. On populated catalogs ($> 2$ lots), Launch Mode evenly interleaves all active campaign cards throughout catalog inventory rows for 100% impression visibility.
+     - Standard cadence splicing utilizes safe modulo indexing (`index % cadenceInterval === 0`) ensuring promotional cards are injected at consistent intervals without layout disruption.
    - **Master Platform Switches**:
      - Global platform switch (`PlatformPromoSettings.enabled`) allows administrators to immediately activate or deactivate all promotional cards and banners across the platform.
      - Slot-level banner toggles (`catalogBanner.enabled`, `lotHeaderBanner.enabled`) and card-level toggles (`card.enabled`) provide granular switch controls.
@@ -1228,7 +1229,7 @@ The platform integrates a dynamic promotional subsystem designed to spotlight la
      - Displays responsive top media banners (`aspect-[16/9]`, `object-cover`) on catalog promo cards matching standard vehicle listings.
 
 2. **Catalog Grid Card Injection (`VehicleCatalogGrid.tsx`)**:
-   - **Unified In-Grid Cadence & Row Padding Pipeline**: When catalog vehicle inventory is low ($\le 2$ lots), the grid automatically injects active promotional cards (`promoCardsToInject`) into empty grid slots to maintain an editorial layout; when inventory is populated ($> 2$ lots), cards are dynamically spliced at the admin-selected cadence interval (6, 9, or 12 lots).
+   - **Unified In-Grid Cadence & Row Padding Pipeline**: When catalog vehicle inventory is low ($\le 2$ lots), the grid automatically injects active promotional cards (`promoCardsToInject`) into empty grid slots to maintain an editorial layout; when inventory is populated ($> 2$ lots), cards are dynamically spliced at the admin-selected cadence interval (6, 9, or 12 lots). Selecting Launch Mode (`cadenceInterval: -1`) overrides the low-inventory row-padding slot cap ($\le 2$ lots), allowing all active audience-matched promotional cards to be displayed concurrently and wrap naturally into multi-row grid layouts; on populated catalogs ($> 2$ lots), Launch Mode evenly interleaves all active campaign cards throughout catalog inventory rows for 100% impression visibility.
    - **Complete Eradication of Client Dismissal Suppression**:
      - Purged all ✕ dismiss buttons, dismissal handlers, and permanent `localStorage` caching (`wailtail_dismissed_promos`).
      - Campaign impressions are 100% deterministic, governed strictly by administrative enablement toggles, audience targeting, and schedule active windows.

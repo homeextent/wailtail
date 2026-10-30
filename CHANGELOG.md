@@ -12,6 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.1] - 2026-10-30 — Catalog Grid Promotional Launch Mode & Omnipresent Campaign Injection
+
+### Added
+- **Catalog Grid Cadence Launch Mode (`src/types.ts`)**: Documented `cadenceInterval: -1` on `PlatformPromoSettings.cadenceInterval` representing "Launch Mode: Show All Active Cards" (alongside `0` [Low Inventory Only], `6`, `9`, `12` lots) to maximize campaign exposure during startup inventory phases.
+- **Admin Portal Launch Mode Cadence Option (`src/components/AdminPortalPage.tsx`)**: Added `<option value={-1}>Show All Active Cards (Launch Mode)</option>` to the Catalog Grid Cadence dropdown in the Promotional & Launch Campaign Manager with clean signed integer parsing (`parseInt(..., 10)`).
+- **Omnipresent Grid Promotional Injection Engine (`src/components/VehicleCatalogGrid.tsx`)**: Upgraded promotional injection pipeline with `isLaunchMode = promoSettings?.cadenceInterval === -1`. When active during low inventory (≤ 2 lots), bypasses single-row slot-capping (`slice(0, 3 - auctions.length)`) to inject and wrap all active, audience-matched campaign cards into secondary grid rows; when active on populated catalogs (> 2 lots), evenly interleaves all active promotional cards across inventory rows for 100% impression reach.
+
+---
+
 ## [1.9.1] - 2026-10-30 — Bi-Directional Seller Attribution & Member Inventory Ledger
 
 ### Added
