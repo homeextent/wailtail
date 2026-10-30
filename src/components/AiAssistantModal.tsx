@@ -6,7 +6,6 @@ import {
   FileText,
   Image as ImageIcon,
   CheckCircle2,
-  ChevronRight,
   ArrowLeft,
   Loader2,
   AlertCircle,
@@ -84,19 +83,19 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   const [isLoadingInterview, setIsLoadingInterview] = useState<boolean>(false);
   const [interviewError, setInterviewError] = useState<string | null>(null);
 
-  // Fallback vehicle taxonomy if currentDraftContext lacks it
-  const [fallbackYear, setFallbackYear] = useState<string>(
-    currentDraftContext?.year ? String(currentDraftContext.year) : ''
-  );
-  const [fallbackMake, setFallbackMake] = useState<string>(
-    currentDraftContext?.make || ''
-  );
-  const [fallbackModel, setFallbackModel] = useState<string>(
-    currentDraftContext?.model || ''
-  );
-  const [fallbackGeneration, setFallbackGeneration] = useState<string>(
-    currentDraftContext?.generation || ''
-  );
+  // Dedicated Vehicle Context State
+  const [vehicleContext, setVehicleContext] = useState<{
+    year: string;
+    make: string;
+    model: string;
+    generation: string;
+  }>({
+    year: currentDraftContext?.year ? String(currentDraftContext.year) : '',
+    make: currentDraftContext?.make || '',
+    model: currentDraftContext?.model || '',
+    generation: currentDraftContext?.generation || ''
+  });
+  const [vehicleContextError, setVehicleContextError] = useState<string | null>(null);
 
   // Step 3: Synthesis & Hydration State
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
@@ -119,10 +118,12 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       if (currentDraftContext) {
-        if (currentDraftContext.year) setFallbackYear(String(currentDraftContext.year));
-        if (currentDraftContext.make) setFallbackMake(currentDraftContext.make);
-        if (currentDraftContext.model) setFallbackModel(currentDraftContext.model);
-        if (currentDraftContext.generation) setFallbackGeneration(currentDraftContext.generation);
+        setVehicleContext({
+          year: currentDraftContext.year ? String(currentDraftContext.year) : '',
+          make: currentDraftContext.make || '',
+          model: currentDraftContext.model || '',
+          generation: currentDraftContext.generation || ''
+        });
       }
     } else {
       // Clean state on modal close
@@ -130,6 +131,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
       setFileError(null);
       setInterviewError(null);
       setSynthesisError(null);
+      setVehicleContextError(null);
     }
   }, [isOpen, currentDraftContext]);
 
@@ -252,14 +254,18 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     setNotes((prev) => (prev ? `${prev.trim()}${promptText}\n` : promptText.trim() + '\n'));
   };
 
-  // Determine effective vehicle context
-  const effectiveYear = fallbackYear || currentDraftContext?.year || '';
-  const effectiveMake = fallbackMake || currentDraftContext?.make || '';
-  const effectiveModel = fallbackModel || currentDraftContext?.model || '';
-  const effectiveGeneration = fallbackGeneration || currentDraftContext?.generation || '';
-
   // Trigger Chassis Interview generation
   const handleProceedToInterview = async () => {
+    const trimmedYear = vehicleContext.year.trim();
+    const trimmedMake = vehicleContext.make.trim();
+    const trimmedModel = vehicleContext.model.trim();
+
+    if (!trimmedYear || !trimmedMake || !trimmedModel) {
+      setVehicleContextError('Year, Make, and Model are required to proceed to the interview.');
+      return;
+    }
+
+    setVehicleContextError(null);
     setInterviewError(null);
     setStep(2);
 
@@ -270,10 +276,10 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     setIsLoadingInterview(true);
     try {
       const questions = await generateChassisInterview({
-        year: effectiveYear || 'Classic',
-        make: effectiveMake || 'Collector',
-        model: effectiveModel || 'Sports Car',
-        generation: effectiveGeneration || undefined
+        year: trimmedYear,
+        make: trimmedMake,
+        model: trimmedModel,
+        generation: vehicleContext.generation.trim() || undefined
       });
       setInterviewQuestions(questions && questions.length > 0 ? questions : [
         'What major mechanical or cosmetic services have been completed during your ownership?',
@@ -328,13 +334,13 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
           dataBase64: f.dataBase64!
         }));
 
-      // Augment base draft with any fallback taxonomy inputs if needed
+      // Augment base draft with finalized vehicleContext
       const baseDraft: Partial<ListingDraftSchema> = {
         ...(currentDraftContext || {}),
-        year: effectiveYear || currentDraftContext?.year || '',
-        make: effectiveMake || currentDraftContext?.make || '',
-        model: effectiveModel || currentDraftContext?.model || '',
-        generation: effectiveGeneration || currentDraftContext?.generation || ''
+        year: vehicleContext.year.trim() || currentDraftContext?.year || '',
+        make: vehicleContext.make.trim() || currentDraftContext?.make || '',
+        model: vehicleContext.model.trim() || currentDraftContext?.model || '',
+        generation: vehicleContext.generation.trim() || currentDraftContext?.generation || ''
       };
 
       const result = await synthesizeListingDraft({
@@ -625,60 +631,85 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 />
               </div>
 
-              {/* Vehicle Context Preview / Fallback taxonomy */}
-              {(!effectiveYear || !effectiveMake || !effectiveModel) && (
-                <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
-                    <Car className="w-4 h-4" />
-                    <span>Chassis Taxonomy Context</span>
+              {/* Vehicle Identification & Details */}
+              <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                  <Car className="w-4 h-4" />
+                  <span>Vehicle Identification & Details</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Confirm the vehicle details used to calibrate provenance questions and editorial copy.
+                </p>
+
+                {vehicleContextError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-2.5 text-red-400 text-xs">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{vehicleContextError}</span>
                   </div>
-                  <p className="text-xs text-slate-400">
-                    Specify vehicle details to calibrate targeted provenance interview questions:
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div>
-                      <label className="text-[10px] text-slate-400 uppercase font-semibold">Year</label>
-                      <input
-                        type="text"
-                        value={fallbackYear}
-                        onChange={(e) => setFallbackYear(e.target.value)}
-                        placeholder="1998"
-                        className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 uppercase font-semibold">Make</label>
-                      <input
-                        type="text"
-                        value={fallbackMake}
-                        onChange={(e) => setFallbackMake(e.target.value)}
-                        placeholder="Porsche"
-                        className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 uppercase font-semibold">Model</label>
-                      <input
-                        type="text"
-                        value={fallbackModel}
-                        onChange={(e) => setFallbackModel(e.target.value)}
-                        placeholder="911 Carrera"
-                        className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 uppercase font-semibold">Generation</label>
-                      <input
-                        type="text"
-                        value={fallbackGeneration}
-                        onChange={(e) => setFallbackGeneration(e.target.value)}
-                        placeholder="993"
-                        className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                      />
-                    </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
+                      Year *
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleContext.year}
+                      onChange={(e) => {
+                        setVehicleContext((prev) => ({ ...prev, year: e.target.value }));
+                        if (vehicleContextError) setVehicleContextError(null);
+                      }}
+                      placeholder="e.g. 1998"
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
+                      Make *
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleContext.make}
+                      onChange={(e) => {
+                        setVehicleContext((prev) => ({ ...prev, make: e.target.value }));
+                        if (vehicleContextError) setVehicleContextError(null);
+                      }}
+                      placeholder="e.g. Porsche"
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
+                      Model *
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleContext.model}
+                      onChange={(e) => {
+                        setVehicleContext((prev) => ({ ...prev, model: e.target.value }));
+                        if (vehicleContextError) setVehicleContextError(null);
+                      }}
+                      placeholder="e.g. 911 Carrera"
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-300 uppercase font-semibold tracking-wider">
+                      Generation / Chassis Code
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleContext.generation}
+                      onChange={(e) => {
+                        setVehicleContext((prev) => ({ ...prev, generation: e.target.value }));
+                      }}
+                      placeholder="e.g. 993"
+                      className="w-full mt-1.5 border border-slate-700 bg-slate-800/80 text-white placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:border-amber-500/80 focus:outline-none"
+                    />
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -693,7 +724,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                   <p className="text-xs text-slate-400 mt-0.5">
                     Targeted provenance questions tailored for{' '}
                     <span className="text-amber-400 font-medium">
-                      {[effectiveYear, effectiveMake, effectiveModel, effectiveGeneration ? `(${effectiveGeneration})` : '']
+                      {[vehicleContext.year, vehicleContext.make, vehicleContext.model, vehicleContext.generation ? `(${vehicleContext.generation})` : '']
                         .filter(Boolean)
                         .join(' ') || 'Collector Vehicle'}
                     </span>
@@ -725,7 +756,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                     Formulating chassis-specific provenance questions...
                   </p>
                   <p className="text-xs text-slate-400 max-w-sm">
-                    Analyzing model history, vulnerable components, and collector nuances for {effectiveMake} {effectiveModel}.
+                    Analyzing model history, vulnerable components, and collector nuances for {vehicleContext.make} {vehicleContext.model}.
                   </p>
                 </div>
               ) : (
@@ -1124,8 +1155,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 disabled={isConvertingFiles}
                 className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 transition flex items-center gap-2 shadow-lg shadow-amber-500/10 disabled:opacity-50"
               >
-                <span>Proceed to Chassis Interview</span>
-                <ChevronRight className="w-4 h-4" />
+                <span>Proceed to Chassis Interview →</span>
               </button>
             </>
           )}

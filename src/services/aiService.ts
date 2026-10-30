@@ -75,17 +75,44 @@ async function postAiAssistant<T>(payload: AiAssistantPayload): Promise<T> {
     throw new Error('AI generation is currently rate-limited. Please wait a moment and try again.');
   }
 
+  const contentType = response.headers.get('content-type') || '';
+  const isJson = contentType.toLowerCase().includes('application/json');
+
+  const rawText = await response.text().catch(() => '');
+
+  // Inspect empty responses
+  if (!rawText || rawText.trim().length === 0) {
+    if (!response.ok) {
+      throw new Error(`AI assistant service returned an empty error response (HTTP ${response.status}).`);
+    }
+    throw new Error(`AI assistant returned an empty response (HTTP ${response.status}).`);
+  }
+
+  // Inspect content-type before attempting JSON deserialization
+  if (!isJson) {
+    if (!response.ok) {
+      throw new Error(`AI assistant request failed (HTTP ${response.status}): ${rawText.slice(0, 300)}`);
+    }
+    throw new Error(
+      `Expected JSON response from AI assistant but received '${contentType || 'unknown'}' (HTTP ${response.status}): ${rawText.slice(0, 150)}`
+    );
+  }
+
   let jsonResult: AiAssistantResponse<T>;
   try {
-    const rawText = await response.text();
     let text = rawText.trim();
     if (text.startsWith('```')) {
       text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     }
     jsonResult = JSON.parse(text);
   } catch (parseErr) {
+    if (!response.ok) {
+      throw new Error(
+        `AI assistant request failed (HTTP ${response.status}) with invalid/truncated response: ${rawText.slice(0, 300)}`
+      );
+    }
     throw new Error(
-      `Failed to parse AI assistant response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+      `Failed to parse AI assistant response (truncated or invalid JSON payload): ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
     );
   }
 

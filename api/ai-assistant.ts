@@ -2,9 +2,9 @@
  * Vercel Serverless Function: /api/ai-assistant
  * Powers Wailtail's AI Editorial Assistant.
  * Interfaces with Google Gemini to support:
- * 1. Targeted chassis interview generation (gemini-1.5-flash)
- * 2. Full listing draft synthesis (gemini-1.5-pro with multimodal document support)
- * 3. Contextual in-section refinements (gemini-1.5-flash)
+ * 1. Targeted chassis interview generation
+ * 2. Full listing draft synthesis (with multimodal document support)
+ * 3. Contextual in-section refinements
  */
 
 import * as admin from 'firebase-admin';
@@ -16,6 +16,14 @@ import {
   ListingDraftSchema,
   ShowcaseChapter
 } from '../src/types';
+
+export const maxDuration = 60;
+
+const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.0-flash'
+];
 
 const firebaseAdmin = (admin as any).default || admin;
 
@@ -106,72 +114,129 @@ function cleanBase64(base64OrDataUrl: string): string {
   return base64OrDataUrl.trim();
 }
 
+interface GeminiDiagnostic {
+  model: string;
+  status?: number;
+  message: string;
+}
+
+export class GeminiAllModelsFailedError extends Error {
+  diagnostics: GeminiDiagnostic[];
+  constructor(diagnostics: GeminiDiagnostic[]) {
+    super('All candidate AI models failed to fulfill the request.');
+    this.name = 'GeminiAllModelsFailedError';
+    this.diagnostics = diagnostics;
+  }
+}
+
+export class GeminiTokenLimitError extends Error {
+  finishReason = 'MAX_TOKENS';
+  constructor(message = 'AI generation reached maximum output token limit (MAX_TOKENS). The response was truncated.') {
+    super(message);
+    this.name = 'GeminiTokenLimitError';
+  }
+}
+
 async function callGeminiApi(params: {
-  model: 'gemini-1.5-pro' | 'gemini-1.5-flash';
   apiKey: string;
   systemInstruction?: string;
   userParts: Array<any>;
   responseSchema?: any;
 }): Promise<any> {
-  const { model, apiKey, systemInstruction, userParts, responseSchema } = params;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const { apiKey, systemInstruction, userParts, responseSchema } = params;
+  const diagnostics: GeminiDiagnostic[] = [];
 
-  const payload: any = {
-    contents: [
-      {
-        role: 'user',
-        parts: userParts
+  for (const model of CANDIDATE_MODELS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const payload: any = {
+      contents: [
+        {
+          role: 'user',
+          parts: userParts
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 8192,
+        temperature: 0.2
       }
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json'
-    }
-  };
-
-  if (systemInstruction) {
-    payload.systemInstruction = {
-      parts: [{ text: systemInstruction }]
     };
-  }
 
-  if (responseSchema) {
-    payload.generationConfig.responseSchema = responseSchema;
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (response.status === 429) {
-    const error: any = new Error('AI generation is currently rate-limited. Please wait a moment and try again.');
-    error.status = 429;
-    throw error;
-  }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    if (response.status === 429 || errorText.toLowerCase().includes('resource_exhausted')) {
-      const error: any = new Error('AI generation is currently rate-limited. Please wait a moment and try again.');
-      error.status = 429;
-      throw error;
+    if (systemInstruction) {
+      payload.systemInstruction = {
+        parts: [{ text: systemInstruction }]
+      };
     }
-    const error: any = new Error(`Gemini API error (${response.status}): ${errorText}`);
-    error.status = response.status;
-    throw error;
+
+    if (responseSchema) {
+      payload.generationConfig.responseSchema = responseSchema;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const rawErrorText = await response.text().catch(() => '');
+        const sanitizedError = rawErrorText.replace(/key=[a-zA-Z0-9_\-]+/g, 'key=[REDACTED]');
+        console.warn(
+          `[ai-assistant] Candidate model '${model}' returned HTTP ${response.status}: ${sanitizedError}. Retrying next candidate...`
+        );
+        diagnostics.push({
+          model,
+          status: response.status,
+          message: sanitizedError || `HTTP ${response.status}`
+        });
+        continue;
+      }
+
+      const geminiData = await response.json();
+      const candidate = geminiData?.candidates?.[0];
+
+      if (!candidate) {
+        console.warn(`[ai-assistant] Candidate model '${model}' returned no candidates. Retrying next candidate...`);
+        diagnostics.push({
+          model,
+          message: 'No candidates returned by model.'
+        });
+        continue;
+      }
+
+      if (candidate.finishReason === 'MAX_TOKENS') {
+        console.error(`[ai-assistant] Candidate model '${model}' reached MAX_TOKENS limit.`);
+        throw new GeminiTokenLimitError();
+      }
+
+      const textContent = candidate?.content?.parts?.[0]?.text;
+      if (!textContent) {
+        console.warn(`[ai-assistant] Candidate model '${model}' returned empty text. Retrying next candidate...`);
+        diagnostics.push({
+          model,
+          message: `Empty candidate text (finishReason: ${candidate?.finishReason || 'UNKNOWN'})`
+        });
+        continue;
+      }
+
+      return cleanAndParseJson(textContent);
+    } catch (err: any) {
+      if (err instanceof GeminiTokenLimitError) {
+        throw err;
+      }
+      console.warn(`[ai-assistant] Candidate model '${model}' encountered exception:`, err?.message);
+      diagnostics.push({
+        model,
+        message: err?.message || 'Unknown processing error'
+      });
+    }
   }
 
-  const geminiData = await response.json();
-  const textContent = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!textContent) {
-    throw new Error('Gemini API did not return any candidate content.');
-  }
-
-  return cleanAndParseJson(textContent);
+  throw new GeminiAllModelsFailedError(diagnostics);
 }
 
 export default async function handler(req: any, res: any) {
@@ -282,7 +347,6 @@ Return a JSON object matching this schema:
       };
 
       const result = await callGeminiApi({
-        model: 'gemini-1.5-flash',
         apiKey,
         userParts: [{ text: prompt }],
         responseSchema
@@ -305,7 +369,7 @@ Return a JSON object matching this schema:
       const { notes, documents, interviewAnswers, baseDraft } = synthesizeParams;
 
       const systemInstruction = `You are the senior editorial director at Wailtail, Canada's premier online collector car auction.
-Your mission is to synthesize a comprehensive, Bring-a-Trailer style vehicle listing draft adhering strictly to ListingDraftSchema.
+Your mission is to synthesize a comprehensive, collector-grade vehicle listing draft adhering strictly to ListingDraftSchema.
 
 CRITICAL EDITORIAL GUIDELINES & ANTI-HALLUCINATION GUARDRAILS:
 1. Anti-Hallucination: NEVER fabricate provenance, undocumented repairs, fake owner counts, past accidents, or unverified paintwork. If details are not supported by the provided notes, interview responses, or attached inspection documents, state them accurately as unknown or omit speculative claims.
@@ -456,7 +520,6 @@ Generate a full ListingDraftSchema JSON object adhering strictly to the required
       };
 
       const rawDraft = await callGeminiApi({
-        model: 'gemini-1.5-pro',
         apiKey,
         systemInstruction,
         userParts,
@@ -544,7 +607,7 @@ Generate a full ListingDraftSchema JSON object adhering strictly to the required
 
       if (targetSection === 'overviewNarrative') {
         const prompt = `You are a veteran collector car auction editor at Wailtail, Canada's premier online auction.
-Refine or generate the Overview Narrative for this listing adhering strictly to Bring-a-Trailer editorial style based on the provided specifications and editorial instructions.
+Refine or generate the Overview Narrative for this listing adhering strictly to collector-grade editorial style based on the provided specifications and editorial instructions.
 
 VEHICLE SPECIFICATIONS & CONTEXT:
 ${JSON.stringify(contextSpecs || {}, null, 2)}
@@ -576,7 +639,6 @@ Return a JSON object matching this schema:
         };
 
         const result = await callGeminiApi({
-          model: 'gemini-1.5-flash',
           apiKey,
           userParts: [{ text: prompt }],
           responseSchema
@@ -652,7 +714,6 @@ Return a JSON object containing an array of exactly 4 showcaseChapters.`;
         };
 
         const result = await callGeminiApi({
-          model: 'gemini-1.5-flash',
           apiKey,
           userParts: [{ text: prompt }],
           responseSchema
@@ -712,6 +773,23 @@ Return a JSON object containing an array of exactly 4 showcaseChapters.`;
     });
   } catch (err: any) {
     console.error('[ai-assistant] Handler error:', err);
+
+    if (err instanceof GeminiTokenLimitError || err?.finishReason === 'MAX_TOKENS') {
+      return sendJson(res, 422, {
+        success: false,
+        error: 'AI generation reached the maximum output token limit (MAX_TOKENS). The truncated response was discarded.',
+        finishReason: 'MAX_TOKENS'
+      });
+    }
+
+    if (err instanceof GeminiAllModelsFailedError) {
+      return sendJson(res, 502, {
+        success: false,
+        error: 'All candidate AI models failed to fulfill the request. Please verify model availability or try again shortly.',
+        diagnostics: err.diagnostics
+      });
+    }
+
     if (err?.status === 429 || err?.message?.includes('rate-limited') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
       return sendJson(res, 429, {
         success: false,
