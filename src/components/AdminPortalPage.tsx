@@ -177,6 +177,34 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     setExpandedBidderId(prev => (prev === uid ? null : uid));
   };
 
+  // Expandable Member Seller Lots Accordion State (reactive Set<string>)
+  const [expandedSellerLotUids, setExpandedSellerLotUids] = useState<Set<string>>(new Set());
+
+  const toggleSellerLots = (uid: string) => {
+    setExpandedSellerLotUids(prev => {
+      const next = new Set(prev);
+      if (next.has(uid)) {
+        next.delete(uid);
+      } else {
+        next.add(uid);
+      }
+      return next;
+    });
+  };
+
+  // In-memory resolution helper for member-attributed vehicle lots
+  const getSellerLots = useCallback((memberUid: string, memberEmail?: string): Auction[] => {
+    return allAuctions.filter(lot => {
+      const matchUid = Boolean(memberUid && lot.sellerId && lot.sellerId === memberUid);
+      const matchEmail = Boolean(
+        memberEmail &&
+        lot.sellerEmail &&
+        lot.sellerEmail.trim().toLowerCase() === memberEmail.trim().toLowerCase()
+      );
+      return matchUid || matchEmail;
+    });
+  }, [allAuctions]);
+
   // -------------------------------------------------------------
   // TAB 1: BIDDER REGISTRY STATE (PAGINATED & FILTERED)
   // -------------------------------------------------------------
@@ -885,6 +913,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
           (lot.make || '').toLowerCase().includes(q) ||
           (lot.model || '').toLowerCase().includes(q) ||
           String(lot.year || '').toLowerCase().includes(q) ||
+          (lot.sellerName || '').toLowerCase().includes(q) ||
+          (lot.sellerEmail || '').toLowerCase().includes(q) ||
           (lot.id || '').toLowerCase().includes(q);
         if (!match) return false;
       }
@@ -1437,7 +1467,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         {/* TAB 1: BIDDER REGISTRY */}
         {/* =================================================================== */}
         {activeTab === 'bidders' && (
-          <div className="space-y-6">
+          <div id="admin-member-directory-section" className="space-y-6">
             {/* Search & Filtering Toolbar */}
             <div className="bg-[#151a1e] rounded-2xl border border-zinc-800 p-5 space-y-4 shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1567,6 +1597,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     const currentRoleUpper: UserRole = isUserAdmin ? 'ADMIN' : isUserSeller ? 'SELLER' : 'BIDDER';
                     const userBids = getMemberBids(userItem);
                     const isExpanded = expandedBidderId === userItem.uid;
+                    const sellerLots = getSellerLots(userItem.uid, userItem.email);
+                    const isLotsExpanded = expandedSellerLotUids.has(userItem.uid);
 
                     return (
                       <div key={userItem.uid} className="transition-colors">
@@ -1710,6 +1742,38 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                             )}
                           </button>
 
+                          {/* Expandable Member Lots Portfolio Toggle */}
+                          {sellerLots.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleSellerLots(userItem.uid)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                isLotsExpanded
+                                  ? 'bg-slate-800 text-amber-300 border-amber-500/60 shadow-sm'
+                                  : 'bg-slate-800 hover:bg-slate-700 hover:text-amber-300 text-zinc-200 border-slate-700 hover:border-amber-500/40'
+                              }`}
+                              title="View member vehicle lots"
+                            >
+                              <Car className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Lots ({sellerLots.length})</span>
+                              {isLotsExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                              )}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="px-2.5 py-1 rounded-lg text-xs font-bold border border-zinc-800 bg-zinc-900/60 text-zinc-500 flex items-center gap-1.5 opacity-40 cursor-not-allowed"
+                              title="No vehicle lots associated with this member"
+                            >
+                              <Car className="w-3.5 h-3.5 text-zinc-600" />
+                              <span>Lots (0)</span>
+                            </button>
+                          )}
+
                           {/* Delete User Action */}
                           <button
                             type="button"
@@ -1750,6 +1814,158 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                           ) : (
                             <div className="space-y-2">
                               {userBids.map(bid => renderBidItem(bid, true))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Member Vehicle Portfolio Ledger (Expandable) */}
+                      {isLotsExpanded && (
+                        <div className="px-5 py-4 bg-[#0d1117] border-t border-zinc-800/80 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Car className="w-4 h-4 text-amber-400" />
+                              <h5 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                                Member Vehicle Portfolio Ledger: <span className="text-white normal-case">{userItem.displayName || userItem.email}</span>
+                              </h5>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] font-mono">
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700">
+                                {sellerLots.length} Lot{sellerLots.length === 1 ? '' : 's'} Consigned
+                              </span>
+                            </div>
+                          </div>
+
+                          {sellerLots.length === 0 ? (
+                            <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800/60 text-center text-xs text-zinc-500">
+                              No vehicle lots attributed to this member.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {sellerLots.map((lot) => {
+                                const thumbnail = lot.leadHeroImage || lot.heroImages?.[0];
+                                const vehicleTitle = [lot.year, lot.make, lot.model].filter(Boolean).join(' ') || lot.title || 'Untitled Vehicle';
+                                const highBid = (lot.currentBid || 0) > 0 ? lot.currentBid : (lot.startingBid || 0);
+                                const hasBids = (lot.bidCount || 0) > 0;
+                                const status = (lot.status || 'draft').toLowerCase();
+
+                                return (
+                                  <div
+                                    key={lot.id}
+                                    className="p-3.5 rounded-xl bg-zinc-900/70 border border-zinc-800/90 flex flex-col justify-between gap-3 hover:border-zinc-700 transition-colors"
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      {/* Vehicle Thumbnail */}
+                                      {thumbnail ? (
+                                        <img
+                                          src={thumbnail}
+                                          alt={vehicleTitle}
+                                          className="w-16 h-14 rounded-lg object-cover border border-zinc-800 bg-zinc-950 shrink-0"
+                                          onError={(e) => {
+                                            (e.target as HTMLElement).style.display = 'none';
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="w-16 h-14 rounded-lg border border-zinc-800 bg-zinc-950 flex items-center justify-center shrink-0 text-zinc-600">
+                                          <Car className="w-5 h-5" />
+                                        </div>
+                                      )}
+
+                                      {/* Details */}
+                                      <div className="min-w-0 flex-1 space-y-1">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <h6 className="font-bold text-xs text-white truncate" title={vehicleTitle}>
+                                            {vehicleTitle}
+                                          </h6>
+                                          {/* Status Pill */}
+                                          {status === 'pending_review' ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-amber-950 text-amber-300 border border-amber-600/60 shrink-0">
+                                              Pending
+                                            </span>
+                                          ) : (status === 'live' || status === 'active' || status === 'ending_soon') ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-emerald-950 text-emerald-300 border border-emerald-800 shrink-0">
+                                              Live
+                                            </span>
+                                          ) : (status === 'upcoming' || status === 'preview') ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-blue-950 text-blue-300 border border-blue-800 shrink-0">
+                                              Upcoming
+                                            </span>
+                                          ) : status === 'sold' ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-purple-950 text-purple-300 border border-purple-800 shrink-0">
+                                              Sold
+                                            </span>
+                                          ) : (status === 'ended' || status === 'reserve_not_met') ? (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-zinc-800 text-zinc-400 border border-zinc-700 shrink-0">
+                                              Ended
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-zinc-800 text-zinc-300 border border-zinc-700 shrink-0">
+                                              Draft
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* VIN */}
+                                        <div className="text-[11px] text-zinc-400 font-mono">
+                                          <span>VIN: {lot.vin || '—'}</span>
+                                        </div>
+
+                                        {/* CAD Financials */}
+                                        <div className="text-xs flex items-center gap-1.5">
+                                          <span className="font-mono font-bold text-emerald-400">
+                                            {formatCurrency(highBid)} CAD
+                                          </span>
+                                          <span className="text-[10px] text-zinc-400">
+                                            ({hasBids ? `${lot.bidCount} bid${lot.bidCount === 1 ? '' : 's'}` : 'Starting Bid'})
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Action CTAs */}
+                                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800/60">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (onOpenListingEditor) {
+                                            onOpenListingEditor(lot.id);
+                                          } else {
+                                            window.history.pushState({}, '', `/dashboard/listings/${lot.id}/edit`);
+                                            window.dispatchEvent(new PopStateEvent('popstate'));
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                                        title={`Open in Editor (/dashboard/listings/${lot.id}/edit)`}
+                                      >
+                                        <span>Open in Editor</span>
+                                        <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveTab('inventory');
+                                          setInventorySearch(lot.id || lot.vin || '');
+                                          setInventoryPage(1);
+                                          setTimeout(() => {
+                                            const el = document.getElementById('admin-inventory-section');
+                                            if (el) {
+                                              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                            } else {
+                                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                                            }
+                                          }, 50);
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-950/60 hover:bg-amber-900 text-amber-200 border border-amber-700/60 flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs"
+                                        title="View in Inventory"
+                                      >
+                                        <span>View in Inventory</span>
+                                        <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -2173,7 +2389,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         {/* TAB 5: VEHICLE INVENTORY & LOTS */}
         {/* =================================================================== */}
         {activeTab === 'inventory' && (
-          <div className="space-y-6">
+          <div id="admin-inventory-section" className="space-y-6">
             <div className="bg-[#151a1e] rounded-2xl border border-zinc-800 p-5 sm:p-6 shadow-sm space-y-4">
               {/* Header & New Lot Trigger */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2359,6 +2575,33 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 <span className="font-mono text-[10px] text-zinc-400 block truncate max-w-[160px]">
                                   VIN: {lot.vin || '—'}
                                 </span>
+                                {lot.sellerName || lot.sellerEmail ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const query = lot.sellerEmail || lot.sellerName || '';
+                                      setActiveTab('bidders');
+                                      setBidderSearch(query);
+                                      setBidderPage(1);
+                                      setTimeout(() => {
+                                        const el = document.getElementById('admin-member-directory-section');
+                                        if (el) {
+                                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        } else {
+                                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                                        }
+                                      }, 50);
+                                    }}
+                                    className="text-amber-400/90 hover:text-amber-300 font-medium text-xs block text-left truncate max-w-[180px] cursor-pointer transition-colors"
+                                    title={`View seller ${lot.sellerName || lot.sellerEmail} in Member Directory`}
+                                  >
+                                    Seller: {lot.sellerName || lot.sellerEmail}
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-500 italic text-xs block truncate max-w-[180px]">
+                                    Seller: Direct / Wailtail
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="p-4">
