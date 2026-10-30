@@ -29,6 +29,8 @@ import { InlineShowcaseSection } from './InlineShowcaseSection';
 import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
 import { PhotoGalleryGrid } from './PhotoGalleryGrid';
 import { ShowcaseChaptersEditor } from './ShowcaseChaptersEditor';
+import { AiAssistantModal } from './AiAssistantModal';
+import { refineListingSection } from '../services/aiService';
 import { 
   ArrowLeft, 
   Save, 
@@ -47,6 +49,7 @@ import {
   Layers, 
   Eye, 
   Sparkles, 
+  Loader2,
   Trash2, 
   Plus, 
   UploadCloud, 
@@ -346,6 +349,27 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
+  // AI Assistant and In-line Generator states
+  const [isAiModalOpen, setIsAiModalOpen] = useState<boolean>(false);
+  const [isRefiningNarrative, setIsRefiningNarrative] = useState<boolean>(false);
+  const [isRefiningShowcase, setIsRefiningShowcase] = useState<boolean>(false);
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+
+  // Toast notification helper accessible throughout the workspace
+  const toast = {
+    info: (msg: string) => {
+      setMessage({ type: 'info', text: msg });
+    },
+    success: (msg: string) => {
+      setMessage({ type: 'success', text: msg });
+      setTimeout(() => setMessage(null), 4000);
+    },
+    error: (msg: string) => {
+      setMessage({ type: 'error', text: msg });
+      setTimeout(() => setMessage(null), 4000);
+    }
+  };
+
   // Modals inside workspace
   const [showImportModal, setShowImportModal] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
@@ -442,6 +466,11 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const initialGearboxState = resolveGearboxState(auction.drivetrain ?? (isMainLot ? '5-Speed Manual' : ''));
   const [drivetrain, setDrivetrain] = useState(initialGearboxState.dropdown);
   const [customDrivetrain, setCustomDrivetrain] = useState(initialGearboxState.custom);
+  const setGearbox = (gearboxVal: string) => {
+    const importedGearboxState = resolveGearboxState(gearboxVal);
+    setDrivetrain(importedGearboxState.dropdown);
+    setCustomDrivetrain(importedGearboxState.custom);
+  };
   const [exteriorColor, setExteriorColor] = useState(auction.exteriorColor ?? (isMainLot ? 'Guards Red (027)' : ''));
   const [interior, setInterior] = useState(auction.interior ?? (isMainLot ? 'Black Leather / Houndstooth' : ''));
   const [titleStatus, setTitleStatus] = useState(auction.titleStatus ?? 'Clean Registration');
@@ -463,6 +492,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const parts = (auction.location ?? (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
     return parts[1] ?? (isMainLot ? 'BC' : '');
   });
+  const setLocationProvince = setLocationRegion;
   const [locationCountry, setLocationCountry] = useState(() => {
     if (!auction.location && !isMainLot) return '';
     const parts = (auction.location ?? (isMainLot ? 'Vancouver, BC, Canada' : '')).split(',').map(s => s.trim());
@@ -669,6 +699,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     }
     return '';
   });
+  const setOverviewParagraphs = (paragraphs: string[] | string) => {
+    if (Array.isArray(paragraphs)) {
+      setOverviewParagraphsText(paragraphs.join('\n\n'));
+    } else if (typeof paragraphs === 'string') {
+      setOverviewParagraphsText(paragraphs);
+    }
+  };
   const [overviewImage, setOverviewImage] = useState(mediaConfig.overviewImage ?? { url: '', caption: '', alt: '' });
 
   // SECTION 3: TECHNICAL SPECIFICATIONS (Single Source Mirror + Custom Rows)
@@ -807,6 +844,11 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [status, setStatus] = useState(auction.status ?? 'upcoming');
   const [startTimeInput, setStartTimeInput] = useState(formatForInput(auction.startTime ?? Date.now()));
   const [endTimeInput, setEndTimeInput] = useState(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
+  const setDurationDays = (days: number) => {
+    const startMs = new Date(startTimeInput).getTime() || auction.startTime || Date.now();
+    const endMs = startMs + days * 86400000;
+    setEndTimeInput(formatForInput(endMs));
+  };
   const [now, setNow] = useState(Date.now());
   const [withdrawing, setWithdrawing] = useState(false);
 
@@ -1078,6 +1120,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         });
       }
 
+      setIsDirty(false);
       setMessage({
         type: 'success',
         text: status === 'pending_review'
@@ -1325,6 +1368,351 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     }
   };
 
+  // =========================================================================
+  // AI WRITING ASSISTANT PIPELINE & INLINE GENERATION
+  // =========================================================================
+
+  // Construct currentDraftContext from active form state
+  const currentDraftContext = useMemo<Partial<ListingDraftSchema>>(() => {
+    const curEffectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : (make || '').trim();
+    const curEffectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : (model || '').trim();
+    const curEffectiveGen = selectedGenerationDropdown === TAXONOMY_OTHER_CUSTOM ? customGeneration.trim() : (generation || '').trim();
+    const finalGearbox = (drivetrain === 'Other / Custom Gearbox...' || drivetrain === 'Other' || !GEARBOX_OPTIONS.includes(drivetrain)) && customDrivetrain.trim()
+      ? customDrivetrain.trim()
+      : drivetrain;
+    const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
+    const paragraphs = overviewParagraphsText.split('\n\n').map(p => p.trim()).filter(Boolean);
+
+    return {
+      title,
+      subtitle,
+      year: year ? Number(year) : '',
+      make: curEffectiveMake,
+      model: curEffectiveModel,
+      generation: curEffectiveGen || undefined,
+      vin,
+      mileage,
+      distanceUnit,
+      location: formattedLocation,
+      locationCity: locationCity.trim(),
+      locationProvince: locationRegion.trim(),
+      locationCountry: locationCountry.trim(),
+      engine,
+      gearbox: finalGearbox,
+      exteriorColor,
+      interior,
+      titleStatus: finalTitleStatus,
+      sellerName,
+      sellerEmail: sellerEmail.trim() || undefined,
+      sellerPhone: sellerPhone.trim() || undefined,
+      highlightsBadge,
+      overviewHeading,
+      overviewNarrative: paragraphs,
+      overviewParagraphs: paragraphs,
+      specifications: compiledOverviewSpecs,
+      financials: {
+        currency: 'CAD',
+        startingBid: Number(startingBid),
+        minimumIncrement: Number(minimumIncrement),
+        reserveAmount: Number(reserveAmount),
+        durationDays: 7
+      }
+    } as Partial<ListingDraftSchema>;
+  }, [
+    title,
+    subtitle,
+    year,
+    selectedMakeDropdown,
+    customMake,
+    make,
+    selectedModelDropdown,
+    customModel,
+    model,
+    selectedGenerationDropdown,
+    customGeneration,
+    generation,
+    vin,
+    mileage,
+    distanceUnit,
+    formattedLocation,
+    locationCity,
+    locationRegion,
+    locationCountry,
+    engine,
+    drivetrain,
+    customDrivetrain,
+    exteriorColor,
+    interior,
+    titleStatus,
+    customTitleStatus,
+    sellerName,
+    sellerEmail,
+    sellerPhone,
+    highlightsBadge,
+    overviewHeading,
+    overviewParagraphsText,
+    compiledOverviewSpecs,
+    startingBid,
+    minimumIncrement,
+    reserveAmount
+  ]);
+
+  // Hydrate selective sections synthesized by AI assistant
+  const handleApplyAiDraft = (
+    synthesizedDraft: ListingDraftSchema,
+    selectedSections: {
+      identity: boolean;
+      narrative: boolean;
+      showcase: boolean;
+      financials: boolean;
+    }
+  ) => {
+    if (!synthesizedDraft) return;
+
+    // selectedSections.identity
+    if (selectedSections.identity) {
+      if (synthesizedDraft.title) setTitle(synthesizedDraft.title);
+      if (synthesizedDraft.subtitle) setSubtitle(synthesizedDraft.subtitle);
+      if (synthesizedDraft.year) setYear(Number(synthesizedDraft.year));
+
+      if (synthesizedDraft.make) {
+        setMake(synthesizedDraft.make);
+        const mState = resolveMakeState(synthesizedDraft.make);
+        setSelectedMakeDropdown(mState.dropdown);
+        setCustomMake(mState.custom);
+        if (synthesizedDraft.model) {
+          setModel(synthesizedDraft.model);
+          const modState = resolveModelState(mState.dropdown, synthesizedDraft.model);
+          setSelectedModelDropdown(modState.dropdown);
+          setCustomModel(modState.custom);
+          if (synthesizedDraft.generation) {
+            setGeneration(synthesizedDraft.generation);
+            const genState = resolveGenerationState(mState.dropdown, modState.dropdown, synthesizedDraft.generation);
+            setSelectedGenerationDropdown(genState.dropdown);
+            setCustomGeneration(genState.custom);
+          } else {
+            setGeneration('');
+            setSelectedGenerationDropdown('');
+            setCustomGeneration('');
+          }
+        }
+      } else if (synthesizedDraft.model) {
+        setModel(synthesizedDraft.model);
+        const modState = resolveModelState(selectedMakeDropdown, synthesizedDraft.model);
+        setSelectedModelDropdown(modState.dropdown);
+        setCustomModel(modState.custom);
+        if (synthesizedDraft.generation) {
+          setGeneration(synthesizedDraft.generation);
+          const genState = resolveGenerationState(selectedMakeDropdown, modState.dropdown, synthesizedDraft.generation);
+          setSelectedGenerationDropdown(genState.dropdown);
+          setCustomGeneration(genState.custom);
+        } else {
+          setGeneration('');
+          setSelectedGenerationDropdown('');
+          setCustomGeneration('');
+        }
+      } else if (synthesizedDraft.generation) {
+        setGeneration(synthesizedDraft.generation);
+        const genState = resolveGenerationState(selectedMakeDropdown, selectedModelDropdown, synthesizedDraft.generation);
+        setSelectedGenerationDropdown(genState.dropdown);
+        setCustomGeneration(genState.custom);
+      }
+
+      if (synthesizedDraft.vin) setVin(synthesizedDraft.vin);
+      if (synthesizedDraft.mileage !== undefined) setMileage(String(synthesizedDraft.mileage));
+      if (synthesizedDraft.distanceUnit) setDistanceUnit(synthesizedDraft.distanceUnit);
+      if (synthesizedDraft.engine) setEngine(synthesizedDraft.engine);
+      if (synthesizedDraft.gearbox) setGearbox(synthesizedDraft.gearbox);
+      if (synthesizedDraft.exteriorColor) setExteriorColor(synthesizedDraft.exteriorColor);
+      if (synthesizedDraft.interior) setInterior(synthesizedDraft.interior);
+
+      if (synthesizedDraft.titleStatus) {
+        if (TITLE_STATUS_OPTIONS.includes(synthesizedDraft.titleStatus)) {
+          setTitleStatus(synthesizedDraft.titleStatus);
+          setCustomTitleStatus('');
+        } else {
+          setTitleStatus('Other / Custom');
+          setCustomTitleStatus(synthesizedDraft.titleStatus);
+        }
+      }
+
+      const draftAny = synthesizedDraft as any;
+      if (draftAny.locationCity) setLocationCity(draftAny.locationCity);
+      if (draftAny.locationProvince) setLocationProvince(draftAny.locationProvince);
+      if (draftAny.locationCountry) setLocationCountry(draftAny.locationCountry);
+
+      if (!draftAny.locationCity && synthesizedDraft.location) {
+        const parts = synthesizedDraft.location.split(',').map(s => s.trim());
+        if (parts[0]) setLocationCity(parts[0]);
+        if (parts[1]) setLocationProvince(parts[1]);
+        if (parts[2]) setLocationCountry(parts[2]);
+      }
+
+      if (synthesizedDraft.sellerName) setSellerName(synthesizedDraft.sellerName);
+
+      if (!isBadgeOverridden && synthesizedDraft.highlightsBadge) {
+        setHighlightsBadge(synthesizedDraft.highlightsBadge);
+      }
+    }
+
+    // selectedSections.narrative
+    if (selectedSections.narrative) {
+      if (synthesizedDraft.overviewHeading) {
+        setOverviewHeading(synthesizedDraft.overviewHeading);
+      }
+      const narrative = (synthesizedDraft as any).overviewParagraphs || synthesizedDraft.overviewNarrative;
+      if (narrative) {
+        setOverviewParagraphs(narrative);
+      }
+    }
+
+    // selectedSections.showcase with Photo Preservation
+    if (selectedSections.showcase && Array.isArray(synthesizedDraft.showcaseChapters) && synthesizedDraft.showcaseChapters.length > 0) {
+      const mergedChapters: ShowcaseChapter[] = synthesizedDraft.showcaseChapters.map((newCh, idx) => {
+        const existing = showcaseChapters.find(
+          (c) => c.category && newCh.category && c.category.toUpperCase() === newCh.category.toUpperCase()
+        ) || showcaseChapters[idx];
+
+        const normalizedNew = normalizeSectionToChapter(newCh, idx);
+        const photoUrl = (existing && existing.photoUrl && existing.photoUrl.trim() !== '')
+          ? existing.photoUrl
+          : (normalizedNew.photoUrl || '');
+        const photoCaption = (existing && existing.photoUrl && existing.photoUrl.trim() !== '')
+          ? (existing.photoCaption || '')
+          : (normalizedNew.photoCaption || '');
+
+        return {
+          ...normalizedNew,
+          id: existing?.id || normalizedNew.id,
+          photoUrl,
+          photoCaption,
+          title: normalizedNew.title,
+          subtitle: normalizedNew.subtitle,
+          narrative: normalizedNew.narrative,
+          highlights: normalizedNew.highlights,
+          specCards: normalizedNew.specCards
+        };
+      });
+      setShowcaseChapters(mergedChapters);
+    }
+
+    // selectedSections.financials
+    if (selectedSections.financials && synthesizedDraft.financials) {
+      if (typeof synthesizedDraft.financials.startingBid === 'number') {
+        setStartingBid(synthesizedDraft.financials.startingBid);
+      }
+      if (typeof synthesizedDraft.financials.reserveAmount === 'number') {
+        setReserveAmount(synthesizedDraft.financials.reserveAmount);
+      }
+      if (typeof synthesizedDraft.financials.minimumIncrement === 'number') {
+        setMinimumIncrement(synthesizedDraft.financials.minimumIncrement);
+      }
+      if (typeof synthesizedDraft.financials.durationDays === 'number') {
+        setDurationDays(synthesizedDraft.financials.durationDays);
+      }
+    }
+
+    setIsDirty(true);
+    toast.success("AI draft applied to listing.");
+    setIsAiModalOpen(false);
+  };
+
+  // Section 2 Inline Narrative Generator
+  const handleRefineNarrative = async () => {
+    const curYear = year ? String(year).trim() : '';
+    const curMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : (make || '').trim();
+    const curModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : (model || '').trim();
+
+    if (!curYear || !curMake || !curModel) {
+      toast.error("Please specify Year, Make, and Model in Section 1 before generating AI content.");
+      return;
+    }
+
+    if (isRefiningNarrative || isRefiningShowcase) return;
+
+    setIsRefiningNarrative(true);
+    try {
+      const response = await refineListingSection({
+        targetSection: 'overviewNarrative',
+        contextSpecs: currentDraftContext
+      });
+
+      if (response?.overviewHeading) {
+        setOverviewHeading(response.overviewHeading);
+      }
+      const narrative = (response as any)?.overviewParagraphs || response?.overviewNarrative;
+      if (narrative) {
+        setOverviewParagraphs(narrative);
+      }
+      setIsDirty(true);
+      toast.success("Editorial narrative updated from specs.");
+    } catch (err: any) {
+      console.error("Narrative refinement failed:", err);
+      toast.error(err?.message || "Failed to auto-draft narrative. Please check connection and try again.");
+    } finally {
+      setIsRefiningNarrative(false);
+    }
+  };
+
+  // Section 4 Inline Showcase Chapters Generator
+  const handleRefineShowcaseChapters = async () => {
+    const curYear = year ? String(year).trim() : '';
+    const curMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : (make || '').trim();
+    const curModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : (model || '').trim();
+
+    if (!curYear || !curMake || !curModel) {
+      toast.error("Please specify Year, Make, and Model in Section 1 before generating AI content.");
+      return;
+    }
+
+    if (isRefiningNarrative || isRefiningShowcase) return;
+
+    setIsRefiningShowcase(true);
+    try {
+      const response = await refineListingSection({
+        targetSection: 'showcaseChapters',
+        contextSpecs: currentDraftContext
+      });
+
+      const incomingChapters = Array.isArray(response) ? response : (response?.showcaseChapters || []);
+      if (incomingChapters && incomingChapters.length > 0) {
+        const mergedChapters: ShowcaseChapter[] = incomingChapters.map((newCh: any, idx: number) => {
+          const existing = showcaseChapters.find(
+            (c) => c.category && newCh.category && c.category.toUpperCase() === newCh.category.toUpperCase()
+          ) || showcaseChapters[idx];
+
+          const normalizedNew = normalizeSectionToChapter(newCh, idx);
+          const photoUrl = (existing && existing.photoUrl && existing.photoUrl.trim() !== '')
+            ? existing.photoUrl
+            : (normalizedNew.photoUrl || '');
+          const photoCaption = (existing && existing.photoUrl && existing.photoUrl.trim() !== '')
+            ? (existing.photoCaption || '')
+            : (normalizedNew.photoCaption || '');
+
+          return {
+            ...normalizedNew,
+            id: existing?.id || normalizedNew.id,
+            photoUrl,
+            photoCaption,
+            title: normalizedNew.title,
+            subtitle: normalizedNew.subtitle,
+            narrative: normalizedNew.narrative,
+            highlights: normalizedNew.highlights,
+            specCards: normalizedNew.specCards
+          };
+        });
+        setShowcaseChapters(mergedChapters);
+        setIsDirty(true);
+        toast.success("Showcase chapters generated from specs.");
+      }
+    } catch (err: any) {
+      console.error("Showcase chapters refinement failed:", err);
+      toast.error(err?.message || "Failed to auto-generate chapters. Please check connection and try again.");
+    } finally {
+      setIsRefiningShowcase(false);
+    }
+  };
+
   // + NEW LISTING WORKFLOW
   const handleCreateNewListing = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1558,21 +1946,6 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const copy = [...galleryImages];
     copy[index] = { ...copy[index], category: newCategory };
     setGalleryImages(copy);
-  };
-
-  // Toast notification helper for Section 6 playlist actions
-  const toast = {
-    info: (msg: string) => {
-      setMessage({ type: 'info', text: msg });
-    },
-    success: (msg: string) => {
-      setMessage({ type: 'success', text: msg });
-      setTimeout(() => setMessage(null), 4000);
-    },
-    error: (msg: string) => {
-      setMessage({ type: 'error', text: msg });
-      setTimeout(() => setMessage(null), 4000);
-    }
   };
 
   const handleAutoFetchPlaylist = async () => {
@@ -1857,8 +2230,20 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </button>
         </div>
 
-        {/* Right: Actions (Import/Export, + New Listing, Save) */}
+        {/* Right: Actions (AI Writing Assistant, Import/Export, + New Listing, Save) */}
         <div className="flex items-center gap-2">
+          {/* AI Writing Assistant: Visible to ADMIN & SELLER roles */}
+          <button
+            type="button"
+            onClick={() => setIsAiModalOpen(true)}
+            disabled={isReadOnlyForSeller || isRefiningNarrative || isRefiningShowcase}
+            className="bg-slate-800/80 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs sm:text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            title="Launch AI Writing Assistant"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+            <span>✨ AI Writing Assistant</span>
+          </button>
+
           {/* Admin JSON & Creation Tools */}
           {isAdmin && (
             <>
@@ -2510,11 +2895,35 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 <div className="space-y-4 text-xs">
                   <div>
-                    <label className="block font-bold text-zinc-300 mb-1">Overview Section Heading</label>
+                    <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                      <label className="block font-bold text-zinc-300">Overview Section Heading</label>
+                      <button
+                        type="button"
+                        onClick={handleRefineNarrative}
+                        disabled={isRefiningNarrative || isRefiningShowcase || isReadOnlyForSeller}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        title="Auto-draft narrative from Section 1 vehicle specifications"
+                      >
+                        {isRefiningNarrative ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 flex-shrink-0" />
+                            <span>Drafting narrative...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                            <span>✨ Auto-Draft Narrative</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <input
                       type="text"
                       value={overviewHeading}
-                      onChange={(e) => setOverviewHeading(e.target.value)}
+                      onChange={(e) => {
+                        setOverviewHeading(e.target.value);
+                        setIsDirty(true);
+                      }}
                       placeholder="Vehicle Overview & Provenance"
                       className="w-full p-2.5 rounded-lg bg-zinc-900 border border-zinc-700 text-white focus:border-red-500 focus:outline-none"
                     />
@@ -2639,12 +3048,33 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
               {/* SECTION 4: SHOWCASE CHAPTERS */}
               <section id="sec-showcase" className="bg-[#181d24] rounded-2xl border border-zinc-800 p-5 sm:p-6 space-y-5 scroll-mt-6">
-                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3 flex-wrap gap-2">
                   <div className="flex items-center gap-2 text-zinc-100 font-bold text-base">
                     <BookOpen className="w-5 h-5 text-red-500" />
                     <h3>4. Curated Showcase Chapters</h3>
                   </div>
-                  <span className="text-[11px] text-zinc-400 font-mono">{showcaseChapters.length} Chapters</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRefineShowcaseChapters}
+                      disabled={isRefiningShowcase || isRefiningNarrative || isReadOnlyForSeller}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      title="Auto-generate showcase chapters from Section 1 vehicle specifications while preserving existing photos"
+                    >
+                      {isRefiningShowcase ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 flex-shrink-0" />
+                          <span>Generating chapters...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                          <span>✨ Auto-Generate Chapters</span>
+                        </>
+                      )}
+                    </button>
+                    <span className="text-[11px] text-zinc-400 font-mono">{showcaseChapters.length} Chapters</span>
+                  </div>
                 </div>
 
                 <ShowcaseChaptersEditor
@@ -4016,6 +4446,16 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </div>
         </div>
       </div>
+
+      {/* =================================================================== */}
+      {/* AI WRITING ASSISTANT MODAL */}
+      {/* =================================================================== */}
+      <AiAssistantModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onApply={handleApplyAiDraft}
+        currentDraftContext={currentDraftContext}
+      />
 
       {/* =================================================================== */}
       {/* IMPORT JSON MODAL */}

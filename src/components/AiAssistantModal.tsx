@@ -377,12 +377,12 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white tracking-wide">AI Editorial Studio</h2>
+                <h2 className="text-lg font-bold text-white tracking-wide">AI Listing Writing Assistant</h2>
                 <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
                   Intake Wizard
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Curated Consignment Intake & Editorial Assistant</p>
+              <p className="text-xs text-slate-400">Guided Consignment Intake & Vehicle Storytelling</p>
             </div>
           </div>
           <button
