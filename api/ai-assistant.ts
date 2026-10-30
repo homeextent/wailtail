@@ -19,6 +19,14 @@ import {
 
 export const maxDuration = 60;
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '4.5mb',
+    },
+  },
+};
+
 const CANDIDATE_MODELS = [
   'gemini-2.5-flash',
   'gemini-flash-latest',

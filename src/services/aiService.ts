@@ -75,10 +75,20 @@ async function postAiAssistant<T>(payload: AiAssistantPayload): Promise<T> {
     throw new Error('AI generation is currently rate-limited. Please wait a moment and try again.');
   }
 
+  const rawText = await response.text().catch(() => '');
+
+  if (
+    response.status === 413 ||
+    rawText.trim().startsWith('Request Entity Too Large') ||
+    rawText.startsWith('Request Entity Too Large')
+  ) {
+    throw new Error(
+      'Attached documents exceed the 4.5MB serverless transmission limit. Please remove some attachments or compress large documents before retrying.'
+    );
+  }
+
   const contentType = response.headers.get('content-type') || '';
   const isJson = contentType.toLowerCase().includes('application/json');
-
-  const rawText = await response.text().catch(() => '');
 
   // Inspect empty responses
   if (!rawText || rawText.trim().length === 0) {

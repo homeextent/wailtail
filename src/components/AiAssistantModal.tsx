@@ -45,8 +45,66 @@ interface UploadedFileItem {
   dataBase64?: string;
 }
 
-const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
-const MAX_IMG_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_CUMULATIVE_SIZE_BYTES = 3.0 * 1024 * 1024; // 3.0 MB cumulative attachment ceiling
+const MAX_PDF_SIZE_BYTES = 3.0 * 1024 * 1024; // 3 MB max for individual PDF
+const MAX_IMG_RAW_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB raw input limit before micro-compression
+
+/**
+ * Micro-compresses an uploaded image using an HTML5 Canvas scaled to a max dimension
+ * of 1200px (preserving aspect ratio) and exported via canvas.toDataURL('image/jpeg', 0.75).
+ */
+function compressImage(file: File): Promise<{ dataBase64: string; mimeType: string; size: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read image file "${file.name}".`));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error(`Failed to load image "${file.name}". The image may be corrupted or unsupported.`));
+      img.onload = () => {
+        try {
+          const maxDim = 1200;
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Failed to acquire canvas context for image micro-compression.'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          const commaIdx = dataUrl.indexOf(',');
+          const dataBase64 = commaIdx !== -1 ? dataUrl.substring(commaIdx + 1) : dataUrl;
+          const approxSizeBytes = Math.round((dataBase64.length * 3) / 4);
+
+          resolve({
+            dataBase64,
+            mimeType: 'image/jpeg',
+            size: approxSizeBytes
+          });
+        } catch (canvasErr) {
+          reject(canvasErr);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 const GUIDANCE_CHIPS = [
   { label: '+ Ownership History', text: '\n\nOwnership History:\n- Previous owners:\n- Current ownership duration:\n- Location history / climate exposure:' },
@@ -76,6 +134,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   const [fileError, setFileError] = useState<string | null>(null);
   const [isConvertingFiles, setIsConvertingFiles] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Step 2: Chassis Interview State
   const [interviewQuestions, setInterviewQuestions] = useState<string[]>([]);
@@ -163,6 +222,13 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isSynthesizing, isLoadingInterview, isConvertingFiles, onClose]);
 
+  // Ensure modal scroll container defaults to scrollTop = 0 when opening or transitioning between steps
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [isOpen, step]);
+
   if (!isOpen) return null;
 
   // File size formatter
@@ -172,64 +238,93 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Handle file uploads with validation and asynchronous Base64 conversion
+  // Handle file uploads with micro-compression, cumulative budget check, and Base64 encoding
   const processFiles = async (files: FileList | File[]) => {
     setFileError(null);
-    const newItems: UploadedFileItem[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const isImage = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
-
-      if (!isPdf && !isImage) {
-        setFileError(`Unsupported file format for "${file.name}". Please attach PDF documents or PNG/JPEG images.`);
-        continue;
-      }
-
-      if (isPdf && file.size > MAX_PDF_SIZE_BYTES) {
-        setFileError(`File "${file.name}" exceeds the 25MB limit for PDF inspection documents.`);
-        continue;
-      }
-
-      if (isImage && file.size > MAX_IMG_SIZE_BYTES) {
-        setFileError(`Image "${file.name}" exceeds the 20MB limit for photo uploads.`);
-        continue;
-      }
-
-      newItems.push({
-        file,
-        name: file.name,
-        size: file.size,
-        mimeType: file.type || (isPdf ? 'application/pdf' : 'image/jpeg')
-      });
-    }
-
-    if (newItems.length === 0) return;
+    if (!files || files.length === 0) return;
 
     setIsConvertingFiles(true);
     try {
-      const convertedItems = await Promise.all(
-        newItems.map(async (item) => {
-          try {
-            const encoded = await encodeFileToBase64(item.file);
-            return {
-              ...item,
-              dataBase64: encoded.dataBase64,
-              mimeType: encoded.mimeType
-            };
-          } catch (err) {
-            console.error(`Failed to encode file ${item.name}`, err);
-            return item;
-          }
-        })
-      );
+      const currentTotalBytes = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
+      let runningTotalBytes = currentTotalBytes;
+      const newItems: UploadedFileItem[] = [];
 
-      setUploadedFiles((prev) => [...prev, ...convertedItems]);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name);
+
+        if (!isPdf && !isImage) {
+          setFileError(`Unsupported file format for "${file.name}". Please attach PDF documents or PNG/JPEG images.`);
+          continue;
+        }
+
+        if (isPdf && file.size > MAX_PDF_SIZE_BYTES) {
+          setFileError(`File "${file.name}" exceeds the 3MB limit for PDF inspection documents.`);
+          continue;
+        }
+
+        if (isImage && file.size > MAX_IMG_RAW_SIZE_BYTES) {
+          setFileError(`Image "${file.name}" exceeds the 20MB limit for source document photos.`);
+          continue;
+        }
+
+        try {
+          if (isImage) {
+            const compressed = await compressImage(file);
+            if (runningTotalBytes + compressed.size > MAX_CUMULATIVE_SIZE_BYTES) {
+              setFileError(
+                'Total attachment size for AI extraction cannot exceed 3MB. Please attach only key service records or invoices.'
+              );
+              return;
+            }
+            runningTotalBytes += compressed.size;
+            newItems.push({
+              file,
+              name: file.name,
+              size: compressed.size,
+              mimeType: compressed.mimeType,
+              dataBase64: compressed.dataBase64
+            });
+          } else {
+            // PDF
+            if (runningTotalBytes + file.size > MAX_CUMULATIVE_SIZE_BYTES) {
+              setFileError(
+                'Total attachment size for AI extraction cannot exceed 3MB. Please attach only key service records or invoices.'
+              );
+              return;
+            }
+            const encoded = await encodeFileToBase64(file);
+            runningTotalBytes += file.size;
+            newItems.push({
+              file,
+              name: file.name,
+              size: file.size,
+              mimeType: encoded.mimeType || 'application/pdf',
+              dataBase64: encoded.dataBase64
+            });
+          }
+        } catch (itemErr) {
+          console.error(`Error processing file "${file.name}":`, itemErr);
+          setFileError(
+            itemErr instanceof Error
+              ? itemErr.message
+              : `Unable to process file "${file.name}". The file may be invalid or corrupted.`
+          );
+        }
+      }
+
+      if (newItems.length > 0) {
+        setUploadedFiles((prev) => [...prev, ...newItems]);
+      }
     } catch (err) {
+      console.error('File processing error:', err);
       setFileError('Failed to process one or more files. Please try again.');
     } finally {
       setIsConvertingFiles(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -487,7 +582,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div ref={scrollContainerRef} className="p-6 overflow-y-auto flex-1 space-y-6">
           {/* STEP 1: Ingestion */}
           {step === 1 && (
             <div className="space-y-6 animate-fade-in">
@@ -496,142 +591,11 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                   Step 1: Provenance Records & Raw Seller Notes
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Upload PDF inspection logs, maintenance invoices, or high-res photos. Paste in your maintenance journal or click guidance headers to structure your intake notes.
+                  Upload PDF inspection logs, service records, or photos of physical invoices. Paste your maintenance journal or click guidance headers to structure your intake notes.
                 </p>
               </div>
 
-              {/* Error banner */}
-              {fileError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span className="flex-1">{fileError}</span>
-                  <button
-                    onClick={() => setFileError(null)}
-                    className="p-1 hover:text-white rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
-              {/* File Dropzone */}
-              <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl p-6 bg-slate-950/40 hover:bg-slate-950/70 transition cursor-pointer flex flex-col items-center justify-center text-center group"
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    if (e.target.files) processFiles(e.target.files);
-                  }}
-                  multiple
-                  accept=".pdf,image/png,image/jpeg,image/jpg"
-                  className="hidden"
-                />
-                <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-amber-400 group-hover:border-amber-500/30 transition mb-3">
-                  {isConvertingFiles ? (
-                    <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
-                  ) : (
-                    <UploadCloud className="w-6 h-6" />
-                  )}
-                </div>
-                <p className="text-sm font-medium text-slate-200 mb-1">
-                  Drag & drop inspection documents, invoices, or photos
-                </p>
-                <p className="text-xs text-slate-400 mb-3">
-                  or <span className="text-amber-400 underline decoration-amber-500/40 underline-offset-2">browse files</span> from your computer
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                    PDFs ≤ 25MB
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                    Images ≤ 20MB
-                  </span>
-                </div>
-              </div>
-
-              {/* Uploaded File Chip List */}
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Attached Provenance Documents ({uploadedFiles.length})</span>
-                    {isConvertingFiles && (
-                      <span className="text-amber-400 flex items-center gap-1.5">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Processing base64 attachments...
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {uploadedFiles.map((item, idx) => {
-                      const isPdf = item.mimeType === 'application/pdf';
-                      return (
-                        <div
-                          key={`${item.name}-${idx}`}
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 mr-2">
-                            {isPdf ? (
-                              <FileText className="w-4 h-4 text-red-400 shrink-0" />
-                            ) : (
-                              <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
-                            )}
-                            <div className="truncate">
-                              <p className="text-slate-200 font-medium truncate">{item.name}</p>
-                              <p className="text-[10px] text-slate-400">{formatFileSize(item.size)}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveFile(idx);
-                            }}
-                            className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700 transition"
-                            title="Remove file"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Guidance Prompt Chips */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300">
-                    Seller Notes & Maintenance Logs
-                  </label>
-                  <span className="text-[11px] text-slate-500">Insert guided provenance headers:</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {GUIDANCE_CHIPS.map((chip, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => appendGuidanceChip(chip.text)}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 hover:bg-amber-500/10 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-slate-300 transition"
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={6}
-                  placeholder="Paste raw maintenance invoices, ownership narrative, collector provenance, paint meter readings, modifications, or mechanic summaries here..."
-                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/60 text-slate-200 text-xs sm:text-sm font-mono placeholder:font-sans placeholder:text-slate-500 transition resize-y"
-                />
-              </div>
-
-              {/* Vehicle Identification & Details */}
+              {/* Permanent Top-Mounted Vehicle Identification & Details */}
               <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/60 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
                   <Car className="w-4 h-4" />
@@ -709,6 +673,145 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Error banner */}
+              {fileError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="flex-1">{fileError}</span>
+                  <button
+                    onClick={() => setFileError(null)}
+                    className="p-1 hover:text-white rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* File Dropzone */}
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl p-6 bg-slate-950/40 hover:bg-slate-950/70 transition cursor-pointer flex flex-col items-center justify-center text-center group"
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => {
+                    if (e.target.files) processFiles(e.target.files);
+                  }}
+                  multiple
+                  accept=".pdf,image/png,image/jpeg,image/jpg"
+                  className="hidden"
+                />
+                <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-amber-400 group-hover:border-amber-500/30 transition mb-3">
+                  {isConvertingFiles ? (
+                    <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                  ) : (
+                    <UploadCloud className="w-6 h-6" />
+                  )}
+                </div>
+                <p className="text-sm font-medium text-slate-200 mb-1">
+                  Drag & drop inspection PDFs, service invoices, or document photos
+                </p>
+                <p className="text-xs text-slate-400 mb-3">
+                  or <span className="text-amber-400 underline decoration-amber-500/40 underline-offset-2">browse files</span> from your computer
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    PDFs ≤ 3MB
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                    Doc Photos ≤ 2MB (Max 3MB Total)
+                  </span>
+                </div>
+              </div>
+
+              {/* Section 5 Guidance Banner */}
+              <div className="p-3 bg-slate-800/40 border border-slate-700/60 rounded-xl flex items-start gap-2.5 text-xs text-slate-400">
+                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p>
+                  <strong className="text-slate-300 font-medium">Note:</strong> Vehicle gallery photography is managed in Section 5 (Photo Gallery). Only upload documentation, service invoices, or photos of physical receipts here.
+                </p>
+              </div>
+
+              {/* Uploaded File Chip List */}
+              {uploadedFiles.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>Attached Provenance Documents ({uploadedFiles.length})</span>
+                    {isConvertingFiles && (
+                      <span className="text-amber-400 flex items-center gap-1.5">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Processing base64 attachments...
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {uploadedFiles.map((item, idx) => {
+                      const isPdf = item.mimeType === 'application/pdf';
+                      return (
+                        <div
+                          key={`${item.name}-${idx}`}
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 mr-2">
+                            {isPdf ? (
+                              <FileText className="w-4 h-4 text-red-400 shrink-0" />
+                            ) : (
+                              <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
+                            )}
+                            <div className="truncate">
+                              <p className="text-slate-200 font-medium truncate">{item.name}</p>
+                              <p className="text-[10px] text-slate-400">{formatFileSize(item.size)}</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFile(idx);
+                            }}
+                            className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700 transition"
+                            title="Remove file"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Guidance Prompt Chips */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Seller Notes & Maintenance Logs
+                  </label>
+                  <span className="text-[11px] text-slate-500">Insert guided provenance headers:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {GUIDANCE_CHIPS.map((chip, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => appendGuidanceChip(chip.text)}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 hover:bg-amber-500/10 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-slate-300 transition"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={6}
+                  placeholder="Paste raw maintenance invoices, ownership narrative, collector provenance, paint meter readings, modifications, or mechanic summaries here..."
+                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/60 text-slate-200 text-xs sm:text-sm font-mono placeholder:font-sans placeholder:text-slate-500 transition resize-y"
+                />
               </div>
             </div>
           )}
