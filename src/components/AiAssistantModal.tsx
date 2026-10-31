@@ -13,7 +13,8 @@ import {
   Car,
   FileSpreadsheet,
   Check,
-  RefreshCw
+  RefreshCw,
+  Camera
 } from 'lucide-react';
 import { ListingDraftSchema } from '../types';
 import {
@@ -2128,6 +2129,30 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* What happens after applying? Handoff Callout */}
+              {!isSynthesizing && synthesizedDraft && (
+                <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3.5 mb-4 text-xs text-slate-300">
+                  <div className="flex items-center gap-2 mb-2 font-semibold text-amber-400">
+                    <Camera className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>What happens after applying?</span>
+                  </div>
+                  <ul className="space-y-1.5 list-disc list-inside text-slate-300">
+                    <li>
+                      <strong className="text-slate-200">Sections 1–4:</strong> Updates your vehicle identity, overview narrative, technical specs, and showcase chapter descriptions.
+                    </li>
+                    <li>
+                      <strong className="text-slate-200">Section 5 (Hero & Gallery):</strong> Head to Section 5 next to upload your high-resolution exterior, interior, engine, and documentation photo archive.
+                    </li>
+                    <li>
+                      <strong className="text-slate-200">Section 4 (Showcase Chapters):</strong> Assign matching gallery photos to each newly generated chapter.
+                    </li>
+                    <li>
+                      <strong className="text-slate-200">Section 7 (Financials & Dates):</strong> Review starting bid, minimum increment, and set your CAD reserve.
+                    </li>
+                  </ul>
                 </div>
               )}
             </div>

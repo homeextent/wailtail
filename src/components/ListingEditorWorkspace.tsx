@@ -1613,7 +1613,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     }
 
     setIsDirty(true);
-    toast.success("AI draft applied to listing.");
+    toast.success("AI draft applied! Next: Upload your vehicle photography in Section 5.");
     setIsAiModalOpen(false);
   };
 
@@ -2230,20 +2230,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </button>
         </div>
 
-        {/* Right: Actions (AI Writing Assistant, Import/Export, + New Listing, Save) */}
+        {/* Right: Actions (Import/Export, + New Listing, Save) */}
         <div className="flex items-center gap-2">
-          {/* AI Writing Assistant: Visible to ADMIN & SELLER roles */}
-          <button
-            type="button"
-            onClick={() => setIsAiModalOpen(true)}
-            disabled={isReadOnlyForSeller || isRefiningNarrative || isRefiningShowcase}
-            className="bg-slate-800/80 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs sm:text-sm font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            title="Launch AI Writing Assistant"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-            <span>✨ AI Writing Assistant</span>
-          </button>
-
           {/* Admin JSON & Creation Tools */}
           {isAdmin && (
             <>
