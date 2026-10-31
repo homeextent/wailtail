@@ -103,7 +103,7 @@ export const Footer: React.FC<FooterProps> = ({
               onClick={onOpenConsignmentModal}
               className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
             >
-              Consign a Vehicle
+              Sell a Vehicle
             </button>
             <span>•</span>
             <button

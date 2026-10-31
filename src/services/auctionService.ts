@@ -4509,7 +4509,7 @@ export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
     enabled: false,
     badgeText: '',
     text: '',
-    ctaText: '',
+    ctaText: 'Sell Your Vehicle',
     ctaAction: 'consignment_modal',
     targetAudience: 'all',
     clickCount: 0
@@ -4518,7 +4518,7 @@ export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
     enabled: true,
     badgeText: 'LAUNCH SPECIAL',
     text: 'Zero buyer premiums & $0 seller fees for our inaugural catalog launch.',
-    ctaText: 'Consign Vehicle',
+    ctaText: 'Sell Your Vehicle',
     ctaAction: 'consignment_modal',
     targetAudience: 'all',
     clickCount: 0
@@ -4530,7 +4530,7 @@ export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
       badgeText: 'FOUNDERS OFFER',
       headline: '$0 Seller Fees & Zero Buyer Premiums',
       copy: 'To celebrate the launch of Wailtail, consignors pay $0 listing fees and buyers pay 0% premium on all inaugural lots.',
-      ctaText: 'Consign Your Vehicle',
+      ctaText: 'Sell Your Vehicle →',
       ctaAction: 'consignment_modal',
       accentColor: 'amber',
       targetAudience: 'all',
