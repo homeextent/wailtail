@@ -15,10 +15,21 @@ export type ConsignmentEmailType =
   | 'listing_approved'
   | 'listing_revision_requested'
   | 'outbid_notification'
-  | 'winning_bid_confirmation';
+  | 'winning_bid_confirmation'
+  | 'feedback_report';
 
 export interface ConsignmentEmailPayload {
   type?: ConsignmentEmailType;
+  // Feedback report fields
+  category?: 'bug' | 'suggestion' | 'general';
+  reporterName?: string;
+  reporterEmail?: string;
+  url?: string;
+  viewport?: string;
+  userAgent?: string;
+  timestamp?: number | string;
+  userId?: string | null;
+  userRole?: string;
   // Consignment & Consignment Receipt fields
   year?: string | number;
   make?: string;
@@ -1273,6 +1284,173 @@ export default async function handler(req: any, res: any) {
       process.env.ADMIN_EMAIL ||
       process.env.WAILTAIL_ADMIN_EMAIL ||
       'contact@wailtail.com';
+
+    // Handle Platform Feedback & Bug Reports (type === 'feedback_report')
+    if (type === 'feedback_report') {
+      const {
+        category = 'general',
+        message = '',
+        reporterName,
+        reporterEmail,
+        url,
+        viewport,
+        userAgent,
+        timestamp,
+        userId,
+        userRole
+      } = payload || {};
+
+      if (!message || message.trim().length < 10) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Missing required feedback message (minimum 10 characters required).'
+        });
+      }
+
+      const catUpper = String(category).toUpperCase();
+      const catKey = String(category).toLowerCase();
+      let badgeBg = '#451a03';
+      let badgeBorder = '#d97706';
+      let badgeColor = '#f59e0b';
+      let badgeLabel = 'GENERAL FEEDBACK';
+
+      if (catKey === 'bug') {
+        badgeBg = '#450a0a';
+        badgeBorder = '#ef4444';
+        badgeColor = '#ef4444';
+        badgeLabel = 'BUG / TECHNICAL ISSUE';
+      } else if (catKey === 'suggestion') {
+        badgeBg = '#0c4a6e';
+        badgeBorder = '#3b82f6';
+        badgeColor = '#3b82f6';
+        badgeLabel = 'SUGGESTION / IMPROVEMENT';
+      }
+
+      const formattedDate = new Date().toLocaleDateString('en-US');
+      const subject = `[Wailtail Feedback] ${catUpper}: ${reporterName || 'Visitor'} (${formattedDate})`;
+      const cleanReporterEmail = reporterEmail ? String(reporterEmail).trim() : '';
+
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #020617; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f8fafc; }
+    .container { max-width: 600px; margin: 32px auto; background: #0f172a; border-radius: 16px; overflow: hidden; border: 1px solid #1e293b; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    .header { background-color: #020617; padding: 32px 24px; text-align: center; border-bottom: 2px solid ${badgeBorder}; }
+    .brand { font-size: 26px; font-weight: 900; letter-spacing: -0.5px; color: #ffffff; text-transform: uppercase; margin: 0; }
+    .sub { font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-top: 6px; }
+    .body { padding: 36px 28px; }
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; background-color: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; }
+    .h1 { font-size: 22px; font-weight: 800; color: #f8fafc; margin: 0 0 16px 0; line-height: 1.3; }
+    .p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 20px 0; }
+    .highlight-card { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin: 20px 0; }
+    .section-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: ${badgeColor}; margin-bottom: 14px; }
+    .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .spec-table tr { border-bottom: 1px solid #1e293b; }
+    .spec-table tr:last-child { border-bottom: none; }
+    .spec-table td { padding: 9px 0; }
+    .spec-label { color: #64748b; font-weight: 600; width: 35%; }
+    .spec-val { color: #f1f5f9; font-weight: 700; text-align: right; word-break: break-all; }
+    .message-block { background-color: #020617; border: 1px solid #1e293b; border-radius: 12px; padding: 18px; font-size: 14px; line-height: 1.6; color: #f8fafc; white-space: pre-wrap; word-break: break-word; font-family: inherit; }
+    .cta-box { text-align: center; margin: 28px 0 20px 0; }
+    .cta-btn { display: inline-block; background-color: #3b82f6; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 800; letter-spacing: 0.5px; padding: 14px 28px; border-radius: 10px; box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.4); text-transform: uppercase; }
+    .footer { background-color: #020617; padding: 24px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1e293b; }
+    .footer p { margin: 4px 0; }
+  </style>
+ head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">WAILTAIL</div>
+      <div class="sub">Platform Feedback &amp; Bug Triage</div>
+    </div>
+    <div class="body">
+      <div class="badge">${badgeLabel}</div>
+      <h1 class="h1">Platform Feedback Submission</h1>
+      <p class="p">
+        A user has submitted feedback or reported an issue on Wailtail.
+      </p>
+
+      <div class="highlight-card">
+        <div class="section-title">Reporter Details</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Name</td>
+            <td class="spec-val">${reporterName || 'Visitor / Anonymous'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Email</td>
+            <td class="spec-val">${cleanReporterEmail ? `<a href="mailto:${cleanReporterEmail}" style="color: #38bdf8; text-decoration: none;">${cleanReporterEmail}</a>` : 'Not provided'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Account UID</td>
+            <td class="spec-val" style="font-family: monospace;">${userId || 'Unauthenticated Guest'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Active Role</td>
+            <td class="spec-val">${userRole || 'GUEST'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">Timestamp</td>
+            <td class="spec-val">${timestamp ? new Date(Number(timestamp) || timestamp).toUTCString() : new Date().toUTCString()}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="highlight-card">
+        <div class="section-title">Client Diagnostics</div>
+        <table class="spec-table">
+          <tr>
+            <td class="spec-label">Active URL</td>
+            <td class="spec-val"><a href="${url || '#'}" style="color: #38bdf8; text-decoration: none;" target="_blank" rel="noopener noreferrer">${url || 'N/A'}</a></td>
+          </tr>
+          <tr>
+            <td class="spec-label">Viewport</td>
+            <td class="spec-val" style="font-family: monospace;">${viewport || 'Unknown'}</td>
+          </tr>
+          <tr>
+            <td class="spec-label">User Agent</td>
+            <td class="spec-val" style="font-size: 11px; font-family: monospace; color: #94a3b8;">${userAgent || 'Unknown'}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="margin: 24px 0 12px 0;">
+        <div class="section-title" style="margin-bottom: 8px;">Submitted Message</div>
+        <div class="message-block">${message}</div>
+      </div>
+
+      ${cleanReporterEmail ? `
+      <div class="cta-box">
+        <a href="mailto:${cleanReporterEmail}?subject=Re:%20Wailtail%20Feedback%20Follow-up" class="cta-btn">
+          Reply Directly to ${cleanReporterEmail}
+        </a>
+      </div>` : ''}
+    </div>
+    <div class="footer">
+      <p><strong>Wailtail Auctions</strong> • Platform Administration &amp; Bug Triage</p>
+      <p>Dispatch Timestamp: ${new Date().toUTCString()}</p>
+    </div>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      await sendEmailNotification({
+        to: adminEmail,
+        subject,
+        html: htmlContent
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Feedback report dispatched successfully.',
+        recipient: adminEmail
+      });
+    }
 
     // Handle Private Vehicle Inquiries
     if (type === 'inquiry') {

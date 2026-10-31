@@ -84,6 +84,11 @@ service cloud.firestore {
     }
 
     // Intake Forms & Direct Communications
+    match /feedback/{feedbackId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
     match /consignment_applications/{appId} {
       allow create: if true;
       allow read, update, delete: if isAuthenticated();

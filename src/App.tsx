@@ -36,6 +36,7 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { ShareModal } from './components/ShareModal';
 import { ContactSellerModal } from './components/ContactSellerModal';
 import { ConsignmentModal } from './components/ConsignmentModal';
+import { FeedbackModal } from './components/FeedbackModal';
 import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
@@ -173,6 +174,7 @@ const AuctionAppContent: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isAccountHubOpen, setIsAccountHubOpen] = useState(false);
   const [accountHubTab, setAccountHubTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'>('bids');
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
@@ -768,6 +770,7 @@ const AuctionAppContent: React.FC = () => {
           siteTagline={effectiveSiteTagline}
           onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
           onOpenLegalModal={handleOpenLegalModal}
+          onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         />
       </div>
     );
@@ -1065,6 +1068,7 @@ const AuctionAppContent: React.FC = () => {
         siteTagline={effectiveSiteTagline}
         onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
         onOpenLegalModal={handleOpenLegalModal}
+        onOpenFeedback={() => setIsFeedbackModalOpen(true)}
       />
 
       {/* Modals */}
@@ -1155,6 +1159,11 @@ const AuctionAppContent: React.FC = () => {
         isOpen={isLegalModalOpen}
         onClose={() => setIsLegalModalOpen(false)}
         initialTab={legalModalTab}
+      />
+
+      <FeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
       />
 
       {isAdmin && (

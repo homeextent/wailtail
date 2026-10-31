@@ -9,6 +9,7 @@ interface FooterProps {
   siteTagline?: string;
   onOpenConsignmentModal?: () => void;
   onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
+  onOpenFeedback?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({ 
@@ -17,7 +18,8 @@ export const Footer: React.FC<FooterProps> = ({
   siteName,
   siteTagline,
   onOpenConsignmentModal,
-  onOpenLegalModal
+  onOpenLegalModal,
+  onOpenFeedback
 }) => {
   const brandName = siteName || 'wailtail';
   const tagline = siteTagline || 'Single-Car Auctions';
@@ -120,6 +122,14 @@ export const Footer: React.FC<FooterProps> = ({
               className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
             >
               Privacy Policy
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={onOpenFeedback}
+              className="text-slate-400 hover:text-white transition-colors text-xs cursor-pointer"
+            >
+              Feedback &amp; Bug Report
             </button>
             <span>•</span>
             <span className="text-zinc-400 font-medium">Consigning & Bidding Nationwide Across Canada 🇨🇦</span>
