@@ -214,11 +214,38 @@ function compressImage(file: File): Promise<{ dataBase64: string; mimeType: stri
   });
 }
 
-const GUIDANCE_CHIPS = [
-  { label: '+ Ownership History', text: '\n\nOwnership History:\n- Previous owners:\n- Current ownership duration:\n- Location history / climate exposure:' },
-  { label: '+ Major Services & Invoices', text: '\n\nMajor Services & Invoices:\n- Date / Mileage:\n- Key maintenance items performed:\n- Replacement parts / fluids used:' },
-  { label: '+ Paint Meter & Flaws', text: '\n\nPaint Meter & Flaws:\n- Paint meter readings (mils/microns):\n- Imperfections, stone chips, or repainted panels:\n- Glass, trim, and weatherstripping condition:' },
-  { label: '+ Factory Options & Modifications', text: '\n\nFactory Options & Modifications:\n- Factory build sheet / optional equipment:\n- Aftermarket modifications / upgrades:\n- Included original OEM parts:' }
+export type ProvenanceCategoryKey = 'ownership' | 'services' | 'flaws' | 'modifications';
+
+export interface StructuredProvenance {
+  ownership: {
+    previousOwners: string;
+    ownershipDuration: string;
+    climateStorage: string;
+  };
+  services: {
+    recentSummary: string;
+    serviceFacility: string;
+    timingMileage: string;
+  };
+  flaws: {
+    paintReadings: string;
+    knownFlaws: string;
+    imperfectionDisclosures: string;
+  };
+  modifications: {
+    factoryOptions: string;
+    modifications: string;
+  };
+}
+
+const PROVENANCE_CATEGORIES: {
+  key: ProvenanceCategoryKey;
+  label: string;
+}[] = [
+  { key: 'ownership', label: 'Ownership History' },
+  { key: 'services', label: 'Major Services & Invoices' },
+  { key: 'flaws', label: 'Paint Meter & Flaws' },
+  { key: 'modifications', label: 'Factory Options & Modifications' }
 ];
 
 const LOADING_TICKER_MESSAGES = [
@@ -236,8 +263,37 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   // Wizard active step: 1 | 2 | 3
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // Step 1: Ingestion State
-  const [notes, setNotes] = useState<string>('');
+  // Step 1: Ingestion State (Structured Provenance Drawers & Freeform Notes)
+  const [structuredProvenance, setStructuredProvenance] = useState<StructuredProvenance>({
+    ownership: {
+      previousOwners: '',
+      ownershipDuration: '',
+      climateStorage: ''
+    },
+    services: {
+      recentSummary: '',
+      serviceFacility: '',
+      timingMileage: ''
+    },
+    flaws: {
+      paintReadings: '',
+      knownFlaws: '',
+      imperfectionDisclosures: ''
+    },
+    modifications: {
+      factoryOptions: '',
+      modifications: ''
+    }
+  });
+
+  const [activeDrawers, setActiveDrawers] = useState<Record<ProvenanceCategoryKey, boolean>>({
+    ownership: false,
+    services: false,
+    flaws: false,
+    modifications: false
+  });
+
+  const [freeformNotes, setFreeformNotes] = useState<string>('');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileItem[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isConvertingFiles, setIsConvertingFiles] = useState<boolean>(false);
@@ -356,6 +412,19 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
       setInterviewError(null);
       setSynthesisError(null);
       setVehicleContextError(null);
+      setActiveDrawers({
+        ownership: false,
+        services: false,
+        flaws: false,
+        modifications: false
+      });
+      setStructuredProvenance({
+        ownership: { previousOwners: '', ownershipDuration: '', climateStorage: '' },
+        services: { recentSummary: '', serviceFacility: '', timingMileage: '' },
+        flaws: { paintReadings: '', knownFlaws: '', imperfectionDisclosures: '' },
+        modifications: { factoryOptions: '', modifications: '' }
+      });
+      setFreeformNotes('');
     }
   }, [isOpen, currentDraftContext]);
 
@@ -510,8 +579,123 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     setUploadedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
-  const appendGuidanceChip = (promptText: string) => {
-    setNotes((prev) => (prev ? `${prev.trim()}${promptText}\n` : promptText.trim() + '\n'));
+  const toggleDrawer = (category: ProvenanceCategoryKey) => {
+    setActiveDrawers((prev) => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  const updateProvenance = <K extends ProvenanceCategoryKey>(
+    category: K,
+    field: keyof StructuredProvenance[K],
+    value: string
+  ) => {
+    setStructuredProvenance((prev) => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: value
+      }
+    }));
+  };
+
+  const hasDrawerContent = (key: ProvenanceCategoryKey): boolean => {
+    switch (key) {
+      case 'ownership':
+        return Boolean(
+          structuredProvenance.ownership.previousOwners.trim() ||
+          structuredProvenance.ownership.ownershipDuration.trim() ||
+          structuredProvenance.ownership.climateStorage.trim()
+        );
+      case 'services':
+        return Boolean(
+          structuredProvenance.services.recentSummary.trim() ||
+          structuredProvenance.services.serviceFacility.trim() ||
+          structuredProvenance.services.timingMileage.trim()
+        );
+      case 'flaws':
+        return Boolean(
+          structuredProvenance.flaws.paintReadings.trim() ||
+          structuredProvenance.flaws.knownFlaws.trim() ||
+          structuredProvenance.flaws.imperfectionDisclosures.trim()
+        );
+      case 'modifications':
+        return Boolean(
+          structuredProvenance.modifications.factoryOptions.trim() ||
+          structuredProvenance.modifications.modifications.trim()
+        );
+      default:
+        return false;
+    }
+  };
+
+  const compileSellerNotes = (): string => {
+    const sections: string[] = [];
+
+    // 1. Ownership History
+    const ownershipLines: string[] = [];
+    if (structuredProvenance.ownership.previousOwners.trim()) {
+      ownershipLines.push(`- Previous owners: ${structuredProvenance.ownership.previousOwners.trim()}`);
+    }
+    if (structuredProvenance.ownership.ownershipDuration.trim()) {
+      ownershipLines.push(`- Current ownership duration: ${structuredProvenance.ownership.ownershipDuration.trim()}`);
+    }
+    if (structuredProvenance.ownership.climateStorage.trim()) {
+      ownershipLines.push(`- Storage / climate exposure: ${structuredProvenance.ownership.climateStorage.trim()}`);
+    }
+    if (ownershipLines.length > 0) {
+      sections.push(`### Ownership History\n${ownershipLines.join('\n')}`);
+    }
+
+    // 2. Major Services & Invoices
+    const serviceLines: string[] = [];
+    if (structuredProvenance.services.recentSummary.trim()) {
+      serviceLines.push(`- Recent work summary: ${structuredProvenance.services.recentSummary.trim()}`);
+    }
+    if (structuredProvenance.services.serviceFacility.trim()) {
+      serviceLines.push(`- Service facility: ${structuredProvenance.services.serviceFacility.trim()}`);
+    }
+    if (structuredProvenance.services.timingMileage.trim()) {
+      serviceLines.push(`- Date & mileage: ${structuredProvenance.services.timingMileage.trim()}`);
+    }
+    if (serviceLines.length > 0) {
+      sections.push(`### Major Services & Invoices\n${serviceLines.join('\n')}`);
+    }
+
+    // 3. Paint Meter & Flaws
+    const flawLines: string[] = [];
+    if (structuredProvenance.flaws.paintReadings.trim()) {
+      flawLines.push(`- Paint meter readings: ${structuredProvenance.flaws.paintReadings.trim()}`);
+    }
+    if (structuredProvenance.flaws.knownFlaws.trim()) {
+      flawLines.push(`- Known flaws / cosmetic imperfections: ${structuredProvenance.flaws.knownFlaws.trim()}`);
+    }
+    if (structuredProvenance.flaws.imperfectionDisclosures.trim()) {
+      flawLines.push(`- Imperfection disclosures: ${structuredProvenance.flaws.imperfectionDisclosures.trim()}`);
+    }
+    if (flawLines.length > 0) {
+      sections.push(`### Paint Meter & Flaws\n${flawLines.join('\n')}`);
+    }
+
+    // 4. Factory Options & Modifications
+    const modLines: string[] = [];
+    if (structuredProvenance.modifications.factoryOptions.trim()) {
+      modLines.push(`- Notable factory options: ${structuredProvenance.modifications.factoryOptions.trim()}`);
+    }
+    if (structuredProvenance.modifications.modifications.trim()) {
+      modLines.push(`- Aftermarket modifications: ${structuredProvenance.modifications.modifications.trim()}`);
+    }
+    if (modLines.length > 0) {
+      sections.push(`### Factory Options & Modifications\n${modLines.join('\n')}`);
+    }
+
+    // 5. Additional Notes & Maintenance Logs
+    if (freeformNotes.trim()) {
+      sections.push(`### Additional Notes & Maintenance Logs\n${freeformNotes.trim()}`);
+    }
+
+    return sections.join('\n\n').trim();
   };
 
   // Trigger Chassis Interview generation
@@ -606,8 +790,10 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
         generation: effectiveVehicleContext.generation || currentDraftContext?.generation || ''
       };
 
+      const compiledSellerNotes = compileSellerNotes();
+
       const result = await synthesizeListingDraft({
-        notes,
+        notes: compiledSellerNotes,
         documents: documentsPayload.length > 0 ? documentsPayload : undefined,
         interviewAnswers,
         baseDraft
@@ -972,143 +1158,476 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 </div>
               </div>
 
-              {/* Error banner */}
-              {fileError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 text-xs">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span className="flex-1">{fileError}</span>
-                  <button
-                    onClick={() => setFileError(null)}
-                    className="p-1 hover:text-white rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+              {/* Middle: Seller Notes & Vehicle Provenance */}
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Seller Notes &amp; Vehicle Provenance
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Click guided headers to expand structured provenance drawers:
+                  </span>
                 </div>
-              )}
 
-              {/* File Dropzone */}
-              <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl p-6 bg-slate-950/40 hover:bg-slate-950/70 transition cursor-pointer flex flex-col items-center justify-center text-center group"
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={(e) => {
-                    if (e.target.files) processFiles(e.target.files);
-                  }}
-                  multiple
-                  accept=".pdf,image/png,image/jpeg,image/jpg"
-                  className="hidden"
-                />
-                <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-amber-400 group-hover:border-amber-500/30 transition mb-3">
-                  {isConvertingFiles ? (
-                    <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
-                  ) : (
-                    <UploadCloud className="w-6 h-6" />
+                {/* Guided Provenance Accordion Category Pills */}
+                <div className="flex flex-wrap gap-2">
+                  {PROVENANCE_CATEGORIES.map((cat) => {
+                    const isOpen = activeDrawers[cat.key];
+                    const hasContent = hasDrawerContent(cat.key);
+                    const isHighlighted = isOpen || hasContent;
+
+                    return (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        onClick={() => toggleDrawer(cat.key)}
+                        aria-expanded={isOpen}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                          isOpen
+                            ? 'bg-amber-500/15 border border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                            : hasContent
+                            ? 'bg-emerald-500/15 border border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
+                            : 'bg-slate-800/80 border border-slate-700 hover:border-slate-600 text-slate-300'
+                        }`}
+                      >
+                        {isHighlighted ? (
+                          <Check
+                            className={`w-3.5 h-3.5 stroke-[2.5] ${
+                              isOpen ? 'text-amber-400' : 'text-emerald-400'
+                            }`}
+                          />
+                        ) : (
+                          <span className="text-slate-400 font-bold">+</span>
+                        )}
+                        <span>{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Expandable Accordion Drawers */}
+                <div className="space-y-3">
+                  {/* Drawer 1: Ownership History */}
+                  {activeDrawers.ownership && (
+                    <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-4 mb-3 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                            Ownership History
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleDrawer('ownership')}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 transition"
+                        >
+                          Collapse
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label
+                            htmlFor="prov-prev-owners"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Previous Owners
+                          </label>
+                          <input
+                            id="prov-prev-owners"
+                            type="text"
+                            value={structuredProvenance.ownership.previousOwners}
+                            onChange={(e) =>
+                              updateProvenance('ownership', 'previousOwners', e.target.value)
+                            }
+                            placeholder="e.g., 2 registered owners in Ontario"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="prov-ownership-duration"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Ownership Duration
+                          </label>
+                          <input
+                            id="prov-ownership-duration"
+                            type="text"
+                            value={structuredProvenance.ownership.ownershipDuration}
+                            onChange={(e) =>
+                              updateProvenance('ownership', 'ownershipDuration', e.target.value)
+                            }
+                            placeholder="e.g., 6 years, acquired in 2020"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="prov-climate-storage"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Storage &amp; Climate Exposure
+                          </label>
+                          <input
+                            id="prov-climate-storage"
+                            type="text"
+                            value={structuredProvenance.ownership.climateStorage}
+                            onChange={(e) =>
+                              updateProvenance('ownership', 'climateStorage', e.target.value)
+                            }
+                            placeholder="e.g., Heated garage, summer use only, no winter driving"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Drawer 2: Major Services & Invoices */}
+                  {activeDrawers.services && (
+                    <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-4 mb-3 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                            Major Services &amp; Invoices
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleDrawer('services')}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 transition"
+                        >
+                          Collapse
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label
+                            htmlFor="prov-recent-summary"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Recent Work Summary
+                          </label>
+                          <textarea
+                            id="prov-recent-summary"
+                            rows={2}
+                            value={structuredProvenance.services.recentSummary}
+                            onChange={(e) =>
+                              updateProvenance('services', 'recentSummary', e.target.value)
+                            }
+                            placeholder="e.g., Major timing belt service, valve adjustment, fluid flush"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition resize-y"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label
+                              htmlFor="prov-service-facility"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Service Facility
+                            </label>
+                            <input
+                              id="prov-service-facility"
+                              type="text"
+                              value={structuredProvenance.services.serviceFacility}
+                              onChange={(e) =>
+                                updateProvenance('services', 'serviceFacility', e.target.value)
+                              }
+                              placeholder="e.g., Independent marque specialist"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="prov-timing-mileage"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Date &amp; Mileage
+                            </label>
+                            <input
+                              id="prov-timing-mileage"
+                              type="text"
+                              value={structuredProvenance.services.timingMileage}
+                              onChange={(e) =>
+                                updateProvenance('services', 'timingMileage', e.target.value)
+                              }
+                              placeholder="e.g., May 2024 at 122,000 km ($4,800 CAD)"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Drawer 3: Paint Meter & Flaws */}
+                  {activeDrawers.flaws && (
+                    <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-4 mb-3 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                            Paint Meter &amp; Flaws
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleDrawer('flaws')}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 transition"
+                        >
+                          Collapse
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label
+                            htmlFor="prov-paint-readings"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Paint Meter Readings
+                          </label>
+                          <input
+                            id="prov-paint-readings"
+                            type="text"
+                            value={structuredProvenance.flaws.paintReadings}
+                            onChange={(e) =>
+                              updateProvenance('flaws', 'paintReadings', e.target.value)
+                            }
+                            placeholder="e.g., Consistent 4.0–5.5 mils across factory panels; rear quarter reads 8.0 mils"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label
+                              htmlFor="prov-known-flaws"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Cosmetic Flaws
+                            </label>
+                            <input
+                              id="prov-known-flaws"
+                              type="text"
+                              value={structuredProvenance.flaws.knownFlaws}
+                              onChange={(e) =>
+                                updateProvenance('flaws', 'knownFlaws', e.target.value)
+                              }
+                              placeholder="e.g., Minor stone chips on front valance, curb rash on rear right wheel"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="prov-imperfections"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Imperfection Disclosures
+                            </label>
+                            <input
+                              id="prov-imperfections"
+                              type="text"
+                              value={structuredProvenance.flaws.imperfectionDisclosures}
+                              onChange={(e) =>
+                                updateProvenance('flaws', 'imperfectionDisclosures', e.target.value)
+                              }
+                              placeholder="e.g., Light bolster wear on driver seat; clean underbody with zero corrosion"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Drawer 4: Factory Options & Modifications */}
+                  {activeDrawers.modifications && (
+                    <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-4 mb-3 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+                            Factory Options &amp; Modifications
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleDrawer('modifications')}
+                          className="text-[11px] text-slate-400 hover:text-slate-200 transition"
+                        >
+                          Collapse
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label
+                            htmlFor="prov-factory-options"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Notable Factory Options
+                          </label>
+                          <textarea
+                            id="prov-factory-options"
+                            rows={2}
+                            value={structuredProvenance.modifications.factoryOptions}
+                            onChange={(e) =>
+                              updateProvenance('modifications', 'factoryOptions', e.target.value)
+                            }
+                            placeholder="e.g., Sport Chrono, LSD, heated sport seats, sunroof delete"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition resize-y"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="prov-modifications"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Aftermarket Modifications
+                          </label>
+                          <textarea
+                            id="prov-modifications"
+                            rows={2}
+                            value={structuredProvenance.modifications.modifications}
+                            onChange={(e) =>
+                              updateProvenance('modifications', 'modifications', e.target.value)
+                            }
+                            placeholder="e.g., Fabspeed exhaust, Bilstein B6 dampers (OEM parts included)"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition resize-y"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
-                <p className="text-sm font-medium text-slate-200 mb-1">
-                  Drag & drop inspection PDFs, service invoices, or document photos
-                </p>
-                <p className="text-xs text-slate-400 mb-3">
-                  or <span className="text-amber-400 underline decoration-amber-500/40 underline-offset-2">browse files</span> from your computer
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                    PDFs ≤ 3MB
-                  </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
-                    Doc Photos ≤ 2MB (Max 3MB Total)
-                  </span>
+
+                {/* Freeform Notes & Pasted Records Textarea */}
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="freeform-seller-notes"
+                    className="block text-xs font-semibold text-slate-300"
+                  >
+                    Additional Notes, Raw Invoices, or Freeform Summary (Optional)
+                  </label>
+                  <textarea
+                    id="freeform-seller-notes"
+                    value={freeformNotes}
+                    onChange={(e) => setFreeformNotes(e.target.value)}
+                    rows={4}
+                    placeholder="Paste raw mechanic summaries, additional historical notes, or unstructured records here..."
+                    className="w-full px-3.5 py-3 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/60 text-slate-200 text-xs sm:text-sm font-mono placeholder:font-sans placeholder:text-slate-500 transition resize-y focus:outline-none"
+                  />
                 </div>
               </div>
 
-              {/* Section 5 Guidance Banner */}
-              <div className="p-3 bg-slate-800/40 border border-slate-700/60 rounded-xl flex items-start gap-2.5 text-xs text-slate-400">
-                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <p>
-                  <strong className="text-slate-300 font-medium">Note:</strong> Vehicle gallery photography is managed in Section 5 (Photo Gallery). Only upload documentation, service invoices, or photos of physical receipts here.
-                </p>
-              </div>
+              {/* Bottom: Multimodal Document Dropzone */}
+              <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                {/* Error banner */}
+                {fileError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3 text-red-400 text-xs">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="flex-1">{fileError}</span>
+                    <button
+                      onClick={() => setFileError(null)}
+                      className="p-1 hover:text-white rounded"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-              {/* Uploaded File Chip List */}
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Attached Provenance Documents ({uploadedFiles.length})</span>
-                    {isConvertingFiles && (
-                      <span className="text-amber-400 flex items-center gap-1.5">
-                        <Loader2 className="w-3 h-3 animate-spin" /> Processing base64 attachments...
-                      </span>
+                {/* File Dropzone */}
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-700 hover:border-amber-500/60 rounded-xl p-6 bg-slate-950/40 hover:bg-slate-950/70 transition cursor-pointer flex flex-col items-center justify-center text-center group"
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      if (e.target.files) processFiles(e.target.files);
+                    }}
+                    multiple
+                    accept=".pdf,image/png,image/jpeg,image/jpg"
+                    className="hidden"
+                  />
+                  <div className="p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 group-hover:text-amber-400 group-hover:border-amber-500/30 transition mb-3">
+                    {isConvertingFiles ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                    ) : (
+                      <UploadCloud className="w-6 h-6" />
                     )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {uploadedFiles.map((item, idx) => {
-                      const isPdf = item.mimeType === 'application/pdf';
-                      return (
-                        <div
-                          key={`${item.name}-${idx}`}
-                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-xs"
-                        >
-                          <div className="flex items-center gap-2 min-w-0 mr-2">
-                            {isPdf ? (
-                              <FileText className="w-4 h-4 text-red-400 shrink-0" />
-                            ) : (
-                              <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
-                            )}
-                            <div className="truncate">
-                              <p className="text-slate-200 font-medium truncate">{item.name}</p>
-                              <p className="text-[10px] text-slate-400">{formatFileSize(item.size)}</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveFile(idx);
-                            }}
-                            className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700 transition"
-                            title="Remove file"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                  <p className="text-sm font-medium text-slate-200 mb-1">
+                    Drag &amp; drop inspection PDFs, service invoices, or document photos
+                  </p>
+                  <p className="text-xs text-slate-400 mb-3">
+                    or <span className="text-amber-400 underline decoration-amber-500/40 underline-offset-2">browse files</span> from your computer
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                      PDFs ≤ 3MB
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+                      Doc Photos ≤ 2MB (Max 3MB Total)
+                    </span>
                   </div>
                 </div>
-              )}
 
-              {/* Guidance Prompt Chips */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-300">
-                    Seller Notes & Maintenance Logs
-                  </label>
-                  <span className="text-[11px] text-slate-500">Insert guided provenance headers:</span>
+                {/* Section 5 Guidance Banner */}
+                <div className="p-3 bg-slate-800/40 border border-slate-700/60 rounded-xl flex items-start gap-2.5 text-xs text-slate-400">
+                  <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <p>
+                    <strong className="text-slate-300 font-medium">Note:</strong> Vehicle gallery photography is managed in Section 5 (Photo Gallery). Only upload documentation, service invoices, or photos of physical receipts here.
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {GUIDANCE_CHIPS.map((chip, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => appendGuidanceChip(chip.text)}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium bg-slate-800 hover:bg-amber-500/10 hover:text-amber-300 border border-slate-700 hover:border-amber-500/40 text-slate-300 transition"
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={6}
-                  placeholder="Paste raw maintenance invoices, ownership narrative, collector provenance, paint meter readings, modifications, or mechanic summaries here..."
-                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950/70 border border-slate-800 focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/60 text-slate-200 text-xs sm:text-sm font-mono placeholder:font-sans placeholder:text-slate-500 transition resize-y"
-                />
+
+                {/* Uploaded File Chip List */}
+                {uploadedFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Attached Provenance Documents ({uploadedFiles.length})</span>
+                      {isConvertingFiles && (
+                        <span className="text-amber-400 flex items-center gap-1.5">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Processing base64 attachments...
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {uploadedFiles.map((item, idx) => {
+                        const isPdf = item.mimeType === 'application/pdf';
+                        return (
+                          <div
+                            key={`${item.name}-${idx}`}
+                            className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/80 border border-slate-700/80 text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 mr-2">
+                              {isPdf ? (
+                                <FileText className="w-4 h-4 text-red-400 shrink-0" />
+                              ) : (
+                                <ImageIcon className="w-4 h-4 text-sky-400 shrink-0" />
+                              )}
+                              <div className="truncate">
+                                <p className="text-slate-200 font-medium truncate">{item.name}</p>
+                                <p className="text-[10px] text-slate-400">{formatFileSize(item.size)}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveFile(idx);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-slate-700 transition"
+                              title="Remove file"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
