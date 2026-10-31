@@ -504,12 +504,19 @@ export interface LotHeaderBannerConfig {
 
 export type BannerConfig = LotHeaderBannerConfig;
 
+export interface FloatingFeedbackConfig {
+  enabled: boolean;
+  label?: string; // e.g. "Feedback & Bug Report" or "✨ AI Assistant Feedback"
+  badgeText?: string; // Optional callout tag (e.g. "BETA" or "NEW")
+}
+
 export interface PlatformPromoSettings {
   enabled: boolean;
   cadenceInterval?: number; // Configurable catalog grid promo injection interval: -1 (Launch Mode: Show All Active Cards), 0 (Low Inventory Only), 6, 9, or 12 lots
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
   catalogBanner?: LotHeaderBannerConfig;
+  feedbackWidget?: FloatingFeedbackConfig;
 }
 
 export type AiAssistantAction = 'generate_interview' | 'synthesize_full_draft' | 'refine_section';

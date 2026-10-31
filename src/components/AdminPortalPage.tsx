@@ -90,7 +90,8 @@ import {
   Megaphone,
   MousePointerClick,
   Calendar,
-  Image as ImageIcon
+  Image as ImageIcon,
+  MessageSquarePlus
 } from 'lucide-react';
 
 interface AdminPortalPageProps {
@@ -1149,6 +1150,19 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
           ctaAction: 'consignment_modal',
           targetAudience: 'all',
           clickCount: 0
+        }),
+        ...updates
+      }
+    }));
+  };
+
+  const handleUpdateFeedbackWidget = (updates: Partial<NonNullable<PlatformPromoSettings['feedbackWidget']>>) => {
+    setPromoSettings((prev) => ({
+      ...prev,
+      feedbackWidget: {
+        ...(prev.feedbackWidget || {
+          enabled: true,
+          label: 'Feedback & Bug Report'
         }),
         ...updates
       }
@@ -3341,6 +3355,66 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                       <option value={9}>Every 9 Lots (3 Rows — Balanced Editorial)</option>
                       <option value={12}>Every 12 Lots (4 Rows — Low Frequency)</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Floating Feedback & Bug Report Dock */}
+              <div className="p-5 rounded-xl bg-[#121619] border border-zinc-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <MessageSquarePlus className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-white">Floating Feedback & Bug Report Dock</h4>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                            promoSettings.feedbackWidget?.enabled
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                          }`}
+                        >
+                          {promoSettings.feedbackWidget?.enabled ? 'Active' : 'Disabled'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Renders a discreet floating pill across desktop and mobile viewports allowing visitors to report issues.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={promoSettings.feedbackWidget?.enabled ?? true}
+                        onChange={(e) => handleUpdateFeedbackWidget({ enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Pill Button Label</label>
+                    <input
+                      type="text"
+                      value={promoSettings.feedbackWidget?.label ?? ''}
+                      onChange={(e) => handleUpdateFeedbackWidget({ label: e.target.value })}
+                      placeholder="Feedback & Bug Report"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-zinc-400">Callout Badge Text (Optional)</label>
+                    <input
+                      type="text"
+                      value={promoSettings.feedbackWidget?.badgeText ?? ''}
+                      onChange={(e) => handleUpdateFeedbackWidget({ badgeText: e.target.value })}
+                      placeholder="e.g. BETA or NEW"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-white"
+                    />
                   </div>
                 </div>
               </div>

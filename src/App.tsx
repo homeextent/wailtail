@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { Auction, Bid, Comment, MediaConfiguration, UserProfile } from './types';
+import { Auction, Bid, Comment, MediaConfiguration, UserProfile, PlatformPromoSettings } from './types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from './mediaConfig';
 import { 
   initializeAuctionIfNotExists, 
@@ -12,6 +12,8 @@ import {
   subscribeToMediaConfig,
   subscribeToUserProfile,
   subscribeToGlobalBranding,
+  subscribeToPromoSettings,
+  DEFAULT_PROMO_SETTINGS,
   getStoredGlobalBranding,
   GLOBAL_BRANDING_STORAGE_KEY,
   saveMediaConfig,
@@ -37,6 +39,7 @@ import { ShareModal } from './components/ShareModal';
 import { ContactSellerModal } from './components/ContactSellerModal';
 import { ConsignmentModal } from './components/ConsignmentModal';
 import { FeedbackModal } from './components/FeedbackModal';
+import { FloatingFeedbackWidget } from './components/FloatingFeedbackWidget';
 import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
@@ -164,6 +167,17 @@ const AuctionAppContent: React.FC = () => {
 
     return () => {
       unsubBranding();
+    };
+  }, []);
+
+  const [promoSettings, setPromoSettings] = useState<PlatformPromoSettings>(DEFAULT_PROMO_SETTINGS);
+
+  useEffect(() => {
+    const unsubPromo = subscribeToPromoSettings((settings) => {
+      setPromoSettings(settings);
+    });
+    return () => {
+      unsubPromo();
     };
   }, []);
 
@@ -1164,6 +1178,14 @@ const AuctionAppContent: React.FC = () => {
       <FeedbackModal
         isOpen={isFeedbackModalOpen}
         onClose={() => setIsFeedbackModalOpen(false)}
+      />
+
+      <FloatingFeedbackWidget
+        enabled={promoSettings?.feedbackWidget?.enabled}
+        label={promoSettings?.feedbackWidget?.label}
+        badgeText={promoSettings?.feedbackWidget?.badgeText}
+        onOpenFeedback={() => setIsFeedbackModalOpen(true)}
+        isSingleLotPage={Boolean(isSpecificAuctionRoute || (!isCatalogRoute && !isEditorRoute && !isAdminRoute))}
       />
 
       {isAdmin && (

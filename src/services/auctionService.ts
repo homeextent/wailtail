@@ -4505,6 +4505,10 @@ export async function fetchUserActivitySummary(
 export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
   enabled: true,
   cadenceInterval: 6,
+  feedbackWidget: {
+    enabled: true,
+    label: 'Feedback & Bug Report'
+  },
   catalogBanner: {
     enabled: false,
     badgeText: '',
@@ -4617,6 +4621,11 @@ export function subscribeToPromoSettings(callback: (settings: PlatformPromoSetti
         const data = snap.data();
         const rawBanner = data.lotHeaderBanner || {};
         const rawCatalogBanner = data.catalogBanner || {};
+        const rawFeedback = data.feedbackWidget || {};
+        const defaultFeedback = DEFAULT_PROMO_SETTINGS.feedbackWidget || {
+          enabled: true,
+          label: 'Feedback & Bug Report'
+        };
         const defaultCatalog = DEFAULT_PROMO_SETTINGS.catalogBanner || {
           enabled: false,
           badgeText: '',
@@ -4629,6 +4638,13 @@ export function subscribeToPromoSettings(callback: (settings: PlatformPromoSetti
         const settings: PlatformPromoSettings = {
           enabled: typeof data.enabled === 'boolean' ? data.enabled : DEFAULT_PROMO_SETTINGS.enabled,
           cadenceInterval: typeof data.cadenceInterval === 'number' ? data.cadenceInterval : (DEFAULT_PROMO_SETTINGS.cadenceInterval ?? 6),
+          feedbackWidget: {
+            ...defaultFeedback,
+            ...rawFeedback,
+            enabled: typeof rawFeedback.enabled === 'boolean' ? rawFeedback.enabled : defaultFeedback.enabled,
+            label: typeof rawFeedback.label === 'string' ? rawFeedback.label : defaultFeedback.label,
+            badgeText: typeof rawFeedback.badgeText === 'string' ? rawFeedback.badgeText : defaultFeedback.badgeText
+          },
           catalogBanner: {
             ...defaultCatalog,
             ...rawCatalogBanner,
