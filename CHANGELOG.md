@@ -12,6 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.0] - 2026-10-30 — Platform Feedback Pipeline, Dynamic Floating Dock & Intake CRO Alignment
+
+### Added
+- **Dynamic Admin-Governed Floating Feedback Dock (`src/components/FloatingFeedbackWidget.tsx`)**: Built an ergonomic floating pill button (`FloatingFeedbackWidget`) anchored across all viewports with dark slate backdrop blur styling, hover micro-animations, and dynamic prompt text/badge support.
+- **Mobile Bid Bar Collision Avoidance (`src/components/FloatingFeedbackWidget.tsx`)**: Engineered route-aware and viewport-aware collision avoidance that dynamically shifts the widget to `bottom-24 right-4` on single-car lot pages (`/auctions/[id]`), preventing obstruction of the mobile `StickyBidBar.tsx` high-bid indicator and bidding CTA button.
+- **Floating Feedback Configuration Schema (`src/types.ts`)**: Defined `FloatingFeedbackConfig` (`enabled`, `label`, `badgeText`) and extended `PlatformPromoSettings` with `feedbackWidget?: FloatingFeedbackConfig;` stored in the `settings/promotions` singleton.
+- **Admin Campaign Manager Feedback Controls (`src/components/AdminPortalPage.tsx`)**: Added a dedicated "Floating Feedback & Bug Report Dock" management card in the Promotional & Launch Campaign Manager (`activeTab === 'branding'`) featuring an Emerald/Slate toggle switch and custom label/badge inputs backed by `handleUpdateFeedbackWidget()` and persistent to Firestore.
+- **Platform Feedback & Bug Reporting Modal (`src/components/FeedbackModal.tsx`)**: Built a collector-grade dialog supporting 3 feedback categories (`bug`, `suggestion`, `general`), 10–1,500 character counter, and auto-populated member contact credentials with unauthenticated guest support.
+- **Automatic Client Diagnostic Capture (`src/components/FeedbackModal.tsx`)**: Integrated zero-friction client telemetry recording the active route URL (`window.location.href`), viewport dimensions (`window.innerWidth x window.innerHeight`), browser User Agent, and user UID/role without requiring manual user input.
+- **Cloud Firestore `/feedback` Collection ACL (`firestore.rules`)**: Added security match block permitting public document creation (`allow create: if true;`) while restricting read, update, and deletion permissions strictly to administrators (`allow read, update, delete: if isAdmin();`).
+- **Serverless Feedback HTML Email Dispatcher (`api/send-consignment-email.ts`)**: Added `type: 'feedback_report'` proxy support generating a high-contrast dark HTML digest email with dynamic category badges (`BUG / TECHNICAL ISSUE`, `SUGGESTION`, `GENERAL FEEDBACK`), reporter metadata, client diagnostic table, formatted message text, and 1-click `mailto` reply button.
+- **Global Footer Trigger (`src/components/Footer.tsx`)**: Added a permanent, compliant "Feedback & Bug Report" action trigger in the footer bottom bar adjacent to Terms and Privacy Policy.
+
+### Changed
+- **Top-of-Funnel Conversion Copy Standardization (`src/components/ConsignmentModal.tsx`, `src/components/Footer.tsx`, `src/services/auctionService.ts`)**: Standardized public-facing copy from "Consign" to the Modern Digital Auction model ("Sell a Vehicle", "Sell Your Vehicle", "Vehicle Submission & Listing Application", "Submit Vehicle Application") to reduce seller onboarding friction while preserving legal terminology in Terms of Service and backend curation ledgers.
+
+---
+
 ## [1.9.1] - 2026-10-30 — Catalog Grid Promotional Launch Mode & Omnipresent Campaign Injection
 
 ### Added

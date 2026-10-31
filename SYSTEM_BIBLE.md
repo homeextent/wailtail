@@ -14,6 +14,7 @@
 * **Dynamic Dual-Slot Promotional & Cadence Engine**: Multi-surface campaign system featuring dual-slot independent announcement banners (full-bleed Catalog Homepage Ribbon and Direct-Lot Header Banner), admin-configurable catalog grid cadence injection (0, 6, 9, 12 lots with safe modulo cycling), low-inventory row padding ($\le 2$ lots), audience segmentation, date scheduling, image uploader, and deterministic admin-driven visibility (zero client-side `localStorage` dismissal suppression)
 * **Decoupled Guest Telemetry Engine**: Atomic `promo_analytics/{promoId}` click counting using `increment(1)` writes, permitting public unauthenticated telemetry logging while securing campaign configuration
 * **Google Analytics 4 (GA4) SPA Telemetry Engine**: `gtag.js` asynchronous bootstrap (`index.html`), reactive `document.title` pageview dispatching (`src/App.tsx`), `import.meta.env.DEV` development isolation, and collector conversion tracking (`src/utils/analytics.ts`)
+* **Platform Feedback & Bug Reporting Pipeline**: Dynamic floating pill dock (`FloatingFeedbackWidget.tsx`) with mobile collision avoidance, category-driven feedback modal (`FeedbackModal.tsx`) with automatic client telemetry capture, dedicated `/feedback` Firestore collection, and serverless HTML email dispatch (`/api/send-consignment-email`) with dynamic category badges and mailto triage
 * **Styling**: Tailwind CSS with custom editorial typographic scales
 * **Real-Time Data Engine**: Google Cloud Firestore with snapshot listeners (`onSnapshot`)
 * **Security & Auth**: Firebase Authentication & Firestore Security Rules (`firestore.rules`)
@@ -31,7 +32,9 @@
 | `/dashboard/listings/[id]/edit` | `ListingEditorWorkspace.tsx` | `ADMIN`, `SELLER` | Dedicated split-screen authoring workspace with 60/40 reactive layout, desktop/mobile preview simulation, sticky 7-section progress stepper (`sticky top-16 self-start max-h-[calc(100vh-4.5rem)]`), Hagerty Canada valuation link integration, JSON schema import/export, role-gated administrative header tools (Import/Export JSON, + New Listing, and manual force-close overrides restricted to `ADMIN`), Section 1 required field error badges, seller lot dropdown filtering (`visibleAuctions`), and high-contrast ← Back to Dashboard navigation CTA button routing administrators to `/admin?tab=inventory` and sellers to `/` with the activity hub open. Features safe fallback route guarding that redirects `'new'`, missing, or unresolvable IDs to `/catalog` (or `/admin?tab=inventory`) with a "Listing lot not found" toast, eradicating runaway auto-creation loops. |
 | User Activity Hub (Modal) | `UserAccountHubModal.tsx` | Authenticated | Global account activity modal accessible from top navigation; displays active bid telemetry (`LEADING` vs `OUTBID`), 4-stage offline CAD settlement checklist, seller lot telemetry, consignment status, and **Notification Control Panel** with "Enable Live Outbid Alerts" toggle and iOS Safari PWA installation guide. |
 | Platform Legal Infrastructure (Modal) | `LegalModal.tsx` | Public | Tabbed modal dialog for platform Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage), triggered globally via `App.tsx` state (`isLegalModalOpen`, `legalModalTab`). |
-| Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct consignment inquiry trigger, and modal openers for Terms of Service and Privacy Policy. |
+| Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct vehicle submission inquiry trigger, Feedback & Bug Report trigger, and modal openers for Terms of Service and Privacy Policy. |
+| Floating Feedback Dock | `FloatingFeedbackWidget.tsx` | Public | Ergonomic, dark slate floating pill anchored across all viewports with dynamic prompt label/badge support; features route-aware collision avoidance dynamically shifting on single lot views (`bottom-24 right-4`) to prevent obstruction of `StickyBidBar.tsx`. |
+| Platform Feedback Modal | `FeedbackModal.tsx` | Public / Guest & Authenticated | Collector-grade dialog supporting 3 feedback categories (`bug`, `suggestion`, `general`), 10–1,500 character counter, auto-populated member contact credentials, and zero-friction client telemetry capture (URL, viewport dimensions, User Agent, UID/role) persisting to `/feedback` collection and dispatching via serverless email. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
 | `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
@@ -498,12 +501,19 @@ export interface LotHeaderBannerConfig {
 
 export type BannerConfig = LotHeaderBannerConfig;
 
+export interface FloatingFeedbackConfig {
+  enabled: boolean;
+  label?: string; // e.g. "Feedback & Bug Report" or "✨ AI Assistant Feedback"
+  badgeText?: string; // Optional callout tag (e.g. "BETA" or "NEW")
+}
+
 export interface PlatformPromoSettings {
   enabled: boolean;
   cadenceInterval?: number; // Configurable catalog grid promo injection interval: -1 (Launch Mode: Show All Active Cards), 0 (Low Inventory Only), 6, 9, or 12 lots.
   cards: PromoCardConfig[];
   lotHeaderBanner: LotHeaderBannerConfig;
   catalogBanner?: LotHeaderBannerConfig;
+  feedbackWidget?: FloatingFeedbackConfig;
 }
 ```
 
@@ -518,6 +528,28 @@ export interface PromoAnalyticsRecord {
   isBanner?: boolean;      // True when event originates from lot_header_banner
 }
 ```
+
+### 2.12 `feedback` Collection Schema
+
+Path: `/feedback/{feedbackId}`
+Stores member and guest feedback submissions, bug reports, and UX suggestions with automated client diagnostic telemetry:
+```typescript
+export interface PlatformFeedbackRecord {
+  id?: string;
+  category: 'bug' | 'suggestion' | 'general';
+  message: string;
+  reporterName?: string;
+  reporterEmail?: string;
+  userId?: string | null;
+  userRole?: string;
+  url: string;
+  viewport: string;
+  userAgent: string;
+  timestamp: number;
+  status: 'new' | 'reviewed' | 'resolved';
+}
+```
+Access is governed by production Firestore security rules: public create (`allow create: if true;`) and administrator-only read/write (`allow read, update, delete: if isAdmin();`).
 
 ---
 
@@ -672,7 +704,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 ### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
 1. **Endpoint Architecture & Multi-Template Proxy Pipeline**:
    - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
-   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected' | 'outbid_notification' | 'winning_bid_confirmation'` (defaulting to `'consignment'` if unspecified):
+   - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected' | 'outbid_notification' | 'winning_bid_confirmation' | 'feedback_report'` (defaulting to `'consignment'` if unspecified):
      - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators with 1-click admin triage deep-links. Includes case-insensitive admin recipient deduplication.
      - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
      - **Seller Consignment Receipt (`type: 'consignment_receipt'`)**: Dispatches a dual-branded HTML acknowledgment email directly to the consignor/seller applicant confirming receipt of their vehicle submission, summarizing vehicle particulars, detailing curation review timelines (1–2 business days), and linking to their member dashboard.
@@ -681,6 +713,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - **New Verified Bidder Welcome (`type: 'welcome_bidder'`)**: Dispatches a dual-branded HTML onboarding email to newly verified bidders celebrating their registration, presenting platform bidding guidelines, highlighting zero buyer fees, and providing 1-click exploration of live auctions.
      - **Outbid Notification (`type: 'outbid_notification'`)**: Dispatches an instant, transaction-decoupled outbid alert to displaced high bidders with current CAD high bid metrics, required minimum increment, and direct deep-link CTA back to the active vehicle auction.
      - **Winning Bid Confirmation (`type: 'winning_bid_confirmation'`)**: Dispatches official auction win documentation to the highest bidder upon terminal auction closure, presenting the winning CAD amount, consignor contact details, and the 4-stage Canadian offline settlement checklist.
+     - **Platform Feedback & Bug Reporting (`type: 'feedback_report'`)**: Handles incoming community feedback and bug submissions from `FeedbackModal.tsx`, compiling reporter metadata, structured client diagnostic telemetry, message content, and dynamic category badges with 1-click direct mailto reply CTA.
    - Integrates with the **Resend API** as primary mail provider (supporting direct HTTP fetch fallback if the SDK is unavailable), with built-in failover to **SendGrid** and a development mock logger when keys are absent.
 2. **Environment Variables**:
    - `RESEND_API_KEY`: Secret API token for Resend dispatch (`https://api.resend.com/emails`).
@@ -749,6 +782,16 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
        - `sellerEmail`: Consignor direct email for settlement.
        - `sellerPhone`: Consignor direct contact phone number.
      - Displays winning financial breakdown, consignor direct contact credentials, 4-stage Canadian offline CAD settlement checklist (1. Bank Wire / Certified Draft, 2. Title & Bill of Sale, 3. Transport / Collection, 4. VIN Check & Key Handover), and direct link to the member dashboard.
+   - **Platform Feedback & Bug Triage Digest (`type: 'feedback_report'`)**:
+     - Subject line: `[Wailtail Feedback] ${catUpper}: ${reporterName || 'Visitor'} (${formattedDate})`.
+     - High-contrast dual-branded dark container layout (`#0f172a` / `#020617`) with dynamic category badges:
+       - `BUG / TECHNICAL ISSUE`: Crimson accent (`#450a0a` / `#ef4444`).
+       - `SUGGESTION / IMPROVEMENT`: Sky blue accent (`#0c4a6e` / `#3b82f6`).
+       - `GENERAL FEEDBACK`: Warm amber accent (`#451a03` / `#f59e0b`).
+     - Structured **Reporter Details** table: Name, Email (active mailto link), Account UID (monospace font, 'Unauthenticated Guest' fallback), Active Role (`GUEST`, `BIDDER`, `SELLER`, `ADMIN`), and formatted UTC timestamp.
+     - Structured **Client Diagnostics** table: Active URL (hyperlinked), Viewport dimensions (`${viewport}`), and Browser User Agent string.
+     - Formatted **Submitted Message** block styled with `white-space: pre-wrap; word-break: break-word;`.
+     - Actionable **Direct Mailto Reply Button**: High-contrast blue CTA button (`mailto:${cleanReporterEmail}?subject=Re:%20Wailtail%20Feedback%20Follow-up`) displayed when reporter email is supplied.
 
 ### 5.4 Serverless Admin User Deletion (`/api/admin-delete-user.ts`)
 1. **Endpoint Architecture & Service Account Credentials**:
@@ -1244,6 +1287,11 @@ The platform integrates a dynamic promotional subsystem designed to spotlight la
    - **Non-Blocking Telemetry Failover**: Wrapped in silent `try/catch` handlers to guarantee that analytics logging never degrades or blocks visitor navigation.
    - **Real-Time Staff Telemetry Feed**: `subscribeToPromoAnalytics` powers real-time click counter badges (`MousePointerClick`) in `AdminPortalPage.tsx`, displaying live interaction counts alongside each campaign asset.
 
+5. **Floating Feedback & Bug Report Dock Controls (`AdminPortalPage.tsx`, `FloatingFeedbackWidget.tsx`)**:
+   - **Administrative Campaign Management**: Dedicated management card in Platform Branding (`activeTab === 'branding'`) featuring an Emerald/Slate master toggle switch (`promoSettings.feedbackWidget.enabled`), custom dock label input (`label`, defaulting to "Feedback & Bug Report"), and optional callout badge text input (`badgeText`, e.g., "BETA", "NEW").
+   - **Firestore Persistence**: State updates are persisted to the `settings/promotions` singleton document via `handleUpdateFeedbackWidget()` and `savePromoSettings()`, synchronizing across all visitor sessions via real-time snapshot listeners.
+   - **Mobile Bid Bar Collision Avoidance**: Viewport and route-aware layout engine that detects when the user is on a single lot view (`/auctions/[id]`) and dynamically translates the widget positioning to `bottom-24 right-4` on mobile viewports ($< 768\text{px}$), completely clearing `StickyBidBar.tsx` high-bid metrics and bidding CTAs while resting at standard `bottom-6 right-6` on wider desktop screens and catalog/admin routes.
+
 ---
 
 ## 7. Security Rules & Permissions
@@ -1361,6 +1409,11 @@ service cloud.firestore {
     }
 
     // Intake Forms & Direct Communications
+    match /feedback/{feedbackId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
     match /consignment_applications/{appId} {
       allow create: if true;
       allow read, update, delete: if isAuthenticated();
