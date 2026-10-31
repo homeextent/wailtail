@@ -12,6 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.12.0] - 2026-10-31 — Platform Social Metadata Rebrand & Generic Auction Preview Card
+
+### Added
+- **Platform Social Preview Card (`public/og-wailtail-platform.jpg`)**: Added `public/og-wailtail-platform.jpg` high-contrast static social preview asset ($1200 \times 630\text{ px}$, 1.91:1 aspect ratio) featuring the dark-slate architectural automotive showcase, smartphone listing UI preview, and platform differentiator badges (0% Buyer Fees, Transparent CAD Bidding, Active Lots, Nationwide Logistics 🇨🇦).
+
+### Changed
+- **Platform Open Graph & Twitter Card Rebrand (`index.html`)**: Rebranded static Open Graph and Twitter Card `<meta>` tags in `index.html` from the legacy 1988 Porsche 928 single lot to overarching platform metadata (`Wailtail — Canada's Digital Vehicle Auctions | Buy & Sell in CAD`, 0% buyer fees, AI-powered listing creation, canonical absolute asset URL `https://www.wailtail.com/og-wailtail-platform.jpg`, explicit `og:image:secure_url`, and `og:image:type`).
+
+---
+
 ## [1.11.0] - 2026-10-31 — AI Assistant Provenance Engine & Editor UI Consolidation
 
 ### Added

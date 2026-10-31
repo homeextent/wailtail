@@ -7,7 +7,7 @@
 ### Technology Stack
 * **Frontend Framework**: React 19 with TypeScript and Vite
 * **Progressive Web App (PWA) & Offline Engine**: `vite-plugin-pwa` with Workbox runtime caching (`StaleWhileRevalidate` for scripts/styles, `NetworkFirst` for media/queries) and standalone Web Manifest (`name: "Wailtail Auctions"`, `short_name: "Wailtail"`, `#0f172a` theme)
-* **Static Open Graph & Twitter Card Social Metadata (`index.html`)**: Pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) tags in `index.html` targeting canonical domain (`https://www.wailtail.com/`) and 1988 Porsche 928 launch hero imagery; guarantees 100% social preview card rendering for web crawlers (`facebookexternalhit`, X, WhatsApp, iMessage) without edge SSR or client-side JavaScript execution overhead
+* **Static Open Graph & Twitter Card Social Metadata (`index.html`)**: Pre-rendered Open Graph (`og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image`, `og:image:secure_url`, `og:image:type`, `og:image:width`, `og:image:height`, `og:image:alt`) and Twitter Card (`twitter:card`, `twitter:site`, `twitter:creator`, `twitter:title`, `twitter:description`, `twitter:image`, `twitter:image:alt`) tags in `index.html` targeting canonical domain (`https://www.wailtail.com/`), the generic platform social asset (`public/og-wailtail-platform.jpg`), and overarching platform branding ("Canada's Digital Vehicle Auctions | Buy & Sell in CAD"); guarantees 100% social preview card rendering for web crawlers (`facebookexternalhit`, X, WhatsApp, iMessage) without edge SSR or client-side JavaScript execution overhead
 * **Branding & Favicon Delivery (`public/favicon.svg`, `index.html`)**: Standalone canonical whale-tail vector SVG asset delivered via `/favicon.svg?v=2` cache-busting query parameter in `index.html`, ensuring high-contrast browser tab rendering across light/dark OS chrome and bypassing aggressive Chromium / WebKit tab favicon caching
 * **Background Push Service Worker & FCM**: Native background Service Worker (`public/firebase-messaging-sw.js`) utilizing Firebase compat SDKs and Firebase Cloud Messaging (`firebase/messaging`) Web Push API with VAPID key token exchange
 * **Multi-Listing Architecture**: Dynamic catalog indexing with `/dashboard/listings/[id]/edit` dedicated workspace routing, `/admin` full-page portal, and multi-lot state hydration
@@ -1728,30 +1728,34 @@ Traditional Single-Page Applications (SPAs) built with Vite and React perform ro
 
 If social tags are injected or updated asynchronously via client-side libraries (e.g., `react-helmet`, `react-helmet-async`, or `useEffect`), web crawlers receive an unpopulated `<head>`, failing to display preview rich cards (resulting in fallback grey boxes or missing media thumbnails).
 
-During the platform's single-car launch campaign centered on the **1988 Porsche 928**, embedding static metadata directly into `index.html`:
+Following the platform's initial single-car launch campaign centered on the 1988 Porsche 928, static social metadata in `index.html` transitioned to an overarching generic digital platform card (`public/og-wailtail-platform.jpg`). Embedding this static platform metadata directly into `index.html`:
 * **Guarantees 100% Preview Card Delivery**: Social crawlers immediately parse pre-baked Open Graph and Twitter Card metadata on the first byte without executing JavaScript.
 * **Eliminates Server-Side Rendering (SSR) & Edge Overhead**: Obviates the need for running complex, costly server-side rendering nodes (such as Next.js, Remix, or edge workers with Chromium/Puppeteer prerendering) just for crawler metadata resolution.
 * **Optimizes Edge CDN Caching**: Allows static HTML to be cached globally at edge CDN locations with sub-millisecond Time to First Byte (TTFB).
 
 #### 2. Tag Specification & Launch Attributes
-The static head payload in `index.html` specifies canonical Open Graph and Twitter Card tags configured specifically for the 1988 Porsche 928 launch lot:
+The static head payload in `index.html` specifies canonical Open Graph and Twitter Card tags configured for the overarching digital vehicle auction platform:
 
 | Tag / Property | Attribute Value | Purpose & Architectural Role |
 | :--- | :--- | :--- |
 | `og:site_name` | `Wailtail Auctions` | Identifies the overarching collector vehicle auction platform brand. |
 | `og:type` | `website` | Defines the Open Graph schema entity type for web crawlers. |
-| `og:title` | `1988 Porsche 928 — Wailtail Collector Car Auctions` | Clear, SEO-optimized title showcasing vehicle year, make, model, and platform name. |
-| `og:description` | `Bid on this 1988 Porsche 928. Transparent CAD bidding, 2-minute soft-close anti-sniping protection, and zero buyer fees on Wailtail.` | Compelling editorial summary highlighting CAD bidding, anti-sniping rules, and zero fee structure. |
+| `og:title` | `Wailtail — Canada's Digital Vehicle Auctions \| 0% Buyer Fees` | Clear, SEO-optimized title showcasing vehicle auction platform and 0% buyer fees. |
+| `og:description` | `Canada's modern digital vehicle auction platform. Transparent CAD bidding, 0% buyer fees, and AI-powered listing creation. Buy and sell nationwide.` | Compelling editorial summary highlighting CAD bidding, 0% buyer fees, and AI listing creation. |
 | `og:url` | `https://www.wailtail.com/` | Canonical launch URL establishing domain authority and eliminating duplicate link indexing. |
-| `og:image` | `https://firebasestorage.googleapis.com/.../hero/1788998248225-j943x.jpg` | Absolute HTTPS URL to the high-resolution 1988 Porsche 928 hero photograph hosted on Firebase Cloud Storage. |
+| `og:image` | `https://www.wailtail.com/og-wailtail-platform.jpg` | Absolute HTTPS URL to the high-resolution generic platform preview card asset. |
+| `og:image:secure_url` | `https://www.wailtail.com/og-wailtail-platform.jpg` | Secure HTTPS target for strict SSL verification crawlers. |
+| `og:image:type` | `image/jpeg` | Explicit MIME type enabling instant image ingestion by social bots. |
 | `og:image:width` | `1200` | Recommended standard width ensuring instantaneous high-resolution card rendering without crawler layout reflow. |
 | `og:image:height` | `630` | Standard 1.91:1 aspect ratio height preventing letterboxing or awkward image cropping. |
-| `og:image:alt` | `1988 Porsche 928 Collector Car Auction` | Accessible descriptive text for screen readers and search indexing. |
+| `og:image:alt` | `Wailtail Digital Vehicle Auctions — Buy and Sell Nationwide Across Canada` | Accessible descriptive text for screen readers and search indexing. |
 | `twitter:card` | `summary_large_image` | Specifies X/Twitter's prominent full-width hero photo card format for maximum visual conversion. |
-| `twitter:title` | `1988 Porsche 928 — Wailtail Collector Car Auctions` | Matches Open Graph title for brand consistency across X/Twitter feeds. |
-| `twitter:description` | `Bid on this 1988 Porsche 928. Transparent CAD bidding, 2-minute soft-close anti-sniping protection, and zero buyer fees on Wailtail.` | Matches Open Graph description providing key auction terms in Twitter link previews. |
-| `twitter:image` | `https://firebasestorage.googleapis.com/.../hero/1788998248225-j943x.jpg` | High-resolution hero image asset mapped to X/Twitter card preview containers. |
-| `twitter:image:alt` | `1988 Porsche 928 Collector Car Auction` | Accessible image description ensuring compliance across Twitter clients. |
+| `twitter:site` | `@wailtail` | Official Twitter handle attribution for platform origin. |
+| `twitter:creator` | `@wailtail` | Official Twitter handle attribution for platform creator. |
+| `twitter:title` | `Wailtail — Canada's Digital Vehicle Auctions \| 0% Buyer Fees` | Matches Open Graph title for brand consistency across X/Twitter feeds. |
+| `twitter:description` | `Canada's modern digital vehicle auction platform. Transparent CAD bidding, 0% buyer fees, and AI-powered listing creation. Buy and sell nationwide.` | Matches Open Graph description providing key platform terms in Twitter link previews. |
+| `twitter:image` | `https://www.wailtail.com/og-wailtail-platform.jpg` | High-resolution platform preview asset mapped to X/Twitter card preview containers. |
+| `twitter:image:alt` | `Wailtail Digital Vehicle Auctions — Buy and Sell Nationwide Across Canada` | Accessible image description ensuring compliance across Twitter clients. |
 
 ### 8.8 Google Analytics 4 (GA4) SPA Telemetry & Conversion Pipeline
 
