@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.11.0] - 2026-10-31 — AI Assistant Provenance Engine & Editor UI Consolidation
+
+### Added
+- **Structured Provenance Drawers (`AiAssistantModal.tsx`)**: Replaced raw text injection with interactive, tab-navigable accordion drawers for Ownership, Services, Flaws, and Modifications.
+- **Collector Disclosure Fields (`AiAssistantModal.tsx`)**: Enriched the AI intake state with dedicated inputs for Odometer Integrity & Cluster Disclosures (TMU), Accident & Insurance Claims, and Known Mechanical Needs to ensure absolute platform transparency.
+- **Sticky Provenance Dock (`AiAssistantModal.tsx`)**: Added a `sticky top-0 z-20` dock for guided header pills to prevent UI displacement during vertical scrolling.
+- **Step 3 Photo Handoff Guidance (`AiAssistantModal.tsx`)**: Added a post-apply informational callout card and updated toast notifications guiding sellers to Section 5 for high-resolution photo uploads.
+- **Hagerty Canada Guidance (`ListingEditorWorkspace.tsx`)**: Added descriptive helper text and a `[🔍 Look up on Hagerty Canada ↗]` quick-link directly beneath the Hagerty input in Section 1, Row 10.
+
+### Changed
+- **Master AI Trigger Consolidation (`ListingEditorWorkspace.tsx`)**: Anchored the primary `✨ AI Writing Assistant` button exclusively in the Section 1 card header. Purged redundant triggers from the top navbar, Section 2 header, and Section 4 header to prevent fragmented workflows and destructive overwrites.
+- **AI Step 1 Reordering (`AiAssistantModal.tsx`)**: Reordered the intake layout for natural cognitive flow: (1) Vehicle Taxonomy, (2) Seller Notes & Provenance, (3) Multimodal Document Dropzone.
+
+---
+
 ## [1.10.0] - 2026-10-30 — Platform Feedback Pipeline, Dynamic Floating Dock & Intake CRO Alignment
 
 ### Added

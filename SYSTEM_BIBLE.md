@@ -853,6 +853,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - Integrated via `src/services/aiService.ts` and `src/components/AiAssistantModal.tsx`.
    - Hardened HTTP fetch interceptors normalize edge 413 and 502 gateway responses before JSON parsing, cleanly presenting user-friendly actionable error messaging and preventing unhandled `JSON.parse` syntax exceptions (`Unexpected token 'R'`).
    - Client-side intake enforces a 3.0MB cumulative document limit guard and client-side canvas micro-compression (1200px max dimension at 75% quality JPEG) before payload transmission.
+5. **Reordered Step 1 Intake Architecture & Interactive Provenance Engine**:
+   - Reordered intake layout for seamless cognitive progression: (1) Vehicle Taxonomy Selection (Year, Make, Model, Generation), (2) Structured Provenance Drawers & Disclosures, (3) Multimodal Document & Paperwork Dropzone.
+   - **Sticky Provenance Dock**: Quick-jump anchor pills pinned in a `sticky top-0 z-20` dock atop the modal content area, maintaining immediate accessibility without UI displacement during vertical scrolling.
+   - **Structured Provenance Drawers & Collector Disclosure Fields**: Interactive, tab-navigable accordion drawers for Ownership, Services, Flaws, and Modifications, paired with dedicated collector transparency inputs for Odometer Integrity & Cluster Disclosures (TMU), Accident & Insurance Claims, and Known Mechanical Needs (`odometerIntegrity`, `accidentHistory`, `mechanicalNeeds`), compiled cleanly into structured narrative prompts via `compileSellerNotes()`.
+   - **Step 3 Photo Handoff Guidance**: Informational callout card upon draft application and guided toast notifications directing sellers to Section 5 ("Hero Carousel & Full Photo Gallery") for full-resolution vehicle exterior and interior photography uploads.
 
 ---
 
@@ -885,6 +890,9 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **Role-Gated Workspace Header Tools & Lifecycle Overrides**:
     - Header administrative controls (**Import JSON**, **Export JSON**, and **+ New Listing**) are gated behind an `isAdmin` check, hiding them from standard seller accounts.
     - Section 7 Auction Lifecycle Status overrides (`Ended - Manual Force Close`, `Sold - Settled Offline`) are restricted to administrators (`isAdmin`). Non-admin sellers are restricted to `Draft` and `Scheduled / Live (Automated Clock)`.
+  - **Consolidated AI Controls & Overwrite Defense**:
+    - Duplicate AI draft generation triggers have been completely purged from the top navigation header bar, Section 2 header, and Section 4 header.
+    - Anchored the primary `✨ AI Writing Assistant` trigger exclusively in the Section 1 card header, eliminating fragmented authoring paths and safeguarding existing custom narrative edits from accidental, destructive overwrites.
   - **Zero-Lot Database Support & Snapshot Rules**:
     - Snapshot listeners in `App.tsx` and `AdminPanelModal.tsx` (`subscribeToAllAuctions`) are configured to support empty states (`list || []`), removing legacy length guards to allow clean operation on a pristine database.
     - All catalog views render the actual database state without forced ternary fallbacks.
@@ -903,6 +911,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Responsive Preview Viewport**: Toggle between full Desktop mode and 390px Mobile simulated phone container with live state hydration.
 - **100% Feature Parity Across All 7 Sections**:
   - **Section 1 (Vehicle Identity & 10-Row Form Layout)**:
+    - **Master AI Writing Assistant Trigger**: Pinned exclusively in the Section 1 card header as the single consolidated entry point (`✨ AI Writing Assistant`) for full-lot draft synthesis, ensuring unified intake flow and eliminating overwrite risk.
     - **Required Field Error Badges & Highlighting**: Empty required inputs display high-visibility red error border rings (`border-red-500/80`) and accompanying text warning badges (`* VIN Required`, `* Make Required`, `* Model Required`, `* Year Required`, etc.), eliminating seller confusion surrounding the sticky sidebar "1 needed" stepper counter.
     - **10-Row Form Hierarchy**:
       - **Row 1 (Top Row)**: 4-column responsive grid featuring the 3-tier dependent vehicle taxonomy pipeline: **Year** select (1930–2026), **Make** dropdown, **Model** dropdown, and **Generation / Chassis Code** dropdown (with dynamic custom input fallbacks).
@@ -914,7 +923,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
       - **Row 7**: Standardized Title & Registration Status dropdown with custom fallback entry.
       - **Row 8**: Structured 3-field vehicle location panel (City, Province / State, and Country).
       - **Row 9**: Grid controls featuring Seller / Consignor name (`sellerName`), Consignor Email (`sellerEmail`), Consignor Phone (`sellerPhone` with telephone character sanitization `[^0-9+\-() ]`), and the **Highlights Tag Badge** input.
-      - **Row 10 (Bottom Row)**: Hagerty Canada Valuation Link (`hagertyValuationUrl`) optional URL input ensuring direct linking to third-party Hagerty valuation appraisal reports.
+      - **Row 10 (Bottom Row)**: Hagerty Canada Valuation Link (`hagertyValuationUrl`) optional URL input ensuring direct linking to third-party Hagerty valuation appraisal reports, accompanied by helpful context copy and an inline `[🔍 Look up on Hagerty Canada ↗]` quick-lookup link.
     - **`formatHighlightsBadge` Auto-Sync & `isBadgeOverridden` Manual Override Protection**:
       - The Highlights Tag Badge displays the prominent badge rendered in the public Vehicle Highlights sidebar (e.g. `"1978 Porsche 911 930"`).
       - When the user selects or updates Year, Make, Model, or Generation in Row 1, `formatHighlightsBadge(year, make, model, generation)` dynamically computes the badge label.
