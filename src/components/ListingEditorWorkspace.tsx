@@ -2434,7 +2434,19 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <Car className="w-5 h-5 text-red-500" />
                     <h3>1. Vehicle Identity & Header Specs</h3>
                   </div>
-                  <span className="text-[11px] text-zinc-400 font-mono">Section 1</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsAiModalOpen(true)}
+                      disabled={isReadOnlyForSeller || isRefiningNarrative || isRefiningShowcase}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Launch AI Writing Assistant"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-slate-950 flex-shrink-0" />
+                      <span>✨ AI Writing Assistant</span>
+                    </button>
+                    <span className="text-[11px] text-zinc-400 font-mono">Section 1</span>
+                  </div>
                 </div>
 
                 <div className="space-y-4 text-xs">
@@ -2865,6 +2877,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         placeholder="https://www.hagerty.ca/valuation-tools/..."
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
                       />
+                      <span className="text-[10px] text-zinc-400 mt-1 block">
+                        Paste your vehicle's valuation report URL from Hagerty Canada. When provided, a verified Hagerty® Market Appraisal button appears on your public listing header to build bidder confidence.
+                      </span>
+                      <a
+                        href="https://www.hagerty.ca/valuation-tools"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 mt-1"
+                      >
+                        <span>🔍 Look up on Hagerty Canada ↗</span>
+                      </a>
                     </div>
                     <div>
                       <label className="block font-bold text-zinc-300 mb-1">External Service Records / Cloud Dossier (Google Drive, Dropbox, OneDrive)</label>
@@ -2895,28 +2918,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 <div className="space-y-4 text-xs">
                   <div>
-                    <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
-                      <label className="block font-bold text-zinc-300">Overview Section Heading</label>
-                      <button
-                        type="button"
-                        onClick={handleRefineNarrative}
-                        disabled={isRefiningNarrative || isRefiningShowcase || isReadOnlyForSeller}
-                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        title="Auto-draft narrative from Section 1 vehicle specifications"
-                      >
-                        {isRefiningNarrative ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 flex-shrink-0" />
-                            <span>Drafting narrative...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                            <span>✨ Auto-Draft Narrative</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    <label className="block font-bold text-zinc-300 mb-1.5">Overview Section Heading</label>
                     <input
                       type="text"
                       value={overviewHeading}
@@ -3053,28 +3055,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <BookOpen className="w-5 h-5 text-red-500" />
                     <h3>4. Curated Showcase Chapters</h3>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleRefineShowcaseChapters}
-                      disabled={isRefiningShowcase || isRefiningNarrative || isReadOnlyForSeller}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                      title="Auto-generate showcase chapters from Section 1 vehicle specifications while preserving existing photos"
-                    >
-                      {isRefiningShowcase ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 flex-shrink-0" />
-                          <span>Generating chapters...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                          <span>✨ Auto-Generate Chapters</span>
-                        </>
-                      )}
-                    </button>
-                    <span className="text-[11px] text-zinc-400 font-mono">{showcaseChapters.length} Chapters</span>
-                  </div>
+                  <span className="text-[11px] text-zinc-400 font-mono">{showcaseChapters.length} Chapters</span>
                 </div>
 
                 <ShowcaseChaptersEditor

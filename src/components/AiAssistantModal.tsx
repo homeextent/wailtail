@@ -221,16 +221,19 @@ export interface StructuredProvenance {
     previousOwners: string;
     ownershipDuration: string;
     climateStorage: string;
+    odometerIntegrity: string;
   };
   services: {
     recentSummary: string;
     serviceFacility: string;
     timingMileage: string;
+    mechanicalNeeds: string;
   };
   flaws: {
     paintReadings: string;
     knownFlaws: string;
     imperfectionDisclosures: string;
+    accidentHistory: string;
   };
   modifications: {
     factoryOptions: string;
@@ -242,9 +245,9 @@ const PROVENANCE_CATEGORIES: {
   key: ProvenanceCategoryKey;
   label: string;
 }[] = [
-  { key: 'ownership', label: 'Ownership History' },
+  { key: 'ownership', label: 'Ownership & Mileage History' },
   { key: 'services', label: 'Major Services & Invoices' },
-  { key: 'flaws', label: 'Paint Meter & Flaws' },
+  { key: 'flaws', label: 'Paint Meter, Flaws & Accidents' },
   { key: 'modifications', label: 'Factory Options & Modifications' }
 ];
 
@@ -268,17 +271,20 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     ownership: {
       previousOwners: '',
       ownershipDuration: '',
-      climateStorage: ''
+      climateStorage: '',
+      odometerIntegrity: ''
     },
     services: {
       recentSummary: '',
       serviceFacility: '',
-      timingMileage: ''
+      timingMileage: '',
+      mechanicalNeeds: ''
     },
     flaws: {
       paintReadings: '',
       knownFlaws: '',
-      imperfectionDisclosures: ''
+      imperfectionDisclosures: '',
+      accidentHistory: ''
     },
     modifications: {
       factoryOptions: '',
@@ -419,9 +425,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
         modifications: false
       });
       setStructuredProvenance({
-        ownership: { previousOwners: '', ownershipDuration: '', climateStorage: '' },
-        services: { recentSummary: '', serviceFacility: '', timingMileage: '' },
-        flaws: { paintReadings: '', knownFlaws: '', imperfectionDisclosures: '' },
+        ownership: { previousOwners: '', ownershipDuration: '', climateStorage: '', odometerIntegrity: '' },
+        services: { recentSummary: '', serviceFacility: '', timingMileage: '', mechanicalNeeds: '' },
+        flaws: { paintReadings: '', knownFlaws: '', imperfectionDisclosures: '', accidentHistory: '' },
         modifications: { factoryOptions: '', modifications: '' }
       });
       setFreeformNotes('');
@@ -606,19 +612,22 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
         return Boolean(
           structuredProvenance.ownership.previousOwners.trim() ||
           structuredProvenance.ownership.ownershipDuration.trim() ||
-          structuredProvenance.ownership.climateStorage.trim()
+          structuredProvenance.ownership.climateStorage.trim() ||
+          structuredProvenance.ownership.odometerIntegrity.trim()
         );
       case 'services':
         return Boolean(
           structuredProvenance.services.recentSummary.trim() ||
           structuredProvenance.services.serviceFacility.trim() ||
-          structuredProvenance.services.timingMileage.trim()
+          structuredProvenance.services.timingMileage.trim() ||
+          structuredProvenance.services.mechanicalNeeds.trim()
         );
       case 'flaws':
         return Boolean(
           structuredProvenance.flaws.paintReadings.trim() ||
           structuredProvenance.flaws.knownFlaws.trim() ||
-          structuredProvenance.flaws.imperfectionDisclosures.trim()
+          structuredProvenance.flaws.imperfectionDisclosures.trim() ||
+          structuredProvenance.flaws.accidentHistory.trim()
         );
       case 'modifications':
         return Boolean(
@@ -644,6 +653,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     if (structuredProvenance.ownership.climateStorage.trim()) {
       ownershipLines.push(`- Storage / climate exposure: ${structuredProvenance.ownership.climateStorage.trim()}`);
     }
+    if (structuredProvenance.ownership.odometerIntegrity.trim()) {
+      ownershipLines.push(`- Odometer & cluster integrity: ${structuredProvenance.ownership.odometerIntegrity.trim()}`);
+    }
     if (ownershipLines.length > 0) {
       sections.push(`### Ownership History\n${ownershipLines.join('\n')}`);
     }
@@ -659,6 +671,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     if (structuredProvenance.services.timingMileage.trim()) {
       serviceLines.push(`- Date & mileage: ${structuredProvenance.services.timingMileage.trim()}`);
     }
+    if (structuredProvenance.services.mechanicalNeeds.trim()) {
+      serviceLines.push(`- Known mechanical needs / pending servicing: ${structuredProvenance.services.mechanicalNeeds.trim()}`);
+    }
     if (serviceLines.length > 0) {
       sections.push(`### Major Services & Invoices\n${serviceLines.join('\n')}`);
     }
@@ -673,6 +688,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     }
     if (structuredProvenance.flaws.imperfectionDisclosures.trim()) {
       flawLines.push(`- Imperfection disclosures: ${structuredProvenance.flaws.imperfectionDisclosures.trim()}`);
+    }
+    if (structuredProvenance.flaws.accidentHistory.trim()) {
+      flawLines.push(`- Accident & insurance claim history: ${structuredProvenance.flaws.accidentHistory.trim()}`);
     }
     if (flawLines.length > 0) {
       sections.push(`### Paint Meter & Flaws\n${flawLines.join('\n')}`);
@@ -1160,49 +1178,52 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
 
               {/* Middle: Seller Notes & Vehicle Provenance */}
               <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <label className="text-xs font-semibold text-slate-300">
-                    Seller Notes &amp; Vehicle Provenance
-                  </label>
-                  <span className="text-[11px] text-slate-500">
-                    Click guided headers to expand structured provenance drawers:
-                  </span>
-                </div>
+                {/* Sticky Header Dock for Guided Provenance */}
+                <div className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur-md py-3 -mx-6 px-6 border-b border-slate-800/80 shadow-lg space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Seller Notes &amp; Vehicle Provenance
+                    </label>
+                    <span className="text-[11px] text-slate-500">
+                      Click guided headers to expand structured provenance drawers:
+                    </span>
+                  </div>
 
-                {/* Guided Provenance Accordion Category Pills */}
-                <div className="flex flex-wrap gap-2">
-                  {PROVENANCE_CATEGORIES.map((cat) => {
-                    const isOpen = activeDrawers[cat.key];
-                    const hasContent = hasDrawerContent(cat.key);
-                    const isHighlighted = isOpen || hasContent;
+                  {/* Guided Provenance Accordion Category Pills */}
+                  <div className="flex flex-wrap gap-2">
+                    {PROVENANCE_CATEGORIES.map((cat) => {
+                      const isOpen = activeDrawers[cat.key];
+                      const hasContent = hasDrawerContent(cat.key);
+                      const isHighlighted = isOpen || hasContent;
 
-                    return (
-                      <button
-                        key={cat.key}
-                        type="button"
-                        onClick={() => toggleDrawer(cat.key)}
-                        aria-expanded={isOpen}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
-                          isOpen
-                            ? 'bg-amber-500/15 border border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
-                            : hasContent
-                            ? 'bg-emerald-500/15 border border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
-                            : 'bg-slate-800/80 border border-slate-700 hover:border-slate-600 text-slate-300'
-                        }`}
-                      >
-                        {isHighlighted ? (
-                          <Check
-                            className={`w-3.5 h-3.5 stroke-[2.5] ${
-                              isOpen ? 'text-amber-400' : 'text-emerald-400'
-                            }`}
-                          />
-                        ) : (
-                          <span className="text-slate-400 font-bold">+</span>
-                        )}
-                        <span>{cat.label}</span>
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          onClick={() => toggleDrawer(cat.key)}
+                          aria-expanded={isOpen}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                            isOpen
+                              ? 'bg-amber-500/15 border border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40'
+                              : hasContent
+                              ? 'bg-emerald-500/15 border border-emerald-500/60 text-emerald-300 ring-1 ring-emerald-500/40'
+                              : 'bg-slate-800/80 border border-slate-700 hover:border-slate-600 text-slate-300'
+                          }`}
+                        >
+                          {isHighlighted ? (
+                            <Check
+                              className={`w-3.5 h-3.5 stroke-[2.5] ${
+                                isOpen ? 'text-amber-400' : 'text-emerald-400'
+                              }`}
+                            />
+                          ) : (
+                            <span className="text-slate-400 font-bold">+</span>
+                          )}
+                          <span>{cat.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Expandable Accordion Drawers */}
@@ -1224,58 +1245,78 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                           Collapse
                         </button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label
-                            htmlFor="prov-prev-owners"
-                            className="block text-xs font-medium text-slate-300"
-                          >
-                            Previous Owners
-                          </label>
-                          <input
-                            id="prov-prev-owners"
-                            type="text"
-                            value={structuredProvenance.ownership.previousOwners}
-                            onChange={(e) =>
-                              updateProvenance('ownership', 'previousOwners', e.target.value)
-                            }
-                            placeholder="e.g., 2 registered owners in Ontario"
-                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
-                          />
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label
+                              htmlFor="prov-prev-owners"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Previous Owners
+                            </label>
+                            <input
+                              id="prov-prev-owners"
+                              type="text"
+                              value={structuredProvenance.ownership.previousOwners}
+                              onChange={(e) =>
+                                updateProvenance('ownership', 'previousOwners', e.target.value)
+                              }
+                              placeholder="e.g., 2 registered owners in Ontario"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="prov-ownership-duration"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Ownership Duration
+                            </label>
+                            <input
+                              id="prov-ownership-duration"
+                              type="text"
+                              value={structuredProvenance.ownership.ownershipDuration}
+                              onChange={(e) =>
+                                updateProvenance('ownership', 'ownershipDuration', e.target.value)
+                              }
+                              placeholder="e.g., 6 years, acquired in 2020"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor="prov-climate-storage"
+                              className="block text-xs font-medium text-slate-300"
+                            >
+                              Storage &amp; Climate Exposure
+                            </label>
+                            <input
+                              id="prov-climate-storage"
+                              type="text"
+                              value={structuredProvenance.ownership.climateStorage}
+                              onChange={(e) =>
+                                updateProvenance('ownership', 'climateStorage', e.target.value)
+                              }
+                              placeholder="e.g., Heated garage, summer use only, no winter driving"
+                              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                            />
+                          </div>
                         </div>
                         <div>
                           <label
-                            htmlFor="prov-ownership-duration"
+                            htmlFor="prov-odometer-integrity"
                             className="block text-xs font-medium text-slate-300"
                           >
-                            Ownership Duration
+                            Odometer Integrity &amp; Cluster Disclosures
                           </label>
                           <input
-                            id="prov-ownership-duration"
+                            id="prov-odometer-integrity"
                             type="text"
-                            value={structuredProvenance.ownership.ownershipDuration}
+                            value={structuredProvenance.ownership.odometerIntegrity}
                             onChange={(e) =>
-                              updateProvenance('ownership', 'ownershipDuration', e.target.value)
+                              updateProvenance('ownership', 'odometerIntegrity', e.target.value)
                             }
-                            placeholder="e.g., 6 years, acquired in 2020"
-                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
-                          />
-                        </div>
-                        <div>
-                          <label
-                            htmlFor="prov-climate-storage"
-                            className="block text-xs font-medium text-slate-300"
-                          >
-                            Storage &amp; Climate Exposure
-                          </label>
-                          <input
-                            id="prov-climate-storage"
-                            type="text"
-                            value={structuredProvenance.ownership.climateStorage}
-                            onChange={(e) =>
-                              updateProvenance('ownership', 'climateStorage', e.target.value)
-                            }
-                            placeholder="e.g., Heated garage, summer use only, no winter driving"
+                            placeholder="e.g., True chassis mileage, original cluster; or replacement 6-digit cluster installed at 45,000 km with documentation (TMU)"
                             className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
                           />
                         </div>
@@ -1357,6 +1398,24 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                             />
                           </div>
                         </div>
+                        <div>
+                          <label
+                            htmlFor="prov-mechanical-needs"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Known Mechanical Needs / Deferred Items
+                          </label>
+                          <input
+                            id="prov-mechanical-needs"
+                            type="text"
+                            value={structuredProvenance.services.mechanicalNeeds}
+                            onChange={(e) =>
+                              updateProvenance('services', 'mechanicalNeeds', e.target.value)
+                            }
+                            placeholder="e.g., AC blows cool but could use a recharge; slight valve cover seep noted at last inspection"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1434,6 +1493,24 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                               className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition"
                             />
                           </div>
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="prov-accident-history"
+                            className="block text-xs font-medium text-slate-300"
+                          >
+                            Accident, Incident &amp; Insurance Claims
+                          </label>
+                          <textarea
+                            id="prov-accident-history"
+                            rows={2}
+                            value={structuredProvenance.flaws.accidentHistory}
+                            onChange={(e) =>
+                              updateProvenance('flaws', 'accidentHistory', e.target.value)
+                            }
+                            placeholder="e.g., Clean Carfax with zero claims; or minor $2,100 parking lot claim in 2019 (front bumper repainted, zero structural damage)"
+                            className="w-full mt-1.5 px-3 py-2 rounded-lg bg-slate-950/60 border border-slate-700 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-slate-100 placeholder-slate-500 text-xs sm:text-sm focus:outline-none transition resize-y"
+                          />
                         </div>
                       </div>
                     </div>
