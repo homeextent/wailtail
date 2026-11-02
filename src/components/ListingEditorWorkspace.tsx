@@ -29,6 +29,7 @@ import { InlineShowcaseSection } from './InlineShowcaseSection';
 import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
 import { PhotoGalleryGrid } from './PhotoGalleryGrid';
 import { ShowcaseChaptersEditor } from './ShowcaseChaptersEditor';
+import { PhotoGuideDrawer } from './PhotoGuideDrawer';
 import { AiAssistantModal } from './AiAssistantModal';
 import { refineListingSection } from '../services/aiService';
 import { 
@@ -3065,6 +3066,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     {heroImages.length} Hero • {galleryImages.length} Gallery Photos
                   </span>
                 </div>
+
+                {/* Collector Photography Guide & Recommended Shot List */}
+                <PhotoGuideDrawer />
 
                 {/* 5A: HERO CAROUSEL BUILDER */}
                 <div className="space-y-3">

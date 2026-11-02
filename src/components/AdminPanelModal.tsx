@@ -27,6 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDateTime, formatExternalUrl } from '../utils/formatters';
 import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { WailtailLogo } from './WailtailLogo';
+import { PhotoGuideDrawer } from './PhotoGuideDrawer';
 import { 
   X, 
   Settings, 
@@ -2982,6 +2983,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     {heroImages.length} Hero Images • {galleryImages.length} Full Gallery Photos
                   </span>
                 </div>
+
+                {/* Collector Photography Guide & Recommended Shot List */}
+                <PhotoGuideDrawer />
 
                 {/* Hero Carousel Section */}
                 <div className="space-y-3">
