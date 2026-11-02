@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.13.0] - 2026-11-02 — Platform Trust, Educational Onboarding & Collector Shot Guide
+
+### Added
+- **Platform Trust & "How It Works" Modal (`HowItWorksModal.tsx`, `App.tsx`)**: Global tabbed educational modal with dark slate styling (`bg-slate-900 border-slate-700/60`), amber accents, and backdrop blur. Provides dedicated tabs for "Buying on Wailtail" (0% buyer fees in CAD, 2-minute anti-sniping soft closes, Pre-Purchase Inspections), "Selling on Wailtail" (retail enthusiast marketplace vs. wholesale dealer clearinghouses, no 3rd-party inspector bottlenecks, no post-sale green/red light arbitration, direct private-party CAD wire settlement), and "Trust & Security" (zero-tolerance anti-shill defense, verified bidder identities, upfront transparency).
+- **Global Educational State & Handlers (`App.tsx`)**: Introduced `isHowItWorksModalOpen: boolean`, `howItWorksTab: 'buying' | 'selling' | 'trust'`, and standardized trigger handler `handleOpenHowItWorks(tab?: 'buying' | 'selling' | 'trust')` hoisted at the root level alongside `LegalModal`.
+- **Desktop & Mobile Navigation Triggers (`Navbar.tsx`, `Footer.tsx`)**: Integrated desktop header text trigger (>= 1024px) and mobile slide-out action (< 768px) in `Navbar.tsx`, plus a dedicated footer navigation link in `Footer.tsx`.
+- **Contextual Consignment FAQ Accordion (`ConsignmentModal.tsx`)**: Injected "Seller FAQ & Settlement Details" collapsible accordion directly above the clickwrap agreement checkbox and submission button. Addresses top seller friction points (no OMVIC dealer arbitration/middleman, direct 100% cleared funds settlement before vehicle release, consignor-provided photography) with a secondary deep-link trigger to the global selling guide.
+- **Collector Photography Guide & Recommended Shot List (`PhotoGuideDrawer.tsx`)**: Built a collapsible helper drawer in Section 5 ("Hero Carousel & Full Photo Gallery") across `ListingEditorWorkspace.tsx` and `AdminPanelModal.tsx`. Details the 5 core visual pillars (Exterior Walkaround [30–40 photos], Cabin & Cockpit [20–30 photos], Powertrain & Mechanical [10–15 photos], Undercarriage & Suspension [15–20 photos], Transparency, Flaws & Paint Depth [10–15 photos]) along with golden hour composition and 45° front wheel alignment pro-tips.
+
+---
+
 ## [1.12.0] - 2026-10-31 — Platform Social Metadata Rebrand & Generic Auction Preview Card
 
 ### Added
