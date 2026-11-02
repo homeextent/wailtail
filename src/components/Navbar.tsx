@@ -19,7 +19,8 @@ import {
   Bookmark,
   Bell,
   Menu,
-  X
+  X,
+  HelpCircle
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -40,6 +41,7 @@ interface NavbarProps {
   onToggleCatalog?: () => void;
   onNavigateHome?: () => void;
   onOpenConsignmentModal?: () => void;
+  onOpenHowItWorks?: (tab?: 'buying' | 'selling' | 'trust') => void;
   isCatalogView?: boolean;
   totalAuctionsCount?: number;
 }
@@ -62,6 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleCatalog,
   onNavigateHome,
   onOpenConsignmentModal,
+  onOpenHowItWorks,
   isCatalogView = false,
   totalAuctionsCount
 }) => {
@@ -223,6 +226,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Desktop Action Controls & User state (hidden on viewports below md:) */}
           <div className="hidden md:flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* How It Works Link (Desktop >= lg) */}
+            {onOpenHowItWorks && (
+              <button
+                type="button"
+                onClick={() => onOpenHowItWorks('buying')}
+                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                title="How Wailtail Works (0% Buyer Fees & Direct Settlement)"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>How It Works</span>
+              </button>
+            )}
+
             {/* Sell Your Vehicle Header Action */}
             {onOpenConsignmentModal && (
               <button
@@ -610,6 +626,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Primary Actions Vertical Stack */}
             <div className="space-y-2">
+              {/* How It Works Mobile Action */}
+              {onOpenHowItWorks && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    onOpenHowItWorks('buying');
+                  }}
+                  className="min-h-[44px] w-full px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 flex items-center justify-between transition-all shadow-sm active:scale-98 cursor-pointer"
+                  title="How Wailtail Works (0% Buyer Fees & Direct Settlement)"
+                >
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-amber-400" />
+                    <span>How It Works</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">Guide</span>
+                </button>
+              )}
+
               {/* Sell Your Vehicle Mobile Action */}
               {onOpenConsignmentModal && (
                 <button

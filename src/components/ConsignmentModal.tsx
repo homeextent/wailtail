@@ -9,7 +9,10 @@ import {
   FileText, 
   Send, 
   AlertCircle,
-  MapPin
+  MapPin,
+  ChevronDown,
+  HelpCircle,
+  ExternalLink
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 import { ConsignmentApplication, UserRole } from '../types';
@@ -50,14 +53,19 @@ interface ConsignmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
+  onOpenHowItWorks?: (tab?: 'buying' | 'selling' | 'trust') => void;
 }
 
 export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   isOpen,
   onClose,
-  onOpenLegalModal
+  onOpenLegalModal,
+  onOpenHowItWorks
 }) => {
   const { user } = useAuth();
+
+  // Seller FAQ Accordion State (closed by default to avoid layout shifts)
+  const [isFaqOpen, setIsFaqOpen] = useState(false);
 
   // 3-tier vehicle taxonomy state
   const [year, setYear] = useState('');
@@ -764,6 +772,70 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm leading-relaxed focus:ring-2 focus:ring-red-600 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Contextual Collapsible FAQ Accordion */}
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFaqOpen(!isFaqOpen)}
+                  className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 transition-colors text-left cursor-pointer group"
+                >
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-bold text-white tracking-wide">
+                      Seller FAQ &amp; Settlement Details
+                    </span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isFaqOpen ? 'rotate-180 text-amber-400' : ''}`} />
+                </button>
+
+                {isFaqOpen && (
+                  <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-xs space-y-3.5 text-slate-300 animate-in fade-in duration-150">
+                    <div>
+                      <h4 className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Are sales subject to OMVIC dealer arbitration?</span>
+                      </h4>
+                      <p className="text-[11px] sm:text-xs text-slate-300 pl-5 leading-relaxed">
+                        No. Wailtail operates exclusively as a peer-to-peer enthusiast marketplace connecting private buyers and sellers directly. Unlike dealer auctions, transactions are private retail sales without intermediary wholesale arbitration boards.
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <h4 className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+                        <span>How and when do I receive payment?</span>
+                      </h4>
+                      <p className="text-[11px] sm:text-xs text-slate-300 pl-5 leading-relaxed">
+                        Upon auction conclusion meeting your reserve, Wailtail securely connects you with the winning bidder. Payment (wire transfer, bank draft, or certified cheque) is settled directly offline between you and the buyer within 3 business days, with 0% deducted by Wailtail.
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800/80">
+                      <h4 className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                        <Car className="w-3.5 h-3.5 text-amber-400" />
+                        <span>How are inspections handled?</span>
+                      </h4>
+                      <p className="text-[11px] sm:text-xs text-slate-300 pl-5 leading-relaxed">
+                        All lots are listed "As-Is, Where-Is". Prospective buyers are encouraged to review your documentation and arrange independent pre-purchase inspections (PPI) prior to bidding while the auction remains live.
+                      </p>
+                    </div>
+
+                    {onOpenHowItWorks && (
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => onOpenHowItWorks('selling')}
+                          className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <span>Have more questions? Read our full Selling &amp; Settlement Guide</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

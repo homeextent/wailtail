@@ -44,6 +44,7 @@ import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
+import { HowItWorksModal, HowItWorksTab } from './components/HowItWorksModal';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
 import { AdminPortalPage } from './components/AdminPortalPage';
@@ -193,10 +194,17 @@ const AuctionAppContent: React.FC = () => {
   const [accountHubTab, setAccountHubTab] = useState<'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications'>('bids');
   const [isLegalModalOpen, setIsLegalModalOpen] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
+  const [isHowItWorksModalOpen, setIsHowItWorksModalOpen] = useState(false);
+  const [howItWorksTab, setHowItWorksTab] = useState<'buying' | 'selling' | 'trust'>('buying');
 
   const handleOpenLegalModal = (tab: 'terms' | 'privacy' = 'terms') => {
     setLegalModalTab(tab);
     setIsLegalModalOpen(true);
+  };
+
+  const handleOpenHowItWorks = (tab: 'buying' | 'selling' | 'trust' = 'buying') => {
+    setHowItWorksTab(tab);
+    setIsHowItWorksModalOpen(true);
   };
 
   const handleOpenAccountHub = (tab?: string) => {
@@ -755,6 +763,7 @@ const AuctionAppContent: React.FC = () => {
           onNavigateHome={() => navigateTo('/')}
           onToggleCatalog={() => navigateTo('/')}
           onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+          onOpenHowItWorks={handleOpenHowItWorks}
           isCatalogView={true}
           totalAuctionsCount={allAuctions.length}
         />
@@ -784,6 +793,7 @@ const AuctionAppContent: React.FC = () => {
           siteTagline={effectiveSiteTagline}
           onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
           onOpenLegalModal={handleOpenLegalModal}
+          onOpenHowItWorks={handleOpenHowItWorks}
           onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         />
       </div>
@@ -811,6 +821,7 @@ const AuctionAppContent: React.FC = () => {
         onNavigateHome={() => navigateTo('/')}
         onToggleCatalog={() => navigateTo('/')}
         onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
+        onOpenHowItWorks={handleOpenHowItWorks}
         isCatalogView={false}
         totalAuctionsCount={allAuctions.length}
       />
@@ -1082,6 +1093,7 @@ const AuctionAppContent: React.FC = () => {
         siteTagline={effectiveSiteTagline}
         onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
         onOpenLegalModal={handleOpenLegalModal}
+        onOpenHowItWorks={handleOpenHowItWorks}
         onOpenFeedback={() => setIsFeedbackModalOpen(true)}
       />
 
@@ -1167,12 +1179,19 @@ const AuctionAppContent: React.FC = () => {
         isOpen={isConsignmentModalOpen}
         onClose={() => setIsConsignmentModalOpen(false)}
         onOpenLegalModal={handleOpenLegalModal}
+        onOpenHowItWorks={handleOpenHowItWorks}
       />
 
       <LegalModal
         isOpen={isLegalModalOpen}
         onClose={() => setIsLegalModalOpen(false)}
         initialTab={legalModalTab}
+      />
+
+      <HowItWorksModal
+        isOpen={isHowItWorksModalOpen}
+        onClose={() => setIsHowItWorksModalOpen(false)}
+        initialTab={howItWorksTab}
       />
 
       <FeedbackModal

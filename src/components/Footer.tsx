@@ -9,6 +9,7 @@ interface FooterProps {
   siteTagline?: string;
   onOpenConsignmentModal?: () => void;
   onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
+  onOpenHowItWorks?: (tab?: 'buying' | 'selling' | 'trust') => void;
   onOpenFeedback?: () => void;
 }
 
@@ -19,6 +20,7 @@ export const Footer: React.FC<FooterProps> = ({
   siteTagline,
   onOpenConsignmentModal,
   onOpenLegalModal,
+  onOpenHowItWorks,
   onOpenFeedback
 }) => {
   const brandName = siteName || 'wailtail';
@@ -91,6 +93,14 @@ export const Footer: React.FC<FooterProps> = ({
             © {new Date().getFullYear()} {brandName.toUpperCase()}. Featured Vehicle: {vehicleTitle || "Wailtail Classic & Collector Auctions"}.
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <button
+              type="button"
+              onClick={() => onOpenHowItWorks?.('buying')}
+              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              How It Works
+            </button>
+            <span>•</span>
             <a 
               href="https://marketplace.wailtail.com" 
               target="_blank" 
