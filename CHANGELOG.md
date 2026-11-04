@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.14.0] - 2026-11-04 — Seller Social Marketing Kit & Canvas Graphic Generator
+
+### Added
+- **Seller Social Marketing Kit (`SocialPromoKitModal.tsx`, `App.tsx`)**: Decoupled modal enabling consignors and administrators to generate high-converting promotional assets for Facebook Groups, forums, Instagram, and social channels. Managed via root global state (`isSocialKitOpen`, `socialKitAuction`) and accessible across multiple application surfaces.
+- **Static 4:3 Template Canvas Compositor (`public/social-promo-template-4x3.jpg`)**: High-energy HTML5 Canvas graphic generator ($1200 \times 900\text{ px}$) compositing dynamic vehicle content over a pre-rendered static poster template. Renders Slot 1 (hero angle, top-right) and Slot 2 (detail/cockpit, lower-left) with vibrant orange framing (`#ff5e00`), condensed automotive headline typography (`Impact` / condensed heavy italic), intelligent two-line title wrapping without ellipsis truncation, text drop shadows, and baked Wailtail branding.
+- **Campaign Stage Reactivity**: Dynamic stage switcher supporting `Upcoming` (`UPCOMING AUCTION`), `Live Now` (`AUCTION IS LIVE`), and `Ending Soon` (`ENDING SOON`), updating the graphic headline gradient and copy templates in real time.
+- **Visual Photo Slot Selector**: Two interactive visual slot cards above the media tray with active selection rings (`Slot 1: Hero Angle`, `Slot 2: Cockpit / Detail`) and quick 1-2 pairing, replacing blind text dropdowns.
+- **Enthusiast Copy Generator**: 3 channel-specific copy templates ("Enthusiast Group Deep-Dive", "Marketplace Pitch", "X / Twitter Thread") using an authentic, grounded gearhead tone with itemized vehicle specs, mechanical highlights, and closing admin courtesy notes.
+- **Tracked Referral UTM Engine**: Automatically generates canonical campaign URLs (`?utm_source=seller_social&utm_medium=social_kit`) with one-click clipboard copying (`🔗 Copy Link`) and external URL testing (`↗ Test URL`).
+- **Multi-Surface Triggers**: Integrated `Social Kit` / `🚀 Social Marketing Kit` action triggers in the Listing Editor Workspace top header, the Seller Activity Hub (`UserAccountHubModal.tsx`), and the Admin Vehicle Inventory table (`AdminPortalPage.tsx`).
+- **Google Cloud Storage Bucket CORS Configuration**: Configured cross-origin resource sharing (`Access-Control-Allow-Origin: *`) on `gs://studio-apps-483721.firebasestorage.app` via `cors.json`, enabling browser canvas PNG exports (`handleDownloadGraphic`) without security tainting errors.
+- **Phase 2 Roadmap Architecture**: Documented planned multi-format aspect ratios (`social-promo-template-9x16.jpg` for Stories/Reels and `social-promo-template-1x1.jpg` for Square Feed) and seller referral analytics.
+
+---
+
 ## [1.13.0] - 2026-11-02 — Platform Trust, Educational Onboarding & Collector Shot Guide
 
 ### Added
