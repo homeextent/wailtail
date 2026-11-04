@@ -294,8 +294,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     const currentVersion = ++renderVersionRef.current;
 
     try {
-      // 1. Preload Dual Vehicle Photos BEFORE modifying or drawing to canvas
-      const [img1, img2] = await Promise.all([
+      // 1. Preload Base Template & Dual Vehicle Photos BEFORE modifying or drawing to canvas
+      const [bgImg, img1, img2] = await Promise.all([
+        loadImageAsync('/social-promo-template-4x3.jpg').catch(() => null),
         imageSlot1 ? loadImageAsync(imageSlot1).catch(() => null) : Promise.resolve(null),
         imageSlot2 ? loadImageAsync(imageSlot2).catch(() => null) : Promise.resolve(null),
       ]);
@@ -317,119 +318,39 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       // Clear the entire canvas explicitly before drawing
       ctx.clearRect(0, 0, width, height);
 
-      // 3. Base Background: Deep charcoal/black gradient (#060911 to #0d131f)
-      const baseGrad = ctx.createLinearGradient(0, 0, 0, height);
-      baseGrad.addColorStop(0, '#060911');
-      baseGrad.addColorStop(1, '#0d131f');
-      ctx.fillStyle = baseGrad;
-      ctx.fillRect(0, 0, width, height);
-
-      // Dark tire tread texture pattern drawn across background and lower quadrant
-      ctx.save();
-      const drawTreadTrack = (startX: number, startY: number, length: number, angleDeg: number, trackWidth: number = 70) => {
-        ctx.save();
-        ctx.translate(startX, startY);
-        ctx.rotate((angleDeg * Math.PI) / 180);
-        const lugWidth = trackWidth * 0.42;
-        const lugHeight = 9;
-        const step = 20;
-        const slantOffset = 10;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.022)';
-        for (let dist = 0; dist < length; dist += step) {
-          // Left lug (angled parallelogram)
-          ctx.beginPath();
-          ctx.moveTo(-trackWidth / 2, dist);
-          ctx.lineTo(-trackWidth / 2 + lugWidth, dist + slantOffset);
-          ctx.lineTo(-trackWidth / 2 + lugWidth, dist + slantOffset + lugHeight);
-          ctx.lineTo(-trackWidth / 2, dist + lugHeight);
-          ctx.closePath();
-          ctx.fill();
-
-          // Right lug (mirrored angled parallelogram, slightly offset)
-          ctx.beginPath();
-          ctx.moveTo(trackWidth / 2, dist + step * 0.5);
-          ctx.lineTo(trackWidth / 2 - lugWidth, dist + step * 0.5 + slantOffset);
-          ctx.lineTo(trackWidth / 2 - lugWidth, dist + step * 0.5 + slantOffset + lugHeight);
-          ctx.lineTo(trackWidth / 2, dist + step * 0.5 + lugHeight);
-          ctx.closePath();
-          ctx.fill();
-
-          // Center sipes / groove marks
-          ctx.fillRect(-2, dist + 4, 4, lugHeight);
-        }
-        ctx.restore();
-      };
-
-      // Draw subtle tire tread tracks
-      drawTreadTrack(180, -60, 650, 25, 60);
-      drawTreadTrack(720, 360, 600, -20, 80);
-      drawTreadTrack(260, 520, 480, 15, 75);
-      drawTreadTrack(880, 580, 420, -15, 80);
-      ctx.restore();
-
-      // Geometric speed chevrons (angled white and amber stripes) drawn in top-right corner
-      ctx.save();
-      for (let i = 0; i < 9; i++) {
-        const startX = 920 + i * 28;
-        const stripeW = 10;
-        const slantX = -50;
-        const stripeH = 150;
-        
-        ctx.beginPath();
-        ctx.moveTo(startX, 0);
-        ctx.lineTo(startX + stripeW, 0);
-        ctx.lineTo(startX + stripeW + slantX, stripeH);
-        ctx.lineTo(startX + slantX, stripeH);
-        ctx.closePath();
-        
-        if (i % 2 === 0) {
-          ctx.fillStyle = 'rgba(255, 94, 0, 0.35)'; // amber / orange
-        } else {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.18)'; // crisp white
-        }
-        ctx.fill();
+      // Layer 1: Base Template (with deep charcoal gradient fallback)
+      if (bgImg) {
+        ctx.drawImage(bgImg, 0, 0, width, height);
+      } else {
+        const baseGrad = ctx.createLinearGradient(0, 0, 0, height);
+        baseGrad.addColorStop(0, '#06080e');
+        baseGrad.addColorStop(1, '#0d131f');
+        ctx.fillStyle = baseGrad;
+        ctx.fillRect(0, 0, width, height);
       }
-      ctx.restore();
 
-      // Reusable Wailtail Fluke Path
-      const flukePath = new Path2D(
-        "M32.54 24.688a7.155 7.155 0 0 0-7.147-7.147c-0.04 0-0.079 0.005-0.119 0.006-2.995-0.044-5.002-0.687-5.795-1.879a2.593 2.593 0 0 1-0.309-2.052c9.13-0.245 9.452-8.8 9.455-8.888a0.549 0.549 0 0 0-0.544-0.563c-0.346-0.001-7.934-0.02-12.038 3.662C11.94 4.148 4.354 4.167 4.004 4.165a0.549 0.549 0 0 0-0.544 0.563c0.002 0.087 0.318 8.478 9.191 8.878-0.394 2.192-1.288 9.271 2.452 13.979 2.178 2.743 5.548 4.159 10.001 4.235 0.097 0.004 0.192 0.015 0.289 0.015 0.012 0 0.023-0.002 0.035-0.002 0.015 0 0.029 0.002 0.045 0.002 0.009 0 0.017-0.005 0.026-0.005A7.152 7.152 0 0 0 32.54 24.688ZM15.965 26.905c-4.047-5.091-2.132-13.624-2.112-13.709a0.549 0.549 0 0 0-0.536-0.673c-7.176 0-8.475-5.426-8.708-7.247 1.883 0.072 7.762 0.544 10.884 3.529v1.337a0.549 0.549 0 0 0 1.099 0V8.805c3.119-2.982 9.001-3.456 10.884-3.528-0.234 1.821-1.533 7.246-8.708 7.246a0.549 0.549 0 0 0-0.504 0.332 3.82 3.82 0 0 0 0.291 3.407 5.438 5.438 0 0 0 3.586 2.07 7.126 7.126 0 0 0-1.458 11.717A9.575 9.575 0 0 1 15.965 26.905Zm9.463 3.83c-0.1 0-0.193-0.01-0.293-0.012a6.042 6.042 0 0 1 0.149-12.078c0.105 0.001 0.2 0.009 0.307 0.009 0.006 0 0.011-0.003 0.018-0.003a6.044 6.044 0 0 1-0.181 12.084Z"
-      );
-      const ringPath = new Path2D(
-        "M25.393 20.541a4.147 4.147 0 1 0 4.148 4.147A4.152 4.152 0 0 0 25.393 20.541Zm0 7.196a3.049 3.049 0 1 1 3.049-3.049A3.052 3.052 0 0 1 25.393 27.737Z"
-      );
-
-      // 4. Primary Hero Card (Top-Right): Position at X: 520, Y: 75, W: 630, H: 440
+      // Layer 2: Slot 1 (Primary Hero Shot, Top-Right: X: 520, Y: 140, W: 630, H: 410)
       const heroX = 520;
-      const heroY = 75;
+      const heroY = 140;
       const heroW = 630;
-      const heroH = 440;
-      const heroBevel = 36;
-      const heroR = 8;
+      const heroH = 410;
+      const heroR = 10;
 
-      // Angled frame with subtle beveled/diagonal lower-left corner
-      const heroPath = new Path2D();
-      heroPath.moveTo(heroX, heroY + heroR);
-      heroPath.arcTo(heroX, heroY, heroX + heroR, heroY, heroR);
-      heroPath.lineTo(heroX + heroW - heroR, heroY);
-      heroPath.arcTo(heroX + heroW, heroY, heroX + heroW, heroY + heroR, heroR);
-      heroPath.lineTo(heroX + heroW, heroY + heroH - heroR);
-      heroPath.arcTo(heroX + heroW, heroY + heroH, heroX + heroW - heroR, heroY + heroH, heroR);
-      heroPath.lineTo(heroX + heroBevel, heroY + heroH);
-      heroPath.lineTo(heroX, heroY + heroH - heroBevel);
-      heroPath.closePath();
-
-      // Card 1 background & warm amber glow
+      // Card 1 shadow & background fill
       ctx.save();
-      ctx.shadowColor = 'rgba(255, 94, 0, 0.6)';
-      ctx.shadowBlur = 24;
+      ctx.shadowColor = 'rgba(234, 88, 12, 0.4)';
+      ctx.shadowBlur = 14;
       ctx.fillStyle = '#0b1120';
-      ctx.fill(heroPath);
+      ctx.beginPath();
+      ctx.roundRect(heroX, heroY, heroW, heroH, heroR);
+      ctx.fill();
       ctx.restore();
 
       // Card 1 image clip
       ctx.save();
-      ctx.clip(heroPath);
+      ctx.beginPath();
+      ctx.roundRect(heroX, heroY, heroW, heroH, heroR);
+      ctx.clip();
       if (img1) {
         drawCoverImage(ctx, img1, heroX, heroY, heroW, heroH);
       } else {
@@ -442,59 +363,28 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       ctx.restore();
 
-      // Card 1 outer border: 4px orange border (#ff5e00) and warm amber glow
+      // Card 1 outer border stroke: 4.5px width with vibrant orange (#ff5e00)
       ctx.save();
       ctx.strokeStyle = '#ff5e00';
-      ctx.lineWidth = 4;
-      ctx.shadowColor = 'rgba(255, 94, 0, 0.5)';
+      ctx.lineWidth = 4.5;
+      ctx.shadowColor = 'rgba(234, 88, 12, 0.4)';
       ctx.shadowBlur = 14;
-      ctx.stroke(heroPath);
+      ctx.beginPath();
+      ctx.roundRect(heroX, heroY, heroW, heroH, heroR);
+      ctx.stroke();
       ctx.restore();
 
-      // Decorative white and orange geometric speed accents along outer frame edges
-      ctx.save();
-      // Lower-left bevel outer accent stripes
-      ctx.strokeStyle = '#ff5e00';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(heroX + heroBevel + 8, heroY + heroH + 6);
-      ctx.lineTo(heroX - 6, heroY + heroH - heroBevel - 8);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(heroX + heroBevel + 18, heroY + heroH + 12);
-      ctx.lineTo(heroX - 12, heroY + heroH - heroBevel - 18);
-      ctx.stroke();
-
-      // Top outer edge speed tick marks
-      for (let s = 0; s < 4; s++) {
-        const tickX = heroX + 30 + s * 16;
-        ctx.fillStyle = s % 2 === 0 ? '#ff5e00' : '#ffffff';
-        ctx.beginPath();
-        ctx.moveTo(tickX, heroY - 12);
-        ctx.lineTo(tickX + 8, heroY - 12);
-        ctx.lineTo(tickX + 4, heroY - 3);
-        ctx.lineTo(tickX - 4, heroY - 3);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.restore();
-
-      // 5. Secondary Detail Card (Lower-Left): Position at X: 60, Y: 470, W: 450, H: 280
+      // Layer 3: Slot 2 (Secondary Detail Shot, Lower-Left: X: 60, Y: 460, W: 450, H: 290)
       const card2X = 60;
-      const card2Y = 470;
+      const card2Y = 460;
       const card2W = 450;
-      const card2H = 280;
+      const card2H = 290;
       const card2R = 8;
 
-      // Card 2 heavy dark drop shadow (shadowColor: 'rgba(0,0,0,0.85)', shadowBlur: 22)
+      // Card 2 heavy dark drop shadow & background fill
       ctx.save();
       ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-      ctx.shadowBlur = 22;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 10;
+      ctx.shadowBlur = 18;
       ctx.fillStyle = '#0b1120';
       ctx.beginPath();
       ctx.roundRect(card2X, card2Y, card2W, card2H, card2R);
@@ -518,44 +408,22 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       ctx.restore();
 
-      // Card 2 outer border: 3.5px orange border (#ff5e00) and heavy dark drop shadow
+      // Card 2 outer border stroke: 4px width with vibrant orange (#ff5e00) and heavy dark drop shadow
       ctx.save();
       ctx.strokeStyle = '#ff5e00';
-      ctx.lineWidth = 3.5;
+      ctx.lineWidth = 4;
       ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
-      ctx.shadowBlur = 22;
+      ctx.shadowBlur = 18;
       ctx.beginPath();
       ctx.roundRect(card2X, card2Y, card2W, card2H, card2R);
       ctx.stroke();
       ctx.restore();
 
-      // 6. Left-Center Typography Block
+      // Layer 4: Dynamic Headline & Title Typography (Upper-Left Negative Space: brandX = 60, startY = 175)
       const brandX = 60;
-      const brandY = 55;
+      const startY = 175;
 
-      // Top-left branding: Wailtail fluke icon + wailtail.com logotype (bold 28px white)
-      ctx.save();
-      ctx.translate(brandX, brandY);
-      ctx.scale(1.15, 1.15);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill(flukePath);
-      ctx.fill(ringPath);
-      ctx.restore();
-
-      ctx.save();
-      ctx.font = 'bold 28px "Inter", "Arial Black", sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('wailtail.com', brandX + 44, brandY + 25);
-      ctx.restore();
-
-      ctx.save();
-      ctx.font = '700 10.5px "Inter", system-ui, sans-serif';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText('CANADIAN ENTHUSIAST & COLLECTOR AUCTIONS', brandX + 45, brandY + 42);
-      ctx.restore();
-
-      // Stage Headline: Heavy, italicized condensed font (italic 900 36px "Inter", "Arial Black", sans-serif)
-      // with orange/amber horizontal gradient (#ff5e00 to #ffa500)
+      // Line 1 (Stage Headline): Impact condensed typography with horizontal orange gradient
       let stageText = 'AUCTION IS LIVE';
       if (stage === 'upcoming') {
         stageText = 'UPCOMING AUCTION';
@@ -564,162 +432,55 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
 
       ctx.save();
-      ctx.font = 'italic 900 36px "Inter", "Arial Black", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.font = 'italic 900 38px Impact, "Arial Narrow", "Arial Black", sans-serif';
       const stageGrad = ctx.createLinearGradient(brandX, 0, brandX + 380, 0);
-      stageGrad.addColorStop(0, '#ff5e00');
+      stageGrad.addColorStop(0, '#ff4500');
       stageGrad.addColorStop(1, '#ffa500');
       ctx.fillStyle = stageGrad;
-      ctx.fillText(stageText, brandX, 155);
+      ctx.fillText(stageText, brandX, startY);
       ctx.restore();
 
-      // Vehicle Title: Large bold condensed italic text (italic 900 42px "Inter", sans-serif, auto-scaling down to 26px) in crisp white
+      // Line 2 (Vehicle Title): Auto-scale down to 28px if text width > 430px
       const vehicleTitle = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.trim().toUpperCase();
-      const maxTitleWidth = 440;
-      const titleWords = vehicleTitle.split(' ').filter(Boolean);
-
-      let bestFontSize = 26;
-      let bestTitleLines: string[] = [vehicleTitle];
-
-      for (let fs = 42; fs >= 26; fs -= 2) {
-        ctx.font = `italic 900 ${fs}px "Inter", sans-serif`;
-        const testLines: string[] = [];
-        let currLine = '';
-
-        for (let i = 0; i < titleWords.length; i++) {
-          const candidate = currLine ? `${currLine} ${titleWords[i]}` : titleWords[i];
-          if (ctx.measureText(candidate).width <= maxTitleWidth) {
-            currLine = candidate;
-          } else {
-            if (currLine) {
-              testLines.push(currLine);
-            }
-            currLine = titleWords[i];
-          }
-        }
-        if (currLine) {
-          testLines.push(currLine);
-        }
-
-        if (testLines.length <= 2 && testLines.every((l) => ctx.measureText(l).width <= maxTitleWidth)) {
-          bestFontSize = fs;
-          bestTitleLines = testLines;
+      let titleFontSize = 42;
+      for (let fs = 42; fs >= 28; fs--) {
+        ctx.font = `italic 900 ${fs}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
+        if (ctx.measureText(vehicleTitle).width <= 430) {
+          titleFontSize = fs;
           break;
         }
-        if (fs === 26) {
-          bestFontSize = 26;
-          bestTitleLines = testLines;
+        titleFontSize = fs;
+      }
+      ctx.font = `italic 900 ${titleFontSize}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
+
+      let displayTitle = vehicleTitle;
+      if (ctx.measureText(displayTitle).width > 430) {
+        while (ctx.measureText(displayTitle + '...').width > 430 && displayTitle.length > 0) {
+          displayTitle = displayTitle.slice(0, -1);
         }
+        displayTitle = displayTitle.trim() + '...';
       }
 
+      const line2Y = startY + 48;
       ctx.save();
-      ctx.font = `italic 900 ${bestFontSize}px "Inter", sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.font = `italic 900 ${titleFontSize}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
       ctx.fillStyle = '#ffffff';
-      const titleLineHeight = Math.round(bestFontSize * 1.15);
-      let titleCurrentY = 208;
-      for (const line of bestTitleLines) {
-        ctx.fillText(line, brandX, titleCurrentY);
-        titleCurrentY += titleLineHeight;
-      }
+      ctx.fillText(displayTitle, brandX, line2Y);
       ctx.restore();
 
-      // Tagline / Subtitle: Clean italic subtext (italic 500 17px #f1f5f9), max 2 lines
-      const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || '';
+      // Line 3 (Subtitle / Tagline): Crisp light gray (#e2e8f0), max 2 lines with auto-wrap
+      const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
       if (displayTagline) {
+        const line3Y = line2Y + 34;
         ctx.save();
-        ctx.font = 'italic 500 17px "Inter", sans-serif';
-        ctx.fillStyle = '#f1f5f9';
-        drawWrappedText(ctx, displayTagline, brandX, titleCurrentY + 8, 440, 24, 2);
+        ctx.textAlign = 'left';
+        ctx.font = 'italic 600 17px "Inter", sans-serif';
+        ctx.fillStyle = '#e2e8f0';
+        drawWrappedText(ctx, displayTagline, brandX, line3Y, 430, 24, 2);
         ctx.restore();
       }
-
-      // 7. Bottom-Left Financial Details: Starting/Current High Bid + Zero Buyer Fees Notice
-      const isUpcoming = stage === 'upcoming';
-      const bidHeader = isUpcoming ? 'STARTING BID' : 'CURRENT HIGH BID';
-      const bidVal = isUpcoming 
-        ? (auction.startingBid || 0) 
-        : (auction.currentBid || auction.startingBid || 0);
-
-      ctx.save();
-      ctx.textAlign = 'left';
-      ctx.font = '700 12px "Inter", sans-serif';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText(bidHeader, 60, 782);
-
-      ctx.font = '900 30px "Inter", monospace';
-      ctx.fillStyle = '#10b981'; // vibrant emerald
-      ctx.fillText(formatCurrency(bidVal), 60, 818);
-
-      ctx.font = '700 11px "Inter", sans-serif';
-      ctx.fillStyle = '#64748b';
-      ctx.fillText('NO BUYER FEES — WINNING BID IS ACTUAL PRICE', 60, 842);
-      ctx.restore();
-
-      // 8. Bottom-Right Angled CTA Badge: Position at X: 620, Y: 750, W: 520, H: 100
-      const badgeX = 620;
-      const badgeY = 750;
-      const badgeW = 520;
-      const badgeH = 100;
-      const slant = 35;
-
-      // Angled trapezoid badge container
-      const badgePath = new Path2D();
-      badgePath.moveTo(badgeX + slant, badgeY);
-      badgePath.lineTo(badgeX + badgeW - 6, badgeY);
-      badgePath.arcTo(badgeX + badgeW, badgeY, badgeX + badgeW, badgeY + 6, 6);
-      badgePath.lineTo(badgeX + badgeW, badgeY + badgeH - 6);
-      badgePath.arcTo(badgeX + badgeW, badgeY + badgeH, badgeX + badgeW - 6, badgeY + badgeH, 6);
-      badgePath.lineTo(badgeX, badgeY + badgeH);
-      badgePath.lineTo(badgeX + slant, badgeY);
-      badgePath.closePath();
-
-      // Dark slate/carbon container fill + drop shadow
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
-      ctx.shadowBlur = 18;
-      ctx.shadowOffsetY = 6;
-      const badgeGrad = ctx.createLinearGradient(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH);
-      badgeGrad.addColorStop(0, '#0c121d');
-      badgeGrad.addColorStop(1, '#060a12');
-      ctx.fillStyle = badgeGrad;
-      ctx.fill(badgePath);
-      ctx.restore();
-
-      // 2.5px orange border (#ff5e00)
-      ctx.save();
-      ctx.strokeStyle = '#ff5e00';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = 'rgba(255, 94, 0, 0.4)';
-      ctx.shadowBlur = 10;
-      ctx.stroke(badgePath);
-      ctx.restore();
-
-      // Inside badge:
-      // Line 1: REGISTER TO BID AT in crisp white italic font (italic 600 15px)
-      const badgeTextX = badgeX + 65;
-      ctx.save();
-      ctx.textAlign = 'left';
-      ctx.font = 'italic 600 15px "Inter", sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('REGISTER TO BID AT', badgeTextX, badgeY + 38);
-
-      // Line 2: wailtail.com/auctions in bold amber font (bold 24px #f59e0b)
-      const urlText = 'wailtail.com/auctions';
-      ctx.font = 'bold 24px "Inter", sans-serif';
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillText(urlText, badgeTextX, badgeY + 70);
-
-      const urlMetrics = ctx.measureText(urlText);
-
-      // White whale-tail fluke icon drawn cleanly to the right of the URL
-      const flukeIconX = badgeTextX + urlMetrics.width + 16;
-      const flukeIconY = badgeY + 46;
-
-      ctx.translate(flukeIconX, flukeIconY);
-      ctx.scale(0.85, 0.85);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill(flukePath);
-      ctx.fill(ringPath);
-      ctx.restore();
 
     } catch (err: any) {
       console.error('Error drawing social promo canvas:', err);
