@@ -447,6 +447,8 @@ export interface UserProfile {
 }
 ```
 
+> **Security & Privacy Consideration (`dealerId` Public-Read Exposure)**: Under current Firestore rules, root documents in `users/{userId}` and `bidders/{userId}` allow public read access (`allow read: if true;`). Because Cloud Firestore rules do not provide field-level read filtering within publicly readable documents, `dealerId` is exposed to public reads wherever populated. This is an existing security/privacy consideration slated for M2 architectural review.
+
 #### Watchlist Service Method Signatures
 The platform provides atomic service operations in `src/services/auctionService.ts` for managing watchlists across user documents and lot-level watch tallies:
 ```typescript
@@ -634,6 +636,13 @@ export interface DealerListingSnapshot {
   licensingJurisdiction?: CanadianProvinceOrTerritory;
 }
 ```
+
+> **Privacy, Legal Approval & Immutability Architecture for `DealerListingSnapshot`**:
+> - **Type Capability vs. Approved Public Disclosure**: The optional `dealerLicenseNumber` and `licensingJurisdiction` fields exist in the TypeScript contract (`DealerListingSnapshot`) to accommodate prospective regulatory and compliance requirements. However, their inclusion in the type definition does not authorize public disclosure.
+> - **Legal Approval Required**: These optional fields **must not** be populated in publicly readable auction snapshots until legal review explicitly approves their public visibility.
+> - **Public-Safe Business Identity**: Public dealer presentation must strictly rely on approved public-safe business identity fields (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`).
+> - **Canonical Profile Isolation**: The dealer's authoritative, private canonical profile (`/dealer_profiles/{dealerId}`) remains separate from the public auction snapshot.
+> - **Administrator-Controlled Snapshot**: Dealer snapshots are intended to preserve the dealer identity associated with an auction at the relevant point in time. Under current Firestore security rules, snapshot fields are protected from non-admin modification, while administrators retain write permissions. Consequently, the snapshot is administrator-controlled, not technically immutable against administrator changes at the database level.
 
 ### 2.14 `dealer_verification_audits` Collection Schema (Append-Only Audit Trail)
 
@@ -2073,6 +2082,7 @@ The dealer identity model separates business entity records, individual user aut
    - Individual registered users (`users/{userId}` and `bidders/{userId}`) link to a dealership entity via an optional `dealerId` foreign key.
    - **Access Boundaries**: Associating a `dealerId` with a user account establishes organizational identity but does not inherently grant authoring, editing, or administrative permissions over another user's lots or dealer inventory.
    - **Phase 1 Representation Model**: Under the Phase 1 specification, each verified dealership is represented by a single primary authorized representative (`primaryRepresentativeUid`). Multi-user dealership staff hierarchies and role delegations are deferred to future roadmap phases.
+   - **Public-Read Exposure & Security Consideration**: Under current Firestore rules, root documents in `users/{userId}` and `bidders/{userId}` permit public reads (`allow read: if true;`). Consequently, `dealerId` is exposed to public reads wherever it exists in those documents, as Firestore rules do not support field-level read filtering within publicly readable documents. This is an existing security/privacy consideration slated for M2 architectural review.
 
 3. **Auction Listing Snapshot (`dealerSnapshot`)**:
    - When an auction is consigned by or assigned to a verified boutique dealer, the lot document in `/auctions/{auctionId}` captures:
@@ -2081,8 +2091,14 @@ The dealer identity model separates business entity records, individual user aut
      - `dealerDocFee: 0` strictly enforcing Wailtail's platform rule: dealers consigning on Wailtail may not charge buyers additional documentation or administrative fees ($0 CAD).
      - `taxHandling`: Tax treatment indicator (`'dealer_collects'` | `'buyer_pays_at_registration'` | `'requires_confirmation'`).
      - `taxDisclaimerVersion`: Version identifier for regulatory tax disclosures.
-     - `dealerSnapshot: DealerListingSnapshot`: An immutable, public-safe denormalized snapshot of essential dealership attributes (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`, `verifiedAt`, `verificationRecordVersion`, `dealerLicenseNumber`, `licensingJurisdiction`).
-   - This denormalized snapshot ensures that historical auction records preserve the exact dealership identity and verification state active at the time of the auction, even if the canonical dealer profile is subsequently modified.
+     - `dealerSnapshot: DealerListingSnapshot`: An administrator-controlled denormalized snapshot preserving essential public-safe dealership identity attributes (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`, `verifiedAt`, `verificationRecordVersion`) along with optional type-contract fields (`dealerLicenseNumber`, `licensingJurisdiction`).
+   - **Point-in-Time Architecture vs. Security Enforcement**:
+     - The denormalized snapshot is designed to preserve the dealer identity associated with an auction at the relevant point in time, ensuring historical lot records maintain their active dealership identity even if the canonical profile later changes.
+     - Under current Firestore security rules, dealer snapshot fields are protected from non-admin modification. However, administrators retain the ability to modify protected auction fields under current rules (`isAdmin() || ...`). Therefore, the snapshot is administrator-controlled, not technically immutable against administrator changes.
+   - **Dealer License Visibility & Disclosure Policy**:
+     - Although optional `dealerLicenseNumber` and `licensingJurisdiction` fields exist in the TypeScript contract (`DealerListingSnapshot`), their presence in the contract does not authorize public exposure.
+     - These fields **must not** be populated in publicly readable auction snapshots until formal legal review explicitly approves their public disclosure.
+     - Public dealer identification relies strictly on approved public-safe business identity attributes, while private canonical profile data remains isolated in `/dealer_profiles/{dealerId}`.
 
 ### 9.3 Dealer Verification Architecture & Separation of Concerns
 
@@ -2123,9 +2139,10 @@ Production Cloud Firestore security rules (`firestore.rules`) enforce strict aut
      - Non-admin callers cannot update any of the six verification fields, dealer listing fields, or applicant dealer declarations (`applicantType`, `dealershipName`, `dealerLicenseNumber`, etc.).
      - Unauthenticated and authenticated non-admin users retain full capability to submit standard private-seller consignment applications and perform safe non-protected updates (e.g., updating vehicle condition notes).
    - **Auctions (`auctions/{auctionId}`)**:
-     - Non-admin users cannot create or update auctions containing protected dealer fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`).
+     - Non-admin users cannot create or update auctions containing protected dealer fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`). Administrators retain permissions to modify auction fields under current rules; therefore, the snapshot is administrator-controlled rather than technically immutable against administrative changes.
    - **User Profiles (`users/{userId}` & `bidders/{bidderId}`)**:
      - Non-admin users cannot set `dealerId` during account creation and cannot alter or clear `dealerId` during profile updates. Only administrators can assign or modify dealer associations.
+     - **Public-Read Exposure**: Current security rules grant public read access (`allow read: if true;`) to `users/{userId}` and `bidders/{bidderId}`. Because Firestore rules do not provide field-level read filtering within publicly readable documents, `dealerId` is exposed to public reads wherever it is populated in those documents.
    - **Dealer Profiles & Audits (`dealer_profiles` & `dealer_verification_audits`)**:
      - Non-admin users have zero read, write, update, or delete access to either collection.
 
@@ -2154,6 +2171,28 @@ Production Cloud Firestore security rules (`firestore.rules`) enforce strict aut
 - **Cloud Firestore Rules**: Separately deployed to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` on GCP project `studio-apps-483721`.
 - **Smoke Testing**: Completed successful production smoke tests across homepage catalog rendering, single lot auction detail views, user authentication lifecycle, and public consignment intake submission. Confirmed test application arrival in the Admin Consignment Pipeline.
 - **Upcoming Work**: M2 Dealer Application Intake UI, Administrative Verification Dashboard, and Dealer Catalog Integration.
+
+### 9.6 Security, Privacy & Architectural Considerations (M2 Roadmap Review)
+
+Following the M1 and M1.1 foundation, three specific architectural boundaries distinguish implemented security guarantees from intended architecture and outstanding security considerations:
+
+1. **Dealer License Visibility & Legal Approval Boundary**:
+   - **Type Capability vs. Authorized Disclosure**: The TypeScript interface `DealerListingSnapshot` includes optional fields `dealerLicenseNumber?: string` and `licensingJurisdiction?: CanadianProvinceOrTerritory`. These optional fields exist in the TypeScript contract to support anticipated regulatory compliance structures. However, their existence in the contract does not authorize public exposure.
+   - **Mandatory Pre-Disclosure Condition**: These fields **must not** be populated in publicly readable auction snapshots until formal legal review explicitly approves their visibility across applicable Canadian regulatory jurisdictions.
+   - **Public Dealer Identification**: Public dealer identification should strictly use approved public-safe business identity fields (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`).
+   - **Canonical Profile Separation**: The dealer's authoritative regulatory license details remain stored exclusively within the private canonical dealer profile (`/dealer_profiles/{dealerId}`), which remains strictly segregated from public auction snapshots and accessible only to administrators.
+
+2. **Snapshot Immutability vs. Administrator Control**:
+   - **Point-in-Time Snapshot Architecture**: Dealer snapshots are architected to preserve the dealer identity associated with an auction at the relevant point in time, protecting historical auction listings against subsequent modifications to the canonical dealer profile.
+   - **Security Enforcement**: Under current Firestore security rules (`/auctions/{auctionId}`), dealer snapshot fields are protected from non-admin creation and modification.
+   - **Administrative Capabilities**: Administrators retain the ability to modify protected auction fields under current rules (`isAdmin() || ...`).
+   - **Architectural Distinction**: Therefore, the snapshot is **administrator-controlled**, not technically immutable against administrator changes. The current implementation does not enforce absolute or database-level immutability for auction dealer snapshots.
+
+3. **Public-Read Exposure of User and Bidder Documents (`dealerId` Linkage)**:
+   - **Implemented Rule Behavior**: Current Firestore security rules permit unrestricted public reads on user and bidder root documents (`/users/{userId}`: `allow read: if true;` and `/bidders/{bidderId}`: `allow read: if true;`).
+   - **Linkage Exposure**: Because Cloud Firestore security rules evaluate permissions at the document level and do not provide field-level read restrictions within otherwise publicly readable documents, `dealerId` is exposed to public reads wherever it exists in those documents.
+   - **Status as Existing Consideration**: This is an existing security/privacy consideration within the platform's collection architecture, not a newly implemented restriction or regression.
+   - **M2 Review Scope**: The M2 review should consider whether dealer identity linkage needs more restrictive read exposure (such as isolating sensitive linkage attributes into non-public subcollections or private authorization projections) without disrupting existing platform behavior, user profile hydration, or community attribution.
 
 ---
 
