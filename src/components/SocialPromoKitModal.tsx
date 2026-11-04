@@ -145,8 +145,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   // Hydrate photo slots when allPhotos populates/changes
   useEffect(() => {
     if (allPhotos.length > 0) {
-      setImageSlot1((prev) => (prev && allPhotos.includes(prev) ? prev : allPhotos[0]));
-      setImageSlot2((prev) => (prev && allPhotos.includes(prev) ? prev : (allPhotos[1] || allPhotos[0])));
+      setImageSlot1((prev) => (prev && allPhotos.includes(prev) ? prev : (allPhotos[0] || '')));
+      setImageSlot2((prev) => (prev && allPhotos.includes(prev) ? prev : (allPhotos.length > 1 ? allPhotos[1] : allPhotos[0] || '')));
     }
   }, [allPhotos]);
 
@@ -284,45 +284,45 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       // 1. Base Dimensions (1200 x 900)
       const width = 1200;
       const height = 900;
+      const footerY = 790;
       canvas.width = width;
       canvas.height = height;
 
-      // 2. Base Fill: Deep Slate Gradient
-      const baseGrad = ctx.createLinearGradient(0, 0, width, height);
+      // 2. Base Fill: Deep Dark Slate/Charcoal Background (#090d16 to #0d131f vertical gradient)
+      const baseGrad = ctx.createLinearGradient(0, 0, 0, height);
       baseGrad.addColorStop(0, '#090d16');
-      baseGrad.addColorStop(0.4, '#0f172a');
-      baseGrad.addColorStop(1, '#0b1120');
+      baseGrad.addColorStop(1, '#0d131f');
       ctx.fillStyle = baseGrad;
       ctx.fillRect(0, 0, width, height);
 
-      // 3. Subtle Technical Grid & Tread Accent Patterns
+      // Subtle dark carbon grid patterning on the left (X <= 620)
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
       ctx.lineWidth = 1;
-      for (let x = 0; x <= width; x += 40) {
+      for (let x = 0; x <= 620; x += 35) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
+        ctx.lineTo(x, footerY);
         ctx.stroke();
       }
-      for (let y = 0; y <= height; y += 40) {
+      for (let y = 0; y <= footerY; y += 35) {
         ctx.beginPath();
         ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
+        ctx.lineTo(620, y);
         ctx.stroke();
       }
       ctx.restore();
 
-      // Lower banner tire tread / technical chevron accents
+      // Subtle geometric technical accents: diagonal speed lines / chevrons in the upper-right corner
       ctx.save();
       ctx.fillStyle = 'rgba(245, 158, 11, 0.04)';
-      for (let i = 0; i < 24; i++) {
+      for (let i = 0; i < 8; i++) {
         ctx.beginPath();
-        const startX = i * 55;
-        ctx.moveTo(startX, 830);
-        ctx.lineTo(startX + 25, 875);
-        ctx.lineTo(startX + 15, 875);
-        ctx.lineTo(startX - 10, 830);
+        const startX = 960 + i * 32;
+        ctx.moveTo(startX, 0);
+        ctx.lineTo(startX + 18, 0);
+        ctx.lineTo(startX - 50, 140);
+        ctx.lineTo(startX - 68, 140);
         ctx.closePath();
         ctx.fill();
       }
@@ -347,95 +347,79 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         }
       }
 
-      // 5. Photo Slot 1 (Primary / Hero, Top-Right)
-      const slot1X = 510;
-      const slot1Y = 70;
-      const slot1W = 630;
-      const slot1H = 430;
+      // Reusable Wailtail Fluke Path
+      const flukePath = new Path2D(
+        "M32.54 24.688a7.155 7.155 0 0 0-7.147-7.147c-0.04 0-0.079 0.005-0.119 0.006-2.995-0.044-5.002-0.687-5.795-1.879a2.593 2.593 0 0 1-0.309-2.052c9.13-0.245 9.452-8.8 9.455-8.888a0.549 0.549 0 0 0-0.544-0.563c-0.346-0.001-7.934-0.02-12.038 3.662C11.94 4.148 4.354 4.167 4.004 4.165a0.549 0.549 0 0 0-0.544 0.563c0.002 0.087 0.318 8.478 9.191 8.878-0.394 2.192-1.288 9.271 2.452 13.979 2.178 2.743 5.548 4.159 10.001 4.235 0.097 0.004 0.192 0.015 0.289 0.015 0.012 0 0.023-0.002 0.035-0.002 0.015 0 0.029 0.002 0.045 0.002 0.009 0 0.017-0.005 0.026-0.005A7.152 7.152 0 0 0 32.54 24.688ZM15.965 26.905c-4.047-5.091-2.132-13.624-2.112-13.709a0.549 0.549 0 0 0-0.536-0.673c-7.176 0-8.475-5.426-8.708-7.247 1.883 0.072 7.762 0.544 10.884 3.529v1.337a0.549 0.549 0 0 0 1.099 0V8.805c3.119-2.982 9.001-3.456 10.884-3.528-0.234 1.821-1.533 7.246-8.708 7.246a0.549 0.549 0 0 0-0.504 0.332 3.82 3.82 0 0 0 0.291 3.407 5.438 5.438 0 0 0 3.586 2.07 7.126 7.126 0 0 0-1.458 11.717A9.575 9.575 0 0 1 15.965 26.905Zm9.463 3.83c-0.1 0-0.193-0.01-0.293-0.012a6.042 6.042 0 0 1 0.149-12.078c0.105 0.001 0.2 0.009 0.307 0.009 0.006 0 0.011-0.003 0.018-0.003a6.044 6.044 0 0 1-0.181 12.084Z"
+      );
+      const ringPath = new Path2D(
+        "M25.393 20.541a4.147 4.147 0 1 0 4.148 4.147A4.152 4.152 0 0 0 25.393 20.541Zm0 7.196a3.049 3.049 0 1 1 3.049-3.049A3.052 3.052 0 0 1 25.393 27.737Z"
+      );
 
-      // Bold Slate Frame & High-Contrast Amber Border for Slot 1
-      ctx.save();
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      ctx.moveTo(slot1X - 6, slot1Y - 6);
-      ctx.lineTo(slot1X + slot1W + 6, slot1Y - 6);
-      ctx.lineTo(slot1X + slot1W + 6, slot1Y + slot1H + 6);
-      ctx.lineTo(slot1X + 44, slot1Y + slot1H + 6);
-      ctx.lineTo(slot1X - 6, slot1Y + slot1H - 44);
-      ctx.closePath();
-      ctx.fill();
+      // 2. Primary Hero (Right Side): Diagonal clipping path (X: 48% at top to X: 56% at footerY)
+      const topCutX = width * 0.48; // 576
+      const bottomCutX = width * 0.56; // 672
 
-      // High-contrast amber border stroke
-      const amberGlow = ctx.createLinearGradient(slot1X, slot1Y, slot1X + slot1W, slot1Y + slot1H);
-      amberGlow.addColorStop(0, '#f59e0b');
-      amberGlow.addColorStop(1, '#d97706');
-      ctx.strokeStyle = amberGlow;
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(slot1X - 2, slot1Y - 2);
-      ctx.lineTo(slot1X + slot1W + 2, slot1Y - 2);
-      ctx.lineTo(slot1X + slot1W + 2, slot1Y + slot1H + 2);
-      ctx.lineTo(slot1X + 41, slot1Y + slot1H + 2);
-      ctx.lineTo(slot1X - 2, slot1Y + slot1H - 41);
-      ctx.closePath();
-      ctx.stroke();
-
-      // Clip and Draw Slot 1
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(slot1X, slot1Y);
-      ctx.lineTo(slot1X + slot1W, slot1Y);
-      ctx.lineTo(slot1X + slot1W, slot1Y + slot1H);
-      ctx.lineTo(slot1X + 38, slot1Y + slot1H);
-      ctx.lineTo(slot1X, slot1Y + slot1H - 38);
+      ctx.moveTo(topCutX, 0);
+      ctx.lineTo(width, 0);
+      ctx.lineTo(width, footerY);
+      ctx.lineTo(bottomCutX, footerY);
       ctx.closePath();
       ctx.clip();
 
+      const heroBoxX = Math.min(topCutX, bottomCutX);
+      const heroBoxW = width - heroBoxX;
       if (img1) {
-        drawCoverImage(ctx, img1, slot1X, slot1Y, slot1W, slot1H);
+        drawCoverImage(ctx, img1, heroBoxX, 0, heroBoxW, footerY);
       } else {
         ctx.fillStyle = '#1e293b';
-        ctx.fillRect(slot1X, slot1Y, slot1W, slot1H);
+        ctx.fillRect(heroBoxX, 0, heroBoxW, footerY);
         ctx.fillStyle = '#64748b';
         ctx.font = '600 22px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Hero Vehicle Angle', slot1X + slot1W / 2, slot1Y + slot1H / 2);
+        ctx.fillText('Hero Vehicle Angle', heroBoxX + heroBoxW / 2, footerY / 2);
       }
       ctx.restore();
 
-      // Slot 1 High-Contrast Badge Overlay (Top-Right)
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.5;
+      // 5px glowing orange gradient seam (#ff5e00 to #f59e0b)
+      ctx.save();
+      const seamGrad = ctx.createLinearGradient(topCutX, 0, bottomCutX, footerY);
+      seamGrad.addColorStop(0, '#ff5e00');
+      seamGrad.addColorStop(1, '#f59e0b');
+      ctx.strokeStyle = seamGrad;
+      ctx.lineWidth = 5;
+      ctx.shadowColor = 'rgba(255, 94, 0, 0.5)';
+      ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.roundRect(slot1X + slot1W - 124, slot1Y + 14, 110, 26, 4);
-      ctx.fill();
+      ctx.moveTo(topCutX, 0);
+      ctx.lineTo(bottomCutX, footerY);
       ctx.stroke();
-
-      ctx.font = '800 11px system-ui, sans-serif';
-      ctx.fillStyle = '#fbbf24';
-      ctx.textAlign = 'center';
-      ctx.fillText('LEAD HERO', slot1X + slot1W - 69, slot1Y + 31);
       ctx.restore();
 
-      // 6. Photo Slot 2 (Secondary / Detail, Bottom-Center-Right)
-      const slot2X = 390;
-      const slot2Y = 475;
-      const slot2W = 390;
-      const slot2H = 275;
+      // 3. Secondary Photo (Lower-Left): Box at X: 60, Y: 460, W: 440, H: 270, r: 8px, 3px #f59e0b border, dark drop shadow
+      const slot2X = 60;
+      const slot2Y = 460;
+      const slot2W = 440;
+      const slot2H = 270;
+      const slot2R = 8;
 
-      // Dark Slate & Bold Amber Framing for Slot 2
+      // Dark drop shadow behind the box
       ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+      ctx.shadowBlur = 18;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 8;
       ctx.fillStyle = '#0b1120';
-      ctx.fillRect(slot2X - 5, slot2Y - 5, slot2W + 10, slot2H + 10);
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(slot2X - 2, slot2Y - 2, slot2W + 4, slot2H + 4);
+      ctx.beginPath();
+      ctx.roundRect(slot2X, slot2Y, slot2W, slot2H, slot2R);
+      ctx.fill();
+      ctx.restore();
 
-      // Clip and Draw Slot 2
+      // Clip and draw image inside rounded box
       ctx.save();
       ctx.beginPath();
-      ctx.rect(slot2X, slot2Y, slot2W, slot2H);
+      ctx.roundRect(slot2X, slot2Y, slot2W, slot2H, slot2R);
       ctx.clip();
 
       if (img2) {
@@ -450,42 +434,28 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       ctx.restore();
 
-      // Slot 2 High-Contrast Badge Overlay
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      // 3px #f59e0b border
+      ctx.save();
       ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.roundRect(slot2X + 14, slot2Y + 14, 110, 26, 4);
-      ctx.fill();
+      ctx.roundRect(slot2X, slot2Y, slot2W, slot2H, slot2R);
       ctx.stroke();
-
-      ctx.font = '800 11px system-ui, sans-serif';
-      ctx.fillStyle = '#fbbf24';
-      ctx.textAlign = 'center';
-      ctx.fillText('DETAIL VIEW', slot2X + 69, slot2Y + 31);
       ctx.restore();
 
-      // 7. Branding (Top-Left): Whale-Tail Icon & Wailtail Logotype
-      const brandX = 65;
-      const brandY = 65;
+      // 4. Top-Left Headline & Typography
+      const brandX = 60;
+      const brandY = 55;
 
+      // Wailtail logo + wailtail.com + micro-tagline
       ctx.save();
-      // Render Whale Tail Fluke SVG Path
       ctx.translate(brandX, brandY);
       ctx.scale(1.3, 1.3);
       ctx.fillStyle = '#ffffff';
-
-      const flukePath = new Path2D(
-        "M32.54 24.688a7.155 7.155 0 0 0-7.147-7.147c-0.04 0-0.079 0.005-0.119 0.006-2.995-0.044-5.002-0.687-5.795-1.879a2.593 2.593 0 0 1-0.309-2.052c9.13-0.245 9.452-8.8 9.455-8.888a0.549 0.549 0 0 0-0.544-0.563c-0.346-0.001-7.934-0.02-12.038 3.662C11.94 4.148 4.354 4.167 4.004 4.165a0.549 0.549 0 0 0-0.544 0.563c0.002 0.087 0.318 8.478 9.191 8.878-0.394 2.192-1.288 9.271 2.452 13.979 2.178 2.743 5.548 4.159 10.001 4.235 0.097 0.004 0.192 0.015 0.289 0.015 0.012 0 0.023-0.002 0.035-0.002 0.015 0 0.029 0.002 0.045 0.002 0.009 0 0.017-0.005 0.026-0.005A7.152 7.152 0 0 0 32.54 24.688ZM15.965 26.905c-4.047-5.091-2.132-13.624-2.112-13.709a0.549 0.549 0 0 0-0.536-0.673c-7.176 0-8.475-5.426-8.708-7.247 1.883 0.072 7.762 0.544 10.884 3.529v1.337a0.549 0.549 0 0 0 1.099 0V8.805c3.119-2.982 9.001-3.456 10.884-3.528-0.234 1.821-1.533 7.246-8.708 7.246a0.549 0.549 0 0 0-0.504 0.332 3.82 3.82 0 0 0 0.291 3.407 5.438 5.438 0 0 0 3.586 2.07 7.126 7.126 0 0 0-1.458 11.717A9.575 9.575 0 0 1 15.965 26.905Zm9.463 3.83c-0.1 0-0.193-0.01-0.293-0.012a6.042 6.042 0 0 1 0.149-12.078c0.105 0.001 0.2 0.009 0.307 0.009 0.006 0 0.011-0.003 0.018-0.003a6.044 6.044 0 0 1-0.181 12.084Z"
-      );
       ctx.fill(flukePath);
-      const ringPath = new Path2D(
-        "M25.393 20.541a4.147 4.147 0 1 0 4.148 4.147A4.152 4.152 0 0 0 25.393 20.541Zm0 7.196a3.049 3.049 0 1 1 3.049-3.049A3.052 3.052 0 0 1 25.393 27.737Z"
-      );
       ctx.fill(ringPath);
       ctx.restore();
 
-      // Logotype Text
       ctx.save();
       ctx.font = '800 32px system-ui, -apple-system, sans-serif';
       ctx.fillStyle = '#ffffff';
@@ -494,61 +464,39 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.fillText('.com', brandX + 160, brandY + 30);
       ctx.restore();
 
-      // Platform Micro-Tagline
       ctx.save();
       ctx.font = '700 11px system-ui, sans-serif';
       ctx.fillStyle = '#94a3b8';
       ctx.fillText('CANADIAN ENTHUSIAST & COLLECTOR AUCTIONS', brandX + 52, brandY + 48);
       ctx.restore();
 
-      // 8. Dynamic Lifecycle Status Badge
-      let badgeLabel = 'AUCTION IS LIVE';
-      let badgeBg = '#10b981';
-      let badgeTextColor = '#ffffff';
-
+      // Line 1: Stage text in italic 900 34px with #ff5e00 to #fbbf24 gradient
+      let stageText = 'AUCTION IS LIVE';
       if (stage === 'upcoming') {
-        badgeLabel = 'UPCOMING AUCTION';
-        badgeBg = '#ea580c';
+        stageText = 'UPCOMING AUCTION';
       } else if (stage === 'ending_soon') {
-        badgeLabel = 'ENDING TODAY — NO SNIPING';
-        badgeBg = '#ef4444';
+        stageText = 'ENDING TODAY — NO SNIPING';
       }
 
       ctx.save();
-      const badgeY = 150;
-      ctx.font = '800 13px system-ui, sans-serif';
-      const badgeTextMetrics = ctx.measureText(badgeLabel);
-      const badgeWidth = badgeTextMetrics.width + 32;
-      const badgeHeight = 32;
-
-      // Badge Rounded Box
-      ctx.fillStyle = badgeBg;
-      ctx.beginPath();
-      ctx.roundRect(brandX, badgeY, badgeWidth, badgeHeight, 6);
-      ctx.fill();
-
-      // Inner dot
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(brandX + 14, badgeY + badgeHeight / 2, 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = badgeTextColor;
-      ctx.fillText(badgeLabel, brandX + 26, badgeY + 21);
+      ctx.font = 'italic 900 34px system-ui, -apple-system, sans-serif';
+      const stageGrad = ctx.createLinearGradient(brandX, 0, brandX + 420, 0);
+      stageGrad.addColorStop(0, '#ff5e00');
+      stageGrad.addColorStop(1, '#fbbf24');
+      ctx.fillStyle = stageGrad;
+      ctx.fillText(stageText, brandX, 165);
       ctx.restore();
 
-      // 9. Vehicle Title Typography with Dynamic Autoscaling & Ellipsis Removal
-      ctx.save();
+      // Line 2: Large bold white italic title (italic 900 42px), auto-scaling down to 28px to prevent overflow
       const vehicleTitle = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.trim().toUpperCase();
-      const maxTitleWidth = 425;
+      const maxTitleWidth = 460;
       const titleWords = vehicleTitle.split(' ').filter(Boolean);
 
-      let bestFontSize = 24;
+      let bestFontSize = 28;
       let bestTitleLines: string[] = [vehicleTitle];
 
-      // Dynamically scale font size from 40px down to 24px so longer model names fit cleanly without truncation or trailing '...'
-      for (let fs = 40; fs >= 24; fs -= 2) {
-        ctx.font = `900 ${fs}px system-ui, -apple-system, sans-serif`;
+      for (let fs = 42; fs >= 28; fs -= 2) {
+        ctx.font = `italic 900 ${fs}px system-ui, -apple-system, sans-serif`;
         const testLines: string[] = [];
         let currLine = '';
 
@@ -572,112 +520,88 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
           bestTitleLines = testLines;
           break;
         }
-        if (fs === 24) {
-          bestFontSize = 24;
+        if (fs === 28) {
+          bestFontSize = 28;
           bestTitleLines = testLines;
         }
       }
 
-      ctx.font = `900 ${bestFontSize}px system-ui, -apple-system, sans-serif`;
+      ctx.save();
+      ctx.font = `italic 900 ${bestFontSize}px system-ui, -apple-system, sans-serif`;
       ctx.fillStyle = '#ffffff';
-      const titleLineHeight = Math.round(bestFontSize * 1.18);
-      let titleCurrentY = 225;
+      const titleLineHeight = Math.round(bestFontSize * 1.15);
+      let titleCurrentY = 215;
       for (const line of bestTitleLines) {
         ctx.fillText(line, brandX, titleCurrentY);
         titleCurrentY += titleLineHeight;
       }
       ctx.restore();
 
-      // 10. Subtitle / Custom Tagline (Rendered cleanly without forced quotes)
-      let taglineBottomY = titleCurrentY;
-      if (tagline && tagline.trim()) {
+      // Line 3: Tagline/subtitle (italic 500 18px #e2e8f0)
+      const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || '';
+      if (displayTagline) {
         ctx.save();
-        ctx.font = '600 18px system-ui, sans-serif';
-        ctx.fillStyle = '#fbbf24'; // High-contrast amber
-        taglineBottomY = drawWrappedText(ctx, tagline.trim(), brandX, titleCurrentY + 8, 420, 24, 2);
+        ctx.font = 'italic 500 18px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#e2e8f0';
+        drawWrappedText(ctx, displayTagline, brandX, titleCurrentY + 6, 440, 24, 2);
         ctx.restore();
       }
 
-      // 11. Core Vehicle Feature Chips
+      // 5. Bottom Footer (Y: 790 to 900): Full-width slate footer with 2px amber pinstripe
       ctx.save();
-      const chipsY = taglineBottomY + 20;
-      const chips: string[] = [];
-      if (auction.mileage) chips.push(`${auction.mileage} ${auction.distanceUnit || 'KM'}`);
-      if (auction.engine) chips.push(auction.engine);
-      if (auction.drivetrain) chips.push(auction.drivetrain);
-      chips.push('0% BUYER PREMIUM');
+      const footerGrad = ctx.createLinearGradient(0, footerY, 0, height);
+      footerGrad.addColorStop(0, '#0a0f1d');
+      footerGrad.addColorStop(1, '#070a14');
+      ctx.fillStyle = footerGrad;
+      ctx.fillRect(0, footerY, width, height - footerY);
 
-      let chipX = brandX;
-      let chipRowY = chipsY;
-      ctx.font = '700 12px system-ui, sans-serif';
+      // 2px amber pinstripe
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(0, footerY, width, 2);
 
-      chips.slice(0, 3).forEach((chip) => {
-        const chipW = ctx.measureText(chip.toUpperCase()).width + 18;
-        ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
-        ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(chipX, chipRowY, chipW, 28, 4);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#f1f5f9';
-        ctx.fillText(chip.toUpperCase(), chipX + 9, chipRowY + 18);
-        chipX += chipW + 10;
-      });
-      ctx.restore();
-
-      // 12. Bottom Left Bid / Pricing Panel
-      ctx.save();
-      const bottomY = 780;
-      ctx.font = '700 12px system-ui, sans-serif';
-      ctx.fillStyle = '#94a3b8';
-      const bidHeader = stage === 'upcoming' ? 'STARTING BID' : 'CURRENT HIGH BID';
-      ctx.fillText(bidHeader, brandX, bottomY);
-
-      const bidVal = stage === 'upcoming' 
+      // Left side: Starting/High Bid in emerald CAD (formatCurrency strictly once)
+      const isUpcoming = stage === 'upcoming';
+      const bidHeader = isUpcoming ? 'STARTING BID' : 'CURRENT HIGH BID';
+      const bidVal = isUpcoming 
         ? (auction.startingBid || 0) 
         : (auction.currentBid || auction.startingBid || 0);
 
+      ctx.textAlign = 'left';
+      ctx.font = '700 12px system-ui, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(bidHeader, 60, footerY + 34);
+
       ctx.font = '900 36px monospace';
-      ctx.fillStyle = '#34d399'; // Emerald-400
-      // Format strictly once as "$40,000 CAD" without duplicate "CAD CAD"
-      ctx.fillText(formatCurrency(bidVal), brandX, bottomY + 38);
+      ctx.fillStyle = '#10b981'; // Emerald CAD
+      ctx.fillText(formatCurrency(bidVal), 60, footerY + 74);
 
-      ctx.font = '700 11px system-ui, sans-serif';
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillText('NO BUYER FEES — WINNING BID IS ACTUAL PRICE', brandX, bottomY + 60);
-      ctx.restore();
-
-      // 13. Bottom Right Call to Action Badge Container
-      const ctaW = 380;
-      const ctaH = 96;
-      const ctaX = width - ctaW - 60;
-      const ctaY = 745;
-
-      ctx.save();
-      // Panel Base
-      const ctaGrad = ctx.createLinearGradient(ctaX, ctaY, ctaX + ctaW, ctaY + ctaH);
-      ctaGrad.addColorStop(0, '#1e293b');
-      ctaGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = ctaGrad;
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(ctaX, ctaY, ctaW, ctaH, 12);
-      ctx.fill();
-      ctx.stroke();
-
-      // CTA Sub-header
+      // Right side: REGISTER TO BID AT + wailtail.com/auctions + white whale-tail icon
+      const rightMargin = width - 60; // 1140
+      ctx.textAlign = 'right';
       ctx.font = '800 12px system-ui, sans-serif';
       ctx.fillStyle = '#94a3b8';
-      ctx.textAlign = 'center';
-      ctx.fillText('REGISTER TO BID & VIEW FULL DOSSIER', ctaX + ctaW / 2, ctaY + 34);
+      ctx.fillText('REGISTER TO BID AT', rightMargin, footerY + 34);
 
-      // Main Domain URL
+      const urlText = 'wailtail.com/auctions';
       ctx.font = '900 28px system-ui, -apple-system, sans-serif';
+      const urlMetrics = ctx.measureText(urlText);
+      const urlWidth = urlMetrics.width;
+
+      // Whale-tail icon to the left of the URL
+      const footerIconScale = 1.1;
+      const footerIconX = rightMargin - urlWidth - 44;
+      const footerIconY = footerY + 48;
+
+      ctx.save();
+      ctx.translate(footerIconX, footerIconY);
+      ctx.scale(footerIconScale, footerIconScale);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText('wailtail.com/auctions', ctaX + ctaW / 2, ctaY + 68);
+      ctx.fill(flukePath);
+      ctx.fill(ringPath);
+      ctx.restore();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(urlText, rightMargin, footerY + 74);
       ctx.restore();
 
     } catch (err: any) {
