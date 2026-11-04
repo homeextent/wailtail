@@ -16,8 +16,9 @@ import {
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
-import { Auction } from '../types';
+import { Auction, MediaConfiguration } from '../types';
 import { formatCurrency } from '../utils/formatters';
+import { subscribeToMediaConfig } from '../services/auctionService';
 
 export interface SocialPromoKitModalProps {
   isOpen: boolean;
@@ -40,28 +41,89 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const [imageSlot2, setImageSlot2] = useState<string>('');
   const [selectedTemplate, setSelectedTemplate] = useState<CopyTemplateId>('enthusiast_forum');
   const [copiedToast, setCopiedToast] = useState(false);
+  const [copiedUrlToast, setCopiedUrlToast] = useState(false);
   const [showTips, setShowTips] = useState(true);
   const [isRenderingCanvas, setIsRenderingCanvas] = useState(false);
   const [canvasError, setCanvasError] = useState<string | null>(null);
+  const [mediaConfig, setMediaConfig] = useState<MediaConfiguration | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeBlobUrlsRef = useRef<string[]>([]);
 
-  // Available vehicle photos
+  // Subscribe to vehicle media configuration in real-time
+  useEffect(() => {
+    if (!isOpen || !auction?.id) {
+      setMediaConfig(null);
+      return;
+    }
+
+    const unsubscribe = subscribeToMediaConfig((config) => {
+      setMediaConfig(config);
+    }, auction.id);
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [isOpen, auction?.id]);
+
+  // Clean up all in-memory blob object URLs to avoid memory leaks
+  const revokeAllBlobUrls = useCallback(() => {
+    activeBlobUrlsRef.current.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        // ignore
+      }
+    });
+    activeBlobUrlsRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      revokeAllBlobUrls();
+    };
+  }, [revokeAllBlobUrls]);
+
+  // Available vehicle photos: compiled across leadHeroImage, heroImages, and fullGallery
   const allPhotos = useMemo<string[]>(() => {
     if (!auction) return [];
     const photos: string[] = [];
-    if (auction.leadHeroImage && auction.leadHeroImage.trim()) {
-      photos.push(auction.leadHeroImage.trim());
+
+    const addPhoto = (url: unknown) => {
+      if (typeof url !== 'string') return;
+      const clean = url.trim();
+      if (!clean) return;
+      // Filter out PDFs and non-image formats
+      const lower = clean.toLowerCase();
+      if (lower.endsWith('.pdf') || lower.includes('.pdf?')) return;
+      if (!photos.includes(clean)) {
+        photos.push(clean);
+      }
+    };
+
+    if (auction.leadHeroImage) {
+      addPhoto(auction.leadHeroImage);
     }
     if (Array.isArray(auction.heroImages)) {
-      auction.heroImages.forEach((img) => {
-        if (img && typeof img === 'string' && img.trim() && !photos.includes(img.trim())) {
-          photos.push(img.trim());
-        }
-      });
+      auction.heroImages.forEach(addPhoto);
     }
+    if (mediaConfig) {
+      if (Array.isArray(mediaConfig.heroImages)) {
+        mediaConfig.heroImages.forEach(addPhoto);
+      }
+      if (Array.isArray(mediaConfig.fullGallery)) {
+        mediaConfig.fullGallery.forEach((item) => {
+          if (item && !item.isPdf && item.url) {
+            addPhoto(item.url);
+          }
+        });
+      }
+    }
+
     return photos;
-  }, [auction]);
+  }, [auction, mediaConfig]);
 
   // Compute canonical tracking link
   const canonicalTrackingUrl = useMemo<string>(() => {
@@ -86,21 +148,32 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       setStage(initialStage);
 
-      // Determine initial tagline
-      const initialTagline = 
-        auction.highlightsBadge?.trim() || 
-        auction.subtitle?.trim() || 
-        auction.title?.trim() || 
-        'Collector-grade provenance, 0% buyer fees';
+      // Determine initial tagline: default to highlightsBadge or subtitle, or an informative mechanical summary
+      let initialTagline = auction.highlightsBadge?.trim() || auction.subtitle?.trim();
+      if (!initialTagline) {
+        const specs = [
+          auction.engine,
+          auction.drivetrain,
+          auction.mileage ? `${auction.mileage} ${auction.distanceUnit || 'KM'}` : ''
+        ].filter(Boolean);
+        if (specs.length > 0) {
+          initialTagline = specs.join(' • ');
+        } else {
+          initialTagline = 'Enthusiast Provenance • 0% Buyer Fees';
+        }
+      }
       setTagline(initialTagline);
-
-      // Photos
-      const photos = allPhotos;
-      setImageSlot1(photos[0] || '');
-      setImageSlot2(photos[1] || photos[0] || '');
       setCanvasError(null);
     }
-  }, [isOpen, auction, allPhotos]);
+  }, [isOpen, auction]);
+
+  // Hydrate photo slots when allPhotos populates/changes
+  useEffect(() => {
+    if (allPhotos.length > 0) {
+      setImageSlot1((prev) => (prev && allPhotos.includes(prev) ? prev : allPhotos[0]));
+      setImageSlot2((prev) => (prev && allPhotos.includes(prev) ? prev : (allPhotos[1] || allPhotos[0])));
+    }
+  }, [allPhotos]);
 
   // Keyboard Escape listener
   useEffect(() => {
@@ -125,24 +198,42 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     }
   }, [isOpen]);
 
-  // Load image helper with CORS support
-  const loadImageAsync = useCallback((url: string): Promise<HTMLImageElement> => {
-    return new Promise((resolve, reject) => {
-      if (!url) {
-        reject(new Error('Empty URL'));
-        return;
+  // Client-side helper to load images as in-memory blob URLs (bypasses canvas CORS export blocks)
+  const loadImageAsync = useCallback(async (url: string): Promise<HTMLImageElement> => {
+    if (!url) {
+      throw new Error('Empty URL');
+    }
+
+    let srcToUse = url;
+
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (response.ok) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        activeBlobUrlsRef.current.push(objectUrl);
+        srcToUse = objectUrl;
       }
+    } catch (fetchErr) {
+      console.warn('In-memory blob fetch fallback for canvas image:', fetchErr);
+    }
+
+    return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => {
-        // Retry without crossOrigin if CORS headers are blocked
-        const fallbackImg = new Image();
-        fallbackImg.onload = () => resolve(fallbackImg);
-        fallbackImg.onerror = (err) => reject(err);
-        fallbackImg.src = url;
+        if (srcToUse !== url) {
+          const fallbackImg = new Image();
+          fallbackImg.crossOrigin = 'anonymous';
+          fallbackImg.onload = () => resolve(fallbackImg);
+          fallbackImg.onerror = (err) => reject(err);
+          fallbackImg.src = url;
+        } else {
+          reject(new Error(`Failed to load image from ${url}`));
+        }
       };
-      img.src = url;
+      img.src = srcToUse;
     });
   }, []);
 
@@ -225,6 +316,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     setIsRenderingCanvas(true);
     setCanvasError(null);
 
+    // Revoke previous blob URLs to prevent memory leaks when re-rendering
+    revokeAllBlobUrls();
+
     try {
       // 1. Base Dimensions (1200 x 900)
       const width = 1200;
@@ -273,7 +367,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       ctx.restore();
 
-      // 4. Preload Dual Vehicle Photos
+      // 4. Preload Dual Vehicle Photos via in-memory blob URLs
       let img1: HTMLImageElement | null = null;
       let img2: HTMLImageElement | null = null;
 
@@ -298,9 +392,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       const slot1W = 630;
       const slot1H = 430;
 
-      // Angular Amber Backdrop Panel for Slot 1
+      // Bold Slate Frame & High-Contrast Amber Border for Slot 1
       ctx.save();
-      ctx.fillStyle = '#ea580c';
+      ctx.fillStyle = '#0f172a';
       ctx.beginPath();
       ctx.moveTo(slot1X - 6, slot1Y - 6);
       ctx.lineTo(slot1X + slot1W + 6, slot1Y - 6);
@@ -310,19 +404,20 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.closePath();
       ctx.fill();
 
-      // Subtle warm gradient accent glow
+      // High-contrast amber border stroke
       const amberGlow = ctx.createLinearGradient(slot1X, slot1Y, slot1X + slot1W, slot1Y + slot1H);
       amberGlow.addColorStop(0, '#f59e0b');
       amberGlow.addColorStop(1, '#d97706');
-      ctx.fillStyle = amberGlow;
+      ctx.strokeStyle = amberGlow;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
-      ctx.moveTo(slot1X - 3, slot1Y - 3);
-      ctx.lineTo(slot1X + slot1W + 3, slot1Y - 3);
-      ctx.lineTo(slot1X + slot1W + 3, slot1Y + slot1H + 3);
-      ctx.lineTo(slot1X + 40, slot1Y + slot1H + 3);
-      ctx.lineTo(slot1X - 3, slot1Y + slot1H - 40);
+      ctx.moveTo(slot1X - 2, slot1Y - 2);
+      ctx.lineTo(slot1X + slot1W + 2, slot1Y - 2);
+      ctx.lineTo(slot1X + slot1W + 2, slot1Y + slot1H + 2);
+      ctx.lineTo(slot1X + 41, slot1Y + slot1H + 2);
+      ctx.lineTo(slot1X - 2, slot1Y + slot1H - 41);
       ctx.closePath();
-      ctx.fill();
+      ctx.stroke();
 
       // Clip and Draw Slot 1
       ctx.save();
@@ -346,7 +441,21 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         ctx.fillText('Hero Vehicle Angle', slot1X + slot1W / 2, slot1Y + slot1H / 2);
       }
       ctx.restore();
-      ctx.restore(); // restore Slot 1 backdrop
+
+      // Slot 1 High-Contrast Badge Overlay (Top-Right)
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(slot1X + slot1W - 124, slot1Y + 14, 110, 26, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '800 11px system-ui, sans-serif';
+      ctx.fillStyle = '#fbbf24';
+      ctx.textAlign = 'center';
+      ctx.fillText('LEAD HERO', slot1X + slot1W - 69, slot1Y + 31);
+      ctx.restore();
 
       // 6. Photo Slot 2 (Secondary / Detail, Bottom-Center-Right)
       const slot2X = 390;
@@ -354,9 +463,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       const slot2W = 390;
       const slot2H = 275;
 
-      // Dark Slate & Orange Trim Border for Slot 2
+      // Dark Slate & Bold Amber Framing for Slot 2
       ctx.save();
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = '#0b1120';
       ctx.fillRect(slot2X - 5, slot2Y - 5, slot2W + 10, slot2H + 10);
       ctx.strokeStyle = '#f59e0b';
       ctx.lineWidth = 3;
@@ -379,6 +488,20 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         ctx.fillText('Cockpit / Detail Angle', slot2X + slot2W / 2, slot2Y + slot2H / 2);
       }
       ctx.restore();
+
+      // Slot 2 High-Contrast Badge Overlay
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(slot2X + 14, slot2Y + 14, 110, 26, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = '800 11px system-ui, sans-serif';
+      ctx.fillStyle = '#fbbf24';
+      ctx.textAlign = 'center';
+      ctx.fillText('DETAIL VIEW', slot2X + 69, slot2Y + 31);
       ctx.restore();
 
       // 7. Branding (Top-Left): Whale-Tail Icon & Wailtail Logotype
@@ -453,51 +576,95 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.fillText(badgeLabel, brandX + 26, badgeY + 21);
       ctx.restore();
 
-      // 9. Vehicle Title Typography
+      // 9. Vehicle Title Typography with Dynamic Autoscaling & Ellipsis Removal
       ctx.save();
       const vehicleTitle = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.trim().toUpperCase();
-      ctx.font = '900 38px system-ui, -apple-system, sans-serif';
+      const maxTitleWidth = 425;
+      const titleWords = vehicleTitle.split(' ').filter(Boolean);
+
+      let bestFontSize = 24;
+      let bestTitleLines: string[] = [vehicleTitle];
+
+      // Dynamically scale font size from 40px down to 24px so longer model names fit cleanly without truncation or trailing '...'
+      for (let fs = 40; fs >= 24; fs -= 2) {
+        ctx.font = `900 ${fs}px system-ui, -apple-system, sans-serif`;
+        const testLines: string[] = [];
+        let currLine = '';
+
+        for (let i = 0; i < titleWords.length; i++) {
+          const candidate = currLine ? `${currLine} ${titleWords[i]}` : titleWords[i];
+          if (ctx.measureText(candidate).width <= maxTitleWidth) {
+            currLine = candidate;
+          } else {
+            if (currLine) {
+              testLines.push(currLine);
+            }
+            currLine = titleWords[i];
+          }
+        }
+        if (currLine) {
+          testLines.push(currLine);
+        }
+
+        if (testLines.length <= 2 && testLines.every((l) => ctx.measureText(l).width <= maxTitleWidth)) {
+          bestFontSize = fs;
+          bestTitleLines = testLines;
+          break;
+        }
+        if (fs === 24) {
+          bestFontSize = 24;
+          bestTitleLines = testLines;
+        }
+      }
+
+      ctx.font = `900 ${bestFontSize}px system-ui, -apple-system, sans-serif`;
       ctx.fillStyle = '#ffffff';
-      const titleBottomY = drawWrappedText(ctx, vehicleTitle, brandX, 230, 420, 46, 2);
+      const titleLineHeight = Math.round(bestFontSize * 1.18);
+      let titleCurrentY = 225;
+      for (const line of bestTitleLines) {
+        ctx.fillText(line, brandX, titleCurrentY);
+        titleCurrentY += titleLineHeight;
+      }
       ctx.restore();
 
-      // 10. Subtitle / Custom Tagline (High Contrast White / Amber)
+      // 10. Subtitle / Custom Tagline (Rendered cleanly without forced quotes)
+      let taglineBottomY = titleCurrentY;
       if (tagline && tagline.trim()) {
         ctx.save();
-        ctx.font = 'italic 600 20px system-ui, sans-serif';
-        ctx.fillStyle = '#f8fafc';
-        const taglineBottomY = drawWrappedText(ctx, `"${tagline.trim()}"`, brandX, titleBottomY + 14, 410, 28, 2);
-        ctx.restore();
-
-        // 11. Core Vehicle Feature Chips
-        ctx.save();
-        const chipsY = taglineBottomY + 24;
-        const chips: string[] = [];
-        if (auction.mileage) chips.push(`${auction.mileage} ${auction.distanceUnit || 'KM'}`);
-        if (auction.engine) chips.push(auction.engine);
-        if (auction.drivetrain) chips.push(auction.drivetrain);
-        chips.push('0% BUYER PREMIUM');
-
-        let chipX = brandX;
-        let chipRowY = chipsY;
-        ctx.font = '700 12px system-ui, sans-serif';
-
-        chips.slice(0, 3).forEach((chip) => {
-          const chipW = ctx.measureText(chip.toUpperCase()).width + 18;
-          ctx.fillStyle = 'rgba(30, 41, 59, 0.85)';
-          ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.roundRect(chipX, chipRowY, chipW, 28, 4);
-          ctx.fill();
-          ctx.stroke();
-
-          ctx.fillStyle = '#e2e8f0';
-          ctx.fillText(chip.toUpperCase(), chipX + 9, chipRowY + 18);
-          chipX += chipW + 10;
-        });
+        ctx.font = '600 18px system-ui, sans-serif';
+        ctx.fillStyle = '#fbbf24'; // High-contrast amber
+        taglineBottomY = drawWrappedText(ctx, tagline.trim(), brandX, titleCurrentY + 8, 420, 24, 2);
         ctx.restore();
       }
+
+      // 11. Core Vehicle Feature Chips
+      ctx.save();
+      const chipsY = taglineBottomY + 20;
+      const chips: string[] = [];
+      if (auction.mileage) chips.push(`${auction.mileage} ${auction.distanceUnit || 'KM'}`);
+      if (auction.engine) chips.push(auction.engine);
+      if (auction.drivetrain) chips.push(auction.drivetrain);
+      chips.push('0% BUYER PREMIUM');
+
+      let chipX = brandX;
+      let chipRowY = chipsY;
+      ctx.font = '700 12px system-ui, sans-serif';
+
+      chips.slice(0, 3).forEach((chip) => {
+        const chipW = ctx.measureText(chip.toUpperCase()).width + 18;
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+        ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(chipX, chipRowY, chipW, 28, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillText(chip.toUpperCase(), chipX + 9, chipRowY + 18);
+        chipX += chipW + 10;
+      });
+      ctx.restore();
 
       // 12. Bottom Left Bid / Pricing Panel
       ctx.save();
@@ -513,7 +680,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
       ctx.font = '900 36px monospace';
       ctx.fillStyle = '#34d399'; // Emerald-400
-      ctx.fillText(`${formatCurrency(bidVal)} CAD`, brandX, bottomY + 38);
+      // Format strictly once as "$40,000 CAD" without duplicate "CAD CAD"
+      ctx.fillText(formatCurrency(bidVal), brandX, bottomY + 38);
 
       ctx.font = '700 11px system-ui, sans-serif';
       ctx.fillStyle = '#f59e0b';
@@ -557,7 +725,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     } finally {
       setIsRenderingCanvas(false);
     }
-  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText]);
+  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, revokeAllBlobUrls]);
 
   // Re-render canvas when tabs, stage, tagline, or selected photos change
   useEffect(() => {
@@ -582,7 +750,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     }
   };
 
-  // Engine 2: Copy Generator Templates
+  // Engine 2: Copy Generator Templates with Grounded Tone & Multi-Stage Reactivity
   const copyTemplates = useMemo(() => {
     if (!auction) return { enthusiast_forum: '', marketplace_pitch: '', x_thread: '' };
 
@@ -590,6 +758,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     const make = auction.make || '';
     const model = auction.model || '';
     const generation = auction.generation ? ` (${auction.generation})` : '';
+    const vehicleFullName = `${year} ${make} ${model}${generation}`.trim();
     const vin = auction.vin || 'Available upon request';
     const mileage = `${auction.mileage || '—'} ${auction.distanceUnit || 'KM'}`;
     const engine = auction.engine || 'Factory Specification';
@@ -602,72 +771,140 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ? (auction.startingBid || 0) 
       : (auction.currentBid || auction.startingBid || 0);
     const bidFormatted = formatCurrency(currentBidVal);
-    const stageLabel = stage === 'upcoming' ? 'scheduled to go live' : stage === 'ending_soon' ? 'ending today with anti-sniping protection' : 'now live for bidding';
 
-    // 1. Enthusiast Group Deep-Dive
+    // 1. Enthusiast Group Deep-Dive Template
+    let forumStageIntro = '';
+    let forumBidNote = '';
+    let forumCta = '';
+
+    if (stage === 'upcoming') {
+      forumStageIntro = `The auction is scheduled to go live shortly. I'm sharing it early so community members can review the dossier, ask questions in the comments, and get set up with bidder registration ahead of launch.`;
+      forumBidNote = `• Starting Bid: ${bidFormatted} (0% Buyer Premium)`;
+      forumCta = [
+        `🔗 PREVIEW DOSSIER & REGISTER EARLY:`,
+        `${canonicalTrackingUrl}`,
+        ``,
+        `*(Note for bidders: Wailtail charges 0% buyer fees, so your winning bid is the actual hammer price in CAD with no added platform fees. Feel free to ask questions about maintenance, paint, or setup in the comments below — happy to chat cars and provide any additional details).*`,
+        ``,
+        `*(Admins: If this post doesn't align with group guidelines, please feel free to remove).*`
+      ].join('\n');
+    } else if (stage === 'ending_soon') {
+      forumStageIntro = `The auction is entering its closing hours today!`;
+      forumBidNote = `• Current High Bid: ${bidFormatted} (0% Buyer Premium)`;
+      forumCta = [
+        `🔗 VIEW LOT & PLACE CLOSING BIDS:`,
+        `${canonicalTrackingUrl}`,
+        ``,
+        `*(Note for bidders: Wailtail uses a 2-minute soft-close anti-sniping rule — any bid placed in the final 2 minutes extends the clock by 2 minutes, ensuring fair closing bidding for everyone. 0% buyer fees apply, so your winning bid is the true CAD hammer price. I'll be monitoring the comments through the close).*`,
+        ``,
+        `*(Admins: If this post doesn't align with group guidelines, please feel free to remove).*`
+      ].join('\n');
+    } else {
+      // Live Now
+      forumStageIntro = `The auction is officially live for bidding.`;
+      forumBidNote = `• Current High Bid: ${bidFormatted} (0% Buyer Premium)`;
+      forumCta = [
+        `🔗 VIEW FULL LOT DETAILS & BID:`,
+        `${canonicalTrackingUrl}`,
+        ``,
+        `*(Note for bidders: Wailtail charges 0% buyer fees — your winning bid is the exact hammer price in CAD with no surprise commissions. Happy to answer any mechanical questions in the comments below).*`,
+        ``,
+        `*(Admins: If this post doesn't align with group guidelines, please feel free to remove).*`
+      ].join('\n');
+    }
+
     const enthusiast_forum = [
-      `Hey fellow ${make} enthusiasts,`,
+      `Hey everyone,`,
       ``,
-      `Decided it's time to pass the torch on my ${year} ${make} ${model}${generation}. Rather than dealing with flaky marketplace messages, lowballers, and joyriders, I have consigned it on Wailtail — Canada's dedicated enthusiast auction platform with 0% buyer fees.`,
+      `After spending the last few years sorting this ${vehicleFullName}, the time has come to pass the keys to the next owner. I’ve put it up on Wailtail — a Canadian enthusiast platform with 0% buyer fees — so anyone interested can dig through the full photo gallery, walkaround videos, and complete service history in one spot.`,
       ``,
-      `📋 VEHICLE OVERVIEW & SPECS:`,
-      `• Year & Model: ${year} ${make} ${model}${generation}`,
+      forumStageIntro,
+      ``,
+      `📋 VEHICLE SPECS & DETAILS:`,
+      `• Vehicle: ${vehicleFullName}`,
       `• VIN: ${vin}`,
-      `• Odometer: ${mileage}`,
-      `• Powertrain: ${engine} | ${drivetrain}`,
-      `• Exterior / Interior: ${exterior} / ${interior}`,
+      `• Mileage: ${mileage}`,
+      `• Powertrain: ${engine} • ${drivetrain}`,
+      `• Colors: ${exterior} (Exterior) / ${interior} (Interior)`,
       `• Registration: ${titleStatus}`,
       `• Location: ${location}`,
+      forumBidNote,
       ``,
-      `🔧 PROVENANCE & CONDITION HIGHLIGHTS:`,
-      tagline ? `• Key Highlight: "${tagline}"` : `• Meticulously maintained and stored in climate-controlled garage`,
+      `🔧 HIGHLIGHTS & CONDITION:`,
+      tagline ? `• Key Highlight: ${tagline}` : `• Meticulously maintained and kept in climate-controlled storage`,
       `• Comprehensive high-resolution photo gallery with 4K walkaround video and mechanical inspection details on file.`,
       auction.serviceRecordsUrl ? `• Verified service records and provenance documentation attached to the lot.` : `• Clean title and verified ownership history.`,
       ``,
-      `🔗 VIEW FULL LOT DETAILS & REGISTER TO BID:`,
-      `${canonicalTrackingUrl}`,
-      ``,
-      `*(Note for prospective bidders: Wailtail charges 0% buyer premium, meaning your winning bid is the true Canadian hammer price with no added platform cut! Happy to answer any mechanical questions in the comments below).*`,
-      ``,
-      `*(Admins: If this post does not align with group guidelines, please feel free to remove it).*`
+      forumCta
     ].join('\n');
 
-    // 2. Marketplace & Short Pitch
+    // 2. Marketplace & Short Pitch Template
+    let pitchHeadline = '';
+    let pitchStatusLine = '';
+    let pitchBidLine = '';
+    let pitchCta = '';
+
+    if (stage === 'upcoming') {
+      pitchHeadline = `🏁 PRE-AUCTION PREVIEW: ${vehicleFullName}`;
+      pitchStatusLine = `Going live soon on Wailtail — Canada's enthusiast auction platform with 0% buyer fees!`;
+      pitchBidLine = `• Starting Bid: ${bidFormatted} (Zero buyer fees added)`;
+      pitchCta = `👉 Review the complete dossier & register to bid before launch:`;
+    } else if (stage === 'ending_soon') {
+      pitchHeadline = `⏳ CLOSING TODAY: ${vehicleFullName}`;
+      pitchStatusLine = `The auction is closing today on Wailtail — Canada's 0% buyer fee enthusiast platform!`;
+      pitchBidLine = `• Current Bid: ${bidFormatted} (Winning bid is the actual hammer price — no buyer premium)`;
+      pitchCta = `👉 Closing soon! 2-minute soft-close anti-snipe active. Submit your final bids:`;
+    } else {
+      // Live Now
+      pitchHeadline = `🏁 NOW LIVE: ${vehicleFullName}`;
+      pitchStatusLine = `Currently open for bidding on Wailtail — Canada's enthusiast auction platform with 0% buyer fees!`;
+      pitchBidLine = `• Current Bid: ${bidFormatted} (No buyer fees — what you bid is what you pay)`;
+      pitchCta = `👉 View full photo gallery, walkaround video & submit your bid:`;
+    }
+
     const marketplace_pitch = [
-      `🏁 AUCTION SPOTLIGHT: ${year} ${make} ${model}${generation}`,
+      pitchHeadline,
       ``,
-      tagline ? `🔥 "${tagline}"\n` : ``,
-      `Currently open for bidding on Wailtail — Canada's zero-buyer-fee collector car marketplace!`,
+      tagline ? `• ${tagline}\n` : ``,
+      pitchStatusLine,
       ``,
       `• ${mileage} | ${exterior}`,
       `• ${engine} | ${drivetrain}`,
       `• Inspected, documented, with cold-start video and complete photo gallery`,
-      `• Current High Bid: ${bidFormatted} CAD (No buyer's premium added)`,
+      pitchBidLine,
       ``,
-      `👉 View the full lot and submit your bid here:`,
+      pitchCta,
       `${canonicalTrackingUrl}`,
       ``,
-      `#Wailtail #${make.replace(/\s+/g, '')} #${model.replace(/\s+/g, '')} #ClassicCars #SportsCars #CarAuction #ZeroBuyerFee`
-    ].join('\n');
+      `#Wailtail #${make.replace(/\s+/g, '')} #${model.replace(/\s+/g, '')} #CarAuction #ZeroBuyerFee #EnthusiastCars`
+    ].filter(Boolean).join('\n');
 
-    // 3. X / Twitter Thread
-    const x_thread = [
-      `🧵 1/3: Decided to list my ${year} ${make} ${model}${generation} on @wailtail — Canada's curated collector auction platform with 0% buyer fees.`,
-      ``,
-      tagline ? `Highlight: "${tagline}"\n` : ``,
-      `🧵 2/3: Mechanical Health & Specs:`,
-      `• ${mileage} | ${drivetrain}`,
-      `• ${exterior} over ${interior}`,
-      `• Full paint readings, high-res gallery, cold-start video, and complete documentation on file.`,
-      ``,
-      `🧵 3/3: The auction is ${stageLabel}. Transparent enthusiast bidding with anti-sniping protection:`,
-      `👉 ${canonicalTrackingUrl}`
-    ].join('\n');
+    // 3. X / Twitter Thread Template
+    let tweet1 = '';
+    let tweet2 = '';
+    let tweet3 = '';
+
+    if (stage === 'upcoming') {
+      tweet1 = `🧵 1/3: After spending the last few years sorting this ${vehicleFullName}, it's heading to auction on @wailtail — a Canadian enthusiast platform with 0% buyer fees.${tagline ? `\n\nHighlight: ${tagline}` : ''}`;
+      tweet2 = `🧵 2/3: Mechanical Overview:\n• ${mileage} | ${drivetrain}\n• ${exterior} over ${interior}\n• Full high-res gallery, cold-start video, and complete service history on file.\n• Starting bid: ${bidFormatted}`;
+      tweet3 = `🧵 3/3: Going live shortly! Dossier is open for pre-launch review, community questions, and early bidder registration:\n👉 ${canonicalTrackingUrl}`;
+    } else if (stage === 'ending_soon') {
+      tweet1 = `🧵 1/3: Final hours! The auction for my ${vehicleFullName} is closing today on @wailtail — Canada's 0% buyer fee enthusiast platform.${tagline ? `\n\nHighlight: ${tagline}` : ''}`;
+      tweet2 = `🧵 2/3: Vehicle Snapshot:\n• ${mileage} | ${drivetrain}\n• ${exterior} over ${interior}\n• Current high bid: ${bidFormatted} (winning bid is the actual price; zero platform buyer fees).`;
+      tweet3 = `🧵 3/3: Bidding closes today! Reminder: 2-minute soft-close anti-snipe rule is active (bids in final 2 mins extend the clock by 2 mins). Place final bids:\n👉 ${canonicalTrackingUrl}`;
+    } else {
+      // Live Now
+      tweet1 = `🧵 1/3: After spending the last few years sorting this ${vehicleFullName}, it's officially live for bidding on @wailtail — Canada's enthusiast auction platform with 0% buyer fees.${tagline ? `\n\nHighlight: ${tagline}` : ''}`;
+      tweet2 = `🧵 2/3: Mechanical Overview:\n• ${mileage} | ${drivetrain}\n• ${exterior} over ${interior}\n• High-res gallery, walkaround videos, and complete documentation on file.\n• Current bid: ${bidFormatted}`;
+      tweet3 = `🧵 3/3: Auction is live! 0% buyer fees means your winning bid is the true Canadian hammer price. Check out the lot and bid:\n👉 ${canonicalTrackingUrl}`;
+    }
+
+    const x_thread = [tweet1, ``, tweet2, ``, tweet3].join('\n');
 
     return { enthusiast_forum, marketplace_pitch, x_thread };
   }, [auction, stage, tagline, canonicalTrackingUrl]);
 
-  // Handle Copy to Clipboard
+  // Handle Copy Text to Clipboard
   const handleCopyText = async () => {
     const textToCopy = copyTemplates[selectedTemplate];
     if (!textToCopy) return;
@@ -678,6 +915,19 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       setTimeout(() => setCopiedToast(false), 2400);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  // Handle Copy Tracked Campaign URL to Clipboard
+  const handleCopyUrl = async () => {
+    if (!canonicalTrackingUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(canonicalTrackingUrl);
+      setCopiedUrlToast(true);
+      setTimeout(() => setCopiedUrlToast(false), 2400);
+    } catch (err) {
+      console.error('Failed to copy tracked URL:', err);
     }
   };
 
@@ -1064,22 +1314,49 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
               </div>
 
               {/* Canonical UTM Link Card */}
-              <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="relative p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="min-w-0">
                   <span className="text-slate-400 block font-semibold text-[11px]">Tracked Campaign URL:</span>
                   <span className="font-mono text-amber-400 truncate block text-xs" title={canonicalTrackingUrl}>
                     {canonicalTrackingUrl}
                   </span>
                 </div>
-                <a
-                  href={canonicalTrackingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 text-xs font-bold transition-colors w-fit flex-shrink-0"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Test URL</span>
-                </a>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyUrl}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shadow-md"
+                    title="Copy tracked campaign URL to clipboard"
+                  >
+                    {copiedUrlToast ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-black" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={canonicalTrackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 text-xs font-bold transition-colors w-fit"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Test URL</span>
+                  </a>
+                </div>
+
+                {copiedUrlToast && (
+                  <div className="absolute -top-3 right-4 bg-emerald-500 text-black text-[11px] font-bold px-2.5 py-1 rounded-md shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 z-10">
+                    <Check className="w-3 h-3 text-black stroke-[3]" />
+                    <span>Tracked campaign link copied to clipboard!</span>
+                  </div>
+                )}
               </div>
 
               {/* Collapsible Enthusiast Posting Tips Card */}

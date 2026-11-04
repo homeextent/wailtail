@@ -3842,6 +3842,25 @@ export function subscribeToMediaConfig(
 }
 
 /**
+ * Retrieve real-time media configuration once
+ */
+export async function getMediaConfig(auctionId?: string): Promise<MediaConfiguration | null> {
+  const targetAuctionId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const docId = (targetAuctionId !== MAIN_AUCTION_ID) ? `media-${targetAuctionId}` : MEDIA_CONFIG_DOC_ID;
+  try {
+    const mediaRef = doc(db, 'settings', docId);
+    const snap = await getDoc(mediaRef);
+    if (snap.exists()) {
+      return snap.data() as MediaConfiguration;
+    }
+    return (targetAuctionId !== MAIN_AUCTION_ID) ? BLANK_MEDIA_CONFIG : DEFAULT_MEDIA_CONFIG;
+  } catch (err) {
+    console.warn('Error fetching media config from Firestore:', err);
+    return (targetAuctionId !== MAIN_AUCTION_ID) ? BLANK_MEDIA_CONFIG : DEFAULT_MEDIA_CONFIG;
+  }
+}
+
+/**
  * Initialize Media Config in Firestore if not present
  */
 export async function initializeMediaConfigIfNotExists(auctionId?: string): Promise<MediaConfiguration> {
