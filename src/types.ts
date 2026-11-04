@@ -55,8 +55,8 @@ export interface DealerProfile {
 export interface DealerVerificationAudit {
   id?: string;
   dealerId: string;
-  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated' | string;
-  status: 'pending' | 'verified' | 'rejected' | 'suspended' | string;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated';
+  status: 'pending' | 'verified' | 'rejected' | 'suspended';
   verifierUid: string;
   verificationMethod: string;
   sourceReferenceDescription?: string;
