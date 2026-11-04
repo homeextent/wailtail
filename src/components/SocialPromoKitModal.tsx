@@ -329,11 +329,11 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         ctx.fillRect(0, 0, width, height);
       }
 
-      // Layer 2: Slot 1 (Primary Hero Shot, Top-Right: X: 520, Y: 140, W: 630, H: 410)
-      const heroX = 520;
-      const heroY = 140;
-      const heroW = 630;
-      const heroH = 410;
+      // Layer 2: Slot 1 (Primary Hero Shot, Top-Right: X: 515, Y: 135, W: 635, H: 415)
+      const heroX = 515;
+      const heroY = 135;
+      const heroW = 635;
+      const heroH = 415;
       const heroR = 10;
 
       // Card 1 shadow & background fill
@@ -419,11 +419,11 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.stroke();
       ctx.restore();
 
-      // Layer 4: Dynamic Headline & Title Typography (Upper-Left Negative Space: brandX = 60, startY = 175)
+      // Layer 4: Dynamic Headline & Title Typography (Upper-Left Negative Space: brandX = 60, startY = 205)
       const brandX = 60;
-      const startY = 175;
+      const startY = 205;
 
-      // Line 1 (Stage Headline): Impact condensed typography with horizontal orange gradient
+      // Line 1 (Stage Headline): Impact condensed typography with horizontal orange gradient & drop shadow
       let stageText = 'AUCTION IS LIVE';
       if (stage === 'upcoming') {
         stageText = 'UPCOMING AUCTION';
@@ -434,6 +434,10 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.save();
       ctx.textAlign = 'left';
       ctx.font = 'italic 900 38px Impact, "Arial Narrow", "Arial Black", sans-serif';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 3;
       const stageGrad = ctx.createLinearGradient(brandX, 0, brandX + 380, 0);
       stageGrad.addColorStop(0, '#ff4500');
       stageGrad.addColorStop(1, '#ffa500');
@@ -441,44 +445,132 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       ctx.fillText(stageText, brandX, startY);
       ctx.restore();
 
-      // Line 2 (Vehicle Title): Auto-scale down to 28px if text width > 430px
-      const vehicleTitle = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.trim().toUpperCase();
-      let titleFontSize = 42;
-      for (let fs = 42; fs >= 28; fs--) {
-        ctx.font = `italic 900 ${fs}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
-        if (ctx.measureText(vehicleTitle).width <= 430) {
-          titleFontSize = fs;
-          break;
-        }
-        titleFontSize = fs;
-      }
-      ctx.font = `italic 900 ${titleFontSize}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
+      // Line 2 (Vehicle Title): Intelligent sizing & wrapping across up to 2 clean lines without ellipsis
+      const rawTitle = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.trim() || auction.title?.trim() || '';
+      const vehicleTitle = rawTitle.toUpperCase();
 
-      let displayTitle = vehicleTitle;
-      if (ctx.measureText(displayTitle).width > 430) {
-        while (ctx.measureText(displayTitle + '...').width > 430 && displayTitle.length > 0) {
-          displayTitle = displayTitle.slice(0, -1);
+      let titleLines: string[] = [vehicleTitle];
+      let titleFontSize = 40;
+
+      // Title measurement logic:
+      // Font: italic 900 40px Impact, "Arial Narrow", "Arial Black", sans-serif
+      ctx.font = 'italic 900 40px Impact, "Arial Narrow", "Arial Black", sans-serif';
+      if (ctx.measureText(vehicleTitle).width <= 440) {
+        titleFontSize = 40;
+        titleLines = [vehicleTitle];
+      } else {
+        // Measure whether it fits at 32px
+        ctx.font = 'italic 900 32px Impact, "Arial Narrow", "Arial Black", sans-serif';
+        if (ctx.measureText(vehicleTitle).width <= 440) {
+          titleFontSize = 32;
+          titleLines = [vehicleTitle];
+        } else {
+          // Measure whether it fits at 28px
+          ctx.font = 'italic 900 28px Impact, "Arial Narrow", "Arial Black", sans-serif';
+          if (ctx.measureText(vehicleTitle).width <= 440) {
+            titleFontSize = 28;
+            titleLines = [vehicleTitle];
+          } else {
+            // Still exceeds 440px at 28px -> wrap across 2 clean lines without ellipsis
+            const genUpper = (auction.generation || '').trim().toUpperCase();
+            const baseUpper = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}`.trim().toUpperCase();
+
+            const splitTwoLines = (maxW: number): [string, string] => {
+              // 1. If taxonomy generation exists and fits cleanly on line 2, split between base vehicle and generation
+              if (genUpper && baseUpper && vehicleTitle.includes(genUpper)) {
+                if (ctx.measureText(baseUpper).width <= maxW && ctx.measureText(genUpper).width <= maxW) {
+                  return [baseUpper, genUpper];
+                }
+              }
+
+              // 2. Otherwise split by words
+              const words = vehicleTitle.split(/\s+/).filter(Boolean);
+              if (words.length <= 1) return [vehicleTitle, ''];
+
+              let best: [string, string] = [words[0], words.slice(1).join(' ')];
+              let foundValid = false;
+              let minDiff = Infinity;
+
+              for (let i = 1; i < words.length; i++) {
+                const l1 = words.slice(0, i).join(' ');
+                const l2 = words.slice(i).join(' ');
+                const w1 = ctx.measureText(l1).width;
+                const w2 = ctx.measureText(l2).width;
+                if (w1 <= maxW && w2 <= maxW) {
+                  foundValid = true;
+                  const diff = Math.abs(w1 - w2);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    best = [l1, l2];
+                  }
+                }
+              }
+
+              if (foundValid) return best;
+
+              // Greedy pack line 1 as fallback
+              let l1Words: string[] = [];
+              let l2Words: string[] = [];
+              for (let i = 0; i < words.length; i++) {
+                const testL1 = [...l1Words, words[i]].join(' ');
+                if (ctx.measureText(testL1).width <= maxW || l1Words.length === 0) {
+                  l1Words.push(words[i]);
+                } else {
+                  l2Words = words.slice(i);
+                  break;
+                }
+              }
+              return [l1Words.join(' '), l2Words.join(' ')];
+            };
+
+            // Attempt 2-line rendering at 32px first, falling back to 28px if needed
+            titleFontSize = 32;
+            ctx.font = 'italic 900 32px Impact, "Arial Narrow", "Arial Black", sans-serif';
+            let [line1, line2] = splitTwoLines(440);
+            if (ctx.measureText(line1).width > 440 || ctx.measureText(line2).width > 440) {
+              titleFontSize = 28;
+              ctx.font = 'italic 900 28px Impact, "Arial Narrow", "Arial Black", sans-serif';
+              [line1, line2] = splitTwoLines(440);
+            }
+
+            titleLines = [line1, line2].filter(Boolean);
+          }
         }
-        displayTitle = displayTitle.trim() + '...';
       }
 
       const line2Y = startY + 48;
+      const titleLineHeight = titleFontSize <= 32 ? 36 : 44;
+
       ctx.save();
       ctx.textAlign = 'left';
       ctx.font = `italic 900 ${titleFontSize}px Impact, "Arial Narrow", "Arial Black", sans-serif`;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 3;
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(displayTitle, brandX, line2Y);
+      titleLines.forEach((tLine, idx) => {
+        ctx.fillText(tLine, brandX, line2Y + idx * titleLineHeight);
+      });
       ctx.restore();
+
+      // Reset shadow properties to avoid affecting other layers
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+
+      const finalTitleY = line2Y + (titleLines.length - 1) * titleLineHeight;
 
       // Line 3 (Subtitle / Tagline): Crisp light gray (#e2e8f0), max 2 lines with auto-wrap
       const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
       if (displayTagline) {
-        const line3Y = line2Y + 34;
+        const line3Y = finalTitleY + 28;
         ctx.save();
         ctx.textAlign = 'left';
-        ctx.font = 'italic 600 17px "Inter", sans-serif';
+        ctx.font = 'italic 500 15px "Inter", sans-serif';
         ctx.fillStyle = '#e2e8f0';
-        drawWrappedText(ctx, displayTagline, brandX, line3Y, 430, 24, 2);
+        drawWrappedText(ctx, displayTagline, brandX, line3Y, 440, 21, 2);
         ctx.restore();
       }
 
