@@ -4122,32 +4122,45 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           }`}>
             {/* 1. Live Header & Public Bid Bar Simulation */}
             <div className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              {/* Top Breadcrumb & Location */}
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider bg-red-700 text-white">
-                    {highlightsBadge || title || '—'}
-                  </span>
-                  {generation && (
-                    <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/30">
-                      {generation}
-                    </span>
-                  )}
-                  <span className="text-[11px] font-mono text-zinc-400">
-                    {year} {make} {model} {generation ? `(${generation})` : ''}
-                  </span>
+                  <span className="font-semibold text-zinc-800 uppercase tracking-wider">Auctions</span>
+                  <span>/</span>
+                  <span className="text-zinc-600">{make || '—'}</span>
+                  <span>/</span>
+                  <span className="text-zinc-600">{model || '—'}</span>
+                  <span>/</span>
+                  <span className="text-zinc-900 font-medium truncate max-w-xs">{vin || '—'}</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium">
-                  <MapPin className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>{formattedLocation || 'Vancouver, BC, Canada'}</span>
+
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-zinc-600">
+                    <MapPin className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>{formattedLocation || 'Vancouver, BC, Canada'}</span>
+                  </span>
+                  {sellerName && (
+                    <>
+                      <span className="text-zinc-300">•</span>
+                      <span className="text-zinc-600">
+                        Seller: <strong className="text-zinc-900 font-semibold">{sellerName}</strong>
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 font-serif">
-                {title || '—'}
-              </h1>
-              <p className="text-sm font-medium text-zinc-600">
-                {subtitle || '—'}
-              </p>
+              {/* Main Vehicle Title & Subtitle */}
+              <div>
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-zinc-900 font-serif">
+                  {title || '—'}
+                </h1>
+                {subtitle && (
+                  <p className="text-sm sm:text-base text-zinc-600 mt-1.5 font-normal">
+                    {subtitle}
+                  </p>
+                )}
+              </div>
 
               {/* Live Bidding & Countdown Status Strip */}
               <div className="p-4 bg-zinc-900 rounded-xl text-white flex flex-col sm:flex-row items-center justify-between gap-4">

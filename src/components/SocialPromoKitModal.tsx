@@ -37,18 +37,19 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const [activeTab, setActiveTab] = useState<'graphics' | 'copy'>('graphics');
   const [stage, setStage] = useState<LifecycleStage>('live');
   const [tagline, setTagline] = useState<string>('');
+  const [activeSlot, setActiveSlot] = useState<1 | 2>(1);
   const [imageSlot1, setImageSlot1] = useState<string>('');
   const [imageSlot2, setImageSlot2] = useState<string>('');
   const [selectedTemplate, setSelectedTemplate] = useState<CopyTemplateId>('enthusiast_forum');
   const [copiedToast, setCopiedToast] = useState(false);
   const [copiedUrlToast, setCopiedUrlToast] = useState(false);
+  const [exportToast, setExportToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showTips, setShowTips] = useState(true);
   const [isRenderingCanvas, setIsRenderingCanvas] = useState(false);
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [mediaConfig, setMediaConfig] = useState<MediaConfiguration | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const activeBlobUrlsRef = useRef<string[]>([]);
 
   // Subscribe to vehicle media configuration in real-time
   useEffect(() => {
@@ -67,24 +68,6 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
     };
   }, [isOpen, auction?.id]);
-
-  // Clean up all in-memory blob object URLs to avoid memory leaks
-  const revokeAllBlobUrls = useCallback(() => {
-    activeBlobUrlsRef.current.forEach((url) => {
-      try {
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        // ignore
-      }
-    });
-    activeBlobUrlsRef.current = [];
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      revokeAllBlobUrls();
-    };
-  }, [revokeAllBlobUrls]);
 
   // Available vehicle photos: compiled across leadHeroImage, heroImages, and fullGallery
   const allPhotos = useMemo<string[]>(() => {
@@ -148,21 +131,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       }
       setStage(initialStage);
 
-      // Determine initial tagline: default to highlightsBadge or subtitle, or an informative mechanical summary
-      let initialTagline = auction.highlightsBadge?.trim() || auction.subtitle?.trim();
-      if (!initialTagline) {
-        const specs = [
-          auction.engine,
-          auction.drivetrain,
-          auction.mileage ? `${auction.mileage} ${auction.distanceUnit || 'KM'}` : ''
-        ].filter(Boolean);
-        if (specs.length > 0) {
-          initialTagline = specs.join(' • ');
-        } else {
-          initialTagline = 'Enthusiast Provenance • 0% Buyer Fees';
-        }
-      }
-      setTagline(initialTagline);
+      // Determine initial tagline: prioritize Row 3 Subtitle (auction.subtitle) first
+      const fullVehicleName = `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}${auction.generation ? ' ' + auction.generation : ''}`.toLowerCase().trim();
+      const isBadgeRedundant = auction.highlightsBadge?.toLowerCase().trim() === fullVehicleName || auction.highlightsBadge?.toLowerCase().trim() === auction.title?.toLowerCase().trim();
+
+      const defaultTagline = auction.subtitle?.trim() || (!isBadgeRedundant ? auction.highlightsBadge?.trim() : null) || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
+
+      setTagline(defaultTagline);
       setCanvasError(null);
     }
   }, [isOpen, auction]);
@@ -198,42 +173,31 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     }
   }, [isOpen]);
 
-  // Client-side helper to load images as in-memory blob URLs (bypasses canvas CORS export blocks)
-  const loadImageAsync = useCallback(async (url: string): Promise<HTMLImageElement> => {
+  // Resilient direct image loader for canvas compositor:
+  // Direct new Image() with cache-busting query param, anonymous crossOrigin,
+  // and fallback load without crossOrigin so images still render visibly on canvas preview.
+  const loadImageAsync = useCallback((url: string): Promise<HTMLImageElement> => {
     if (!url) {
-      throw new Error('Empty URL');
+      return Promise.reject(new Error('Empty URL'));
     }
 
-    let srcToUse = url;
-
-    try {
-      const response = await fetch(url, { mode: 'cors' });
-      if (response.ok) {
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        activeBlobUrlsRef.current.push(objectUrl);
-        srcToUse = objectUrl;
-      }
-    } catch (fetchErr) {
-      console.warn('In-memory blob fetch fallback for canvas image:', fetchErr);
-    }
+    const safeUrl = url.includes('?') ? `${url}&wailtail_cors=1` : `${url}?wailtail_cors=1`;
 
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
+
       img.onload = () => resolve(img);
+
       img.onerror = () => {
-        if (srcToUse !== url) {
-          const fallbackImg = new Image();
-          fallbackImg.crossOrigin = 'anonymous';
-          fallbackImg.onload = () => resolve(fallbackImg);
-          fallbackImg.onerror = (err) => reject(err);
-          fallbackImg.src = url;
-        } else {
-          reject(new Error(`Failed to load image from ${url}`));
-        }
+        // Resilient fallback: attempt secondary load without crossOrigin so canvas preview still renders visibly
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => resolve(fallbackImg);
+        fallbackImg.onerror = (err) => reject(err);
+        fallbackImg.src = safeUrl;
       };
-      img.src = srcToUse;
+
+      img.src = safeUrl;
     });
   }, []);
 
@@ -315,9 +279,6 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
     setIsRenderingCanvas(true);
     setCanvasError(null);
-
-    // Revoke previous blob URLs to prevent memory leaks when re-rendering
-    revokeAllBlobUrls();
 
     try {
       // 1. Base Dimensions (1200 x 900)
@@ -725,7 +686,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     } finally {
       setIsRenderingCanvas(false);
     }
-  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, revokeAllBlobUrls]);
+  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText]);
 
   // Re-render canvas when tabs, stage, tagline, or selected photos change
   useEffect(() => {
@@ -744,9 +705,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       link.download = `${auction.id || 'wailtail'}-social-promo.png`;
       link.href = dataUrl;
       link.click();
+      setExportToast({ message: 'High-res graphic downloaded successfully!', type: 'success' });
+      setTimeout(() => setExportToast(null), 3000);
     } catch (err: any) {
       console.error('Canvas export error:', err);
-      setCanvasError('Canvas export restricted due to external image CORS restrictions.');
+      setCanvasError('Canvas export restricted due to external image CORS restrictions. Right-click the canvas preview to save the image directly.');
+      setExportToast({ message: 'Canvas export restricted by CORS. Right-click graphic to save.', type: 'error' });
+      setTimeout(() => setExportToast(null), 4000);
     }
   };
 
@@ -1053,13 +1018,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
           {/* TAB 1: CANVAS GRAPHIC GENERATOR */}
           {activeTab === 'graphics' && (
             <div className="space-y-5">
-              {/* Graphic Customization Form */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+              {/* Graphic Controls Panel */}
+              <div className="space-y-3.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
                 {/* Custom Tagline Input */}
-                <div className="md:col-span-1 space-y-1.5">
+                <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
                     <span>Custom Graphic Tagline</span>
-                    <span className="text-[10px] text-slate-500 font-mono">Max 65 chars</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Max 75 chars</span>
                   </label>
                   <input
                     type="text"
@@ -1071,50 +1036,79 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                   />
                 </div>
 
-                {/* Slot 1 Photo Switcher */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span>Slot 1 (Hero Angle)</span>
-                  </label>
-                  <select
-                    value={imageSlot1}
-                    onChange={(e) => setImageSlot1(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-400"
+                {/* Visual Slot Cards (Replacing blind select dropdowns) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Slot 1 Card */}
+                  <div
+                    onClick={() => setActiveSlot(1)}
+                    className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                      activeSlot === 1
+                        ? 'ring-2 ring-amber-500 bg-amber-500/10 border-amber-500 shadow-md'
+                        : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                    }`}
                   >
-                    {allPhotos.length === 0 ? (
-                      <option value="">No photos available</option>
-                    ) : (
-                      allPhotos.map((photo, i) => (
-                        <option key={photo} value={photo}>
-                          Photo #{i + 1} {i === 0 ? '(Lead Hero)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden bg-slate-950 border border-slate-700/80 shrink-0">
+                      {imageSlot1 ? (
+                        <img src={imageSlot1} alt="Slot 1 Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-500">
+                          <ImageIcon className="w-4 h-4" />
+                        </div>
+                      )}
+                      <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 bg-amber-500 text-black text-[9px] font-black rounded">
+                        S1
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold text-white tracking-tight">Slot 1: Hero Angle</span>
+                        {activeSlot === 1 && (
+                          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {imageSlot1 ? 'Hero angle assigned' : 'Click to select from tray'}
+                      </p>
+                    </div>
+                  </div>
 
-                {/* Slot 2 Photo Switcher */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-orange-500" />
-                    <span>Slot 2 (Detail/Cockpit)</span>
-                  </label>
-                  <select
-                    value={imageSlot2}
-                    onChange={(e) => setImageSlot2(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-amber-400"
+                  {/* Slot 2 Card */}
+                  <div
+                    onClick={() => setActiveSlot(2)}
+                    className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                      activeSlot === 2
+                        ? 'ring-2 ring-amber-500 bg-amber-500/10 border-amber-500 shadow-md'
+                        : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                    }`}
                   >
-                    {allPhotos.length === 0 ? (
-                      <option value="">No photos available</option>
-                    ) : (
-                      allPhotos.map((photo, i) => (
-                        <option key={photo} value={photo}>
-                          Photo #{i + 1} {i === 1 ? '(Secondary Detail)' : ''}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden bg-slate-950 border border-slate-700/80 shrink-0">
+                      {imageSlot2 ? (
+                        <img src={imageSlot2} alt="Slot 2 Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-500">
+                          <ImageIcon className="w-4 h-4" />
+                        </div>
+                      )}
+                      <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 bg-orange-500 text-white text-[9px] font-black rounded">
+                        S2
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-bold text-white tracking-tight">Slot 2: Cockpit / Detail</span>
+                        {activeSlot === 2 && (
+                          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {imageSlot2 ? 'Detail angle assigned' : 'Click to select from tray'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1122,8 +1116,10 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
               {allPhotos.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Quick Select Media Tray ({allPhotos.length} available):</span>
-                    <span className="text-[11px] text-slate-500">Click to set Slot 1 (Left-click) or Slot 2 (Right-click)</span>
+                    <span className="font-semibold text-slate-300">Quick Select Media Tray ({allPhotos.length} available):</span>
+                    <span className="text-[11px] text-amber-400/90 font-medium">
+                      Active Target: <strong className="text-amber-300 font-bold">Slot {activeSlot}</strong> (Click photo to assign & toggle)
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
                     {allPhotos.map((photo, idx) => {
@@ -1132,19 +1128,25 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                       return (
                         <div
                           key={photo}
-                          onClick={() => setImageSlot1(photo)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setImageSlot2(photo);
+                          onClick={() => {
+                            if (activeSlot === 1) {
+                              setImageSlot1(photo);
+                              setActiveSlot(2);
+                            } else {
+                              setImageSlot2(photo);
+                              setActiveSlot(1);
+                            }
                           }}
                           className={`relative flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
-                            isSlot1
-                              ? 'border-amber-400 ring-2 ring-amber-400/30'
+                            isSlot1 && isSlot2
+                              ? 'border-amber-400 ring-2 ring-amber-400/50 shadow-md'
+                              : isSlot1
+                              ? 'border-amber-400 ring-2 ring-amber-400/40 shadow-sm'
                               : isSlot2
-                              ? 'border-orange-500 ring-2 ring-orange-500/30'
+                              ? 'border-orange-500 ring-2 ring-orange-500/40 shadow-sm'
                               : 'border-slate-800 hover:border-slate-600 opacity-70 hover:opacity-100'
                           }`}
-                          title={`Photo #${idx + 1}. Click for Slot 1, Right-click for Slot 2`}
+                          title={`Photo #${idx + 1}. Click to assign to Slot ${activeSlot} and auto-toggle`}
                         >
                           <img
                             src={photo}
@@ -1152,7 +1154,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                             className="w-full h-full object-cover"
                           />
                           {(isSlot1 || isSlot2) && (
-                            <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 bg-black/80 text-[9px] font-bold text-white rounded">
+                            <span className={`absolute bottom-0.5 right-0.5 px-1 py-0.2 text-[9px] font-black rounded ${
+                              isSlot1 && isSlot2
+                                ? 'bg-amber-500 text-black'
+                                : isSlot1
+                                ? 'bg-amber-500 text-black'
+                                : 'bg-orange-500 text-white'
+                            }`}>
                               {isSlot1 && isSlot2 ? 'S1+S2' : isSlot1 ? 'S1' : 'S2'}
                             </span>
                           )}
@@ -1212,6 +1220,68 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span>Download Graphic (PNG)</span>
                   </button>
                 </div>
+              </div>
+
+              {/* Export Toast Notification */}
+              {exportToast && (
+                <div className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+                  exportToast.type === 'success'
+                    ? 'bg-emerald-950/80 border border-emerald-800 text-emerald-200'
+                    : 'bg-red-950/80 border border-red-800 text-red-200'
+                }`}>
+                  {exportToast.type === 'success' ? (
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  )}
+                  <span>{exportToast.message}</span>
+                </div>
+              )}
+
+              {/* Tracked Campaign URL Card for Instant Sharing */}
+              <div className="relative p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <span className="text-slate-400 block font-semibold text-[11px]">Tracked Campaign URL:</span>
+                  <span className="font-mono text-amber-400 truncate block text-xs" title={canonicalTrackingUrl}>
+                    {canonicalTrackingUrl}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCopyUrl}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shadow-md"
+                    title="Copy tracked campaign URL to clipboard"
+                  >
+                    {copiedUrlToast ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-black" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={canonicalTrackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 text-xs font-bold transition-colors w-fit"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Test URL ↗</span>
+                  </a>
+                </div>
+
+                {copiedUrlToast && (
+                  <div className="absolute -top-3 right-4 bg-emerald-500 text-black text-[11px] font-bold px-2.5 py-1 rounded-md shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-1 z-10">
+                    <Check className="w-3 h-3 text-black stroke-[3]" />
+                    <span>Tracked campaign link copied to clipboard!</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1347,7 +1417,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center gap-1.5 text-xs font-bold transition-colors w-fit"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Test URL</span>
+                    <span>Test URL ↗</span>
                   </a>
                 </div>
 
