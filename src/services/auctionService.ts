@@ -1082,66 +1082,26 @@ if (typeof window !== 'undefined' && auth) {
 export async function submitConsignmentApplication(
   app: Omit<ConsignmentApplication, 'id' | 'submittedAt' | 'status'>
 ): Promise<string> {
-  // Query Firestore bidders or users collections by email prior to creating consignment document
-  let registeredUserId: string | undefined = undefined;
-  let isRegisteredUser = false;
-  let registeredUserRole = 'GUEST';
-
-  const cleanEmail = (app.sellerEmail || '').trim().toLowerCase();
-  if (cleanEmail) {
-    try {
-      // 1. Check 'users' collection by email
-      const usersCol = collection(db, 'users');
-      const userQ = query(usersCol, where('email', '==', cleanEmail));
-      const userSnap = await getDocs(userQ);
-      if (!userSnap.empty) {
-        const userDoc = userSnap.docs[0];
-        const data = userDoc.data();
-        registeredUserId = data?.uid || userDoc.id;
-        isRegisteredUser = true;
-        registeredUserRole = (data?.role || 'BIDDER').toUpperCase();
-      } else {
-        // 2. Check 'bidders' collection by email
-        const biddersCol = collection(db, 'bidders');
-        const bidderQ = query(biddersCol, where('email', '==', cleanEmail));
-        const bidderSnap = await getDocs(bidderQ);
-        if (!bidderSnap.empty) {
-          const bidderDoc = bidderSnap.docs[0];
-          const data = bidderDoc.data();
-          registeredUserId = data?.uid || bidderDoc.id;
-          isRegisteredUser = true;
-          registeredUserRole = (data?.role || 'BIDDER').toUpperCase();
-        }
-      }
-    } catch (err) {
-      console.warn('Could not query users/bidders for consignment email lookup:', err);
-    }
-  }
+  const normalizedSellerEmail = (app.sellerEmail || '').trim().toLowerCase();
 
   const payload: ConsignmentApplication = {
     ...app,
+    sellerEmail: normalizedSellerEmail,
     submittedAt: Date.now(),
-    status: 'pending',
-    isRegisteredUser,
-    registeredUserRole,
-    ...(registeredUserId ? { registeredUserId } : {})
+    status: 'pending'
   };
 
-  let createdId = `consignment-${Date.now()}`;
-  try {
-    const colRef = collection(db, 'consignment_applications');
-    const docRef = await addDoc(colRef, sanitizePayload(payload));
-    createdId = docRef.id;
+  const colRef = collection(db, 'consignment_applications');
+  // Primary write - must propagate errors to the caller
+  const docRef = await addDoc(colRef, sanitizePayload(payload));
+  const createdId = docRef.id;
 
-    // Dual-write to legacy 'consignments' collection for backwards compatibility
-    try {
-      const legacyRef = doc(db, 'consignments', createdId);
-      await setDoc(legacyRef, sanitizePayload(payload));
-    } catch {
-      // Silently continue if legacy write fails
-    }
-  } catch (err) {
-    console.warn('Saved consignment locally fallback:', err);
+  // Dual-write to legacy 'consignments' collection for backwards compatibility (best-effort)
+  try {
+    const legacyRef = doc(db, 'consignments', createdId);
+    await setDoc(legacyRef, sanitizePayload(payload));
+  } catch (legacyErr) {
+    console.warn('[Consignment] Legacy consignments write failed (non-fatal):', legacyErr);
   }
 
   // Non-blocking consolidated serverless email notification (intake & seller receipt) with 5000ms timeout
@@ -4436,23 +4396,8 @@ export async function fetchUserActivitySummary(
     // Sort seller listings by start/end time descending
     summary.sellerListings.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
 
-    // 5. Query Consignment Submissions
+    // 5. Query Consignment Submissions (Scoped to normalized applicant email)
     const consignmentsList: ConsignmentApplication[] = [];
-    if (userId) {
-      try {
-        const qUser = query(
-          collection(db, 'consignment_applications'),
-          where('registeredUserId', '==', userId)
-        );
-        const snapUser = await getDocs(qUser);
-        consignmentsList.push(
-          ...(snapUser.docs.map((d) => ({ id: d.id, ...d.data() })) as ConsignmentApplication[])
-        );
-      } catch (err) {
-        console.warn('Error querying consignment_applications by registeredUserId:', err);
-      }
-    }
-
     if (cleanEmail) {
       try {
         const qEmail = query(
@@ -4460,32 +4405,27 @@ export async function fetchUserActivitySummary(
           where('sellerEmail', '==', cleanEmail)
         );
         const snapEmail = await getDocs(qEmail);
-        const existingIds = new Set(consignmentsList.map((c) => c.id));
         snapEmail.docs.forEach((d) => {
-          if (!existingIds.has(d.id)) {
-            consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
-            existingIds.add(d.id);
-          }
+          consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
         });
       } catch (err) {
         console.warn('Error querying consignment_applications by sellerEmail:', err);
       }
-    }
 
-    // Fallback to legacy 'consignments' collection if empty
-    if (consignmentsList.length === 0) {
-      try {
-        const legacySnap = await getDocs(collection(db, 'consignments'));
-        const matched = legacySnap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as ConsignmentApplication))
-          .filter(
-            (c) =>
-              (userId && c.registeredUserId === userId) ||
-              (cleanEmail && c.sellerEmail?.toLowerCase() === cleanEmail)
+      // Fallback to legacy 'consignments' collection if empty, using email-scoped query
+      if (consignmentsList.length === 0) {
+        try {
+          const legacyQ = query(
+            collection(db, 'consignments'),
+            where('sellerEmail', '==', cleanEmail)
           );
-        consignmentsList.push(...matched);
-      } catch {
-        // ignore
+          const legacySnap = await getDocs(legacyQ);
+          legacySnap.docs.forEach((d) => {
+            consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
+          });
+        } catch (legacyErr) {
+          console.warn('Error querying legacy consignments by sellerEmail:', legacyErr);
+        }
       }
     }
 
