@@ -91,7 +91,8 @@ import {
   MousePointerClick,
   Calendar,
   Image as ImageIcon,
-  MessageSquarePlus
+  MessageSquarePlus,
+  Share2
 } from 'lucide-react';
 
 interface AdminPortalPageProps {
@@ -103,6 +104,7 @@ interface AdminPortalPageProps {
   onNavigateHome: () => void;
   onOpenListingEditor: (auctionId?: string) => void;
   onSelectAuction?: (auctionId: string) => void;
+  onOpenSocialKit?: (auction: Auction) => void;
 }
 
 export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
@@ -113,7 +115,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   onUpdateMediaConfig,
   onNavigateHome,
   onOpenListingEditor,
-  onSelectAuction
+  onSelectAuction,
+  onOpenSocialKit
 }) => {
   const { user: authUser, userProfile: authUserProfile } = useAuth();
 
@@ -3013,13 +3016,26 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 </span>
                               </td>
                               <td className="p-3 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => onOpenListingEditor(lot.id)}
-                                  className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold border border-zinc-700 cursor-pointer"
-                                >
-                                  Open Editor →
-                                </button>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {onOpenSocialKit && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenSocialKit(lot)}
+                                      className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-white text-[11px] font-bold border border-amber-500/30 flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Open Seller Social Marketing Kit & Canvas Generator"
+                                    >
+                                      <Share2 className="w-3 h-3 text-amber-400" />
+                                      <span>Social Kit</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenListingEditor(lot.id)}
+                                    className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[11px] font-bold border border-zinc-700 cursor-pointer"
+                                  >
+                                    Open Editor →
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

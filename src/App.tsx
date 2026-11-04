@@ -45,6 +45,7 @@ import { ListingSubNav } from './components/ListingSubNav';
 import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
 import { HowItWorksModal, HowItWorksTab } from './components/HowItWorksModal';
+import { SocialPromoKitModal } from './components/SocialPromoKitModal';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
 import { AdminPortalPage } from './components/AdminPortalPage';
@@ -196,6 +197,18 @@ const AuctionAppContent: React.FC = () => {
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
   const [isHowItWorksModalOpen, setIsHowItWorksModalOpen] = useState(false);
   const [howItWorksTab, setHowItWorksTab] = useState<'buying' | 'selling' | 'trust'>('buying');
+  const [isSocialKitOpen, setIsSocialKitOpen] = useState(false);
+  const [socialKitAuction, setSocialKitAuction] = useState<Auction | null>(null);
+
+  const handleOpenSocialKit = (targetAuction: Auction) => {
+    setSocialKitAuction(targetAuction);
+    setIsSocialKitOpen(true);
+  };
+
+  const handleCloseSocialKit = () => {
+    setIsSocialKitOpen(false);
+    setSocialKitAuction(null);
+  };
 
   const handleOpenLegalModal = (tab: 'terms' | 'privacy' = 'terms') => {
     setLegalModalTab(tab);
@@ -670,6 +683,7 @@ const AuctionAppContent: React.FC = () => {
           onSelectAuction={(newAuctionId) => {
             setActiveAuctionId(newAuctionId);
           }}
+          onOpenSocialKit={handleOpenSocialKit}
         />
       );
     }
@@ -733,6 +747,7 @@ const AuctionAppContent: React.FC = () => {
           }
         }}
         onOpenAccountHub={handleOpenAccountHub}
+        onOpenSocialKit={handleOpenSocialKit}
       />
     );
   }
@@ -1158,6 +1173,7 @@ const AuctionAppContent: React.FC = () => {
         }}
         onOpenConsignmentModal={() => setIsConsignmentModalOpen(true)}
         onBrowseCatalog={() => navigateTo('/')}
+        onOpenSocialKit={handleOpenSocialKit}
       />
 
       <AuthModal
@@ -1192,6 +1208,12 @@ const AuctionAppContent: React.FC = () => {
         isOpen={isHowItWorksModalOpen}
         onClose={() => setIsHowItWorksModalOpen(false)}
         initialTab={howItWorksTab}
+      />
+
+      <SocialPromoKitModal
+        isOpen={isSocialKitOpen}
+        onClose={handleCloseSocialKit}
+        auction={socialKitAuction || auction}
       />
 
       <FeedbackModal

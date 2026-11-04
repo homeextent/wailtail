@@ -56,6 +56,7 @@ export interface UserAccountHubModalProps {
   onOpenBidModal?: (auctionId: string) => void;
   onOpenConsignmentModal?: () => void;
   onBrowseCatalog?: () => void;
+  onOpenSocialKit?: (auction: Auction) => void;
 }
 
 export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
@@ -68,7 +69,8 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   onOpenListingEditor,
   onOpenBidModal,
   onOpenConsignmentModal,
-  onBrowseCatalog
+  onBrowseCatalog,
+  onOpenSocialKit
 }) => {
   const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller } = useAuth();
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
@@ -984,8 +986,44 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                               </div>
                             </div>
 
-                            {/* Open in Listing Editor Quick Action */}
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-shrink-0">
+                            {/* Quick Actions */}
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto justify-end flex-shrink-0">
+                              {onOpenSocialKit && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const foundAuction = allAuctions.find((a) => a.id === listing.auctionId);
+                                    const targetAuction: Auction = foundAuction || {
+                                      id: listing.auctionId,
+                                      title: listing.title,
+                                      subtitle: '',
+                                      vin: '',
+                                      mileage: '',
+                                      location: '',
+                                      sellerName: userProfile?.displayName || user?.displayName || 'Seller',
+                                      startTime: listing.startTime || Date.now(),
+                                      endTime: listing.endTime || Date.now() + 7 * 86400000,
+                                      startingBid: listing.currentBid || 1000,
+                                      minimumIncrement: 250,
+                                      currentBid: listing.currentBid || 0,
+                                      reserveAmount: 0,
+                                      isReserveMet: false,
+                                      bidCount: listing.bidCount || 0,
+                                      status: listing.status,
+                                      leadHeroImage: listing.heroImage,
+                                      heroImages: listing.heroImage ? [listing.heroImage] : [],
+                                      createdAt: Date.now(),
+                                      updatedAt: Date.now()
+                                    };
+                                    onOpenSocialKit(targetAuction);
+                                  }}
+                                  className="min-h-[44px] px-3.5 py-2.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 hover:border-amber-500/50 transition-colors flex items-center justify-center gap-1.5 w-full sm:w-auto cursor-pointer shadow-sm"
+                                  title="Open Social Marketing Kit & Canvas Graphic Generator"
+                                >
+                                  <span>🚀 Social Marketing Kit</span>
+                                </button>
+                              )}
+
                               <button
                                 onClick={() => {
                                   onClose();

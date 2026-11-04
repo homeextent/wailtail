@@ -211,6 +211,7 @@ interface ListingEditorWorkspaceProps {
   onBackToPublic: () => void;
   onBackToDashboard?: () => void;
   onOpenAccountHub?: (tab?: string) => void;
+  onOpenSocialKit?: (auction: Auction) => void;
 }
 
 // Standardized Year choices (2026 down to 1950, then key classics down to 1900)
@@ -265,7 +266,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onUpdateMediaConfig,
   onBackToPublic,
   onBackToDashboard,
-  onOpenAccountHub
+  onOpenAccountHub,
+  onOpenSocialKit
 }) => {
   const { user, userProfile } = useAuth();
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
@@ -2233,6 +2235,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
         {/* Right: Actions (Import/Export, + New Listing, Save) */}
         <div className="flex items-center gap-2">
+          {onOpenSocialKit && (
+            <button
+              type="button"
+              onClick={() => onOpenSocialKit(auction)}
+              className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 hover:text-white border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Launch Seller Social Marketing Kit & Canvas Generator"
+            >
+              <span>📣 Social Kit</span>
+            </button>
+          )}
+
           {/* Admin JSON & Creation Tools */}
           {isAdmin && (
             <>
