@@ -12,6 +12,86 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.15.0] - 2026-11-04 — Verified Boutique Dealer Foundation (M1 & M1.1 Milestones)
+
+### M1 — Verified Dealer Identity Foundation
+- **Dealer Schema & Listing Snapshot Contracts (`src/types.ts`)**:
+  - Defined `CanadianProvinceOrTerritory` 13-region union type covering all Canadian provinces and territories (`AB`, `BC`, `MB`, `NB`, `NL`, `NS`, `NT`, `NU`, `ON`, `PE`, `QC`, `SK`, `YT`).
+  - Defined canonical `DealerProfile` interface for private dealer records (`legalBusinessName`, `dbaName`, `dealerLicenseNumber`, `licensingJurisdiction`, `primaryRepresentativeUid`, address, phone, website, public visibility toggles, and verification metadata).
+  - Defined `DealerListingSnapshot` interface capturing immutable verified dealer attributes attached to vehicle auction documents (`dealerId`, `dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`, `verifiedAt`, `verificationRecordVersion`, `dealerLicenseNumber`, `licensingJurisdiction`).
+  - Defined `DealerVerificationAudit` interface tracking administrative verification history.
+  - Extended core `Auction` interface with optional dealer properties: `sellerType?: 'private' | 'dealer'`, `dealerId?: string`, `dealerSnapshot?: DealerListingSnapshot`, `dealerDocFee?: 0` (strictly enforced $0 documentation fee), `taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration' | 'requires_confirmation'`, and `taxDisclaimerVersion?: string`.
+- **User Profile Dealer Identity Linkage (`src/types.ts`)**:
+  - Extended `UserProfile` and `BidderProfile` schemas with optional `dealerId?: string`.
+  - Established dealer identity linkage mapping individual user accounts to verified dealer entities. Phase 1 model designates one primary authorized representative per dealer.
+- **Consignment Application Dealer Declarations (`src/types.ts`)**:
+  - Extended `ConsignmentApplication` interface with dealer applicant declarations: `applicantType?: 'private' | 'dealer'`, `submittedDealershipName?: string`, `dealershipName?: string`, `submittedDealerLicenseNumber?: string`, `dealerLicenseNumber?: string`, `submittedLicensingJurisdiction?: CanadianProvinceOrTerritory`, `licensingJurisdiction?: CanadianProvinceOrTerritory`, `dealershipOwnershipDeclaration?: boolean`, and `legalSellerOfRecordDeclaration?: boolean`.
+- **Initial Firestore Security Rules Restrictions (`firestore.rules`)**:
+  - Restricted `/dealer_profiles/{dealerId}` to administrative read, create, and update access (`allow read, create, update: if isAdmin();`), with document deletion explicitly forbidden (`allow delete: if false;`).
+  - Restricted `/dealer_verification_audits/{auditId}` to administrative read and create access (`allow read, create: if isAdmin();`), with updates and deletions forbidden (`allow update, delete: if false;`).
+  - Restricted `/users/{userId}` and `/bidders/{bidderId}` so non-admin users cannot set `dealerId` on creation (`(!('dealerId' in request.resource.data) || isAdmin())`) and cannot modify `dealerId` on update (`!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId'])`).
+  - Restricted `/auctions/{auctionId}` create and update rules so non-admin users cannot introduce or modify protected dealer fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`).
+
+### M1.1 — Dealer Verification Security Hardening
+- **Strict Verification Audit Action and Status Unions (`src/types.ts`)**:
+  - Hardened `DealerVerificationAudit.action` from loose string unions to strict union literals: `'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated'`.
+  - Hardened `DealerVerificationAudit.status` to strict union literals: `'pending' | 'verified' | 'rejected' | 'suspended'`.
+- **Protection of All Six Trusted Verification Metadata Fields (`firestore.rules`)**:
+  - Explicitly hardened Firestore security rules to prohibit non-admin users from creating or mutating all six trusted administrator verification metadata fields across consignment applications:
+    1. `verifiedAt`
+    2. `verifierUid`
+    3. `verificationStatus`
+    4. `verificationMethod`
+    5. `verificationExpiresAt`
+    6. `verificationRecordVersion`
+- **Dual Collection Coverage (`firestore.rules`)**:
+  - Applied complete protection guards to both active consignment application collections: `match /consignment_applications/{appId}` and `match /consignments/{consignmentId}`.
+- **Non-Admin Creation and Modification Lock**:
+  - `allow create`: Blocked creation if request data keys contain any of the six verification metadata fields or dealer listing snapshot fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`), unless caller is `isAdmin()`.
+  - `allow update`: Blocked updates if affected keys contain any applicant declarations (`applicantType`, `dealershipName`, `dealerLicenseNumber`, etc.), dealer listing fields, or the six verification metadata fields, unless caller is `isAdmin()`.
+  - Permitted ordinary private seller applications and safe updates (such as notes modifications) to proceed unimpeded.
+
+### Security Verification
+- **Temporary Authenticated Non-Admin Security Probe**:
+  - Designed and executed a structured client-side security probe (`DealerRulesSecurityProbe.tsx`) in an authenticated non-admin browser session against live Cloud Firestore rules.
+- **18 Security Checks Passed (18/18)**:
+  - Unauthorized protected-field creation rejected (403 Permission Denied) in both `consignment_applications` and `consignments` (2 checks).
+  - Ordinary application creation succeeded for unprivileged authenticated user in both collections (2 checks).
+  - Six separate individual update attempts targeting each of the six protected verification fields rejected (403 Permission Denied) in `consignment_applications` (6 checks).
+  - Six separate individual update attempts targeting each of the six protected verification fields rejected (403 Permission Denied) in `consignments` (6 checks).
+  - Ordinary non-protected updates (modifying `notes`) succeeded in both collections (2 checks).
+- **Synthetic Test Record Cleanup**:
+  - All synthetic probe records created during validation were cleanly purged immediately following test execution.
+- **Probe Teardown & Clean Build**:
+  - Temporary probe component and developer routes cleanly unmounted and removed from the codebase.
+  - Production TypeScript compilation and Vite build succeeded with zero errors (`npm run build`).
+- **Test Limitations & Boundaries (Scope Disclaimer)**:
+  - *Tests actually performed*: Authenticated non-admin negative authorization probes and baseline non-admin positive creation/notes-update tests against live Firestore rules in dual collections.
+  - *Tests NOT performed (not claimed)*:
+    - No Firebase Local Emulator Suite testing was conducted (tested against live project rules).
+    - No exhaustive full Firestore rules audit across unrelated collections was performed.
+    - Positive admin-write authorization tests for protected fields were not performed in this probe pass.
+    - End-to-end consignment intake-to-draft conversion workflows for dealer applications were not executed.
+    - M2 dealer application intake UI, verification dashboard, and public dealer showroom badges are not yet implemented.
+    - Phase 1 Verified Boutique Dealer initiative is in foundational stage and not fully delivered.
+
+### Production Promotion
+- **PR #1 Merged**:
+  - Pull Request #1 promoting M1 and M1.1 foundation from `staging` to `main` merged cleanly.
+- **Production Merge Commit**:
+  - `cbae9be76c339a4eb8b03fa13fcebdfe80353dda`.
+- **Staging Synchronization**:
+  - `staging` branch synchronized with `main` at the promotion baseline.
+- **Vercel Production Deployment**:
+  - Vercel production deployment confirmed **Ready** with zero build regressions.
+- **Production Smoke Tests Completed**:
+  - Homepage catalog, vehicle lot detail page, authentication lifecycle, and consignment submission smoke tests completed successfully in production.
+  - Production consignment application test successfully submitted through public intake and verified resident in the Admin Consignment Pipeline (`AdminPortalPage.tsx`).
+- **Firestore Rules Deployment**:
+  - Cloud Firestore security rules separately deployed to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` on GCP project `studio-apps-483721`.
+
+---
+
 ## [1.14.0] - 2026-11-04 — Seller Social Marketing Kit & Canvas Graphic Generator
 
 ### Added

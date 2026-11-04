@@ -118,6 +118,14 @@ interface Auction {
   siteLogo?: string;
   siteName?: string;
   siteTagline?: string;
+
+  // Verified Boutique Dealer Integration (M1 Foundation)
+  sellerType?: 'private' | 'dealer';
+  dealerId?: string;
+  dealerSnapshot?: DealerListingSnapshot;
+  dealerDocFee?: 0; // Strictly enforced $0 CAD dealer doc fee
+  taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration' | 'requires_confirmation';
+  taxDisclaimerVersion?: string;
 }
 ```
 
@@ -329,6 +337,17 @@ export interface ConsignmentApplication {
   isRegisteredUser?: boolean;   // Flag indicating registered member submission
   registeredUserRole?: string;  // Active role ('ADMIN' | 'SELLER' | 'BIDDER') at submission
   sellerId?: string;            // Resolved UID of seller post-onboarding claim
+
+  // Dealer Applicant Declarations (M1 Foundation)
+  applicantType?: 'private' | 'dealer';
+  submittedDealershipName?: string;
+  dealershipName?: string;
+  submittedDealerLicenseNumber?: string;
+  dealerLicenseNumber?: string;
+  submittedLicensingJurisdiction?: CanadianProvinceOrTerritory;
+  licensingJurisdiction?: CanadianProvinceOrTerritory;
+  dealershipOwnershipDeclaration?: boolean;
+  legalSellerOfRecordDeclaration?: boolean;
 }
 ```
 
@@ -424,6 +443,7 @@ export interface UserProfile {
   banReason?: string;
   watchlist?: string[]; // Array of saved auction lot IDs
   fcmTokens?: string[]; // Registered FCM device tokens for Web Push outbid & auction alerts
+  dealerId?: string; // Foreign key linking user profile to canonical dealer_profiles/{dealerId}
 }
 ```
 
@@ -553,6 +573,88 @@ export interface PlatformFeedbackRecord {
 }
 ```
 Access is governed by production Firestore security rules: public create (`allow create: if true;`) and administrator-only read/write (`allow read, update, delete: if isAdmin();`).
+
+### 2.13 `dealer_profiles` Collection Schema (Private Canonical Records)
+
+Path: `/dealer_profiles/{dealerId}`
+Maintains authoritative, canonical business profile data for verified boutique automotive dealerships. Documents in this collection are strictly private to administrators (`allow read, create, update: if isAdmin();`) with deletions forbidden (`allow delete: if false;`):
+
+```typescript
+export type CanadianProvinceOrTerritory =
+  | 'AB'
+  | 'BC'
+  | 'MB'
+  | 'NB'
+  | 'NL'
+  | 'NS'
+  | 'NT'
+  | 'NU'
+  | 'ON'
+  | 'PE'
+  | 'QC'
+  | 'SK'
+  | 'YT';
+
+export interface DealerProfile {
+  id: string;
+  legalBusinessName: string;
+  dbaName?: string;
+  dealerLicenseNumber: string;
+  licensingJurisdiction: CanadianProvinceOrTerritory;
+  primaryRepresentativeUid: string;
+  streetAddress: string;
+  postalCode: string;
+  city: string;
+  province: CanadianProvinceOrTerritory;
+  phone: string;
+  displayPhonePublicly: boolean;
+  website?: string;
+  displayWebsitePublicly: boolean;
+  verificationStatus: 'unverified' | 'pending' | 'verified' | 'rejected' | 'suspended';
+  verifiedAt?: number;
+  verifierUid?: string;
+  verificationMethod?: string;
+  verificationExpiresAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DealerListingSnapshot {
+  dealerId: string;
+  dealershipName: string;
+  displayName?: string;
+  dbaName?: string;
+  city: string;
+  province: CanadianProvinceOrTerritory;
+  phone?: string;
+  website?: string;
+  verifiedAt: number;
+  verificationRecordVersion: string;
+  dealerLicenseNumber?: string;
+  licensingJurisdiction?: CanadianProvinceOrTerritory;
+}
+```
+
+### 2.14 `dealer_verification_audits` Collection Schema (Append-Only Audit Trail)
+
+Path: `/dealer_verification_audits/{auditId}`
+Preserves an immutable, chronological administrative audit ledger of dealer verification actions, method descriptions, and status changes. Accessible strictly to administrators for read and append creation (`allow read, create: if isAdmin();`), with updates and deletions permanently disabled (`allow update, delete: if false;`):
+
+```typescript
+export interface DealerVerificationAudit {
+  id?: string;
+  dealerId: string;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated';
+  status: 'pending' | 'verified' | 'rejected' | 'suspended';
+  verifierUid: string;
+  verificationMethod: string;
+  sourceReferenceDescription?: string;
+  sourceReference?: string;
+  notes?: string;
+  timestamp: number;
+  createdAt?: number;
+}
+```
 
 ---
 
@@ -1415,7 +1517,11 @@ service cloud.firestore {
     // Auctions & Media Subcollections
     match /auctions/{auctionId} {
       allow read: if true;
-      allow create, update, delete: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        (!request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']) || isAdmin());
+      allow update: if isAuthenticated() &&
+        (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']));
+      allow delete: if isAuthenticated();
 
       match /{document=**} {
         allow read: if true;
@@ -1440,14 +1546,28 @@ service cloud.firestore {
     // User Accounts & Moderation Registry
     match /users/{userId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
+      allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /bidders/{bidderId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isOwner(bidderId) || isAdmin();
+      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
+      allow update: if isAdmin() || (isOwner(bidderId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
+      allow delete: if isOwner(bidderId) || isAdmin();
+    }
+
+    // Dealer Profiles (Private Canonical Records)
+    match /dealer_profiles/{dealerId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Dealer Verification Audits (Append-only Administrative History)
+    match /dealer_verification_audits/{auditId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Platform Settings & Media Configuration
@@ -1484,13 +1604,87 @@ service cloud.firestore {
     }
 
     match /consignment_applications/{appId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow create: if !request.resource.data.keys().hasAny([
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion',
+        'verifiedAt',
+        'verifierUid',
+        'verificationStatus',
+        'verificationMethod',
+        'verificationExpiresAt',
+        'verificationRecordVersion'
+      ]) || isAdmin();
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'applicantType',
+        'dealershipName',
+        'submittedDealershipName',
+        'dealerLicenseNumber',
+        'submittedDealerLicenseNumber',
+        'licensingJurisdiction',
+        'submittedLicensingJurisdiction',
+        'dealershipOwnershipDeclaration',
+        'legalSellerOfRecordDeclaration',
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion',
+        'verifiedAt',
+        'verifierUid',
+        'verificationStatus',
+        'verificationMethod',
+        'verificationExpiresAt',
+        'verificationRecordVersion'
+      ]));
+      allow delete: if isAuthenticated();
     }
 
     match /consignments/{consignmentId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow create: if !request.resource.data.keys().hasAny([
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion',
+        'verifiedAt',
+        'verifierUid',
+        'verificationStatus',
+        'verificationMethod',
+        'verificationExpiresAt',
+        'verificationRecordVersion'
+      ]) || isAdmin();
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'applicantType',
+        'dealershipName',
+        'submittedDealershipName',
+        'dealerLicenseNumber',
+        'submittedDealerLicenseNumber',
+        'licensingJurisdiction',
+        'submittedLicensingJurisdiction',
+        'dealershipOwnershipDeclaration',
+        'legalSellerOfRecordDeclaration',
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion',
+        'verifiedAt',
+        'verifierUid',
+        'verificationStatus',
+        'verificationMethod',
+        'verificationExpiresAt',
+        'verificationRecordVersion'
+      ]));
+      allow delete: if isAuthenticated();
     }
 
     match /inquiries/{inquiryId} {
@@ -1854,5 +2048,147 @@ High-intent collector actions are instrumented across core conversion funnels:
 | `consignment_submitted` | `src/components/ConsignmentModal.tsx` | Dispatched on successful intake form submission, capturing seller inventory pipeline volume and vehicle dimensions. | `{ vehicle_year: string \| number, vehicle_make: string, vehicle_model: string }` |
 | `provenance_view` | `src/components/AuctionHeader.tsx`, `src/App.tsx` | Dispatched when a collector clicks high-intent external provenance verification dossiers (cloud service folders or Hagerty Canada valuation reports). | `{ auction_id: string, link_type: 'cloud_dossier' \| 'hagerty_valuation' }` |
 
+---
 
+## 9. Verified Boutique Dealer Identity & Security Architecture (M1 & M1.1 Milestones)
 
+### 9.1 Executive Summary & Boutique Dealer Initiative
+The Verified Boutique Dealer initiative establishes the data models, identity relationships, and database-level security policies required to support professional, licensed boutique automotive dealerships on Wailtail alongside traditional private-party sellers.
+
+High-value automotive auctions present unique regulatory, tax, and licensing challenges when inventory is consigned or sold by licensed dealers rather than private individuals. In Canada, licensed motor vehicle dealers operate under provincial regulatory frameworks (such as OMVIC in Ontario, VSA in British Columbia, or AMVIC in Alberta) and are subject to mandatory retail disclosure obligations, documentation fee transparency, and distinct sales tax collection mandates.
+
+The M1 and M1.1 milestones deliver the foundational identity schemas and security hardening necessary to support verified boutique dealers safely. Full dealer application intake workflows, administrative verification tooling, and public dealer showroom profiles are designated for upcoming milestones (M2+) and are not yet complete.
+
+### 9.2 Dealer Identity Architecture
+
+The dealer identity model separates business entity records, individual user authentication accounts, and vehicle listings:
+
+1. **Canonical Dealer Profile (`dealer_profiles/{dealerId}`)**:
+   - The authoritative record for a dealership entity is stored in `/dealer_profiles/{dealerId}`.
+   - Captures legal business name, trade name / DBA name, provincial dealer license number, licensing jurisdiction (`CanadianProvinceOrTerritory`), primary representative user UID, physical operating address, verified phone number, website, and public visibility toggles (`displayPhonePublicly`, `displayWebsitePublicly`).
+   - Maintains trusted verification status metadata (`verificationStatus`, `verifiedAt`, `verifierUid`, `verificationMethod`, `verificationExpiresAt`).
+   - Accessible strictly to platform administrators (`allow read, create, update: if isAdmin();`) with deletions forbidden (`allow delete: if false;`).
+
+2. **User Profile Linkage (`UserProfile.dealerId`)**:
+   - Individual registered users (`users/{userId}` and `bidders/{userId}`) link to a dealership entity via an optional `dealerId` foreign key.
+   - **Access Boundaries**: Associating a `dealerId` with a user account establishes organizational identity but does not inherently grant authoring, editing, or administrative permissions over another user's lots or dealer inventory.
+   - **Phase 1 Representation Model**: Under the Phase 1 specification, each verified dealership is represented by a single primary authorized representative (`primaryRepresentativeUid`). Multi-user dealership staff hierarchies and role delegations are deferred to future roadmap phases.
+
+3. **Auction Listing Snapshot (`dealerSnapshot`)**:
+   - When an auction is consigned by or assigned to a verified boutique dealer, the lot document in `/auctions/{auctionId}` captures:
+     - `sellerType: 'dealer'` (versus `'private'`).
+     - `dealerId: string` referencing the canonical profile.
+     - `dealerDocFee: 0` strictly enforcing Wailtail's platform rule: dealers consigning on Wailtail may not charge buyers additional documentation or administrative fees ($0 CAD).
+     - `taxHandling`: Tax treatment indicator (`'dealer_collects'` | `'buyer_pays_at_registration'` | `'requires_confirmation'`).
+     - `taxDisclaimerVersion`: Version identifier for regulatory tax disclosures.
+     - `dealerSnapshot: DealerListingSnapshot`: An immutable, public-safe denormalized snapshot of essential dealership attributes (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, `phone`, `website`, `verifiedAt`, `verificationRecordVersion`, `dealerLicenseNumber`, `licensingJurisdiction`).
+   - This denormalized snapshot ensures that historical auction records preserve the exact dealership identity and verification state active at the time of the auction, even if the canonical dealer profile is subsequently modified.
+
+### 9.3 Dealer Verification Architecture & Separation of Concerns
+
+1. **Business-Level Verification vs. Vehicle-Level Curation**:
+   - Business entity verification is strictly decoupled from individual vehicle listing curation.
+   - A dealer achieving verified status confirms that the business is a legitimate, licensed boutique motor vehicle dealer in its declared Canadian jurisdiction.
+   - Verification of the dealership does not bypass or relax individual vehicle listing curation: every vehicle consigned by a verified dealer undergoes standard Wailtail editorial review, provenance verification, mechanical disclosure auditing, and photography inspection before being scheduled or approved for auction.
+
+2. **Manual Administrator Control**:
+   - Dealer verification is strictly administrator-controlled. No automated or self-service verification pathways exist.
+   - Only authorized platform administrators (`isAdmin()`) can transition a dealership's `verificationStatus` or generate an approved `dealerSnapshot`.
+
+3. **Separation of Applicant Declarations from Verified Metadata**:
+   - Consignment application documents (`consignment_applications` and `consignments`) support dealer applicant declarations (`applicantType`, `dealershipName`, `submittedDealershipName`, `dealerLicenseNumber`, `submittedDealerLicenseNumber`, `licensingJurisdiction`, `submittedLicensingJurisdiction`, `dealershipOwnershipDeclaration`, `legalSellerOfRecordDeclaration`).
+   - These applicant fields represent unverified consignor declarations. They are strictly segregated from trusted administrator-verified metadata fields.
+
+4. **Immutable Verification Audit Ledger (`dealer_verification_audits`)**:
+   - All verification decisions and status changes are recorded in an independent collection `/dealer_verification_audits/{auditId}`.
+   - Captures `dealerId`, `action` (`'verified'` | `'rejected'` | `'suspended'` | `'reviewed'` | `'updated'`), `status` (`'pending'` | `'verified'` | `'rejected'` | `'suspended'`), `verifierUid`, `verificationMethod`, `sourceReferenceDescription`, `sourceReference`, `notes`, and timestamps.
+   - To guarantee regulatory and evidentiary compliance, audit records are completely separate from mutable dealer profiles and are strictly append-only: administrators can read and create audit records, while updates and deletions are permanently blocked (`allow update, delete: if false;`).
+
+### 9.4 Database Security Posture & Non-Admin Access Boundaries
+
+Production Cloud Firestore security rules (`firestore.rules`) enforce strict authorization boundaries around dealer identity and verification metadata:
+
+1. **The Six Protected Verification Metadata Fields**:
+   Platform security rules identify and strictly protect all six trusted verification metadata fields across consignment applications:
+   - `verifiedAt`
+   - `verifierUid`
+   - `verificationStatus`
+   - `verificationMethod`
+   - `verificationExpiresAt`
+   - `verificationRecordVersion`
+
+2. **Creation & Update Restrictions for Non-Admin Users**:
+   - **Consignment Applications (`consignment_applications` & `consignments`)**:
+     - Non-admin callers cannot create an application containing any of the six trusted verification fields or dealer listing snapshot attributes (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`).
+     - Non-admin callers cannot update any of the six verification fields, dealer listing fields, or applicant dealer declarations (`applicantType`, `dealershipName`, `dealerLicenseNumber`, etc.).
+     - Unauthenticated and authenticated non-admin users retain full capability to submit standard private-seller consignment applications and perform safe non-protected updates (e.g., updating vehicle condition notes).
+   - **Auctions (`auctions/{auctionId}`)**:
+     - Non-admin users cannot create or update auctions containing protected dealer fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`).
+   - **User Profiles (`users/{userId}` & `bidders/{bidderId}`)**:
+     - Non-admin users cannot set `dealerId` during account creation and cannot alter or clear `dealerId` during profile updates. Only administrators can assign or modify dealer associations.
+   - **Dealer Profiles & Audits (`dealer_profiles` & `dealer_verification_audits`)**:
+     - Non-admin users have zero read, write, update, or delete access to either collection.
+
+3. **Security Verification Probe (18/18 Checks Passed)**:
+   - The security rules were rigorously validated in an authenticated non-admin browser session using a temporary client probe (`DealerRulesSecurityProbe.tsx`) targeting live Firestore rules:
+     - **2 Creation Rejection Checks**: Confirmed that non-admin creation payloads injecting protected verification fields were rejected with 403 Permission Denied across both `consignment_applications` and `consignments`.
+     - **2 Creation Success Checks**: Confirmed that standard non-admin consignment application creation succeeded in both collections.
+     - **12 Update Rejection Checks**: Confirmed that 6 separate update attempts—each targeting one of the six protected verification fields individually—were rejected with 403 Permission Denied across both collections ($6 \times 2 = 12$).
+     - **2 Update Success Checks**: Confirmed that ordinary non-protected updates (modifying `notes`) succeeded in both collections.
+   - All synthetic test records were cleaned up immediately following probe execution, the probe component was cleanly unmounted and purged from the repository, and the production build succeeded with zero errors.
+
+4. **Scope & Testing Boundaries (Explicit Limitations)**:
+   - **Actual Testing Conducted**: Authenticated non-admin negative authorization probes and positive baseline creation/update checks against live project rules.
+   - **Testing NOT Conducted (Do Not Claim)**:
+     - No Firebase Local Emulator Suite testing was conducted (probes executed directly against live cloud database rules).
+     - No exhaustive full-codebase Firestore security audit across unrelated collections was performed.
+     - Positive administrator-write authorization tests for protected fields were not performed in this probe run.
+     - End-to-end dealer consignment intake, verification approval, and listing conversion workflows were not executed.
+     - M2 functionality (dealer intake UI, admin verification screens, dealer catalog badges) is upcoming work and not implemented.
+     - This release represents foundational M1/M1.1 milestone completion, not full Phase 1 platform delivery.
+
+### 9.5 Production Deployment & Release Status
+- **Production Merge Commit**: `cbae9be76c339a4eb8b03fa13fcebdfe80353dda`.
+- **Promotion Route**: Merged from `staging` into `main` via PR #1; `staging` synchronized with `main` at promotion baseline.
+- **Vercel Production Status**: Confirmed **Ready** and active.
+- **Cloud Firestore Rules**: Separately deployed to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` on GCP project `studio-apps-483721`.
+- **Smoke Testing**: Completed successful production smoke tests across homepage catalog rendering, single lot auction detail views, user authentication lifecycle, and public consignment intake submission. Confirmed test application arrival in the Admin Consignment Pipeline.
+- **Upcoming Work**: M2 Dealer Application Intake UI, Administrative Verification Dashboard, and Dealer Catalog Integration.
+
+---
+
+## 10. Planned Features & Upcoming Releases
+
+The following features represent architectural enhancements identified for subsequent platform milestones. Both features are currently **planned** and **not yet implemented**.
+
+### 10.1 Consignment Application Detail & Review
+- **Status**: PLANNED — NOT IMPLEMENTED.
+- **Proposed Capability**:
+  - A comprehensive, read-only administrative detail view integrated into the existing Admin Consignment Pipeline (`AdminPortalPage.tsx`).
+  - Full inspection of submitted vehicle taxonomy, specifications, mechanical condition notes, seller contact details, and location data.
+  - Review of submission timestamps, current status, and historical review notes.
+  - Clear structural separation of applicant-supplied declarations (e.g. dealership name, license number) from trusted administrator-verified metadata.
+  - Private administrative review notes and curator annotations.
+  - Future possibility of requesting supplementary information or revised documentation from consignor applicants.
+- **Architectural Requirements**:
+  - Opening, inspecting, or closing the detail view must never trigger implicit status transitions.
+  - Inspection must be strictly read-only and never mutate submitted application documents.
+  - Status changes (approval, rejection, conversion to draft) must remain explicit administrative actions with confirmation dialogs.
+  - Full backward compatibility with the existing private-seller curation workflow must be preserved.
+
+### 10.2 Optional Consignment Photo Upload
+- **Status**: PLANNED — NOT IMPLEMENTED.
+- **Proposed Capability**:
+  - Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`).
+  - Clear guidance and strong recommendation for applicants to submit at least five representative photographs covering key vehicle angles.
+  - File format support for JPEG, PNG, and WebP assets.
+  - Client-side image previews and individual photo removal controls prior to final application submission.
+  - Secure upload directly to Firebase Cloud Storage, returning lightweight download URLs.
+  - Association of submitted image URLs with the consignment application record in Firestore.
+  - Isolation of uploaded photos within private administrative review workflows until appropriate curation, verification, and approval.
+  - Capability for administrators to review and select submitted photos for direct transfer into the Listing Editor Workspace media gallery upon draft conversion.
+- **Architectural Requirements**:
+  - Binary image data or Base64 payloads must never be stored in Firestore documents.
+  - Pre-implementation audit of existing Firebase Cloud Storage configuration, security rules, and bucket access controls.
+  - Enforcement of client-side file-size limits, MIME type validation, and automated cleanup routines for orphaned uploads from abandoned submissions.
+  - Full architectural compatibility with the existing Listing Editor media pipeline (`uploadImageToStorage`) and canvas compression helpers.

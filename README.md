@@ -65,6 +65,8 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `settings/promotions`: Promotional campaign configurations, catalog card definitions, and lot header banner settings locked to admins.
   - `promo_analytics`: Decoupled guest click telemetry collection recording public atomic `increment(1)` interactions.
   - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
+  - `dealer_profiles`: Private canonical boutique dealer profiles (`dealer_profiles/{dealerId}`) restricted strictly to administrator access.
+  - `dealer_verification_audits`: Append-only administrative verification audit trail (`dealer_verification_audits/{auditId}`) documenting verification methods, decisions, and timestamps; immutable and restricted to administrators.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
 - **Firebase Cloud Messaging (FCM)**: Native Web Push notification engine dispatching live outbid alerts and auction lifecycle events via root-scoped background service worker (`/firebase-messaging-sw.js`) with VAPID token exchange (`VITE_FIREBASE_VAPID_KEY`) and multi-device Firestore token merge synchronization.
@@ -349,6 +351,27 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Tracked Referral UTM Engine**: Automatically generates canonical campaign URLs (`https://www.wailtail.com/auctions/[id]?utm_source=seller_social&utm_medium=social_kit`) with one-click clipboard copying (`🔗 Copy Link`) and external URL testing (`↗ Test URL`).
     - **CORS Configuration & Safe Export**: Configured cross-origin resource sharing (`Access-Control-Allow-Origin: *`) on Cloud Storage bucket `gs://studio-apps-483721.firebasestorage.app` via `cors.json`, paired with cache-busting image loading (`?wailtail_cors=1`) and `crossOrigin = 'anonymous'` to ensure error-free client-side canvas PNG exports (`handleDownloadGraphic`).
     - **Phase 2 Multi-Format Roadmap**: Documented planned multi-format aspect ratios (`social-promo-template-9x16.jpg` for 9:16 Vertical Stories / Reels and `social-promo-template-1x1.jpg` for 1:1 Square Feed) and seller referral analytics.
+40. **Verified Boutique Dealer Identity & Security Foundation (M1 & M1.1 Milestones)**:
+    - **Verified Boutique Dealer Initiative**: Introduced the architectural and security foundation for verified boutique automotive dealers on the Wailtail platform, differentiating professional boutique dealers from private sellers while strictly upholding platform standards.
+    - **Canonical Dealer Profile Architecture (`dealer_profiles/{dealerId}`)**: Defined private, canonical dealer profile records capturing legal business name, DBA name, provincial licensing credentials, primary representative UID, physical address, public contact visibility toggles, and administrator verification metadata. Stored in `dealer_profiles/{dealerId}` with administrator-only read and write permissions, with document deletions permanently disabled.
+    - **Dealer Identity Linkage via User Profiles**: Dealer association is linked through user profiles (`UserProfile.dealerId` and `BidderProfile.dealerId`). Non-admin users are strictly prevented from self-assigning, altering, or clearing their `dealerId` via Firestore security rules. Sharing a dealer identity does not inherently grant vehicle authoring or administrative inventory rights. In Phase 1, each verified dealer is represented by a single primary authorized representative.
+    - **Auction Listing Snapshots (`dealerSnapshot`)**: Vehicle auction documents support `sellerType` (`'private' | 'dealer'`), `dealerId`, `dealerDocFee` ($0 CAD enforcement), `taxHandling`, `taxDisclaimerVersion`, and a public-safe `dealerSnapshot: DealerListingSnapshot` capturing immutable business details and verification timestamps. Creation and mutation of these dealer fields on auctions are strictly restricted to administrators.
+    - **Manual Administrator Verification & Audit Logging (`dealer_verification_audits`)**: Dealer verification is strictly administrator-controlled and decoupled from individual vehicle listing curation. Verification decisions are logged to `dealer_verification_audits/{auditId}` with strict action and status unions (`'verified'`, `'rejected'`, `'suspended'`, `'reviewed'`, `'updated'`), verifier UID, verification method, notes, and timestamp. The audit collection is append-only (updates and deletions forbidden).
+    - **Consignment Application Protection & Six Trusted Verification Fields**: Extended consignment applications (`consignment_applications` and legacy `consignments`) with dealer intake declaration fields (`applicantType`, `dealershipName`, `dealerLicenseNumber`, `licensingJurisdiction`, etc.). Hardened security rules protect all six trusted administrator verification metadata fields:
+      1. `verifiedAt`
+      2. `verifierUid`
+      3. `verificationStatus`
+      4. `verificationMethod`
+      5. `verificationExpiresAt`
+      6. `verificationRecordVersion`
+      Non-admin users cannot create or update applications containing any of these six fields or protected dealer listing attributes. Ordinary private seller application submissions and non-protected application updates remain fully supported.
+    - **Implementation Boundaries**: The M1/M1.1 milestone establishes the foundational types, data contracts, and database security rules. Full dealer intake onboarding flows, administrative verification UI, and public dealer showroom badges/pages are scheduled for upcoming milestones (M2+) and are not yet complete. This milestone does not represent full Phase 1 delivery.
+    - **Production Milestone & Promotion Record**:
+      - Production merge commit: `cbae9be76c339a4eb8b03fa13fcebdfe80353dda`.
+      - M1 and M1.1 foundation promoted to `main` via PR #1.
+      - Staging synchronized with `main` at the time of promotion.
+      - Vercel production deployment confirmed Ready.
+      - Cloud Firestore security rules separately deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
 
 ---
 
@@ -431,3 +454,19 @@ match /media/{document=**} {
 
 ### YouTube Thumbnail 404s
 Ensure valid 11-character video IDs or URLs are used. The application automatically filters out non-matching strings to prevent failed thumbnail asset requests.
+
+---
+
+## 5. Planned Features & Upcoming Releases
+
+The following features represent architectural enhancements identified for upcoming platform milestones. Both features are currently **planned** and **not yet implemented**.
+
+### 1. Consignment Application Detail & Review
+- **Status**: PLANNED — NOT IMPLEMENTED.
+- **Proposed Capability**: A dedicated, read-only administrative inspection modal within the Admin Consignment Pipeline (`AdminPortalPage.tsx`). Provides comprehensive review of submitted vehicle specifications, provenance notes, seller contact details, submission timestamps, and lifecycle status. Introduces private administrative review notes, explicit separation between applicant-submitted declarations and administrator-verified metadata, and future pathways to request supplementary documentation from consignors.
+- **Architectural Requirements**: Opening or inspecting the detail view must never trigger implicit status transitions. Viewing data must never mutate submitted application documents. Status changes (approval, rejection, draft conversion) must remain explicit administrative actions. The existing private seller curation workflow must remain completely unaffected.
+
+### 2. Optional Consignment Photo Upload
+- **Status**: PLANNED — NOT IMPLEMENTED.
+- **Proposed Capability**: Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`), with a strong recommendation for applicants to submit at least five initial photographs (JPEG, PNG, WebP). Features client-side image preview and removal before submission, secure upload directly to Firebase Cloud Storage, association of photo URLs with the consignment record, and private isolation of uploaded images until administrative curation and approval. Approved photos can subsequently be selected for transfer into the Listing Editor Workspace gallery.
+- **Architectural Requirements**: Binary photo payloads or Base64 strings must never be stored in Firestore documents. Existing Firebase Storage security rules, MIME validation, and file-size constraints must be audited prior to implementation. Clean lifecycle management and orphaned file cleanup must be established. Full compatibility with the existing Listing Editor media pipeline (`uploadImageToStorage`) must be maintained.
