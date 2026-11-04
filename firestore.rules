@@ -21,7 +21,11 @@ service cloud.firestore {
     // Auctions & Media Subcollections
     match /auctions/{auctionId} {
       allow read: if true;
-      allow create, update, delete: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+        (!request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']) || isAdmin());
+      allow update: if isAuthenticated() && 
+        (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']));
+      allow delete: if isAuthenticated();
 
       match /{document=**} {
         allow read: if true;
@@ -46,14 +50,28 @@ service cloud.firestore {
     // User Accounts & Moderation Registry
     match /users/{userId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
+      allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /bidders/{bidderId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update, delete: if isOwner(bidderId) || isAdmin();
+      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
+      allow update: if isAdmin() || (isOwner(bidderId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
+      allow delete: if isOwner(bidderId) || isAdmin();
+    }
+
+    // Dealer Profiles (Private Canonical Records)
+    match /dealer_profiles/{dealerId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Dealer Verification Audits (Append-only Administrative History)
+    match /dealer_verification_audits/{auditId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Platform Settings & Media Configuration
@@ -90,13 +108,49 @@ service cloud.firestore {
     }
 
     match /consignment_applications/{appId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow create: if !request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion', 'verifiedAt', 'verifierUid', 'verificationStatus']) || isAdmin();
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'applicantType',
+        'dealershipName',
+        'submittedDealershipName',
+        'dealerLicenseNumber',
+        'submittedDealerLicenseNumber',
+        'licensingJurisdiction',
+        'submittedLicensingJurisdiction',
+        'dealershipOwnershipDeclaration',
+        'legalSellerOfRecordDeclaration',
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion'
+      ]));
+      allow delete: if isAuthenticated();
     }
 
     match /consignments/{consignmentId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow create: if !request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion', 'verifiedAt', 'verifierUid', 'verificationStatus']) || isAdmin();
+      allow read: if isAuthenticated();
+      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'applicantType',
+        'dealershipName',
+        'submittedDealershipName',
+        'dealerLicenseNumber',
+        'submittedDealerLicenseNumber',
+        'licensingJurisdiction',
+        'submittedLicensingJurisdiction',
+        'dealershipOwnershipDeclaration',
+        'legalSellerOfRecordDeclaration',
+        'sellerType',
+        'dealerId',
+        'dealerSnapshot',
+        'dealerDocFee',
+        'taxHandling',
+        'taxDisclaimerVersion'
+      ]));
+      allow delete: if isAuthenticated();
     }
 
     match /inquiries/{inquiryId} {

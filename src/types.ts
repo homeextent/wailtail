@@ -1,3 +1,71 @@
+export type CanadianProvinceOrTerritory =
+  | 'AB'
+  | 'BC'
+  | 'MB'
+  | 'NB'
+  | 'NL'
+  | 'NS'
+  | 'NT'
+  | 'NU'
+  | 'ON'
+  | 'PE'
+  | 'QC'
+  | 'SK'
+  | 'YT';
+
+export interface DealerListingSnapshot {
+  dealerId: string;
+  dealershipName: string;
+  displayName?: string;
+  dbaName?: string;
+  city: string;
+  province: CanadianProvinceOrTerritory;
+  phone?: string;
+  website?: string;
+  verifiedAt: number;
+  verificationRecordVersion: string;
+  dealerLicenseNumber?: string;
+  licensingJurisdiction?: CanadianProvinceOrTerritory;
+}
+
+export interface DealerProfile {
+  id: string;
+  legalBusinessName: string;
+  dbaName?: string;
+  dealerLicenseNumber: string;
+  licensingJurisdiction: CanadianProvinceOrTerritory;
+  primaryRepresentativeUid: string;
+  streetAddress: string;
+  postalCode: string;
+  city: string;
+  province: CanadianProvinceOrTerritory;
+  phone: string;
+  displayPhonePublicly: boolean;
+  website?: string;
+  displayWebsitePublicly: boolean;
+  verificationStatus: 'unverified' | 'pending' | 'verified' | 'rejected' | 'suspended';
+  verifiedAt?: number;
+  verifierUid?: string;
+  verificationMethod?: string;
+  verificationExpiresAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DealerVerificationAudit {
+  id?: string;
+  dealerId: string;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated' | string;
+  status: 'pending' | 'verified' | 'rejected' | 'suspended' | string;
+  verifierUid: string;
+  verificationMethod: string;
+  sourceReferenceDescription?: string;
+  sourceReference?: string;
+  notes?: string;
+  timestamp: number;
+  createdAt?: number;
+}
+
 export interface Auction {
   id: string;
   title: string;
@@ -47,6 +115,12 @@ export interface Auction {
   winningEmailSent?: boolean;
   watchlist?: string[];
   status: 'draft' | 'pending_review' | 'preview' | 'upcoming' | 'active' | 'live' | 'ending_soon' | 'ended' | 'sold' | 'reserve_not_met';
+  sellerType?: 'private' | 'dealer';
+  dealerId?: string;
+  dealerSnapshot?: DealerListingSnapshot;
+  dealerDocFee?: 0;
+  taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration' | 'requires_confirmation';
+  taxDisclaimerVersion?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -108,6 +182,7 @@ export interface UserProfile {
   banReason?: string;
   watchlist?: string[];
   fcmTokens?: string[];
+  dealerId?: string;
 }
 
 export interface BidderProfile extends UserProfile {
@@ -403,6 +478,15 @@ export interface ConsignmentApplication {
   registeredUserId?: string;
   isRegisteredUser?: boolean;
   registeredUserRole?: string;
+  applicantType?: 'private' | 'dealer';
+  submittedDealershipName?: string;
+  dealershipName?: string;
+  submittedDealerLicenseNumber?: string;
+  dealerLicenseNumber?: string;
+  submittedLicensingJurisdiction?: CanadianProvinceOrTerritory;
+  licensingJurisdiction?: CanadianProvinceOrTerritory;
+  dealershipOwnershipDeclaration?: boolean;
+  legalSellerOfRecordDeclaration?: boolean;
 }
 
 export interface UserBidActivity {
