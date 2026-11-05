@@ -26,3 +26,25 @@ export function isDesignatedAdminEmail(email: string | null | undefined): boolea
   if (!normalized) return false;
   return DESIGNATED_ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === normalized);
 }
+
+/**
+ * Milestone M2.0B Correction A:
+ * Evaluates administrative authority based strictly on:
+ * 1. Authenticated Firebase user present
+ * 2. Email present
+ * 3. Email matches explicit designated administrator allowlist
+ * 4. Firebase Authentication reports emailVerified === true
+ *
+ * Mutable Firestore profile fields (e.g. role, isEmailVerified) must NEVER establish admin authority.
+ */
+export function evaluateAdminAuthority(
+  user: { email: string | null; emailVerified: boolean } | null | undefined,
+  _profile?: { isEmailVerified?: boolean; role?: string } | null
+): boolean {
+  return Boolean(
+    user &&
+    user.email &&
+    isDesignatedAdminEmail(user.email) &&
+    user.emailVerified === true
+  );
+}

@@ -69,6 +69,11 @@ To protect platform continuity, audit integrity, and high-value catalog transact
 ## 2. Core Firestore Data Schemas
 
 ### 2.1 `auctions` Collection
+
+> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
+> **Production blocker — auction ownership and mutation authorization.**  
+> The current Firestore security rules for `auctions/{auctionId}` allow any authenticated user to create, update, or delete auction documents (with only dealer metadata restricted to `isAdmin()`). In particular, critical ownership fields such as `sellerId`, `sellerName`, `sellerEmail`, and `sellerPhone` require explicit server-side or rule-level authorization guards to prevent unauthorized lot mutation or reassignment. While the M2.0B trusted consignor endpoint (`/api/authorize-approved-consignor`) strictly protects seller assignments against overwriting existing seller ownership, general auction ownership and mutation authorization remains a required production blocker prior to public launch.
+
 Document ID: SEO title slug format `${slug}-${shortHash}` (e.g. `1988-porsche-928-s4-automatic-mtur4abv`), generated via `slugifyTitle(title)` and `generateShortHash()` in `createNewListing()` (or legacy `current` / specific auction UUID)
 ```typescript
 interface Auction {
@@ -921,6 +926,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - Actionable **Direct Mailto Reply Button**: High-contrast blue CTA button (`mailto:${cleanReporterEmail}?subject=Re:%20Wailtail%20Feedback%20Follow-up`) displayed when reporter email is supplied.
 
 ### 5.4 Serverless Admin User Deletion (`/api/admin-delete-user.ts`)
+
+> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
+> **Production blocker — server-side administrator authorization required for account deletion.**  
+> The current `/api/admin-delete-user` endpoint accepts caller-supplied `uid` and `adminUid` in the POST body without cryptographically validating a Firebase ID token or verifying administrator authority on the server. This constitutes a critical account-deletion vulnerability. Prior to production release, this endpoint must be refactored to mandate an `Authorization: Bearer <token>` header, verify the token via Firebase Admin SDK (`verifyIdToken(idToken, true)`), require a verified designated administrator identity (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), derive the administrator UID and email strictly from the verified token, validate the target user, and block unauthorized invocation.
+
 1. **Endpoint Architecture & Service Account Credentials**:
    - Hosted as a dedicated Vercel Serverless Function at `/api/admin-delete-user` (`api/admin-delete-user.ts`).
    - Requires an authenticated administrative caller context in the POST payload: `{ uid: string, adminUid: string }`.
@@ -1780,6 +1790,10 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
 
 ### 7.5 Serverless Edge & Auth Deletion Architecture (`/api/admin-delete-user.ts`)
 
+> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
+> **Production blocker — server-side administrator authorization required for account deletion.**  
+> The current `/api/admin-delete-user` endpoint accepts caller-supplied `uid` and `adminUid` parameters without cryptographically verifying a Firebase ID token or confirming designated administrator authority on the server. This constitutes a severe potential account-deletion vulnerability. Prior to production approval, this endpoint must require an `Authorization: Bearer <token>` header, verify caller identity via `auth.verifyIdToken(idToken, true)`, enforce that the caller matches the verified designated administrator allowlist (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), and derive all administrative credentials strictly from the verified token.
+
 To support permanent, legally compliant member deletions without client credential exposure, the platform deploys a dedicated Vercel Serverless Function at `/api/admin-delete-user`:
 
 1. **Firebase Admin SDK ESM Interop Resolution**:
@@ -1813,12 +1827,13 @@ The platform implements multi-layer session defense mechanisms in `src/context/A
      - Dispatches a prominent high-visibility toast notice: `"This account has been deleted by an administrator."`.
      - Instantly redirects the client to the root homepage (`/`).
 
-2. **Strict Email Verification Enforcement**:
+2. **Strict Email Verification Enforcement (M2.0B Correction A & B)**:
+   - **Authoritative Firebase Auth Verification**: Following M2.0B Security Correction A, email verification state (`isEmailVerified`) derives strictly from `user.emailVerified` on the authenticated Firebase user instance. Mutable Firestore profile fields (`userProfile.isEmailVerified`) never independently establish verification, authentication trust, or administrator authority.
    - **Auto-Logout Post-Signup**: When a user registers an account via email and password, `AuthContext.tsx` dispatches a verification email and immediately calls `signOut(auth)` to terminate the automatic Firebase client auto-login.
-   - **Unverified Login Blocking**: During sign-in attempts in `AuthModal.tsx` and session evaluation in `AuthContext.tsx`, accounts where `!currentUser.emailVerified && !userProfile.isEmailVerified` are blocked from session hydration, immediately signed out, and prompted with an informative verification notice. Authenticated state is only unlocked upon email link confirmation or manual administrator staff override (`setUserEmailVerified`).
-   - **Credentialed Unauthenticated Status Checks (`checkEmailVerification`)**: Enables users to verify their email status without an existing session by submitting credentials (`email` and `pass`). The routine signs in, calls `currentUser.reload()`, and if verified, atomically auto-syncs `isEmailVerified: true` across both `users/{uid}` and `bidders/{uid}` collections in Firestore while returning full authenticated session state.
-   - **Atomic Auto-Sync Across Collections**: Any confirmed verification (via client status check or staff manual override) executes synchronized writes ensuring `isEmailVerified: true` is permanently mirrored across both `users` and `bidders` profiles.
-   - **Deferred Welcome Email Dispatch**: To guarantee that welcome emails are only received by genuine, confirmed recipients, `sendWelcomeBidderEmail` (`type: 'welcome_bidder'`) is suppressed during initial signup. It is triggered strictly after verification is confirmed (`user.emailVerified || data.isEmailVerified`) or staff manual override, with duplicate deliveries guarded via `wailtail_welcome_sent_${uid}` in `localStorage`.
+   - **Unverified Login Blocking**: During sign-in attempts in `AuthModal.tsx` and session evaluation in `AuthContext.tsx`, accounts where `!currentUser.emailVerified` are blocked from session hydration, immediately signed out, and prompted with an informative verification notice. Authenticated state is only unlocked upon Firebase Auth email link confirmation (or pre-verified Google OAuth credentials).
+   - **Credentialed Status Checks (`checkEmailVerification`)**: Enables users to verify their email status without an existing session by submitting credentials (`email` and `pass`). The routine signs in, reloads the user instance via `currentUser.reload()`, and if `currentUser.emailVerified === true`, mirrors `isEmailVerified: true` across both `users/{uid}` and `bidders/{uid}` collections in Firestore while returning full authenticated session state.
+   - **Deferred Welcome Email Dispatch**: To guarantee that welcome emails are only received by genuine, confirmed recipients, `sendWelcomeBidderEmail` (`type: 'welcome_bidder'`) is suppressed during initial signup. It is triggered strictly after verification is confirmed by Firebase Authentication (`currentUser.emailVerified === true`), with duplicate deliveries guarded via `welcomeEmailSent` in Firestore state.
+   - **Firestore Self-Verification Defense (Correction B)**: Security rules in `firestore.rules` mandate that writing `isEmailVerified: true` on `users` or `bidders` documents requires `request.auth.token.email_verified == true`. Client-side demo self-verification (`manualVerifyForDemo`) is deprecated and disabled.
 
 3. **Google OAuth Direct State Hydration (`signInGoogle`)**:
    - Executes pop-up authentication via `signInWithPopup(auth, googleProvider)`.
@@ -2391,20 +2406,25 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Dependencies**: M1.1 completion.
 - **Exit Criteria**: 83/83 rules unit tests pass; production deployment verified; Cloud Firestore rules deployed; production QA confirmed.
 
-#### M2.0B — Trusted Server-Side Role Authorization
-- **Status**: **COMPLETE — VERIFIED ON STAGING**.
-- **Objectives**: Transition role promotion and approved-consignor workspace authorization from legacy client-side execution to a secure, trusted server-side architecture.
-- **Business Rationale**: Eliminates the critical vulnerability where client-side code (`elevateApprovedConsignor`) promotes users to `'seller'` under client-controlled `isOwner(uid)` Firestore rules, preventing client-side privilege escalation or unauthorized self-promotion.
-- **Key Deliverables**:
+#### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
+- **Status**: **VERIFIED ON STAGING (Security Corrections Applied; Pending Production Blockers Resolution)**.
+- **Objectives**: Transition role promotion and approved-consignor workspace authorization from legacy client-side execution to a secure, trusted server-side architecture, and enforce Firebase Authentication as the sole email-verification and administrator authority.
+- **Business Rationale**: Eliminates vulnerabilities where client-side code (`elevateApprovedConsignor`) promotes users to `'seller'` under client-controlled `isOwner(uid)` Firestore rules, and where mutable Firestore fields (`isEmailVerified`) could substitute for cryptographic Firebase Authentication token claims.
+- **Key Deliverables & Corrections**:
   - Secure serverless endpoint `/api/authorize-approved-consignor` utilizing Firebase Admin SDK with reusable initialization and named database instance targeting (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
-  - Cryptographic validation of caller ID tokens (`admin.auth().verifyIdToken()`).
+  - Cryptographic validation of caller ID tokens with active token revocation verification (`admin.auth().verifyIdToken(idToken, true)` — Correction C).
   - Server-side verification that the authenticated user's verified email matches an approved consignment application document (`status == 'approved'`) with support for historical email casing.
   - Atomic, trusted server-side role assignment across `users/{uid}` and `bidders/{uid}` collections, preserving administrator roles against demotion.
-  - Removal of client-side role elevation mutations (`elevateApprovedConsignor`) from `AuthContext.tsx`.
-  - Hardening of Firestore security rules to deny non-admin users the ability to mutate `role` fields on `users` or `bidders` documents (`!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])`) while retaining baseline `bidder` role creation.
-  - Comprehensive unit and integration test coverage: 112 passing Firestore rules unit tests and 25 passing isolated endpoint unit tests.
+  - Safe seller-to-auction linkage with conflict detection, preventing overwrites of existing lot assignments.
+  - Removal of client-side role elevation mutations (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`) from `AuthContext.tsx`.
+  - Establishment of Firebase Authentication as the sole email-verification authority (`isEmailVerified = Boolean(user?.emailVerified)` — Correction A) and administrative root of trust (`isAdmin = Boolean(user?.email && isDesignatedAdminEmail(user.email) && user.emailVerified === true)`), integrated with Firebase user reload on auth hydration.
+  - Hardening of Firestore security rules (`firestore.rules` — Correction B) to deny non-admin users the ability to mutate `role` fields, dealer fields, or self-verify via `isEmailVerified: true` without matching `request.auth.token.email_verified == true`.
+  - Comprehensive unit and integration test coverage: 126 passing Firestore rules emulator unit tests and 34 passing isolated endpoint and administrative authority unit tests.
 - **Dependencies**: M2.0A production baseline.
-- **Exit Criteria**: Non-admin users cannot mutate `role` via Firestore SDK; approved consignor onboarding flow elevates roles exclusively through trusted serverless validation; passing test suite.
+- **Remaining Production Blockers**:
+  1. *Production blocker — server-side administrator authorization required for account deletion (`api/admin-delete-user.ts`)*.
+  2. *Production blocker — auction ownership and mutation authorization (`auctions/{auctionId}`)*.
+- **Exit Criteria**: Non-admin users cannot mutate `role` or self-verify via Firestore; approved consignors are elevated exclusively through trusted backend endpoint; token revocation enforced; 126 rules tests and 34 endpoint tests pass; production blockers resolved prior to production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
 - **Status**: **PLANNED**.

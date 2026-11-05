@@ -20,40 +20,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## 2026-11-05 — Trusted Server-Side Role Authorization (M2.0B Milestone)
+## 2026-11-05 — Trusted Server-Side Role Authorization (M2.0B Milestone & Security Corrections)
 
-### M2.0B — Trusted Server-Side Role Authorization
+### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
 
-> **Release Status**: COMPLETE — VERIFIED ON STAGING. Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections, removed vulnerable client-side self-promotion (`elevateApprovedConsignor`), aligned administrative root of trust to verified explicit email allowlist, and verified with 112 passing Firestore rules emulator unit tests and 25 isolated endpoint unit tests.
+> **Release Status**: VERIFIED ON STAGING (M2.0B Security Corrections Applied). Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections against self-verification, established Firebase Authentication as sole email-verification authority, added token revocation verification, removed client-side self-promotion (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`), aligned administrative root of trust to verified explicit email allowlist, and validated with 126 passing Firestore rules emulator unit tests and 34 isolated endpoint & authority unit tests. *Note: Milestone M2.0B is verified on staging with security corrections applied; it is not yet production-approved pending resolution of documented production blockers.*
 
-- **Trusted Server-Side Consignor Authorization (`api/authorize-approved-consignor.ts`)**:
-  - **Verified Token Authorization**: Requires valid Firebase ID token in `Authorization: Bearer <token>` header, verified cryptographically via Firebase Admin SDK `verifyIdToken()`. Derives UID, email, and email verification status exclusively from token. Request body identity fields are strictly ignored.
-  - **Verified Consignment Verification**: Evaluates approved consignment applications in `consignment_applications` (with legacy collection fallback) matching normalized token email. Normalizes email casing while supporting historical original-case matches.
-  - **Atomic Canonical Profile Updates**: Executes Firestore transaction updating `users/{uid}` and `bidders/{uid}` with `role: 'seller'` (preserving `role: 'admin'` for designated administrators) with merge semantics and missing-doc creation.
-  - **Seller-to-Auction Linkage**: Links converted auctions referenced by approved applications, recording `sellerId` and `sellerName` while safeguarding existing assignments against overwrites and reporting conflicts without auto-transferring ownership.
-  - **Named Firestore Database Binding (`api/_lib/firebaseAdmin.ts`)**: Reusable Firebase Admin initialization targeting named instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, avoiding accidental `(default)` fallback.
+- **Correction A — Firebase Authentication Established as Sole Email-Verification Authority (`src/context/AuthContext.tsx`, `src/config/adminConfig.ts`)**:
+  - **Authoritative Identity State**: Redefined `isEmailVerified` as `Boolean(user?.emailVerified)` deriving exclusively from authenticated Firebase user state. Eradicated logic where mutable Firestore profile field `userProfile.isEmailVerified` could substitute for Firebase Authentication verified identity.
+  - **Administrative Root of Trust**: `isAdmin` requires all four invariants: (1) Authenticated Firebase user, (2) email present, (3) email matches explicit designated administrator allowlist (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), and (4) Firebase Authentication reports `emailVerified === true`. Evaluated deterministically via centralized `evaluateAdminAuthority()`.
+  - **Firebase User Refresh Mechanism**: Integrated `await reload(currentUser)` on auth state change and login hydration when unverified, ensuring auth context does not rely indefinitely on a stale Firebase user object after external verification link confirmation.
+  - **Eliminated Privilege Bypass in Sign-In**: Removed fallback to `userProfile.isEmailVerified` in `signInEmail()` and `AuthModal.tsx`; unverified credentials cannot hydrate sessions or bypass verification guards.
 
-- **Canonical Profile Security Rules Hardening (`firestore.rules`)**:
-  - **Create Locks**: Non-admin callers can only create their own profile document (`isOwner(userId)` / `isOwner(bidderId)`), cannot set elevated roles (`seller` or `admin`), must supply baseline `bidder` role if role field is present, and cannot inject protected dealer (`dealerId`) or administrative ban flags (`isBanned`, `bannedFromBidding`, `bannedAt`).
-  - **Update Locks**: Ordinary profile owners are barred from mutating `role`, `dealerId`, `isBanned`, `bannedFromBidding`, and `bannedAt` fields. Ordinary permitted profile updates (`displayName`, `phone`, `totalBidsPlaced`, `updatedAt`, `isEmailVerified`) remain functional.
-  - **Explicit Admin Root of Trust**: `isAdmin()` helper requires authenticated context, `token.email != null`, verified email (`('email_verified' in request.auth.token && request.auth.token.email_verified == true)`), and exact match against the two designated administrator identities (`jeremygoodmurphy@gmail.com` and `jeremy@theinnovativegroup.ca`). Mutable profile roles cannot establish administrative authority.
+- **Correction B — Firestore Rules Hardened Against Self-Verification & Workflow Audit (`firestore.rules`, `src/services/auctionService.ts`)**:
+  - **Create Locks on Verification Fields**: Rules for `users/{userId}` and `bidders/{bidderId}` enforce that `isEmailVerified: true` can only be stored if `request.auth.token.email_verified == true` (`isTokenEmailVerified()`). Unverified tokens cannot create documents claiming verified status.
+  - **Update Locks on Verification Fields**: Non-admin owners are barred from updating `isEmailVerified` to `true` unless their authenticated Firebase token claim has `email_verified == true`. Legitimate profile updates (`displayName`, `phone`, `updatedAt`) remain functional for unverified users.
+  - **Administrative Workflow Audit**: Audited `setUserEmailVerified()` in `src/services/auctionService.ts` and administrator Member Directory toggle in `AdminPortalPage.tsx`. Documented that Firestore `isEmailVerified` is strictly an informational and directory management field that cannot establish authentication trust or privileges.
+  - **Disabled Insecure Demo Verification**: Deprecated and disabled `manualVerifyForDemo()` in `AuthContext.tsx`, removing the client-side self-verification bypass and removing the "Instant Demo Verification" button from `AuthModal.tsx` and `BidModal.tsx`.
 
-- **Client Privilege Escalation Removal (`src/context/AuthContext.tsx`)**:
-  - **Removed `elevateApprovedConsignor()`**: Eradicated client-side elevation mechanism querying applications and mutating roles from client.
-  - **Trusted Endpoint Invocation**: Replaced with `requestServerConsignorAuthorization()` invoking `/api/authorize-approved-consignor` and refreshing canonical profile from Firestore.
-  - **Registration Hardening**: Baseline registration creates ordinary members with `role: 'bidder'` only.
-  - **Centralized Admin Identity Configuration (`src/config/adminConfig.ts`)**: Unified administrator email allowlist and normalization utilities shared across client and server.
+- **Correction C — Revocation-Aware Token Verification (`api/authorize-approved-consignor.ts`)**:
+  - **Token Revocation Check**: Updated Firebase Admin SDK token verification to `auth.verifyIdToken(idToken, true)`, actively verifying whether the token has been revoked.
+  - **Graceful Error Handling**: Detects `auth/id-token-revoked` and rejects revoked tokens with HTTP 401 and code `auth/id-token-revoked` without executing any Firestore writes or mutating consignor/auction linkages.
 
-- **UI Authorization & Route Guard Hardening (`src/App.tsx`, `src/components/ListingEditorWorkspace.tsx`, `src/components/AuthModal.tsx`, `src/components/Navbar.tsx`, `src/components/UserAccountHubModal.tsx`, `src/components/CommentSection.tsx`)**:
-  - Removed reliance on `userProfile.role === 'admin'` for administrative presentation and route guards.
-  - Hardened `/admin` operations portal route guard to derive exclusively from verified admin identity.
-  - Hardened `/dashboard/listings/[id]/edit` and inventory dropdowns to restrict access based on verified seller/admin authorization and `sellerId` ownership.
-  - Hardened `AuthModal.tsx` admin deep-link resolution to utilize centralized `isDesignatedAdminEmail()`.
+- **Separate Production Blockers Identified**:
+  - **Production blocker — server-side administrator authorization required for account deletion**: `api/admin-delete-user.ts` currently accepts caller-supplied `uid` and `adminUid` without validating a Firebase ID token or verifying administrator authority on the server. Requires token-verified designated administrator authorization before production deployment.
+  - **Production blocker — auction ownership and mutation authorization**: Firestore auction update/delete rules remain overly permissive; ownership-related fields (`sellerId`, `sellerName`) require strict server-side or rules-level mutation locks to prevent unauthorized lot reassignment.
 
 - **Comprehensive Verification & Regression Testing**:
-  - **112 Passing Firestore Rules Tests (`npm run test:rules`)**: 83 existing M2.0A/M1/M1.1 tests + 29 new tests validating user/bidder creation locks, role mutation prevention, dealerId protection, admin capability retention, and isolation from attacker `role: 'admin'` profiles.
-  - **25 Passing Isolated Endpoint Tests (`npm run test:endpoint`)**: Full unit test coverage across authentication, authorization decisions, casing normalization, request body injection defense, atomic transaction profile updates, and auction linkage conflict reporting.
-  - **Clean Build (`npm run build`)**: Zero TypeScript or bundling errors.
+  - **126 Passing Firestore Rules Tests (`npm run test:rules`)**: 112 baseline M2.0A/M2.0B tests + 14 new tests validating self-verification prevention on create and update across `users` and `bidders`, verified user update allowances, and isolation of admin permissions from unverified allowlisted tokens and profile claims.
+  - **34 Passing Isolated Endpoint & Authority Tests (`npm run test:endpoint`)**: 25 baseline endpoint tests + 9 new tests validating token revocation rejection (`checkRevoked: true`), zero writes on revoked/expired/unverified tokens, allowlisted vs non-allowlisted evaluation, and prevention of profile overrides.
+  - **Clean Build & Type Check**: `npx tsc --noEmit` and `npm run build` pass with zero errors.
 
 ---
 

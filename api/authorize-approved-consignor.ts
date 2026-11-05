@@ -90,16 +90,20 @@ export async function handleAuthorizeApprovedConsignor(
 
   const { auth, firestore } = services;
 
-  // 2. Verify Firebase ID Token
+  // 2. Verify Firebase ID Token with revocation check (Milestone M2.0B Correction C)
   let decodedToken: any;
   try {
-    decodedToken = await auth.verifyIdToken(idToken);
+    decodedToken = await auth.verifyIdToken(idToken, true);
   } catch (verifyErr: any) {
     console.warn('[authorize-approved-consignor] Token verification rejected:', verifyErr?.message);
+    const errorCode = verifyErr?.code;
+    const isRevoked = errorCode === 'auth/id-token-revoked';
     return sendJson(res, 401, {
       success: false,
-      error: 'Unauthorized: Invalid or expired Firebase ID token.',
-      code: 'auth/invalid-token'
+      error: isRevoked
+        ? 'Unauthorized: Firebase ID token has been revoked.'
+        : 'Unauthorized: Invalid or expired Firebase ID token.',
+      code: isRevoked ? 'auth/id-token-revoked' : 'auth/invalid-token'
     });
   }
 

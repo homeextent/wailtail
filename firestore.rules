@@ -19,6 +19,11 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function isTokenEmailVerified() {
+      return isAuthenticated() &&
+        ('email_verified' in request.auth.token && request.auth.token.email_verified == true);
+    }
+
     // Auctions & Media Subcollections
     match /auctions/{auctionId} {
       allow read: if true;
@@ -57,7 +62,8 @@ service cloud.firestore {
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
-        (!('role' in request.resource.data) || request.resource.data.role == 'bidder')
+        (!('role' in request.resource.data) || request.resource.data.role == 'bidder') &&
+        (!('isEmailVerified' in request.resource.data) || request.resource.data.isEmailVerified == false || isTokenEmailVerified())
       );
       allow update: if isAdmin() || (
         isOwner(userId) &&
@@ -67,7 +73,10 @@ service cloud.firestore {
           'isBanned',
           'bannedFromBidding',
           'bannedAt'
-        ])
+        ]) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isEmailVerified']) ||
+         request.resource.data.isEmailVerified == false ||
+         isTokenEmailVerified())
       );
       allow delete: if isOwner(userId) || isAdmin();
     }
@@ -80,7 +89,8 @@ service cloud.firestore {
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
-        (!('role' in request.resource.data) || request.resource.data.role == 'bidder')
+        (!('role' in request.resource.data) || request.resource.data.role == 'bidder') &&
+        (!('isEmailVerified' in request.resource.data) || request.resource.data.isEmailVerified == false || isTokenEmailVerified())
       );
       allow update: if isAdmin() || (
         isOwner(bidderId) &&
@@ -90,7 +100,10 @@ service cloud.firestore {
           'isBanned',
           'bannedFromBidding',
           'bannedAt'
-        ])
+        ]) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isEmailVerified']) ||
+         request.resource.data.isEmailVerified == false ||
+         isTokenEmailVerified())
       );
       allow delete: if isOwner(bidderId) || isAdmin();
     }

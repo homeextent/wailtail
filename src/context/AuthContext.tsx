@@ -19,7 +19,8 @@ import { sendWelcomeBidderEmail, setUserEmailVerified } from '../services/auctio
 import {
   ADMIN_EMAILS as DESIGNATED_ADMIN_EMAILS_LIST,
   isDesignatedAdminEmail,
-  normalizeEmail
+  normalizeEmail,
+  evaluateAdminAuthority
 } from '../config/adminConfig';
 
 export const ADMIN_EMAILS = DESIGNATED_ADMIN_EMAILS_LIST;
@@ -120,6 +121,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
         try {
+          // Firebase User Refresh: Ensure auth context does not rely indefinitely on a stale Firebase user object
+          if (!currentUser.emailVerified) {
+            try {
+              await reload(currentUser);
+            } catch (reloadErr) {
+              console.warn('[AuthContext] Notice reloading user on auth change:', reloadErr);
+            }
+          }
+
           const userRef = doc(db, 'users', currentUser.uid);
           let snap = await getDoc(userRef);
 
@@ -141,9 +151,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
 
-            const isVerified = Boolean(currentUser.emailVerified || data.isEmailVerified);
+            // Sole email-verification authority: Authenticated Firebase user emailVerified
+            const isVerified = Boolean(currentUser.emailVerified);
 
-            // Strict Unverified Session Enforcement: If both are false, prevent session login hydration and execute signOut(auth)
+            // Strict Unverified Session Enforcement: If false, prevent session login hydration and execute signOut(auth)
             if (!isVerified) {
               console.warn(`[AuthContext] Unverified session detected for uid: ${currentUser.uid}. Enforcing signOut.`);
               await fbSignOut(auth).catch(() => {});
@@ -252,7 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else {
           const data = snap.data() as UserProfile;
-          const isVerified = Boolean(firebaseUser.emailVerified || data.isEmailVerified);
+          // Sole email-verification authority: Authenticated Firebase user emailVerified
+          const isVerified = Boolean(firebaseUser.emailVerified);
           if (!isVerified) {
             console.warn(`[AuthContext] Real-time check: Session email unverified. Revoking session.`);
             await fbSignOut(auth).catch(() => {});
@@ -267,15 +279,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [user?.uid]);
 
-  const isEmailVerified = Boolean(user?.emailVerified || userProfile?.isEmailVerified);
+  // Establish Firebase Authentication as the sole email-verification authority.
+  // Mutable Firestore profile fields (userProfile.isEmailVerified) must NEVER substitute for Firebase Auth state.
+  const isEmailVerified = Boolean(user?.emailVerified);
 
   // Administrative root of trust: Verified account state & explicit email allowlist ONLY.
-  // Mutable profile roles (users/{uid}.role) must NEVER independently establish administrative authority.
-  const isAdmin = Boolean(
-    user?.email &&
-    isDesignatedAdminEmail(user.email) &&
-    isEmailVerified
-  );
+  // Administrator identity requires ALL of the following:
+  // 1. Authenticated Firebase user.
+  // 2. Email present.
+  // 3. Email matches explicit designated administrator allowlist.
+  // 4. Firebase Authentication reports emailVerified === true.
+  // Mutable profile roles or Firestore fields must NEVER independently establish administrative authority.
+  const isAdmin = evaluateAdminAuthority(user, userProfile);
 
   const isSeller = Boolean(
     isAdmin || userProfile?.role === 'seller'
@@ -285,33 +300,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     await reload(cred.user);
 
-    // If cred.user.emailVerified is true, execute await setUserEmailVerified(cred.user.uid, true)
-    if (cred.user.emailVerified) {
-      try {
-        await setUserEmailVerified(cred.user.uid, true);
-      } catch (syncErr) {
-        console.warn('Could not sync emailVerified to Firestore on signInEmail:', syncErr);
-      }
-    }
-
-    // Check both Firebase Auth user.emailVerified and Firestore staff override userProfile.isEmailVerified
-    let profileData: UserProfile | null = null;
-    try {
-      const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      if (snap.exists()) {
-        profileData = { uid: snap.id, ...snap.data() } as UserProfile;
-      }
-    } catch {
-      // ignore
-    }
-
-    const isProfileVerified = Boolean(profileData?.isEmailVerified);
-    const isVerified = Boolean(cred.user.emailVerified || isProfileVerified);
+    // Sole email-verification authority: Authenticated Firebase user emailVerified
+    const isVerified = Boolean(cred.user.emailVerified);
     if (!isVerified) {
       await fbSignOut(auth).catch(() => {});
       setUser(null);
       setUserProfile(null);
       throw new Error('Email verification required. Please check your inbox to verify your email address before signing in.');
+    }
+
+    // Sync verified status to Firestore once verified by Firebase Auth
+    try {
+      await setUserEmailVerified(cred.user.uid, true);
+    } catch (syncErr) {
+      console.warn('Could not sync emailVerified to Firestore on signInEmail:', syncErr);
+    }
+
+    let profileData: UserProfile | null = null;
+    try {
+      const snap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (snap.exists()) {
+        profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
+      }
+    } catch {
+      // ignore
     }
 
     // Re-evaluate approved consignor role via trusted server authorization
@@ -692,70 +704,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const manualVerifyForDemo = async (emailForDemo?: string, passForDemo?: string) => {
-    let targetUser = auth.currentUser;
-    if (!targetUser && emailForDemo && passForDemo) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, emailForDemo.trim(), passForDemo);
-        targetUser = cred.user;
-      } catch (err) {
-        console.warn('Demo verify sign-in error:', err);
-      }
-    }
-
-    if (!targetUser) return;
-
-    try {
-      await setUserEmailVerified(targetUser.uid, true);
-    } catch (err) {
-      console.warn(err);
-    }
-
-    let profileData: UserProfile | null = null;
-    try {
-      const snap = await getDoc(doc(db, 'users', targetUser.uid));
-      if (snap.exists()) {
-        profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
-      }
-    } catch {
-      // ignore
-    }
-
-    if (!profileData && userProfile) {
-      profileData = { ...userProfile, isEmailVerified: true };
-    } else if (!profileData) {
-      const userEmail = normalizeEmail(targetUser.email || emailForDemo);
-      const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
-      profileData = {
-        uid: targetUser.uid,
-        email: targetUser.email || emailForDemo || '',
-        displayName: targetUser.displayName || (targetUser.email || emailForDemo || '').split('@')[0],
-        role: isDesignatedAdmin ? 'admin' : 'bidder',
-        isEmailVerified: true,
-        registeredAt: Date.now(),
-        totalBidsPlaced: 0,
-        highestBidPlaced: 0
-      };
-    }
-
-    setUser(targetUser);
-    setUserProfile(profileData);
-
-    const recipientEmail = (targetUser.email || profileData?.email || '').trim();
-    if (recipientEmail && profileData?.welcomeEmailSent !== true) {
-      console.log(`[Welcome Email] Dispatching welcome email in manualVerifyForDemo for ${recipientEmail} (${targetUser.uid})`);
-      sendWelcomeBidderEmail(
-        targetUser.uid,
-        recipientEmail,
-        profileData?.displayName || recipientEmail.split('@')[0]
-      ).then((sent) => {
-        if (sent && profileData) profileData.welcomeEmailSent = true;
-      }).catch((err) => {
-        console.warn('[Welcome Email] Demo welcome email dispatch notice:', err);
-      });
-    } else if (profileData?.welcomeEmailSent === true) {
-      console.log(`[Welcome Email] Skipped welcome email in manualVerifyForDemo: welcomeEmailSent sentinel is true for ${targetUser.uid}`);
-    }
+  /**
+   * Deprecated and disabled for security (M2.0B Correction B).
+   * Verified email identity must be established through Firebase Authentication.
+   * Client-side writes to Firestore cannot establish verified identity.
+   */
+  const manualVerifyForDemo = async (_emailForDemo?: string, _passForDemo?: string) => {
+    console.warn('[AuthContext] manualVerifyForDemo has been disabled for security. Email verification must be established via Firebase Authentication.');
   };
 
   return (

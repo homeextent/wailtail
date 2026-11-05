@@ -1,6 +1,7 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { handleAuthorizeApprovedConsignor } from '../api/authorize-approved-consignor';
+import { evaluateAdminAuthority, isDesignatedAdminEmail } from '../src/config/adminConfig';
 
 interface MockDocData {
   [key: string]: any;
@@ -137,8 +138,16 @@ function createMockFirestore() {
 }
 
 function createMockAuth(validTokens: Record<string, any> = {}) {
+  const verifyCalls: Array<{ token: string; checkRevoked?: boolean }> = [];
   return {
-    async verifyIdToken(token: string) {
+    verifyCalls,
+    async verifyIdToken(token: string, checkRevoked?: boolean) {
+      verifyCalls.push({ token, checkRevoked });
+      if (token === 'revoked-token') {
+        const err: any = new Error('Firebase ID token has been revoked.');
+        err.code = 'auth/id-token-revoked';
+        throw err;
+      }
       if (token === 'expired-token') {
         const err: any = new Error('Firebase ID token has expired.');
         err.code = 'auth/id-token-expired';
@@ -260,6 +269,88 @@ describe('M2.0B — /api/authorize-approved-consignor Endpoint Tests', () => {
       assert.strictEqual(res.statusCode, 401);
       assert.strictEqual(res.data?.success, false);
       assert.strictEqual(res.data?.code, 'auth/invalid-token');
+    });
+
+    test('Rejects revoked token (Correction C)', async () => {
+      const req = {
+        method: 'POST',
+        headers: { authorization: 'Bearer revoked-token' }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      assert.strictEqual(res.statusCode, 401);
+      assert.strictEqual(res.data?.success, false);
+      assert.strictEqual(res.data?.code, 'auth/id-token-revoked');
+      assert.match(res.data?.error, /revoked/i);
+    });
+
+    test('Passes checkRevoked: true to verifyIdToken (Correction C)', async () => {
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      assert.strictEqual(mockAuth.verifyCalls.length, 1);
+      assert.strictEqual(mockAuth.verifyCalls[0].token, VALID_TOKEN);
+      assert.strictEqual(mockAuth.verifyCalls[0].checkRevoked, true);
+    });
+
+    test('Failed token verification produces no Firestore writes', async () => {
+      // Seed an approved application in store
+      mockStore._store.set('consignment_applications/app-revoked-test', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-revoked-test'
+      });
+      mockStore._store.set('auctions/auction-revoked-test', {
+        id: 'auction-revoked-test',
+        title: 'Revoked Test Lot'
+      });
+
+      const initialStoreSize = mockStore._store.size;
+
+      // 1. Try with revoked token
+      const resRevoked = createMockResponse();
+      await handleAuthorizeApprovedConsignor(
+        { method: 'POST', headers: { authorization: 'Bearer revoked-token' } },
+        resRevoked,
+        { adminServices: { auth: mockAuth, firestore: mockStore } }
+      );
+      assert.strictEqual(resRevoked.statusCode, 401);
+      assert.strictEqual(mockStore._store.size, initialStoreSize);
+      assert.strictEqual(mockStore._store.has(`users/${SELLER_UID}`), false);
+      assert.strictEqual(mockStore._store.get('auctions/auction-revoked-test').sellerId, undefined);
+
+      // 2. Try with expired token
+      const resExpired = createMockResponse();
+      await handleAuthorizeApprovedConsignor(
+        { method: 'POST', headers: { authorization: 'Bearer expired-token' } },
+        resExpired,
+        { adminServices: { auth: mockAuth, firestore: mockStore } }
+      );
+      assert.strictEqual(resExpired.statusCode, 401);
+      assert.strictEqual(mockStore._store.size, initialStoreSize);
+      assert.strictEqual(mockStore._store.has(`users/${SELLER_UID}`), false);
+
+      // 3. Try with unverified email token
+      const resUnverified = createMockResponse();
+      await handleAuthorizeApprovedConsignor(
+        { method: 'POST', headers: { authorization: 'Bearer token-unverified' } },
+        resUnverified,
+        { adminServices: { auth: mockAuth, firestore: mockStore } }
+      );
+      assert.strictEqual(resUnverified.statusCode, 403);
+      assert.strictEqual(mockStore._store.size, initialStoreSize);
+      assert.strictEqual(mockStore._store.has('users/unverified-uid'), false);
     });
 
     test('Rejects token with missing email claim', async () => {
@@ -799,6 +890,84 @@ describe('M2.0B — /api/authorize-approved-consignor Endpoint Tests', () => {
       assert.strictEqual(res.data?.authorized, false);
       assert.strictEqual(res.data?.role, 'bidder');
       assert.strictEqual(mockStore._store.get('auctions/unrelated-auction-lot').sellerId, undefined);
+    });
+  });
+
+  // 9.5 Administrative root of trust and email verification authority tests (Correction A)
+  describe('9.5 Administrative Root of Trust & Email Verification Authority (Correction A)', () => {
+    test('Allowlisted but unverified account is not an administrator', () => {
+      // Primary designated admin unverified
+      const isAdmin1 = evaluateAdminAuthority({
+        email: 'jeremygoodmurphy@gmail.com',
+        emailVerified: false
+      });
+      assert.strictEqual(isAdmin1, false);
+
+      // Secondary designated admin unverified
+      const isAdmin2 = evaluateAdminAuthority({
+        email: 'jeremy@theinnovativegroup.ca',
+        emailVerified: false
+      });
+      assert.strictEqual(isAdmin2, false);
+    });
+
+    test('Verified non-allowlisted account is not an administrator', () => {
+      const isOrdinaryAdmin = evaluateAdminAuthority({
+        email: 'ordinary.bidder@example.com',
+        emailVerified: true
+      });
+      assert.strictEqual(isOrdinaryAdmin, false);
+
+      const isConsignorAdmin = evaluateAdminAuthority({
+        email: 'seller@wailtail.com',
+        emailVerified: true
+      });
+      assert.strictEqual(isConsignorAdmin, false);
+    });
+
+    test('Verified allowlisted account is an administrator', () => {
+      const isAdmin1 = evaluateAdminAuthority({
+        email: 'jeremygoodmurphy@gmail.com',
+        emailVerified: true
+      });
+      assert.strictEqual(isAdmin1, true);
+
+      const isAdmin2 = evaluateAdminAuthority({
+        email: 'jeremy@theinnovativegroup.ca',
+        emailVerified: true
+      });
+      assert.strictEqual(isAdmin2, true);
+
+      // Mixed-case normalization check
+      const isAdminMixed = evaluateAdminAuthority({
+        email: 'JeremyGoodMurphy@Gmail.COM',
+        emailVerified: true
+      });
+      assert.strictEqual(isAdminMixed, true);
+    });
+
+    test('Firestore isEmailVerified: true field cannot override user.emailVerified === false', () => {
+      // Allowlisted email with Firestore isEmailVerified: true but Firebase Auth user.emailVerified: false
+      const isAdmin = evaluateAdminAuthority(
+        { email: 'jeremygoodmurphy@gmail.com', emailVerified: false },
+        { isEmailVerified: true, role: 'admin' }
+      );
+      assert.strictEqual(isAdmin, false, 'Firestore profile isEmailVerified: true must NOT bypass unverified Firebase Auth state');
+    });
+
+    test('Firestore role: "admin" cannot establish administrator privileges for non-allowlisted user', () => {
+      const isAdmin = evaluateAdminAuthority(
+        { email: 'attacker@evil.com', emailVerified: true },
+        { role: 'admin', isEmailVerified: true }
+      );
+      assert.strictEqual(isAdmin, false, 'Mutable Firestore profile role must NOT establish admin authority');
+    });
+
+    test('Unauthenticated or missing user cannot be an administrator', () => {
+      assert.strictEqual(evaluateAdminAuthority(null), false);
+      assert.strictEqual(evaluateAdminAuthority(undefined), false);
+      assert.strictEqual(evaluateAdminAuthority({ email: null, emailVerified: true }), false);
+      assert.strictEqual(evaluateAdminAuthority({ email: '', emailVerified: true }), false);
     });
   });
 });

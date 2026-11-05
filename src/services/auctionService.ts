@@ -3118,8 +3118,12 @@ export async function setUserBannedStatus(userId: string, isBanned: boolean): Pr
 }
 
 /**
- * Admin: Set user email verified status
+ * Admin / Operational: Set user email verified status in Firestore
  * Persists updates atomically across Firestore 'users' and 'bidders' collections.
+ * 
+ * Note (M2.0B Correction A & B): This updates an informational profile field and directory record.
+ * It does NOT grant authentication trust, administrator privileges, or server-side consignor promotion,
+ * which strictly require Firebase Authentication email_verified token claims.
  */
 export async function setUserEmailVerified(userId: string, isVerified: boolean = true): Promise<void> {
   if (!userId) throw new Error('User ID is required to update email verification.');

@@ -857,6 +857,66 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
           );
         });
 
+        // Correction B: Owner cannot create their own profile with isEmailVerified: true when Firebase token is unverified
+        test(`Owner cannot create their own ${col} profile with isEmailVerified: true when token is unverified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: false
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Unverified Member',
+              role: 'bidder',
+              isEmailVerified: true,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // Correction B: Owner CAN create their own profile with isEmailVerified: false when Firebase token is unverified
+        test(`Owner can create their own ${col} profile with isEmailVerified: false when token is unverified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: false
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Unverified Member',
+              role: 'bidder',
+              isEmailVerified: false,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // Correction B: Owner CAN create their own profile with isEmailVerified: true when Firebase token IS verified
+        test(`Owner can create their own ${col} profile with isEmailVerified: true when token is verified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Verified Member',
+              role: 'bidder',
+              isEmailVerified: true,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
         // 3. Owner cannot create another UID's profile
         test(`3. Owner cannot create another UID's ${col} profile`, async () => {
           const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
@@ -1020,6 +1080,93 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
             );
           });
 
+          // Correction B: Owner cannot update their own isEmailVerified to true when token is unverified
+          test(`Owner cannot update their own isEmailVerified to true in ${col} when token is unverified (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const unverifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isEmailVerified: true
+              })
+            );
+          });
+
+          // Correction B: Unverified user CAN perform legitimate ordinary profile updates without touching isEmailVerified
+          test(`Unverified user can perform legitimate ordinary profile updates in ${col} without modifying isEmailVerified (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const unverifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                displayName: 'Updated Unverified Name',
+                phone: '416-555-0188',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // Correction B: Verified user CAN update their own isEmailVerified to true
+          test(`Verified user can update their own isEmailVerified to true in ${col} (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const verifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(verifiedCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isEmailVerified: true,
+                updatedAt: Date.now()
+              })
+            );
+          });
+
           // 9. Designated administrators retain authorized role-management capability
           test(`9. Designated administrator 1 retains authorized role-management capability in ${col}`, async () => {
             const adminCtx = testEnv.authenticatedContext('admin-uid-1', {
@@ -1112,6 +1259,72 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
       await assertFails(
         updateDoc(doc(db, 'users', OTHER_UID), {
           role: 'admin'
+        })
+      );
+    });
+
+    // Correction A & B: User cannot use isEmailVerified in users or bidders to gain administrator authority
+    test('Correction A & B: User cannot use isEmailVerified in users or bidders to gain administrator authority', async () => {
+      const nonAdminUid = 'non-admin-verified-uid';
+      const nonAdminEmail = 'user.with.verified.profile@wailtail.com';
+
+      // Seed profile with isEmailVerified: true and role: 'bidder'
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const rootDb = getNamedDb(context);
+        await setDoc(doc(rootDb, 'users', nonAdminUid), {
+          uid: nonAdminUid,
+          email: nonAdminEmail,
+          role: 'bidder',
+          isEmailVerified: true
+        });
+        await setDoc(doc(rootDb, 'bidders', nonAdminUid), {
+          uid: nonAdminUid,
+          email: nonAdminEmail,
+          role: 'bidder',
+          isEmailVerified: true
+        });
+      });
+
+      const userCtx = testEnv.authenticatedContext(nonAdminUid, {
+        email: nonAdminEmail,
+        email_verified: true
+      });
+      const db = getNamedDb(userCtx);
+
+      // Attempt to access admin collections (must fail because email is not designated admin)
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'dealer-bypass-attempt'), {
+          legalBusinessName: 'Bypass Inc.'
+        })
+      );
+
+      // Attempt to update another user's role (must fail)
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'admin'
+        })
+      );
+    });
+
+    // Allowlisted admin identity with unverified token cannot exercise administrator authority
+    test('Allowlisted admin with unverified Firebase token cannot exercise administrative authority', async () => {
+      const unverifiedAdminCtx = testEnv.authenticatedContext('admin-unverified-uid', {
+        email: ADMIN_1_EMAIL,
+        email_verified: false
+      });
+      const db = getNamedDb(unverifiedAdminCtx);
+
+      // Attempt to write to admin-only collection
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'unverified-admin-dealer'), {
+          legalBusinessName: 'Unverified Admin Corp.'
+        })
+      );
+
+      // Attempt to modify another user's role
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'seller'
         })
       );
     });
