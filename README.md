@@ -373,13 +373,13 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
       - Staging synchronized with `main` at the time of promotion.
       - Vercel production deployment confirmed Ready.
       - Cloud Firestore security rules separately deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
-40. **Consignment Application Security Hardening (M2.0A Milestone)**:
+41. **Consignment Application Security Hardening (M2.0A Milestone)**:
     - **Verified-Email Read Authorization**: Consignment application access requires an authenticated Firebase user whose verified email claim (`email_verified == true`) exactly matches the document's normalized `sellerEmail`. Access authorization is derived strictly from the cryptographic token claim rather than unverified client-supplied identifiers (`registeredUserId`).
     - **Creation & Modification Locks**: Non-admin creation strictly requires `status: 'pending'` and bars injection of administrator-controlled metadata, protected dealer verification fields, and registration linkage fields (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`). New M2.0A submissions no longer write these registration fields. Non-admin document updates and deletions are completely locked (`allow update, delete: if isAdmin();`). Guest submissions remain supported for initial intake.
     - **Historical Compatibility & Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` enforce identical security rules. Historical application documents retain legacy registration metadata without migration or deletion and remain readable by authorized applicants.
     - **Persistence & Notification Resilience**: Submissions normalize `sellerEmail` to lowercase upon creation. Primary persistence errors in `consignment_applications` propagate directly to the caller without synthetic fallback IDs, legacy dual-write is non-fatal best effort, and serverless notifications execute post-persistence in a non-blocking background routine with a 5000ms timeout guard.
     - **Emulator Verification**: 83 passing unit tests (`npm run test:rules`) executed against named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
-    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is fully implemented and verified on `staging`, awaiting production promotion. Downstream M2.0B role-escalation hardening (preventing user/bidder self-promotion and establishing trusted server-side authorization for `elevateApprovedConsignor`) remains outstanding and planned.
+    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is complete, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026. Downstream M2.0B role-escalation hardening (preventing user/bidder self-promotion and establishing trusted server-side authorization for `elevateApprovedConsignor`) remains the next milestone, not yet implemented.
 
 ---
 
@@ -468,16 +468,28 @@ Ensure valid 11-character video IDs or URLs are used. The application automatica
 
 ---
 
-## 5. Planned Features & Upcoming Releases
+## 5. Phase 1 Roadmap & Program Status
 
-The following features represent architectural enhancements identified for upcoming platform milestones. Both features are currently **planned** and **not yet implemented**.
+Wailtail is actively executing the **Phase 1 Verified Boutique Dealer Program**, establishing an institutional framework for licensed Canadian boutique classic and collector vehicle dealerships to consign and auction inventory alongside private sellers.
 
-### 1. Consignment Application Detail & Review
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**: A dedicated, read-only administrative inspection modal within the Admin Consignment Pipeline (`AdminPortalPage.tsx`). Provides comprehensive review of submitted vehicle specifications, provenance notes, seller contact details, submission timestamps, and lifecycle status. Introduces private administrative review notes, explicit separation between applicant-submitted declarations and administrator-verified metadata, and future pathways to request supplementary documentation from consignors.
-- **Architectural Requirements**: Opening or inspecting the detail view must never trigger implicit status transitions. Viewing data must never mutate submitted application documents. Status changes (approval, rejection, draft conversion) must remain explicit administrative actions. The existing private seller curation workflow must remain completely unaffected.
+For comprehensive milestone specifications, commercial boundaries, architecture, acceptance criteria, and release governance, refer to the authoritative [`SYSTEM_BIBLE.md`](SYSTEM_BIBLE.md).
 
-### 2. Optional Consignment Photo Upload
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**: Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`), with a strong recommendation for applicants to submit at least five initial photographs (JPEG, PNG, WebP). Features client-side image preview and removal before submission, secure upload directly to Firebase Cloud Storage, association of photo URLs with the consignment record, and private isolation of uploaded images until administrative curation and approval. Approved photos can subsequently be selected for transfer into the Listing Editor Workspace gallery.
-- **Architectural Requirements**: Binary photo payloads or Base64 strings must never be stored in Firestore documents. Existing Firebase Storage security rules, MIME validation, and file-size constraints must be audited prior to implementation. Clean lifecycle management and orphaned file cleanup must be established. Full compatibility with the existing Listing Editor media pipeline (`uploadImageToStorage`) must be maintained.
+### Program Status Summary (as of November 5, 2026)
+
+| Milestone | Title & Focus | Status | Details |
+| :--- | :--- | :--- | :--- |
+| **M1.0** | Dealer Foundation and Data Architecture | **COMPLETE** | Core schemas, TypeScript interfaces, and baseline security rules. |
+| **M1.1** | Dealer Verification Metadata and Security Hardening | **COMPLETE** | Dual-collection protection for all 6 trusted verification fields; 18/18 live probe checks passed; production deployed. |
+| **M2.0A** | Consignment Security and Persistence Hardening | **COMPLETE** | Verified-email applicant reads, token-derived auth, modification locks, 83 emulator tests; deployed to production with Cloud Firestore rules; production QA passed. |
+| **M2.0B** | Trusted Server-Side Role Authorization | **NEXT MILESTONE** | Firebase Admin SDK ID-token verification; trusted approved-consignor authorization; removal of client-side role elevation. *Not yet implemented.* |
+| **M2.1** | Administrative Consignment Application Review | **PLANNED** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
+| **M2.2** | Dealer Application and Intake | **PLANNED** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
+| **M2.3** | Manual Dealer Verification & Profile Creation | **PLANNED** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
+| **M2.4** | Dealer Vehicle Listing Integration | **PLANNED** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
+| **M2.5** | Public Dealer Presentation & Badging | **PLANNED** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
+| **M2.6** | Optional Private Application Photo Uploads | **PLANNED (GATED)** | Multi-photo upload in consignment intake; private Cloud Storage bucket; curation transfer to listing gallery. *Separately gated; non-blocker for core program.* |
+
+### Phase 1 Governance & Commercial Boundaries
+- **Core Milestone Execution Order**: M2.0B $\rightarrow$ M2.1 $\rightarrow$ M2.2 $\rightarrow$ M2.3 $\rightarrow$ M2.4 $\rightarrow$ M2.5 (with M2.6 separately gated and non-blocking).
+- **Commercial Invariants**: Exclusive vehicle ownership (no broker/pass-through inventory); one primary authorized representative per dealer; manual admin verification; verification decoupled from lot curation; private canonical profiles; $0 dealer listing fees, $0 commissions, $0 doc fees, and $0 buyer premiums.
+- **Detailed Specification**: See [`SYSTEM_BIBLE.md` (Section 11)](SYSTEM_BIBLE.md:2280) for authoritative requirements, dependencies, release gates, and Founding Dealer Pilot KPIs.

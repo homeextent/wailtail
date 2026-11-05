@@ -2200,9 +2200,9 @@ Following the M1 and M1.1 foundation, three specific architectural boundaries di
 ## 10. Consignment Application Security Hardening (M2.0A Milestone)
 
 ### 10.1 Strategic Context & Release Posture
-- **Implementation Status**: Fully implemented, verified with local unit testing, committed, and pushed to the `staging` branch (Commits: `ebf277406a591f40454ef86ec35bce3c2b3e2c4b`, `488cefc5fc946f499df31d47842f4a5ae95dc15a`).
-- **Release Posture**: M2.0A is currently verified on `staging` and awaiting production promotion. It is **not** deployed to production. Production promotion (via PR to `main`) and live Cloud Firestore rules deployment to GCP project `studio-apps-483721` remain pending.
-- **Milestone Scope**: Addresses M2.0A Consignment Application Security Hardening. Downstream M2.0B role-escalation hardening (securing `elevateApprovedConsignor` from client-driven role assignment to trusted serverless backend or admin custom claims) remains outstanding and planned.
+- **Implementation Status**: Fully implemented, verified with local unit testing, committed, deployed to production, and verified with production QA on November 5, 2026.
+- **Release Posture**: M2.0A is deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026.
+- **Milestone Scope**: Addresses M2.0A Consignment Application Security Hardening. Downstream M2.0B role-escalation hardening (securing `elevateApprovedConsignor` from client-driven role assignment to trusted serverless backend or admin custom claims) remains the next milestone, not yet implemented.
 
 ### 10.2 Final M2.0A Security & Authorization Model
 The M2.0A security model hardens consignment application intake and access control across Cloud Firestore rules (`firestore.rules`):
@@ -2273,44 +2273,256 @@ The M2.0A security model hardens consignment application intake and access contr
   - Full production compilation and typechecking succeeded with zero errors (`npm run build`).
 
 ### 10.5 Milestone Boundaries & Outstanding Work
-- **M2.0A Status**: Consignment application security hardening is complete and verified on the `staging` branch. New submissions no longer write legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`), applicant reads require verified email claims matching normalized `sellerEmail`, and creation/modification locks prevent unauthorized state tampering. Historical application records are retained without migration or deletion.
-- **M2.0B Outstanding**: Role-escalation hardening remains outstanding as future work. Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) is a legacy/current implementation operating under client-side `isOwner(uid)` Firestore security rules and is not a fully secured trusted authorization architecture. M2.0A did not implement the M2.0B role-escalation fix. M2.0B remains responsible for preventing user/bidder self-promotion and implementing trusted server-side authorization (e.g. serverless admin endpoints or Firebase Auth custom claims).
-- **Deployment Status**: Production promotion and Firestore rules deployment (`npm run deploy:rules`) remain pending.
+- **M2.0A Status**: Consignment application security hardening is complete, deployed to production, with Cloud Firestore rules deployed and required production QA passed on November 5, 2026. New submissions no longer write legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`), applicant reads require verified email claims matching normalized `sellerEmail`, and creation/modification locks prevent unauthorized state tampering. Historical application records are retained without migration or deletion.
+- **M2.0B Outstanding**: Role-escalation hardening remains the next milestone (not yet implemented). Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) is a legacy/current implementation operating under client-side `isOwner(uid)` Firestore security rules and is not a fully secured trusted authorization architecture. M2.0A did not implement the M2.0B role-escalation fix. M2.0B remains responsible for preventing user/bidder self-promotion and implementing trusted server-side authorization (e.g. serverless admin endpoints or Firebase Auth custom claims).
+- **Deployment Status**: Production deployment and Cloud Firestore rules deployment (`npm run deploy:rules`) are complete and verified in production.
 
 ---
 
-## 11. Planned Features & Upcoming Releases
+## 11. Authoritative Phase 1 Roadmap: Verified Boutique Dealer Program
 
-The following features represent architectural enhancements identified for subsequent platform milestones. Both features are currently **planned** and **not yet implemented**.
+### 11.1 Executive Summary & Current Program Status
+The Wailtail Verified Boutique Dealer Program establishes an institutional-grade, legally compliant operational framework enabling verified boutique automotive dealerships in Canada to consign and auction collector vehicles alongside private sellers.
 
-### 11.1 Consignment Application Detail & Review
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**:
-  - A comprehensive, read-only administrative detail view integrated into the existing Admin Consignment Pipeline (`AdminPortalPage.tsx`).
-  - Full inspection of submitted vehicle taxonomy, specifications, mechanical condition notes, seller contact details, and location data.
-  - Review of submission timestamps, current status, and historical review notes.
-  - Clear structural separation of applicant-supplied declarations (e.g. dealership name, license number) from trusted administrator-verified metadata.
-  - Private administrative review notes and curator annotations.
-  - Future possibility of requesting supplementary information or revised documentation from consignor applicants.
-- **Architectural Requirements**:
-  - Opening, inspecting, or closing the detail view must never trigger implicit status transitions.
-  - Inspection must be strictly read-only and never mutate submitted application documents.
-  - Status changes (approval, rejection, conversion to draft) must remain explicit administrative actions with confirmation dialogs.
-  - Full backward compatibility with the existing private-seller curation workflow must be preserved.
+**Authoritative Program Status (as of November 5, 2026)**:
+- **M1.0 — Dealer Foundation and Data Architecture**: **COMPLETE**.
+- **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
+- **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
+- **M2.0B — Trusted Server-Side Role Authorization**: **NEXT MILESTONE — NOT YET IMPLEMENTED**.
+- **M2.1 through M2.6**: **PLANNED**.
 
-### 11.2 Optional Consignment Photo Upload
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**:
-  - Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`).
-  - Clear guidance and strong recommendation for applicants to submit at least five representative photographs covering key vehicle angles.
-  - File format support for JPEG, PNG, and WebP assets.
-  - Client-side image previews and individual photo removal controls prior to final application submission.
-  - Secure upload directly to Firebase Cloud Storage, returning lightweight download URLs.
-  - Association of submitted image URLs with the consignment application record in Firestore.
-  - Isolation of uploaded photos within private administrative review workflows until appropriate curation, verification, and approval.
-  - Capability for administrators to review and select submitted photos for direct transfer into the Listing Editor Workspace media gallery upon draft conversion.
-- **Architectural Requirements**:
-  - Binary image data or Base64 payloads must never be stored in Firestore documents.
-  - Pre-implementation audit of existing Firebase Cloud Storage configuration, security rules, and bucket access controls.
-  - Enforcement of client-side file-size limits, MIME type validation, and automated cleanup routines for orphaned uploads from abandoned submissions.
-  - Full architectural compatibility with the existing Listing Editor media pipeline (`uploadImageToStorage`) and canvas compression helpers.
+The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
+
+### 11.2 Phase 1 Strategic Objectives
+1. **Curated Commercial Integrity**: Support licensed Canadian boutique automotive dealers with curated collector inventory while preserving Wailtail's enthusiast-first, peer-to-peer auction culture.
+2. **Transparent Canadian CAD Financial Model**: Uphold a zero-friction fee structure for Phase 1: $0 dealer listing fees, 0% platform success commissions, strictly prohibited dealer documentation fees ($0 CAD dealer doc fee), and 0% buyer premiums.
+3. **Provincial Regulatory Compliance**: Architect identity, disclosures, and seller warranties to align with Canadian motor vehicle dealer governance (e.g., OMVIC in Ontario, VSA in British Columbia, AMVIC in Alberta) without Wailtail assuming regulatory co-endorsement or dealer-of-record liability.
+4. **Defense-in-Depth Security**: Enforce administrative-only control over verification credentials, immutable audit logs, strict token-based authorization, and trusted server-side role assignment.
+5. **Decoupled Editorial & Identity Curation**: Maintain strict architectural and operational separation between dealership business verification and individual vehicle lot curation.
+
+### 11.3 Commercial & Product Scope Boundaries
+To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces the following commercial and product boundaries:
+
+- **Exclusive Vehicle Ownership & Seller of Record**: Consigning dealers must be the registered legal owner and sole seller of record for every consigned vehicle. No brokered vehicles, third-party consignments-to-dealer, or private-owner pass-through inventory are permitted under any circumstances.
+- **Authorized Representation**: In Phase 1, each verified dealership is represented by exactly one primary authorized representative (`primaryRepresentativeUid`). Multi-user dealership staff accounts, sub-user access delegation, and shared login credentials are strictly prohibited and out of scope.
+- **Manual Administrator Verification**: Dealer verification is performed manually by Wailtail administrators. No self-service or automated verification pathways exist.
+- **Verification Decoupled from Lot Curation**: Verification of a dealership entity confirms business legitimacy only. It does not grant automatic lot approvals or bypass individual vehicle provenance inspection and editorial review.
+- **Private Canonical Profiles**: Dealer profiles (`dealer_profiles/{dealerId}`) remain strictly private and accessible only to administrators. There are no public dealer profile landing pages or showcase directories in Phase 1.
+- **Showroom Location Precision**: Public dealer showroom location disclosures are strictly limited to City and Province (city-level precision only). Specific street addresses are withheld from public catalog listings.
+- **Conditional Contact Disclosure**: Dealership phone numbers and websites are displayed on vehicle lots only when the dealer explicitly opts in via dedicated visibility flags (`displayPhonePublicly`, `displayWebsitePublicly`).
+- **Dealer License Disclosure Policy**: Dealer license numbers and licensing jurisdictions are captured privately for compliance auditing. They **must not** be populated in publicly readable auction snapshots until formal legal counsel provides jurisdiction-specific authorization.
+- **No Regulatory Endorsement**: Approved dealer presentation badges indicate platform identity verification only and must explicitly disclaim provincial regulatory endorsement.
+- **Tax Handling Model**: The platform provides informational tax indicators (`taxHandling`, `taxDisclaimerVersion`) to clarify whether sales tax is collected by the dealer at settlement or paid by the buyer upon registration. The platform executes no automated tax calculations.
+- **Zero-Dollar Commercial Model**: Phase 1 operates without financial transaction processing: $0 dealer listing fees, $0 platform commission, $0 dealer documentation fees, and $0 buyer fees.
+- **Explicit Phase 1 Exclusions**: The following capabilities are explicitly deferred to future phases:
+  - Stripe or merchant payment integrations.
+  - Billing, credits, deposits, subscriptions, invoicing, or refunds.
+  - Dealership staff permission hierarchies or multi-seat access.
+  - Consignment broker or private pass-through inventory.
+  - Public dealer showcase directories or branded microsites.
+  - Dealership inventory analytics, fleet management tools, or CRM integrations.
+
+### 11.4 Milestone Blueprint & Execution Sequencing
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                             PHASE 1 ROADMAP OVERVIEW                             │
+├────────────────────┬───────────────────────────────────────┬─────────────────────┤
+│ Milestone          │ Title & Description                   │ Status              │
+├────────────────────┼───────────────────────────────────────┼─────────────────────┤
+│ M1.0               │ Dealer Foundation & Data Architecture │ COMPLETE            │
+│ M1.1               │ Dealer Verification Security          │ COMPLETE            │
+│ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
+│ M2.0B              │ Trusted Server-Side Authorization     │ NEXT (NOT IMPL.)    │
+│ M2.1               │ Admin Consignment Review              │ PLANNED             │
+│ M2.2               │ Dealer Application Intake             │ PLANNED             │
+│ M2.3               │ Manual Dealer Verification & Profiles │ PLANNED             │
+│ M2.4               │ Dealer Vehicle Listing Integration    │ PLANNED             │
+│ M2.5               │ Public Dealer Presentation & Badging  │ PLANNED             │
+│ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
+└────────────────────┴───────────────────────────────────────┴─────────────────────┘
+```
+
+#### M1.0 — Dealer Foundation and Data Architecture
+- **Status**: **COMPLETE**.
+- **Objectives**: Establish foundational TypeScript interfaces, data models, and database security rules to support verified dealer entities and dealer auction metadata.
+- **Business Rationale**: Provides the data contracts required for dealer identity, audit records, and listing snapshots without altering existing private seller workflows.
+- **Key Deliverables**:
+  - `CanadianProvinceOrTerritory` 13-region union type in `src/types.ts`.
+  - Canonical `DealerProfile` interface for private dealership records.
+  - `DealerListingSnapshot` interface capturing immutable snapshot attributes for vehicle auctions.
+  - `DealerVerificationAudit` interface tracking administrative verification history.
+  - Core `Auction` interface extensions: `sellerType?: 'private' | 'dealer'`, `dealerId?: string`, `dealerSnapshot?: DealerListingSnapshot`, `dealerDocFee?: 0`, `taxHandling`, and `taxDisclaimerVersion`.
+  - `UserProfile` and `BidderProfile` identity linkage via optional `dealerId?: string`.
+  - Consignment application applicant declaration schemas (`applicantType`, `dealershipName`, `dealerLicenseNumber`, etc.).
+  - Initial Cloud Firestore rules (`firestore.rules`) restricting `/dealer_profiles` and `/dealer_verification_audits` to administrators and blocking non-admin user/bidder `dealerId` modifications.
+- **Dependencies**: Baseline multi-car platform architecture.
+- **Exit Criteria**: All data schemas compile cleanly; non-admin users cannot create or mutate dealer profiles or inject `dealerId` on user accounts.
+
+#### M1.1 — Dealer Verification Metadata and Security Hardening
+- **Status**: **COMPLETE**.
+- **Objectives**: Harden database access rules across consignment applications to protect all trusted administrator verification fields.
+- **Business Rationale**: Prevents malicious consignors or unauthorized callers from spoofing verified dealer credentials or falsifying verification metadata.
+- **Key Deliverables**:
+  - Strict audit action literals (`'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated'`) and status literals (`'pending' | 'verified' | 'rejected' | 'suspended'`) in `src/types.ts`.
+  - Explicit protection of all six trusted administrator verification fields in `firestore.rules`: `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, and `verificationRecordVersion`.
+  - Symmetric rules coverage across both `consignment_applications` and legacy `consignments` collections.
+  - Non-admin creation and modification locks preventing mutation of applicant declarations or verification metadata.
+  - Authenticated security probe (`DealerRulesSecurityProbe.tsx`) validating 18/18 negative and positive authorization checks against live Cloud Firestore rules.
+  - Production promotion via PR #1 to `main` (commit `cbae9be76c339a4eb8b03fa13fcebdfe80353dda`), Vercel production deployment, and Firestore rules deployment to GCP project `studio-apps-483721`.
+- **Dependencies**: M1.0 completion.
+- **Exit Criteria**: 18/18 security probe checks pass; clean production deployment; production smoke tests verified.
+
+#### M2.0A — Consignment Security and Persistence Hardening
+- **Status**: **COMPLETE — PRODUCTION QA PASSED**.
+- **Objectives**: Harden consignment application access authorization, decouple applicant reads from unverified client data, lock non-admin mutations, and stabilize persistence.
+- **Business Rationale**: Secures seller application data under PIPEDA privacy standards, prevents data tampering, and ensures resilient intake without false failure alerts.
+- **Key Deliverables**:
+  - Verified-email applicant read authorization (`request.auth.token.email_verified == true` matching lowercased `sellerEmail`).
+  - Authorization derived strictly from verified Firebase Auth token email claims rather than unverified client-supplied identifiers (`registeredUserId`).
+  - Strict creation safeguards: non-admin submissions require `status == 'pending'` and reject all 12 protected dealer fields and 7 administrative metadata fields.
+  - Discontinuation of legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`) on new submissions while maintaining non-destructive compatibility with historical records.
+  - Non-admin update and delete locks (`allow update, delete: if isAdmin();`).
+  - Normalized lowercase `sellerEmail` formatting on intake persistence in `auctionService.ts`.
+  - Primary persistence error propagation without synthetic fallback IDs; non-fatal legacy dual-write; non-blocking notification dispatch with 5000ms timeout guard.
+  - 83 passing unit tests in Firebase Local Emulator Suite targeting named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` (`npm run test:rules`).
+  - Deployed to production, Cloud Firestore rules deployed to GCP project `studio-apps-483721`, and required production QA verified on November 5, 2026.
+- **Dependencies**: M1.1 completion.
+- **Exit Criteria**: 83/83 rules unit tests pass; production deployment verified; Cloud Firestore rules deployed; production QA confirmed.
+
+#### M2.0B — Trusted Server-Side Role Authorization
+- **Status**: **NEXT MILESTONE — NOT YET IMPLEMENTED**.
+- **Objectives**: Transition role promotion and approved-consignor workspace authorization from legacy client-side execution to a secure, trusted server-side architecture.
+- **Business Rationale**: Eliminates the critical vulnerability where client-side code (`elevateApprovedConsignor`) promotes users to `'seller'` under client-controlled `isOwner(uid)` Firestore rules, preventing client-side privilege escalation or unauthorized self-promotion.
+- **Key Deliverables**:
+  - Secure serverless endpoint or Firebase Cloud Function utilizing Firebase Admin SDK.
+  - Cryptographic validation of caller ID tokens (`admin.auth().verifyIdToken()`).
+  - Server-side verification that the authenticated user's verified email matches an approved consignment application document (`status == 'approved'`).
+  - Atomic, trusted server-side role assignment across `users/{uid}` and `bidders/{uid}` collections.
+  - Removal of client-side role elevation mutations from `AuthContext.tsx`.
+  - Hardening of Firestore security rules to deny non-admin users the ability to mutate `role` fields on their own `users` or `bidders` documents (`!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])`).
+  - Comprehensive unit and integration test coverage verifying positive approved promotion and rejecting unapproved or self-promotion attempts.
+- **Dependencies**: M2.0A production baseline.
+- **Exit Criteria**: Non-admin users cannot mutate `role` via Firestore SDK; approved consignor onboarding flow elevates roles exclusively through trusted serverless validation; passing test suite.
+
+#### M2.1 — Administrative Consignment Application Review
+- **Status**: **PLANNED**.
+- **Objectives**: Build a dedicated, read-only administrative inspection view within the Admin Consignment Pipeline for reviewing submitted consignment and dealer applications.
+- **Business Rationale**: Empowers curators to thoroughly evaluate submitted vehicle particulars, condition disclosures, and applicant credentials before making approval or rejection decisions.
+- **Key Deliverables**:
+  - Dedicated read-only application detail inspection modal in `AdminPortalPage.tsx`.
+  - Comprehensive surfacing of vehicle taxonomy, mechanical condition, contact details, and location data.
+  - Clear visual demarcation distinguishing applicant-submitted declarations from administrator-verified information.
+  - Audit trail displaying submission timestamps, review history, and curator assignments.
+  - Private administrative review notes and internal curator annotations.
+  - Safeguards ensuring opening or inspecting applications never triggers implicit status transitions.
+- **Dependencies**: M2.0B completion.
+- **Exit Criteria**: Curators can inspect complete application records; administrative notes persist securely; viewing records never mutates document status; private seller curation workflows remain intact.
+
+#### M2.2 — Dealer Application and Intake
+- **Status**: **PLANNED**.
+- **Objectives**: Introduce structured boutique dealer intake capabilities into the consignment application workflow.
+- **Business Rationale**: Enables prospective boutique dealers to submit verified commercial credentials and formal declarations during initial platform intake.
+- **Key Deliverables**:
+  - Dealer applicant classification toggle in `ConsignmentModal.tsx` (`applicantType: 'private' | 'dealer'`).
+  - Structured dealer intake fields: legal business name, trade name / DBA, provincial dealer license number, and licensing jurisdiction dropdown (`CanadianProvinceOrTerritory`).
+  - Primary authorized representative contact details.
+  - Mandatory clickwrap declarations:
+    1. Exclusive vehicle ownership warranty (confirming dealership owns the consigned vehicle with clean title).
+    2. Legal seller-of-record declaration (confirming dealership acts as legal seller and assumes statutory retail obligations).
+    3. Prohibition of third-party brokered or private pass-through inventory.
+  - Client-side and server-side validation enforcing all required dealer fields and declarations.
+- **Dependencies**: M2.1 completion.
+- **Exit Criteria**: Dealers can submit complete commercial applications; missing declarations block submission; submitted records persist securely with pending status without exposing administrative metadata.
+
+#### M2.3 — Manual Dealer Verification and Canonical Profile Creation
+- **Status**: **PLANNED**.
+- **Objectives**: Build administrative verification tooling to review dealer credentials, verify provincial regulatory licenses, generate canonical dealer profiles, and log audit trails.
+- **Business Rationale**: Enforces strict human verification of dealer credentials before granting boutique dealer status, ensuring regulatory compliance.
+- **Key Deliverables**:
+  - Dedicated Dealer Verification management interface within `AdminPortalPage.tsx`.
+  - Manual verification workflow enabling administrators to record verification methodology (e.g., OMVIC registry check, provincial corporate registry verification).
+  - Creation of canonical `dealer_profiles/{dealerId}` records capturing verified legal entities, primary representatives, and public contact visibility toggles.
+  - Linking verified `dealerId` to the authorized representative's user profile (`users/{userId}` and `bidders/{userId}`).
+  - Append-only audit record creation in `dealer_verification_audits/{auditId}` for every verification, modification, suspension, or rejection.
+  - Verification expiry tracking and administrative suspension controls.
+  - Operational separation ensuring dealer verification remains independent of vehicle lot curation.
+- **Dependencies**: M2.2 completion.
+- **Exit Criteria**: Only administrators can create or update dealer profiles; all verification actions generate immutable audit records; suspension instantly halts dealer listing capabilities; zero automatic lot curation approvals.
+
+#### M2.4 — Dealer Vehicle Listing Integration
+- **Status**: **PLANNED**.
+- **Objectives**: Integrate verified dealer attribution and point-in-time dealer snapshots into vehicle draft and listing authoring workflows.
+- **Business Rationale**: Connects approved dealer inventory to the dealer's verified business identity while ensuring immutable historical lot records and fee compliance.
+- **Key Deliverables**:
+  - Approved dealer attribution in `convertConsignmentToDraftListing()` and `ListingEditorWorkspace.tsx`.
+  - Protected assignment of `dealerId` and creation of point-in-time `dealerSnapshot` on `auctions/{auctionId}`.
+  - Snapshot population using approved public-safe dealership metadata (`dealershipName`, `displayName`, `dbaName`, `city`, `province`, conditional `phone` and `website`).
+  - Strict enforcement of $0 documentation fee (`dealerDocFee: 0`).
+  - Tax handling indicator configuration (`taxHandling`, `taxDisclaimerVersion`).
+  - Listing Editor controls allowing authorized dealer representatives to manage draft narrative and media while protecting dealer verification snapshot fields from tampering.
+- **Dependencies**: M2.3 completion.
+- **Exit Criteria**: Dealer vehicle drafts correctly link to verified dealer identities; dealer snapshot is protected from non-admin modification; $0 doc fee is locked; dealer representative can edit narrative and media for assigned lots.
+
+#### M2.5 — Public Dealer Presentation and Auction Integration
+- **Status**: **PLANNED**.
+- **Objectives**: Deliver polished, transparent public dealer presentation elements across the catalog grid, auction lot headers, and promotional marketing kits.
+- **Business Rationale**: Enhances buyer trust and marketplace transparency by clearly distinguishing verified boutique dealer inventory from private party lots.
+- **Key Deliverables**:
+  - Distinctive "Verified Boutique Dealer" badges on catalog cards (`CatalogCard.tsx`) and auction headers (`AuctionHeader.tsx`).
+  - Privacy-conscious showroom disclosures: City and Province only (no street addresses).
+  - Conditional contact displays: dealership phone number and website rendered only when explicit opt-in flags (`displayPhonePublicly`, `displayWebsitePublicly`) are active.
+  - Clear legal disclaimers stating verification confirms platform identity and exclusive inventory ownership without implying provincial regulatory endorsement.
+  - Dealer license number and jurisdiction strictly excluded from public display pending formal legal counsel authorization.
+  - Tailored social marketing templates in `SocialPromoKitModal.tsx` highlighting verified boutique dealer provenance.
+- **Dependencies**: M2.4 completion.
+- **Exit Criteria**: Public auction lots render verified dealer badges; street addresses and license numbers are withheld; phone/website display adheres to opt-in flags; disclaimers render accurately across all viewports.
+
+#### M2.6 — Optional Private Application Photo Uploads
+- **Status**: **PLANNED — SEPARATELY GATED**.
+- **Objectives**: Provide an optional multi-photo upload mechanism within initial consignment intake to assist curation triage.
+- **Business Rationale**: Improves early curation evaluation by enabling applicants to submit photos during initial intake. Separately gated so it does not block completion of the core dealer program.
+- **Key Deliverables**:
+  - Optional multi-image upload dropzone in `ConsignmentModal.tsx` (recommending 5+ photos covering exterior, interior, engine, and flaws).
+  - Client-side image preview, reordering, and deletion before submission.
+  - Secure upload directly to private Firebase Cloud Storage buckets (`consignment_uploads/{appId}/*`).
+  - Private Cloud Storage security rules restricting asset access strictly to the authenticated applicant and administrators.
+  - Association of image download URLs or storage paths with the consignment application document in Firestore.
+  - Administrative curation review in `AdminPortalPage.tsx` with 1-click photo transfer into the Listing Editor Workspace media gallery upon approval.
+  - Automated or administrative cleanup routine purging orphaned storage assets from abandoned submissions.
+- **Dependencies**: M2.1 completion. **Explicitly independent of M2.2–M2.5**; does not gate core dealer program delivery.
+- **Exit Criteria**: Applicants can optionally upload images; unauthenticated or unauthorized users cannot access uploaded photos; binary data is never stored in Firestore; core dealer program can launch with or without M2.6.
+
+### 11.5 Release Governance & Quality Gates
+Every milestone in the Phase 1 roadmap must satisfy rigorous, independent release governance gates before promotion:
+
+1. **Independent Milestone Gates**: Each milestone possesses dedicated design specifications, implementation scope, test suites, documentation updates, and production verification criteria. No milestone may claim completion based on downstream or partial work.
+2. **Staging Validation Gate**: All functionality, database migrations, and security rules must be fully deployed and tested on the `staging` branch. Unit tests, emulator tests, and manual regression checks must pass 100%.
+3. **Explicit Production Promotion Authorization**: Promotion from `staging` to `main` requires an authorized Pull Request, clean branch synchronization, and explicit engineering sign-off. Merging directly to `main` without staging validation is strictly forbidden.
+4. **Separate Cloud Firestore Rules Deployment**: Cloud Firestore security rules deployments are separate manual operations executed via `npm run deploy:rules`. Code builds or Vercel deployments do not deploy database security rules.
+5. **Build Verification vs. Milestone Completion**: Successful TypeScript compilation (`npm run build`) is a prerequisite but does not alone establish milestone completion.
+6. **Production QA Evidence Gate**: Milestones cannot be closed or recorded as complete in release history without verified production QA evidence, including live database verification, security rule probes, and production smoke testing.
+
+### 11.6 Founding Dealer Pilot Objectives & Key Performance Indicators (KPIs)
+Prior to declaring broad public availability of the boutique dealer program, Wailtail will conduct a controlled Founding Dealer Pilot with 3 to 5 hand-selected Canadian boutique collector vehicle dealerships.
+
+**Pilot Strategic Objectives**:
+- Validate the operational viability of manual dealer verification with live regulatory bodies (e.g., OMVIC, VSA).
+- Validate the dealer onboarding experience, inventory intake, and draft authoring workflows.
+- Confirm buyer receptivity and trust regarding dealer badges, tax indicators, and $0 doc fee disclosures.
+- Stress-test the exclusive vehicle ownership warranty and ensure zero pass-through or brokered inventory reaches the platform.
+
+**Pilot Key Performance Indicators (KPIs)**:
+1. **Verification Cycle Time**: Average time from dealer application submission to manual administrative verification decision $\le 48\text{ hours}$.
+2. **Listing Curation Turnaround**: Average time from dealer inventory submission to curated draft ready for scheduling $\le 72\text{ hours}$.
+3. **Exclusive Ownership Integrity**: 100% compliance with exclusive ownership warranties; 0 incidents of brokered, third-party, or private-owner pass-through inventory.
+4. **Fee Compliance**: 100% adherence to the zero-dollar fee model; 0 dealer documentation fee infractions ($0 CAD doc fee strictly upheld).
+5. **Regulatory & Advertising Compliance**: 0 provincial regulatory complaints, advertising infractions, or consumer disclosure disputes across all pilot lots.
+6. **Dealer Satisfaction Score**: Net promoter satisfaction score $\ge 90\%$ among pilot dealers regarding listing presentation and curation support.
+
+### 11.7 Definition of Phase 1 Completion
+The Wailtail Phase 1 Verified Boutique Dealer Program is formally defined as complete when:
+1. **Core Milestones Delivered**: Milestones M1.0, M1.1, M2.0A, M2.0B, M2.1, M2.2, M2.3, M2.4, and M2.5 are fully implemented, verified in staging, promoted to `main`, deployed to production with active Cloud Firestore security rules, and validated with documented production QA evidence.
+2. **Separately Gated Milestones**: Milestone M2.6 (Optional Private Application Photo Uploads) is either completed or formally confirmed as decoupled from the core dealer release.
+3. **Founding Dealer Pilot Executed**: The Founding Dealer Pilot has concluded with all 6 pilot KPIs satisfied.
+4. **Documentation Synchronized**: All system bibles, API references, user documentation, and changelogs reflect the production state with zero roadmap or status contradictions.

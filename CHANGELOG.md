@@ -8,9 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.0A — Consignment Application Security Hardening (Staging Verification)
+### Next Milestone
+- **M2.0B — Trusted Server-Side Role Authorization**:
+  - **Status**: NEXT MILESTONE — NOT YET IMPLEMENTED.
+  - Scope includes Firebase Admin SDK ID-token verification, trusted approved-consignor authorization, consistent users/bidders role assignment, prevention of client-side privilege escalation, and removal of client-side self-promotion.
 
-> **Release Status**: Implemented, verified, committed, and pushed to the `staging` branch (Commits: `ebf277406a591f40454ef86ec35bce3c2b3e2c4b`, `488cefc5fc946f499df31d47842f4a5ae95dc15a`). Awaiting production promotion and Firestore security rules deployment to GCP project `studio-apps-483721`. M2.0B role-escalation hardening remains outstanding. This release is not yet deployed to production.
+### Planned Milestones
+- **M2.1 — Administrative Consignment Application Review**: PLANNED. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
+- **M2.2 — Dealer Application and Intake**: PLANNED. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
+- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: PLANNED. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
+- **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
+- **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
+- **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
+
+---
+
+## 2026-11-05 — Consignment Security & Persistence Hardening (M2.0A Milestone)
+
+### M2.0A — Consignment Security & Persistence Hardening
+
+> **Release Status**: COMPLETE — PRODUCTION QA PASSED. Implemented, verified with emulator test suite, committed, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026.
 
 - **Consignment Application Security Hardening (`firestore.rules`)**:
   - **Verified-Email Authorization for Applicant Reads**: Restructured read authorization for consignment documents. Applicants must be authenticated, have a non-null email claim in their Firebase Auth token, have `email_verified == true`, and have their lowercased authenticated email claim match `resource.data.sellerEmail`.
@@ -30,12 +47,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Emulator Security Verification & Build Validation**:
   - **83 Passing Firestore Rules Emulator Unit Tests (`tests/firestore.rules.test.ts`)**: Successfully executed full unit test suite targeting named Firestore database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` via `npm run test:rules`.
   - **Test Suite Coverage**: Validated guest application creation, authenticated creation, creation status enforcement, rejection of unauthorized creation metadata (11 administrator/role fields + 12 protected dealer fields across both collections), verified-email applicant read authorization, unverified email read rejection, missing email claim read rejection, unrelated applicant read denial, unscoped query rejection, email-scoped query authorization, administrator full query/document access, non-admin update denial, non-admin delete denial, legacy collection parity, and named database isolation.
-  - **Testing Boundaries**: Emulator tests validate rule logic within local emulator suites (`@firebase/rules-unit-testing`) and do not constitute live production penetration testing, nor do they imply that production Firestore rules on GCP have been updated prior to formal deployment.
+  - **Testing Boundaries**: Emulator tests validate rule logic within local emulator suites (`@firebase/rules-unit-testing`) and do not constitute live production penetration testing. Production rules were separately deployed and verified with production QA.
   - **Build Verification**: Verified zero TypeScript or bundling errors via `npm run build`.
 
 - **Milestone Scope & Roadmap Distinction**:
   - Implements the M2.0A Consignment Application Security Hardening scope.
-  - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains outstanding as upcoming work.
+  - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains the next milestone, not yet implemented.
+  - Milestones M2.1 through M2.6 remain planned.
 
 ---
 
