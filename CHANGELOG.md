@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security — Server-Authorized Administrator Account Deletion (Staging)
+
+- **Implementation commit**: [`860042bc35fcc98246f6385a035fc08d3c84d01f`](https://github.com/homeextent/wailtail/commit/860042bc35fcc98246f6385a035fc08d3c84d01f) hardens `api/admin-delete-user.ts` and the production client service `deleteUserRecord()`.
+- **Verified administrator authority**: The endpoint accepts POST only, verifies a Firebase ID token with revocation checking, requires `email_verified === true`, and authorizes only the two designated administrator emails through the shared `src/config/adminConfig.ts` allowlist. Administrator UID/email are derived from the verified token; request-body `adminUid` is not trusted.
+- **Deletion safeguards**: Rejects self-deletion and protects both designated administrator accounts by checking the target Auth identity and independently resolving current designated administrator Auth UIDs by allowlisted email. Unexpected lookup failures fail closed.
+- **Server-owned cleanup**: The server deletes the target Firebase Auth identity and then cleans direct `users/{uid}` and `bidders/{uid}` documents plus legacy documents with an exact matching `uid` field. Email-only deletion queries are not used. The client sends only `{ uid }` with a Bearer token and has no client-side Firestore fallback.
+- **Partial-failure and retry behaviour**: Firebase Auth deletion and Firestore cleanup are not atomic. Query or batch failures return HTTP 500 (`admin/incomplete-deletion`); a retry tolerates an already-absent Auth identity and retries Firestore cleanup. Exact-UID query errors are not swallowed.
+- **Regression coverage**: 44 administrator account-deletion tests and 41 approved-consignor endpoint tests (85 combined `npm run test:endpoint` tests); 126 Firestore rules tests. Roo Code reported `npm run lint`, `npx tsc --noEmit`, `npm run build`, endpoint tests, rules tests and `git diff --check` passing before the commit. This is reported local verification, not confirmation of a GitHub Actions run for this commit.
+- **Known limitation**: If a designated administrator Auth identity is already absent, lookup by email cannot recover its former UID. Protecting orphaned administrator profile documents in that exceptional state requires stable administrator UIDs in protected server configuration.
+- **Release boundary**: Committed and pushed to `staging`; not production-deployed. Auction ownership and mutation authorization remains a separate production security blocker.
+
 ### Development & Continuous Integration
 - **GitHub Actions CI workflow (`.github/workflows/ci.yml`)**: Added automated validation on pushes to `staging` and `main`, pull requests targeting those branches, and manual workflow dispatch. The job uses Node.js 22 and Java 21, installs dependencies with `npm ci`, then runs the production build/TypeScript checks, ESLint, endpoint tests, and Firestore security rules emulator tests.
 - **ESLint configuration and dependencies**: Added the ESLint flat configuration (`eslint.config.js`) and required development dependencies. React Hooks Rules of Hooks violations are enforced; broader lint adoption remains progressive, with selected legacy rules intentionally not enforced yet.
@@ -50,7 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Graceful Error Handling**: Detects `auth/id-token-revoked` and rejects revoked tokens with HTTP 401 and code `auth/id-token-revoked` without executing any Firestore writes or mutating consignor/auction linkages.
 
 - **Separate Production Blockers Identified**:
-  - **Production blocker — server-side administrator authorization required for account deletion**: `api/admin-delete-user.ts` currently accepts caller-supplied `uid` and `adminUid` without validating a Firebase ID token or verifying administrator authority on the server. Requires token-verified designated administrator authorization before production deployment.
+  - **Administrator account-deletion blocker (subsequently resolved on staging)**: At the M2.0B review point, `api/admin-delete-user.ts` still accepted caller-supplied `uid` and `adminUid` without server-side token verification. This was subsequently corrected in staging commit `860042bc35fcc98246f6385a035fc08d3c84d01f`; the endpoint is not yet production-deployed. The separate auction ownership and mutation authorization blocker remains open.
   - **Production blocker — auction ownership and mutation authorization**: Firestore auction update/delete rules remain overly permissive; ownership-related fields (`sellerId`, `sellerName`) require strict server-side or rules-level mutation locks to prevent unauthorized lot reassignment.
 
 - **Correction D — Transactional Approval Revalidation & Retry-Safe Results (`api/authorize-approved-consignor.ts`, `tests/authorize-approved-consignor.test.ts`)**:
