@@ -588,7 +588,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     const targetEmail = confirmDeleteUser.email || 'User';
     setDeletingUser(true);
     try {
-      await deleteUserRecord(targetId, currentAdminId);
+      await deleteUserRecord(targetId);
       setBiddersList(prev => prev.filter(b => b.uid !== targetId));
       setBiddersTotal(prev => Math.max(0, prev - 1));
       showToast(`Permanently deleted account for ${targetEmail}.`);

@@ -21,8 +21,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { db, auth } from '../firebase';
-import { storage } from './firebase';
+import { db, auth, storage } from '../firebase';
 import { 
   Auction, 
   Bid, 
@@ -3160,63 +3159,67 @@ export async function setUserEmailVerified(userId: string, isVerified: boolean =
 }
 
 /**
- * Permanent User Deletion Service
- * First dispatches an administrative deletion request to /api/admin-delete-user to remove
- * the target identity from Firebase Authentication.
- * If the serverless proxy is unreachable (e.g. ECONNREFUSED on port 3000 in local dev),
- * or the identity is not found (HTTP 404 / user-not-found) or already orphaned, falls back
- * safely to purge matching user documents from both 'users' and 'bidders' Firestore collections.
+ * Client-Side Administrator Account Deletion Service
+ * Dispatches an authenticated administrator deletion request to /api/admin-delete-user.
+ * Server is the sole authority for deleting both the Firebase Authentication identity
+ * and associated Firestore profile documents across 'users' and 'bidders'.
+ * Client-side Firestore fallback purging is strictly forbidden.
  */
-export async function deleteUserRecord(userId: string, adminUid?: string): Promise<void> {
+export interface DeleteUserRecordOptions {
+  auth?: { currentUser: { getIdToken: () => Promise<string> } | null };
+  fetch?: typeof fetch;
+}
+
+export async function deleteUserRecord(
+  userId: string,
+  options?: DeleteUserRecordOptions
+): Promise<void> {
   const cleanId = userId?.trim();
   if (!cleanId) throw new Error('User ID is required for deletion.');
 
-  const resolvedAdminUid = (adminUid || auth?.currentUser?.uid || '').trim();
-
-  // 1. Call serverless deletion endpoint to remove Auth identity wrapped in dedicated try/catch
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    try {
-      const response = await fetch('/api/admin-delete-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: cleanId,
-          adminUid: resolvedAdminUid || cleanId
-        }),
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        console.warn('[deleteUserRecord] Auth serverless proxy unreachable; proceeding with Firestore document purge.');
-      }
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  } catch (_err) {
-    console.warn('[deleteUserRecord] Auth serverless proxy unreachable; proceeding with Firestore document purge.');
+  const resolvedAuth = options?.auth || auth;
+  const currentUser = resolvedAuth?.currentUser;
+  if (!currentUser) {
+    throw new Error('Authentication required: No active administrator session.');
   }
 
-  // 2. Ensure execution immediately proceeds to execute the atomic Firestore document deletions for both users/{userId} and bidders/{userId} documents via deleteDoc()
+  const idToken = await currentUser.getIdToken();
+  const fetchImpl = options?.fetch || fetch;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  let response: Response;
   try {
-    const { userDocRefs, bidderDocRefs } = await resolveUserAndBidderDocuments(cleanId);
-    const batch = writeBatch(db);
-
-    for (const ref of userDocRefs) {
-      batch.delete(ref);
+    response = await fetchImpl('/api/admin-delete-user', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ uid: cleanId }),
+      signal: controller.signal
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('Deletion request timed out. Please try again.');
     }
-    for (const ref of bidderDocRefs) {
-      batch.delete(ref);
-    }
-
-    await batch.commit();
-  } catch (resolveErr) {
-    console.warn('[deleteUserRecord] Batch document resolution notice, proceeding with direct deleteDoc:', resolveErr);
+    throw new Error(`Network failure during deletion request: ${err?.message || 'Unable to connect to server'}`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
-  await deleteDoc(doc(db, 'users', cleanId));
-  await deleteDoc(doc(db, 'bidders', cleanId));
+  let data: any;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`Server returned status ${response.status} with non-JSON response.`);
+  }
+
+  if (!response.ok || data?.success !== true) {
+    const errorMsg = data?.error || data?.message || `Server returned error status ${response.status}`;
+    throw new Error(errorMsg);
+  }
 }
 
 /**
