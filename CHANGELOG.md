@@ -31,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
 
-> **Release Status**: VERIFIED ON STAGING (M2.0B Security Corrections Applied). Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections against self-verification, established Firebase Authentication as sole email-verification authority, added token revocation verification, removed client-side self-promotion (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`), aligned administrative root of trust to verified explicit email allowlist, and validated with 126 passing Firestore rules emulator unit tests and 34 isolated endpoint & authority unit tests. *Note: Milestone M2.0B is verified on staging with security corrections applied; it is not yet production-approved pending resolution of documented production blockers.*
+> **Release Status**: VERIFIED ON STAGING (M2.0B Security Corrections A–D Applied). Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections against self-promotion and self-verification, established Firebase Authentication as the sole email-verification authority, added token revocation verification, removed client-side role elevation (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`), and aligned administrator authority to the verified explicit email allowlist. Final recorded coverage: 126 Firestore rules emulator tests and 41 isolated endpoint and authority tests. *M2.0B is verified on staging, not production-approved; documented production security blockers remain unresolved.*
 
 - **Correction A — Firebase Authentication Established as Sole Email-Verification Authority (`src/context/AuthContext.tsx`, `src/config/adminConfig.ts`)**:
   - **Authoritative Identity State**: Redefined `isEmailVerified` as `Boolean(user?.emailVerified)` deriving exclusively from authenticated Firebase user state. Eradicated logic where mutable Firestore profile field `userProfile.isEmailVerified` could substitute for Firebase Authentication verified identity.
@@ -53,10 +53,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Production blocker — server-side administrator authorization required for account deletion**: `api/admin-delete-user.ts` currently accepts caller-supplied `uid` and `adminUid` without validating a Firebase ID token or verifying administrator authority on the server. Requires token-verified designated administrator authorization before production deployment.
   - **Production blocker — auction ownership and mutation authorization**: Firestore auction update/delete rules remain overly permissive; ownership-related fields (`sellerId`, `sellerName`) require strict server-side or rules-level mutation locks to prevent unauthorized lot reassignment.
 
+- **Correction D — Transactional Approval Revalidation & Retry-Safe Results (`api/authorize-approved-consignor.ts`, `tests/authorize-approved-consignor.test.ts`)**:
+  - Re-reads candidate approval documents inside the Firestore transaction and proceeds only when a document still exists, remains `approved`, and its normalized seller email matches the verified Firebase token email.
+  - Derives auction linkage candidates from the freshly revalidated application records; revoked or changed applications cannot authorize profile promotion or auction assignment.
+  - Scopes `linkedAuctions`, `missingAuctions`, and `conflicts` to each transaction callback execution so retries cannot accumulate stale or duplicate response data.
+  - Adds regression coverage for revocation in the current `consignment_applications` collection and legacy `consignments` fallback, valid approval, retry result isolation, retry-time revocation, existing auction assignment conflicts, and idempotent authorization.
 - **Comprehensive Verification & Regression Testing**:
   - **126 Passing Firestore Rules Tests (`npm run test:rules`)**: 112 baseline M2.0A/M2.0B tests + 14 new tests validating self-verification prevention on create and update across `users` and `bidders`, verified user update allowances, and isolation of admin permissions from unverified allowlisted tokens and profile claims.
-  - **34 Passing Isolated Endpoint & Authority Tests (`npm run test:endpoint`)**: 25 baseline endpoint tests + 9 new tests validating token revocation rejection (`checkRevoked: true`), zero writes on revoked/expired/unverified tokens, allowlisted vs non-allowlisted evaluation, and prevention of profile overrides.
-  - **Clean Build & Type Check**: `npx tsc --noEmit` and `npm run build` pass with zero errors.
+  - **41 Passing Isolated Endpoint & Authority Tests (`npm run test:endpoint`)**: Includes token revocation rejection (`checkRevoked: true`), zero writes on revoked/expired/unverified tokens, designated administrator evaluation, transactional approval revalidation for current and legacy application collections, retry-safe result isolation, conflict protection, and idempotency.
+  - **Clean Build, Lint & Type Check**: The recorded staging validation passed `npm run lint`, `npx tsc --noEmit`, and `npm run build`. The final Correction D report also records 41 endpoint tests and 126 rules tests passing.
 
 ---
 
@@ -89,7 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Milestone Scope & Roadmap Distinction**:
   - Implements the M2.0A Consignment Application Security Hardening scope.
-  - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains the next milestone, not yet implemented.
+  - At the time of the M2.0A release, M2.0B trusted server-side role authorization remained the next milestone. M2.0B has since been implemented and verified on staging; it is not production-approved while separate security blockers remain unresolved.
   - Milestones M2.1 through M2.5 remain planned.
   - Milestone M2.6 remains planned and separately gated (not a prerequisite for core dealer program completion).
 
