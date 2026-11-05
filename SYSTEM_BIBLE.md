@@ -2547,3 +2547,73 @@ The Wailtail Phase 1 Verified Boutique Dealer Program is formally defined as com
 2. **Separately Gated Milestones**: Milestone M2.6 (Optional Private Application Photo Uploads) is either completed or formally confirmed as decoupled from the core dealer release.
 3. **Founding Dealer Pilot Executed**: The Founding Dealer Pilot has concluded with all 6 pilot KPIs satisfied.
 4. **Documentation Synchronized**: All system bibles, API references, user documentation, and changelogs reflect the production state with zero roadmap or status contradictions.
+
+---
+
+## 12. Development Workflow & Continuous Integration
+
+### 12.1 GitHub Actions CI Workflow
+
+The canonical automated validation workflow is defined in `.github/workflows/ci.yml`.
+
+**Workflow triggers**:
+- Pushes to `staging` and `main`.
+- Pull requests targeting `staging` and `main`.
+- Manual execution through `workflow_dispatch`.
+
+**Execution environment**:
+- GitHub-hosted `ubuntu-latest` runner.
+- Node.js 22, with npm dependency caching.
+- Java 21 (Temurin distribution) for Firebase Emulator Suite execution.
+- 30-minute job timeout.
+- Read-only repository contents permission.
+
+### 12.2 Required CI Validation Sequence
+
+The workflow installs dependencies with `npm ci`, ensuring installation follows the committed `package-lock.json`, and executes these gates sequentially:
+
+1. **Production build and TypeScript** — `npm run build` executes `tsc && vite build`. Both TypeScript compilation and the Vite production bundle must complete successfully.
+2. **Static analysis** — `npm run lint` executes ESLint across the repository with unused-directive reporting and zero-warning tolerance.
+3. **Endpoint tests** — `npm run test:endpoint` executes the Node test runner against `tests/authorize-approved-consignor.test.ts`, covering endpoint and authorization behaviour.
+4. **Firestore security rules tests** — `npm run test:rules` starts the Firebase Firestore emulator and executes `tests/firestore.rules.test.ts` through `@firebase/rules-unit-testing`.
+
+**Local validation equivalent**:
+
+```bash
+npm ci
+npm run build
+npm run lint
+npm run test:endpoint
+npm run test:rules
+```
+
+Java 21 is required for the emulator-backed Firestore rules test suite. The package script `npm test` runs both endpoint and rules test suites; build and lint remain separate commands.
+
+### 12.3 ESLint Adoption Boundaries
+
+ESLint is configured through the flat configuration in `eslint.config.js`, using the JavaScript and TypeScript recommended configurations and React Hooks rules. The critical `react-hooks/rules-of-hooks` rule is enforced as an error. The `react-hooks/exhaustive-deps` rule and selected pre-existing TypeScript/JavaScript rules are intentionally not enforced as part of this initial progressive-adoption configuration. A passing lint job therefore confirms compliance with the currently enabled rules; it must not be represented as exhaustive static analysis or proof that all legacy code patterns have been remediated.
+
+### 12.4 Verified Staging CI Baseline — November 5, 2026
+
+The first fully successful execution of the configured workflow was GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121), associated with staging commit [`a28f8b0eaabbaeacd285a2b268212884d4c0bb07`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07), titled **Add ESLint and enforce CI lint checks**.
+
+**Recorded result**:
+- Production build and TypeScript checks: **PASSED**.
+- ESLint: **PASSED**.
+- Endpoint suite: **41 passed, 0 failed**.
+- Firestore security rules suite: **126 passed, 0 failed**.
+- GitHub Actions job: **completed successfully**.
+
+These counts describe the test results from the identified run; future code changes must be validated by their own CI execution. Emulator tests validate the configured rules against the emulator and do not replace live production security testing.
+
+### 12.5 CI, Staging Verification & Production Release Are Separate Gates
+
+A successful CI run establishes that the checked commit passed the automated build, lint, endpoint, and emulator test commands. It does **not**:
+- Deploy application code or serverless functions to production.
+- Deploy Cloud Firestore security rules (which remain a separate explicit operation using `npm run deploy:rules`).
+- Promote `staging` to `main` or authorize a production release.
+- Establish that outstanding production security blockers have been resolved.
+- Replace manual regression testing, production smoke testing, or production QA evidence.
+
+All production promotion remains subject to the release governance and explicit authorization requirements in Section 11.5. The M2.0B security corrections are verified on staging but remain not production-approved while the documented server-side administrator authorization for account deletion and auction ownership/mutation authorization blockers remain unresolved.
+

@@ -379,15 +379,16 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Historical Compatibility & Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` enforce identical security rules. Historical application documents retain legacy registration metadata without migration or deletion and remain readable by authorized applicants.
     - **Persistence & Notification Resilience**: Submissions normalize `sellerEmail` to lowercase upon creation. Primary persistence errors in `consignment_applications` propagate directly to the caller without synthetic fallback IDs, legacy dual-write is non-fatal best effort, and serverless notifications execute post-persistence in a non-blocking background routine with a 5000ms timeout guard.
     - **Emulator Verification**: 83 passing unit tests (`npm run test:rules`) executed against named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
-    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is complete, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026. Downstream M2.0B role-escalation hardening (preventing user/bidder self-promotion and establishing trusted server-side authorization for `elevateApprovedConsignor`) remains the next milestone, not yet implemented.
+    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is complete, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026. M2.0B trusted server-side role authorization and its security corrections are **verified on staging**, but are **not production-approved**. Production promotion remains blocked by the separately documented server-side administrator authorization requirement for account deletion and auction ownership/mutation authorization.
 
 ---
 
 ## 3. Getting Started
 
 ### Prerequisites
-- Node.js (v18+) or Bun / npm / yarn
-- Firebase Project configured with Firestore and Authentication
+- Node.js 22 and npm
+- Java 21 (required for Firebase emulator-backed security rules tests)
+- Firebase project configured with Firestore and Authentication
 
 ### Installation
 ```bash
@@ -407,6 +408,34 @@ npm run dev
 # Run Firestore security rules emulator unit tests
 npm run test:rules
 ```
+
+### Continuous Integration & Local Validation
+
+GitHub Actions runs the repository CI workflow defined in `.github/workflows/ci.yml` on:
+- Pushes to `staging` and `main`.
+- Pull requests targeting `staging` and `main`.
+- Manual `workflow_dispatch` execution.
+
+The workflow uses Node.js 22 and Java 21 (for the Firebase emulator), installs the lockfile-pinned dependencies with `npm ci`, and runs the following checks in order:
+
+1. `npm run build` — TypeScript compilation followed by the Vite production build.
+2. `npm run lint` — ESLint validation.
+3. `npm run test:endpoint` — serverless endpoint and authorization tests.
+4. `npm run test:rules` — Firestore security rules tests executed through the Firebase emulator.
+
+Run the same validation locally before pushing changes:
+
+```bash
+npm ci
+npm run build
+npm run lint
+npm run test:endpoint
+npm run test:rules
+```
+
+Java 21 is required locally when running the Firebase emulator-backed rules suite. The combined `npm test` script also runs both test suites, but does not replace the build and lint checks.
+
+**CI is validation, not deployment.** A successful workflow does not deploy the application, publish Firestore rules, promote `staging` to `main`, or establish production readiness. Production promotion remains subject to the release governance and outstanding security blockers documented in `SYSTEM_BIBLE.md`.
 
 ### Environment Configuration Requirements
 
@@ -481,7 +510,7 @@ For comprehensive milestone specifications, commercial boundaries, architecture,
 | **M1.0** | Dealer Foundation and Data Architecture | **COMPLETE** | Core schemas, TypeScript interfaces, and baseline security rules. |
 | **M1.1** | Dealer Verification Metadata and Security Hardening | **COMPLETE** | Dual-collection protection for all 6 trusted verification fields; 18/18 live probe checks passed; production deployed. |
 | **M2.0A** | Consignment Security and Persistence Hardening | **COMPLETE** | Verified-email applicant reads, token-derived auth, modification locks, 83 emulator tests; deployed to production with Cloud Firestore rules; production QA passed. |
-| **M2.0B** | Trusted Server-Side Role Authorization | **NEXT MILESTONE** | Firebase Admin SDK ID-token verification; trusted approved-consignor authorization; removal of client-side role elevation. *Not yet implemented.* |
+| **M2.0B** | Trusted Server-Side Role Authorization | **VERIFIED ON STAGING** | Firebase Admin SDK ID-token verification; trusted approved-consignor authorization; removal of client-side role elevation; 126 Firestore rules tests and 34 isolated endpoint/authority tests recorded in the M2.0B milestone evidence. *Not production-approved; outstanding production security blockers remain.* |
 | **M2.1** | Administrative Consignment Application Review | **PLANNED** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
 | **M2.2** | Dealer Application and Intake | **PLANNED** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
 | **M2.3** | Manual Dealer Verification & Profile Creation | **PLANNED** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |

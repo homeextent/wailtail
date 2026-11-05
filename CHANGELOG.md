@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Development & Continuous Integration
+- **GitHub Actions CI workflow (`.github/workflows/ci.yml`)**: Added automated validation on pushes to `staging` and `main`, pull requests targeting those branches, and manual workflow dispatch. The job uses Node.js 22 and Java 21, installs dependencies with `npm ci`, then runs the production build/TypeScript checks, ESLint, endpoint tests, and Firestore security rules emulator tests.
+- **ESLint configuration and dependencies**: Added the ESLint flat configuration (`eslint.config.js`) and required development dependencies. React Hooks Rules of Hooks violations are enforced; broader lint adoption remains progressive, with selected legacy rules intentionally not enforced yet.
+- **React Hooks correction (`src/components/YouTubePlaylistSection.tsx`)**: Moved the conditional early return below the component's hooks to preserve consistent hook invocation order.
+- **Optional Resend dependency typing (`api/send-consignment-email.ts`)**: Replaced the suppression directive with a documented `@ts-expect-error`, preserving the optional SDK import and existing HTTP API fallback.
+- **Verified staging CI run**: GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121) completed successfully for commit [`a28f8b0`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07). The run passed the production build/TypeScript checks, ESLint, **41 endpoint tests**, and **126 Firestore security rules tests**. This is CI validation evidence for the staging commit, not production deployment or production security sign-off.
+
 ### Next Milestone
 - **M2.1 — Administrative Consignment Application Review**: PLANNED. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
