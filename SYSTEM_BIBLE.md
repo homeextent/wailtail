@@ -359,7 +359,7 @@ export interface ConsignmentApplication {
 #### Lifecycle State Transitions & Seller Workspace Claim Integration:
 - **`status: 'rejected'`**: Marked when curation staff decline an intake submission. Automatically dispatches an asynchronous serverless rejection email (`type: 'consignment_rejected'`) via `/api/send-consignment-email` to `sellerEmail` (with fallback to `email`), conveying vehicle particulars and optional curator notes without blocking the administrative interface.
 - **`convertedAuctionId`**: Generated during administrative 1-click approval (`convertConsignmentToDraftListing`). References the new draft listing created in `auctions/{convertedAuctionId}` pre-populated with vehicle taxonomy, location, and reserve parameters. During conversion, `convertConsignmentToDraftListing()` resolves the seller account via legacy `registeredUserId` if present on historical records, or dynamically queries for an existing member record matching `sellerEmail` when a legacy ID is absent, promoting the consignor to `SELLER` across `users` and `bidders` collections (preserving `ADMIN`).
-- **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. Upon authentication or account registration, `AuthContext.tsx` (`elevateApprovedConsignor`) queries `consignment_applications` by `sellerEmail`, checks for `status: 'approved'`, mutates user roles across `users/{uid}` and `bidders/{uid}` to `'seller'`, and links `sellerId` and `sellerName` into `auctions/{convertedAuctionId}`. *(Note: This client-side role elevation pathway represents legacy/current implementation pending M2.0B hardening. It is not a trusted server-side authorization architecture, and M2.0A did not resolve user/bidder role self-escalation; M2.0B remains responsible for server-side trusted authorization and preventing self-promotion.)*
+- **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. After authentication, `AuthContext.tsx` requests authorization through `POST /api/authorize-approved-consignor`. The endpoint verifies the Firebase ID token, revalidates the approved application inside a Firestore transaction, atomically updates the canonical `users/{uid}` and `bidders/{uid}` profiles, and safely links the converted auction without overwriting another seller's assignment. The client does not write role changes or optimistically promote the account.
 
 #### M2.0A Consignment Access Control & Security Model:
 - **Normalized Lowercase Seller Email**: All new submissions normalize `sellerEmail` via `(app.sellerEmail || '').trim().toLowerCase()` prior to database write, ensuring reliable alignment with lowercased authentication claims.
@@ -1385,9 +1385,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Seller Workspace Claim Onboarding Pipeline (`action=claim_seller`)**:
   - Upon consignment approval, the seller receives an email containing a dedicated claim onboarding deep-link targeting `/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${appId}&lot=${convertedAuctionId}&email=${sellerEmail}`.
   - When opened by an unauthenticated seller, `AuthModal.tsx` activates the registration tab, pre-fills the applicant's email address, and renders an emerald onboarding banner (`"Seller Onboarding & Listing Claim — Create your Wailtail account or sign in with your approved consignment email to claim your listing workspace."`).
-  - **Approved-Consignor Role Elevation (`AuthContext.tsx` via `elevateApprovedConsignor`) — Legacy / Current Implementation Pending M2.0B Hardening**:
-    - *Current Client-Side Elevation Workflow*: Evaluates approved consignment records matching `sellerEmail`. Mutates `users/{uid}` and `bidders/{uid}` documents to `role: 'seller'` under client-side `isOwner(uid)` Firestore security rules, atomically merges `sellerId: uid` and `sellerName` onto the draft vehicle lot (`auctions/{convertedAuctionId}`), and hydrates in-memory React context (`userProfile.role = 'seller'`), immediately granting authorization to the listing authoring workspace.
-    - *Security Status & M2.0B Milestone Distinction*: This client-side pathway represents current legacy functionality and is **not** a trusted server-side authorization architecture. M2.0A hardened consignment intake and verified-email read access; it did **not** implement the M2.0B role-escalation fix. M2.0B remains responsible for closing client-side role elevation vulnerabilities, preventing potential user/bidder self-promotion, and transitioning role elevation to trusted server-side endpoints or Firebase Auth custom claims.
+  - **Approved-Consignor Server Authorization (M2.0B)**:
+    - After authentication, `AuthContext.tsx` calls `POST /api/authorize-approved-consignor`; the client does not directly promote roles or assign auction ownership.
+    - The endpoint verifies the Firebase ID token with revocation checking, derives identity from the verified token, and revalidates the matching approved application inside the Firestore transaction before making authorization writes.
+    - The transaction atomically updates `users/{uid}` and `bidders/{uid}`, preserves designated administrator roles, and links a converted auction only when its seller assignment is empty or already belongs to the same UID. Conflicting assignments are left unchanged.
+    - Firebase Auth `user.emailVerified` is the sole client-side email-verification authority. Firestore profile fields cannot independently establish verification or administrator authority.
 
 ### 6.9 Strict Fresh Listing Isolation Guarantees
 - **Data Leak Prevention**:
@@ -2217,7 +2219,7 @@ Following the M1 and M1.1 foundation, three specific architectural boundaries di
 ### 10.1 Strategic Context & Release Posture
 - **Implementation Status**: Fully implemented, verified with local unit testing, committed, deployed to production, and verified with production QA on November 5, 2026.
 - **Release Posture**: M2.0A is deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026.
-- **Milestone Scope**: Addresses M2.0A Consignment Application Security Hardening. Downstream M2.0B role-escalation hardening (securing `elevateApprovedConsignor` from client-driven role assignment to trusted serverless backend or admin custom claims) remains the next milestone, not yet implemented.
+- **Milestone Scope**: This section records the M2.0A Consignment Application Security Hardening baseline. M2.0B trusted server-side role authorization and its security corrections have since been implemented and verified on staging; they are documented in Section 11.4. M2.0B is not production-approved.
 
 ### 10.2 Final M2.0A Security & Authorization Model
 The M2.0A security model hardens consignment application intake and access control across Cloud Firestore rules (`firestore.rules`):
@@ -2289,7 +2291,7 @@ The M2.0A security model hardens consignment application intake and access contr
 
 ### 10.5 Milestone Boundaries & Outstanding Work
 - **M2.0A Status**: Consignment application security hardening is complete, deployed to production, with Cloud Firestore rules deployed and required production QA passed on November 5, 2026. New submissions no longer write legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`), applicant reads require verified email claims matching normalized `sellerEmail`, and creation/modification locks prevent unauthorized state tampering. Historical application records are retained without migration or deletion.
-- **M2.0B Outstanding**: Role-escalation hardening remains the next milestone (not yet implemented). Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) is a legacy/current implementation operating under client-side `isOwner(uid)` Firestore security rules and is not a fully secured trusted authorization architecture. M2.0A did not implement the M2.0B role-escalation fix. M2.0B remains responsible for preventing user/bidder self-promotion and implementing trusted server-side authorization (e.g. serverless admin endpoints or Firebase Auth custom claims).
+- **M2.0B Status**: Trusted server-side role authorization and its security corrections are implemented and verified on staging. Client-side role elevation and demo self-verification have been removed; approved-consignor authorization is performed by the trusted Firebase Admin endpoint, and user/bidder role and verification protections are enforced by Firestore rules. M2.0B is **not production-approved** while the account-deletion administrator authorization and auction ownership/mutation blockers listed in Section 11.4 remain unresolved.
 - **Deployment Status**: Production deployment and Cloud Firestore rules deployment (`npm run deploy:rules`) are complete and verified in production.
 
 ---
@@ -2303,7 +2305,7 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M1.0 — Dealer Foundation and Data Architecture**: **COMPLETE**.
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
-- **M2.0B — Trusted Server-Side Role Authorization**: **NEXT MILESTONE — NOT YET IMPLEMENTED**.
+- **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
 - **M2.1 through M2.5**: **PLANNED**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
@@ -2349,7 +2351,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M1.0               │ Dealer Foundation & Data Architecture │ COMPLETE            │
 │ M1.1               │ Dealer Verification Security          │ COMPLETE            │
 │ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
-│ M2.0B              │ Trusted Server-Side Authorization     │ NEXT (NOT IMPL.)    │
+│ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
 │ M2.1               │ Admin Consignment Review              │ PLANNED             │
 │ M2.2               │ Dealer Application Intake             │ PLANNED             │
 │ M2.3               │ Manual Dealer Verification & Profiles │ PLANNED             │
@@ -2419,12 +2421,13 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
   - Removal of client-side role elevation mutations (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`) from `AuthContext.tsx`.
   - Establishment of Firebase Authentication as the sole email-verification authority (`isEmailVerified = Boolean(user?.emailVerified)` — Correction A) and administrative root of trust (`isAdmin = Boolean(user?.email && isDesignatedAdminEmail(user.email) && user.emailVerified === true)`), integrated with Firebase user reload on auth hydration.
   - Hardening of Firestore security rules (`firestore.rules` — Correction B) to deny non-admin users the ability to mutate `role` fields, dealer fields, or self-verify via `isEmailVerified: true` without matching `request.auth.token.email_verified == true`.
-  - Comprehensive unit and integration test coverage: 126 passing Firestore rules emulator unit tests and 34 passing isolated endpoint and administrative authority unit tests.
+  - **Correction D — Transactional Approval Revalidation & Retry-Safe Results**: Candidate application documents are re-read inside the Firestore transaction; promotion proceeds only while an application still exists, remains approved, and matches the verified token email. Transaction result arrays are scoped to each callback execution so SDK retries cannot contaminate the final response.
+  - **Comprehensive unit and integration test coverage**: 126 passing Firestore rules emulator unit tests and 41 passing isolated endpoint and administrative authority unit tests, including current and legacy application revocation and transaction callback retry coverage.
 - **Dependencies**: M2.0A production baseline.
 - **Remaining Production Blockers**:
   1. *Production blocker — server-side administrator authorization required for account deletion (`api/admin-delete-user.ts`)*.
   2. *Production blocker — auction ownership and mutation authorization (`auctions/{auctionId}`)*.
-- **Exit Criteria**: Non-admin users cannot mutate `role` or self-verify via Firestore; approved consignors are elevated exclusively through trusted backend endpoint; token revocation enforced; 126 rules tests and 34 endpoint tests pass; production blockers resolved prior to production promotion.
+- **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; approved consignors are authorized exclusively through the trusted backend endpoint; approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
 - **Status**: **PLANNED**.
