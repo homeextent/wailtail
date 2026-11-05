@@ -2269,7 +2269,7 @@ The M2.0A security model hardens consignment application intake and access contr
   - **1 Database Isolation Check**: Validated named database configuration and verified that tests run isolated from the default database instance.
 - **Testing Scope & Limitations**:
   - Unit tests were executed locally within the Firebase Local Emulator Suite using `@firebase/rules-unit-testing`.
-  - Emulator testing validates rule logic in emulation; it does **not** constitute live production penetration testing, nor does it imply that deployed Firebase security rules on GCP are currently updated.
+  - Emulator testing validates rule logic in emulation; it does **not** constitute live production penetration testing. Production rules were separately deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`) and verified with production QA on November 5, 2026.
   - Full production compilation and typechecking succeeded with zero errors (`npm run build`).
 
 ### 10.5 Milestone Boundaries & Outstanding Work
@@ -2289,7 +2289,8 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
 - **M2.0B — Trusted Server-Side Role Authorization**: **NEXT MILESTONE — NOT YET IMPLEMENTED**.
-- **M2.1 through M2.6**: **PLANNED**.
+- **M2.1 through M2.5**: **PLANNED**.
+- **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
 

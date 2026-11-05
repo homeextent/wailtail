@@ -53,7 +53,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Milestone Scope & Roadmap Distinction**:
   - Implements the M2.0A Consignment Application Security Hardening scope.
   - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains the next milestone, not yet implemented.
-  - Milestones M2.1 through M2.6 remain planned.
+  - Milestones M2.1 through M2.5 remain planned.
+  - Milestone M2.6 remains planned and separately gated (not a prerequisite for core dealer program completion).
 
 ---
 
