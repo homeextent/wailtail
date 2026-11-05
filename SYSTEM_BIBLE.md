@@ -40,7 +40,7 @@
 | Platform Feedback Modal | `FeedbackModal.tsx` | Public / Guest & Authenticated | Collector-grade dialog supporting 3 feedback categories (`bug`, `suggestion`, `general`), 10–1,500 character counter, auto-populated member contact credentials, and zero-friction client telemetry capture (URL, viewport dimensions, User Agent, UID/role) persisting to `/feedback` collection and dispatching via serverless email. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
 | `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
-| `/api/admin-delete-user` | `api/admin-delete-user.ts` | `ADMIN` only / Serverless | Vercel serverless proxy endpoint executing atomic Firebase Authentication identity deletion (`admin.auth().deleteUser(uid)`) with ESM interop resolution and private key newline unescaping. |
+| `/api/admin-delete-user` | `api/admin-delete-user.ts` | Verified designated administrator / Serverless | Server-authorized account deletion endpoint. Verifies a revocation-aware Firebase ID token, requires a verified designated administrator, rejects self-deletion and protected administrator targets, deletes the target Auth identity, then performs retryable server-side Firestore profile cleanup. |
 | `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
 | `/api/ai-assistant` | `api/ai-assistant.ts` | Authenticated (`ADMIN`, `SELLER`) / Serverless | Vercel serverless AI writing assistant and editorial synthesis engine leveraging Google Gemini 2.5 Flash with fallback candidate models, 4.5MB payload capacity, and 60-second execution budget. |
 
@@ -925,30 +925,31 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
      - Formatted **Submitted Message** block styled with `white-space: pre-wrap; word-break: break-word;`.
      - Actionable **Direct Mailto Reply Button**: High-contrast blue CTA button (`mailto:${cleanReporterEmail}?subject=Re:%20Wailtail%20Feedback%20Follow-up`) displayed when reporter email is supplied.
 
-### 5.4 Serverless Admin User Deletion (`/api/admin-delete-user.ts`)
+### 5.4 Serverless Administrator Account Deletion (`/api/admin-delete-user.ts`)
 
-> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
-> **Production blocker — server-side administrator authorization required for account deletion.**  
-> The current `/api/admin-delete-user` endpoint accepts caller-supplied `uid` and `adminUid` in the POST body without cryptographically validating a Firebase ID token or verifying administrator authority on the server. This constitutes a critical account-deletion vulnerability. Prior to production release, this endpoint must be refactored to mandate an `Authorization: Bearer <token>` header, verify the token via Firebase Admin SDK (`verifyIdToken(idToken, true)`), require a verified designated administrator identity (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), derive the administrator UID and email strictly from the verified token, validate the target user, and block unauthorized invocation.
+**Staging security status:** The former caller-supplied administrator identity vulnerability has been corrected in staging commit [`860042b`](https://github.com/homeextent/wailtail/commit/860042bc35fcc98246f6385a035fc08d3c84d01f). The endpoint now authorizes deletion from a verified Firebase Authentication identity; the client cannot assert administrator authority by supplying an `adminUid`.
 
-1. **Endpoint Architecture & Service Account Credentials**:
-   - Hosted as a dedicated Vercel Serverless Function at `/api/admin-delete-user` (`api/admin-delete-user.ts`).
-   - Requires an authenticated administrative caller context in the POST payload: `{ uid: string, adminUid: string }`.
-   - Protects against accidental self-deletion by blocking requests where `cleanUid === cleanAdminUid` (HTTP 400).
-2. **Static Firebase Admin Import & ESM Interop Resolution**:
-   - Utilizes static module import for `firebase-admin`:
-     ```typescript
-     import * as admin from 'firebase-admin';
-     const firebaseAdmin = (admin as any).default || admin;
-     ```
-   - Resolves CommonJS/ESM interop bundling discrepancies across Vercel Node runtime environments, guaranteeing stable access to `initializeApp`, `credential.cert`, and `auth().deleteUser`.
-3. **Private Key Newline Unescaping**:
-   - Normalizes service account private keys from `FIREBASE_SERVICE_ACCOUNT_KEY` or `FIREBASE_PRIVATE_KEY` by unescaping literal newline sequences (`replace(/\\n/g, '\n')`).
-   - Completely avoids ASN.1/OpenSSL parse failures during credential instantiation.
-4. **Atomic Identity Purging Across Auth and Firestore**:
-   - Executes `await firebaseAdmin.auth().deleteUser(cleanUid)` on the serverless edge.
-   - Gracefully intercepts `auth/user-not-found` exceptions as non-fatal successes (`{ success: true, note: 'user-not-found' }`), allowing deletion workflows to proceed if Auth identity is already absent.
-   - Orchestrated client-side by `deleteUserRecord(userId, adminUid)` in `src/services/auctionService.ts`, which calls `/api/admin-delete-user` before committing an atomic Firestore batch purge wiping corresponding documents across `users/{uid}` and `bidders/{uid}` collections.
+1. **Request authentication and administrator authorization**:
+   - Accepts POST requests only; missing or other HTTP methods receive HTTP 405.
+   - Requires an `Authorization: Bearer <Firebase ID token>` header. Firebase Admin verifies the token with revocation checking enabled (`verifyIdToken(idToken, true)`).
+   - Requires `email_verified === true` and an email matching the shared designated-administrator allowlist in `src/config/adminConfig.ts` (`DESIGNATED_ADMIN_EMAILS`, `normalizeEmail()`, and `isDesignatedAdminEmail()`).
+   - Derives the acting administrator UID and email exclusively from the verified token. The request body contains only the target `uid`; caller-supplied `adminUid` is not accepted as an authority source.
+   - Rejects self-deletion and protects both designated administrator accounts. The endpoint checks the target Auth identity's email and independently resolves the designated administrator Auth identities by allowlisted email before any target deletion or Firestore mutation. Unexpected lookup failures fail closed.
+2. **Server-side Auth and Firestore deletion**:
+   - Uses the shared Firebase Admin initializer in `api/_lib/firebaseAdmin.ts`, including the configured named Firestore database.
+   - The server is the sole authority for deleting the Firebase Authentication identity and related Firestore profile records. The client service `deleteUserRecord(userId)` obtains the active user's ID token and sends one authenticated POST request containing only `{ uid }`.
+   - After authorization, the endpoint deletes the target Auth identity. An `auth/user-not-found` result is treated as an already-absent Auth identity so a previously interrupted Firestore cleanup can be retried.
+   - Firestore cleanup covers direct `users/{uid}` and `bidders/{uid}` documents plus legacy documents whose `uid` field exactly matches the target UID. It does not perform email-only deletion queries.
+   - Exact-UID query failures and batch failures propagate as incomplete cleanup; the endpoint returns HTTP 500 with `admin/incomplete-deletion` rather than reporting success. Deletion references are deduplicated and writes are chunked to respect Firestore batch limits.
+   - Firebase Auth deletion and Firestore cleanup are **not atomic**. If Auth deletion succeeds but Firestore cleanup fails, the client receives an error and an administrator can retry; the endpoint treats the missing Auth identity as retryable and attempts Firestore cleanup again.
+3. **Client failure behaviour and tests**:
+   - `deleteUserRecord()` fails closed on missing authentication, network errors, timeouts, malformed responses, unsuccessful HTTP status, or a response without `success: true`. It performs no client-side Firestore fallback deletion.
+   - Regression coverage is in `tests/admin-delete-user.test.ts` (44 tests). The combined `npm run test:endpoint` suite runs 85 tests: 41 approved-consignor authorization tests and 44 administrator-deletion tests. The Firestore rules suite remains at 126 tests.
+4. **Administrator identity protection limitation**:
+   - The workflow protects designated administrator Auth accounts while those Auth identities exist. If a designated administrator's Auth identity has already been removed, lookup by email cannot recover that account's former UID. Absolute protection of orphaned administrator profile documents in that condition requires stable administrator UIDs to be added to protected server configuration. No UID is inferred or fabricated.
+5. **Release boundary**:
+   - This implementation is committed and pushed to `staging`; it is not a production deployment or production security sign-off.
+   - Auction ownership and mutation authorization remains a separate production blocker.
 
 ### 5.5 Mobile Viewport Hero & Gallery Architecture
 
@@ -1249,7 +1250,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **3-Way Role Switching (`updateUserRole`)**: Allows administrators to toggle user accounts between `ADMIN`, `SELLER`, and `BIDDER` via an atomic Firestore `writeBatch`.
   - **Account Ban Toggling (`setUserBannedStatus` / `banOrRemoveBidder` / `unbanBidder`)**: Atomically updates `isBanned`, `bannedFromBidding`, `bannedAt`, and `banReason`.
   - **Email Verification Override (`setUserEmailVerified`)**: Permits manual staff verification overrides (`isEmailVerified: true/false`).
-  - **Permanent Record Deletion (`deleteUserRecord`)**: Two-stage atomic purge that first calls `/api/admin-delete-user` to permanently remove the identity from Firebase Authentication via the Firebase Admin SDK, followed by atomic batch deletion purging documents from both `users/{userId}` and `bidders/{userId}` collections with resilient fallback for orphaned or non-existent auth records.
+  - **Administrator Account Deletion (`deleteUserRecord`)**: Client sends a revocation-aware Firebase ID token and target UID to `/api/admin-delete-user`; the server verifies the designated administrator allowlist, rejects self-deletion and protected administrator targets, deletes the Auth identity, and performs Firestore cleanup across direct profile documents and exact-UID legacy matches. Auth and Firestore operations are not atomic; incomplete cleanup returns an error and can be retried. The client has no Firestore fallback.
 - **1-Click Consignment Approval Draft Conversion (`convertConsignmentToDraftListing`)**:
   - Administrators review pending vehicle consignment intake submissions and click `"Approve & Convert to Draft"`.
   - Atomically creates a fresh listing document in `auctions/{newAuctionId}` pre-populated with:
@@ -1790,32 +1791,19 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
      - *Google Drive Sync vs. Gemini Gem*: Drive synchronization occurs continuously on commit. Gemini Gem Knowledge Bases freeze context upon session launch; new chat sessions must be created to mount updated context.
      - *Local Mirroring vs. Live Rules Deployment*: Mirroring `firestore.rules` to Google Drive does not deploy rules to production. Live Firestore rules deployment must be executed explicitly via `npm run deploy:rules`.
 
-### 7.5 Serverless Edge & Auth Deletion Architecture (`/api/admin-delete-user.ts`)
+### 7.5 Serverless Edge & Administrator Account Deletion Architecture (`/api/admin-delete-user.ts`)
 
-> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
-> **Production blocker — server-side administrator authorization required for account deletion.**  
-> The current `/api/admin-delete-user` endpoint accepts caller-supplied `uid` and `adminUid` parameters without cryptographically verifying a Firebase ID token or confirming designated administrator authority on the server. This constitutes a severe potential account-deletion vulnerability. Prior to production approval, this endpoint must require an `Authorization: Bearer <token>` header, verify caller identity via `auth.verifyIdToken(idToken, true)`, enforce that the caller matches the verified designated administrator allowlist (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), and derive all administrative credentials strictly from the verified token.
+The account-deletion endpoint is a trusted server-side administrative operation. Its security model is documented in Section 5.4 and implemented in `api/admin-delete-user.ts`.
 
-To support permanent, legally compliant member deletions without client credential exposure, the platform deploys a dedicated Vercel Serverless Function at `/api/admin-delete-user`:
-
-1. **Firebase Admin SDK ESM Interop Resolution**:
-   - Resolves CommonJS/ESM module interop discrepancies across Vercel Node runtime bundlers via:
-     ```typescript
-     import * as admin from 'firebase-admin';
-     const firebaseAdmin = (admin as any).default || admin;
-     ```
-   - Ensures consistent runtime access to `initializeApp`, `credential.cert`, and `auth().deleteUser`.
-
-2. **Environment Private Key Newline Unescaping**:
-   - Private keys supplied through production environment variables (`FIREBASE_SERVICE_ACCOUNT_KEY` or `FIREBASE_PRIVATE_KEY`) frequently serialize newline characters as literal `\n` escape sequences.
-   - The endpoint normalizes keys prior to SDK credential initialization via `.replace(/\\n/g, '\n')`, preventing ASN.1/OpenSSL parse failures.
-
-3. **Atomic Account Purging Across Auth and Firestore**:
-   - Executed via `deleteUserRecord(userId, adminUid)` in `src/services/auctionService.ts`:
-     1. Dispatches an authenticated HTTP POST request to `/api/admin-delete-user` with `{ uid, adminUid }`.
-     2. The serverless handler verifies administrator parameters, enforces a self-deletion guard (`cleanUid === cleanAdminUid`), and executes `await firebaseAdmin.auth().deleteUser(cleanUid)`.
-     3. Gracefully catches and logs `auth/user-not-found`, treating already-purged Auth identities as non-blocking successes (`{ success: true, note: 'user-not-found' }`).
-     4. `deleteUserRecord` then resolves and commits an atomic batch deletion wiping associated documents across both `users/{userId}` and `bidders/{userId}` Firestore collections.
+- **Caller authentication**: POST only; requires a Bearer Firebase ID token verified by Firebase Admin with revocation checking (`verifyIdToken(idToken, true)`).
+- **Administrator authorization**: requires a verified email matching the shared designated-administrator allowlist. The acting administrator identity is derived from the verified token, never from request-body identity fields.
+- **Protected identities**: rejects self-deletion and both designated administrator targets. It checks the target Auth email and independently resolves current designated administrator Auth UIDs by allowlisted email. Unexpected lookup errors fail closed.
+- **Server-owned deletion**: the client sends only `{ uid }`; the server deletes the Auth identity and then removes direct `users/{uid}` / `bidders/{uid}` profiles and legacy documents with an exact matching `uid` field. Email-only document deletion is prohibited.
+- **Retry semantics**: Auth and Firestore are separate systems and cannot be deleted atomically. If Firestore queries or batch commits fail after Auth deletion, the endpoint returns HTTP 500 (`admin/incomplete-deletion`). A retry tolerates the already-missing Auth identity and retries Firestore cleanup. Query errors must never be swallowed or converted into success.
+- **No client fallback**: `deleteUserRecord()` fails closed and never performs client-side Firestore deletion if the request fails.
+- **Verification**: 44 administrator-deletion regression tests plus 41 approved-consignor endpoint tests (85 combined endpoint tests); 126 Firestore rules tests. Roo Code reported lint, TypeScript, production build and test checks passing before the staging commit. The staging commit itself must still be distinguished from a successful CI run.
+- **Known limitation**: if a designated administrator Auth identity is already absent, lookup by email cannot recover its former UID. Protecting orphaned profile records in that exceptional state requires stable administrator UIDs in protected server configuration. Do not invent or assume those UIDs.
+- **Release status**: committed to staging in `860042bc35fcc98246f6385a035fc08d3c84d01f`; not production-deployed. Auction ownership and mutation authorization remains a separate production blocker.
 
 ### 7.6 Authentication Security & Session Defense (`AuthContext.tsx` & `AuthModal.tsx`)
 
@@ -2422,11 +2410,10 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
   - Establishment of Firebase Authentication as the sole email-verification authority (`isEmailVerified = Boolean(user?.emailVerified)` — Correction A) and administrative root of trust (`isAdmin = Boolean(user?.email && isDesignatedAdminEmail(user.email) && user.emailVerified === true)`), integrated with Firebase user reload on auth hydration.
   - Hardening of Firestore security rules (`firestore.rules` — Correction B) to deny non-admin users the ability to mutate `role` fields, dealer fields, or self-verify via `isEmailVerified: true` without matching `request.auth.token.email_verified == true`.
   - **Correction D — Transactional Approval Revalidation & Retry-Safe Results**: Candidate application documents are re-read inside the Firestore transaction; promotion proceeds only while an application still exists, remains approved, and matches the verified token email. Transaction result arrays are scoped to each callback execution so SDK retries cannot contaminate the final response.
-  - **Comprehensive unit and integration test coverage**: 126 passing Firestore rules emulator unit tests and 41 passing isolated endpoint and administrative authority unit tests, including current and legacy application revocation and transaction callback retry coverage.
+  - **Comprehensive unit and integration test coverage**: 126 passing Firestore rules emulator unit tests and 41 passing isolated M2.0B endpoint and administrative authority unit tests, including current and legacy application revocation and transaction callback retry coverage. The separate administrator account-deletion hardening adds 44 regression tests; the combined `npm run test:endpoint` suite therefore contains 85 tests.
 - **Dependencies**: M2.0A production baseline.
 - **Remaining Production Blockers**:
-  1. *Production blocker — server-side administrator authorization required for account deletion (`api/admin-delete-user.ts`)*.
-  2. *Production blocker — auction ownership and mutation authorization (`auctions/{auctionId}`)*.
+  1. *Production blocker — auction ownership and mutation authorization (`auctions/{auctionId}`)*. The separate administrator account-deletion endpoint has been corrected and verified on staging, but has not been production-deployed.
 - **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; self-service approved-consignor claims are authorized through the trusted backend endpoint; administrator-initiated role changes remain restricted to designated administrators; application approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
