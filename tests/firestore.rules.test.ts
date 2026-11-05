@@ -335,12 +335,122 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
 
         // Test with exact lowercase and mixed-case auth token email to verify case-insensitivity
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: 'APPLICANT@WAILTAIL.COM'
+          email: 'APPLICANT@WAILTAIL.COM',
+          email_verified: true
         });
         const db = getNamedDb(applicantCtx);
         const appSnap = await assertSucceeds(getDoc(doc(db, collectionName, 'app-own-1')));
         assert.strictEqual(appSnap.exists(), true);
         assert.strictEqual(appSnap.data()?.sellerEmail, APPLICANT_EMAIL);
+      });
+
+      // M2.0A: 1. Authenticated applicant with verified matching email can read their application
+      test('M2.0A: 1. Authenticated applicant with verified matching email can read their application', async () => {
+        await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+          const adminDb = getNamedDb(adminCtx);
+          await setDoc(doc(adminDb, collectionName, 'app-verified-read-1'), {
+            year: '2020',
+            make: 'Toyota',
+            model: 'GR Yaris',
+            sellerEmail: APPLICANT_EMAIL,
+            status: 'pending'
+          });
+        });
+
+        const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
+          email: APPLICANT_EMAIL,
+          email_verified: true
+        });
+        const db = getNamedDb(applicantCtx);
+        const snap = await assertSucceeds(getDoc(doc(db, collectionName, 'app-verified-read-1')));
+        assert.strictEqual(snap.exists(), true);
+        assert.strictEqual(snap.data()?.sellerEmail, APPLICANT_EMAIL);
+      });
+
+      // M2.0A: 2. Authenticated applicant with matching but unverified email cannot read
+      test('M2.0A: 2. Authenticated applicant with matching but unverified email cannot read', async () => {
+        await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+          const adminDb = getNamedDb(adminCtx);
+          await setDoc(doc(adminDb, collectionName, 'app-unverified-read-1'), {
+            year: '2020',
+            make: 'Toyota',
+            model: 'GR Yaris',
+            sellerEmail: APPLICANT_EMAIL,
+            status: 'pending'
+          });
+        });
+
+        const unverifiedCtx = testEnv.authenticatedContext('applicant-uid-1', {
+          email: APPLICANT_EMAIL,
+          email_verified: false
+        });
+        const db = getNamedDb(unverifiedCtx);
+        await assertFails(getDoc(doc(db, collectionName, 'app-unverified-read-1')));
+      });
+
+      // M2.0A: 3. Authenticated user without an email claim cannot read
+      test('M2.0A: 3. Authenticated user without an email claim cannot read', async () => {
+        await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+          const adminDb = getNamedDb(adminCtx);
+          await setDoc(doc(adminDb, collectionName, 'app-no-email-read-1'), {
+            year: '2020',
+            make: 'Toyota',
+            model: 'GR Yaris',
+            sellerEmail: APPLICANT_EMAIL,
+            status: 'pending'
+          });
+        });
+
+        const noEmailCtx = testEnv.authenticatedContext('user-without-email-uid');
+        const db = getNamedDb(noEmailCtx);
+        await assertFails(getDoc(doc(db, collectionName, 'app-no-email-read-1')));
+      });
+
+      // M2.0A: 4. Authenticated applicant with verified but unrelated email cannot read
+      test('M2.0A: 4. Authenticated applicant with verified but unrelated email cannot read', async () => {
+        await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+          const adminDb = getNamedDb(adminCtx);
+          await setDoc(doc(adminDb, collectionName, 'app-unrelated-verified-1'), {
+            year: '2020',
+            make: 'Toyota',
+            model: 'GR Yaris',
+            sellerEmail: APPLICANT_EMAIL,
+            status: 'pending'
+          });
+        });
+
+        const unrelatedVerifiedCtx = testEnv.authenticatedContext('unrelated-uid', {
+          email: OTHER_USER_EMAIL,
+          email_verified: true
+        });
+        const db = getNamedDb(unrelatedVerifiedCtx);
+        await assertFails(getDoc(doc(db, collectionName, 'app-unrelated-verified-1')));
+      });
+
+      // M2.0A: 5. Administrator can still read collection-wide application queries and individual documents
+      test('M2.0A: 5. Administrator can still read collection-wide application queries and individual documents', async () => {
+        await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+          const adminDb = getNamedDb(adminCtx);
+          await setDoc(doc(adminDb, collectionName, 'app-admin-read-indiv-1'), {
+            sellerEmail: APPLICANT_EMAIL,
+            status: 'pending'
+          });
+        });
+
+        const adminCtx = testEnv.authenticatedContext('admin-uid', {
+          email: ADMIN_EMAIL,
+          email_verified: true
+        });
+        const db = getNamedDb(adminCtx);
+
+        // Individual document read
+        const docSnap = await assertSucceeds(getDoc(doc(db, collectionName, 'app-admin-read-indiv-1')));
+        assert.strictEqual(docSnap.exists(), true);
+
+        // Collection-wide query read
+        const unscopedQ = query(collection(db, collectionName));
+        const snap = await assertSucceeds(getDocs(unscopedQ));
+        assert.strictEqual(snap.docs.length >= 1, true);
       });
 
       // 13. Applicant cannot read another applicant's application
@@ -357,7 +467,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: APPLICANT_EMAIL
+          email: APPLICANT_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(applicantCtx);
         await assertFails(getDoc(doc(db, collectionName, 'app-other-1')));
@@ -377,7 +488,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const unrelatedCtx = testEnv.authenticatedContext('unrelated-uid', {
-          email: OTHER_USER_EMAIL
+          email: OTHER_USER_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(unrelatedCtx);
         await assertFails(getDoc(doc(db, collectionName, 'app-secret-1')));
@@ -413,7 +525,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: APPLICANT_EMAIL
+          email: APPLICANT_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(applicantCtx);
         const q = query(collection(db, collectionName), where('sellerEmail', '==', APPLICANT_EMAIL));
@@ -432,7 +545,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: APPLICANT_EMAIL
+          email: APPLICANT_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(applicantCtx);
         const unscopedQ = query(collection(db, collectionName));
@@ -450,7 +564,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const adminCtx = testEnv.authenticatedContext('admin-uid', {
-          email: ADMIN_EMAIL
+          email: ADMIN_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(adminCtx);
         const unscopedQ = query(collection(db, collectionName));
@@ -594,7 +709,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
 
         // Readable by authorized applicant
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: APPLICANT_EMAIL
+          email: APPLICANT_EMAIL,
+          email_verified: true
         });
         const applicantDb = getNamedDb(applicantCtx);
         const snap = await assertSucceeds(getDoc(doc(applicantDb, collectionName, 'app-legacy-hist-1')));
@@ -603,7 +719,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
 
         // Readable by administrator
         const adminCtx = testEnv.authenticatedContext('admin-uid', {
-          email: ADMIN_EMAIL
+          email: ADMIN_EMAIL,
+          email_verified: true
         });
         const adminDb = getNamedDb(adminCtx);
         const adminSnap = await assertSucceeds(getDoc(doc(adminDb, collectionName, 'app-legacy-hist-1')));
@@ -624,7 +741,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
 
         // The applicant with matching sellerEmail can read even if registeredUserId doesn't match applicant uid
         const applicantCtx = testEnv.authenticatedContext('applicant-uid-1', {
-          email: APPLICANT_EMAIL
+          email: APPLICANT_EMAIL,
+          email_verified: true
         });
         const applicantDb = getNamedDb(applicantCtx);
         const snap = await assertSucceeds(getDoc(doc(applicantDb, collectionName, 'app-id-test-1')));
@@ -632,7 +750,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
 
         // A user whose uid matches registeredUserId but whose email does NOT match cannot read
         const dummyCtx = testEnv.authenticatedContext('unrelated-dummy-id', {
-          email: 'imposter@wailtail.com'
+          email: 'imposter@wailtail.com',
+          email_verified: true
         });
         const dummyDb = getNamedDb(dummyCtx);
         await assertFails(getDoc(doc(dummyDb, collectionName, 'app-id-test-1')));

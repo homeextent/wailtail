@@ -135,6 +135,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (
         isAuthenticated() &&
         request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
         resource.data.sellerEmail == request.auth.token.email.lower()
       );
       allow update, delete: if isAdmin();
@@ -168,6 +169,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (
         isAuthenticated() &&
         request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
         resource.data.sellerEmail == request.auth.token.email.lower()
       );
       allow update, delete: if isAdmin();
