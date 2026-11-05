@@ -62,6 +62,10 @@ function createMockFirestore() {
 
   const firestore: any = {
     _store: store,
+    _retryCount: 0,
+    _attemptCount: 0,
+    _beforeTransaction: null,
+    _beforeRetry: null,
     collection(colName: string) {
       return {
         doc(docId: string) {
@@ -96,40 +100,60 @@ function createMockFirestore() {
       };
     },
     async runTransaction(updateFunction: (transaction: any) => Promise<any>) {
-      const stagedWrites = new Map<string, MockDocData>();
+      if (firestore._beforeTransaction) {
+        await firestore._beforeTransaction(store);
+      }
 
-      const transaction = {
-        async get(docRef: any) {
-          const colName = docRef.parent.id;
-          const docId = docRef.id;
-          const fullPath = `${colName}/${docId}`;
-          if (stagedWrites.has(fullPath)) {
-            const data = stagedWrites.get(fullPath);
-            return {
-              id: docId,
-              exists: data !== undefined,
-              data: () => (data ? JSON.parse(JSON.stringify(data)) : undefined),
-              ref: docRef
-            };
+      let attempt = 0;
+      const retryCount = firestore._retryCount || 0;
+
+      while (true) {
+        attempt++;
+        firestore._attemptCount = attempt;
+        const stagedWrites = new Map<string, MockDocData>();
+
+        const transaction = {
+          async get(docRef: any) {
+            const colName = docRef.parent.id;
+            const docId = docRef.id;
+            const fullPath = `${colName}/${docId}`;
+            if (stagedWrites.has(fullPath)) {
+              const data = stagedWrites.get(fullPath);
+              return {
+                id: docId,
+                exists: data !== undefined,
+                data: () => (data ? JSON.parse(JSON.stringify(data)) : undefined),
+                ref: docRef
+              };
+            }
+            return getDoc(colName, docId);
+          },
+          set(docRef: any, data: any, options?: { merge?: boolean }) {
+            const fullPath = `${docRef.parent.id}/${docRef.id}`;
+            if (options?.merge && store.has(fullPath)) {
+              const existing = store.get(fullPath) || {};
+              stagedWrites.set(fullPath, { ...existing, ...data });
+            } else {
+              stagedWrites.set(fullPath, { ...data });
+            }
           }
-          return getDoc(colName, docId);
-        },
-        set(docRef: any, data: any, options?: { merge?: boolean }) {
-          const fullPath = `${docRef.parent.id}/${docRef.id}`;
-          if (options?.merge && store.has(fullPath)) {
-            const existing = store.get(fullPath) || {};
-            stagedWrites.set(fullPath, { ...existing, ...data });
-          } else {
-            stagedWrites.set(fullPath, { ...data });
+        };
+
+        const result = await updateFunction(transaction);
+
+        if (attempt <= retryCount) {
+          if (firestore._beforeRetry) {
+            await firestore._beforeRetry(attempt, store);
           }
+          continue;
         }
-      };
 
-      await updateFunction(transaction);
+        // Commit staged writes
+        for (const [key, value] of stagedWrites.entries()) {
+          store.set(key, value);
+        }
 
-      // Commit staged writes
-      for (const [key, value] of stagedWrites.entries()) {
-        store.set(key, value);
+        return result;
       }
     }
   };
@@ -968,6 +992,345 @@ describe('M2.0B — /api/authorize-approved-consignor Endpoint Tests', () => {
       assert.strictEqual(evaluateAdminAuthority(undefined), false);
       assert.strictEqual(evaluateAdminAuthority({ email: null, emailVerified: true }), false);
       assert.strictEqual(evaluateAdminAuthority({ email: '', emailVerified: true }), false);
+    });
+  });
+
+  // 9.6 Transactional approval revalidation and retry-safe results (Correction D)
+  describe('9.6 Transactional Approval Revalidation & Retry-Safe Results (Correction D)', () => {
+    test('Test 1 — Application approval revoked before transaction authorization', async () => {
+      // 1. Initial application is approved and returned by pre-transaction query
+      mockStore._store.set('consignment_applications/app-revoked-before-tx', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-revoked-before-tx'
+      });
+      mockStore._store.set('auctions/auction-revoked-before-tx', {
+        id: 'auction-revoked-before-tx',
+        title: 'Revoked Before TX Lot'
+      });
+
+      // 2. Before the transaction performs its authoritative application read, change status to 'revoked'
+      mockStore._beforeTransaction = (store: Map<string, any>) => {
+        store.set('consignment_applications/app-revoked-before-tx', {
+          sellerEmail: SELLER_EMAIL,
+          status: 'revoked',
+          convertedAuctionId: 'auction-revoked-before-tx'
+        });
+      };
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      // Assertions
+      assert.strictEqual(res.statusCode, 403);
+      assert.strictEqual(res.data?.authorized, false);
+      assert.strictEqual(res.data?.success, false);
+      assert.strictEqual(mockStore._store.has(`users/${SELLER_UID}`), false, 'No user profile promotion');
+      assert.strictEqual(mockStore._store.has(`bidders/${SELLER_UID}`), false, 'No bidder profile promotion');
+      const auction = mockStore._store.get('auctions/auction-revoked-before-tx');
+      assert.strictEqual(auction.sellerId, undefined, 'No auction seller assignment');
+      assert.strictEqual(auction.sellerName, undefined);
+    });
+
+    test('Test 2 — Application approval remains valid', async () => {
+      mockStore._store.set('consignment_applications/app-remains-valid', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-remains-valid'
+      });
+      mockStore._store.set('auctions/auction-remains-valid', {
+        id: 'auction-remains-valid',
+        title: 'Remains Valid Lot'
+      });
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      // Assertions
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data?.success, true);
+      assert.strictEqual(res.data?.authorized, true);
+      assert.strictEqual(res.data?.role, 'seller');
+      assert.strictEqual(res.data?.uid, SELLER_UID);
+      assert.deepStrictEqual(res.data?.linkedAuctions, ['auction-remains-valid']);
+      assert.deepStrictEqual(res.data?.missingAuctions, []);
+      assert.deepStrictEqual(res.data?.conflicts, []);
+
+      // Verify user and bidder profile promotion
+      const user = mockStore._store.get(`users/${SELLER_UID}`);
+      const bidder = mockStore._store.get(`bidders/${SELLER_UID}`);
+      assert.ok(user, 'User document must exist');
+      assert.ok(bidder, 'Bidder document must exist');
+      assert.strictEqual(user.role, 'seller');
+      assert.strictEqual(bidder.role, 'seller');
+
+      // Verify auction linkage
+      const auction = mockStore._store.get('auctions/auction-remains-valid');
+      assert.strictEqual(auction.sellerId, SELLER_UID);
+      assert.strictEqual(auction.sellerName, 'Approved Consignor');
+    });
+
+    test('Test 3 — Transaction callback retry does not contaminate results', async () => {
+      mockStore._store.set('consignment_applications/app-retry-clean', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-retry-clean'
+      });
+      mockStore._store.set('auctions/auction-retry-clean', {
+        id: 'auction-retry-clean',
+        title: 'Retry Clean Lot'
+      });
+
+      // Configure mock to execute callback once, abort it, then re-execute
+      mockStore._retryCount = 1;
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      // Assert mock executed transaction callback multiple times
+      assert.strictEqual(mockStore._attemptCount, 2, 'Mock must invoke callback twice');
+
+      // Assert final response contains no duplicate auction IDs and reflects only successful attempt
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data?.success, true);
+      assert.strictEqual(res.data?.authorized, true);
+      assert.strictEqual(res.data?.linkedAuctions?.length, 1, 'No duplicate entries');
+      assert.deepStrictEqual(res.data?.linkedAuctions, ['auction-retry-clean']);
+      assert.deepStrictEqual(res.data?.missingAuctions, []);
+      assert.deepStrictEqual(res.data?.conflicts, []);
+
+      // Committed state is correct
+      const auction = mockStore._store.get('auctions/auction-retry-clean');
+      assert.strictEqual(auction.sellerId, SELLER_UID);
+    });
+
+    test('Test 4 — Retry with changed application approval', async () => {
+      mockStore._store.set('consignment_applications/app-retry-revoked', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-retry-revoked'
+      });
+      mockStore._store.set('auctions/auction-retry-revoked', {
+        id: 'auction-retry-revoked',
+        title: 'Retry Revoked Lot'
+      });
+
+      // Configure mock to execute callback once, abort, revoke approval before attempt 2, then re-execute
+      mockStore._retryCount = 1;
+      let capturedStoreState: Map<string, any> | null = null;
+      mockStore._beforeRetry = (_attempt: number, store: Map<string, any>) => {
+        store.set('consignment_applications/app-retry-revoked', {
+          sellerEmail: SELLER_EMAIL,
+          status: 'revoked',
+          convertedAuctionId: 'auction-retry-revoked'
+        });
+        // Capture complete Firestore mock store state after revocation and before attempt 2 executes
+        capturedStoreState = new Map(
+          Array.from(store.entries()).map(([k, v]) => [k, JSON.parse(JSON.stringify(v))])
+        );
+      };
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      // Callback executed twice
+      assert.strictEqual(mockStore._attemptCount, 2, 'Mock must invoke callback twice');
+
+      // Authorization denied on second attempt
+      assert.strictEqual(res.statusCode, 403);
+      assert.strictEqual(res.data?.authorized, false);
+      assert.strictEqual(res.data?.success, false);
+
+      // Verify no writes occurred and store remains identical to captured state after revocation
+      assert.ok(capturedStoreState, 'Store state must be captured after revocation');
+      assert.strictEqual(mockStore._store.size, (capturedStoreState as Map<string, any>).size);
+      assert.deepStrictEqual(
+        Object.fromEntries(mockStore._store),
+        Object.fromEntries(capturedStoreState as Map<string, any>)
+      );
+      assert.strictEqual(mockStore._store.has(`users/${SELLER_UID}`), false, 'No user profile promotion');
+      assert.strictEqual(mockStore._store.has(`bidders/${SELLER_UID}`), false, 'No bidder profile promotion');
+      const auction = mockStore._store.get('auctions/auction-retry-revoked');
+      assert.strictEqual(auction.sellerId, undefined, 'No auction seller assignment');
+      assert.strictEqual(auction.sellerName, undefined);
+
+      // Response does not contain stale results from attempt 1
+      assert.strictEqual(res.data?.linkedAuctions, undefined);
+    });
+
+    test('Test 5 — Existing auction assignment conflict remains protected', async () => {
+      const OTHER_SELLER_UID = 'competing-seller-uid';
+      mockStore._store.set('consignment_applications/app-conflict-prot', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-conflict-prot'
+      });
+      mockStore._store.set('auctions/auction-conflict-prot', {
+        id: 'auction-conflict-prot',
+        title: 'Protected Conflict Lot',
+        sellerId: OTHER_SELLER_UID,
+        sellerName: 'Other Seller'
+      });
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.data?.authorized, true);
+      assert.strictEqual(res.data?.linkedAuctions?.length, 0);
+      assert.strictEqual(res.data?.conflicts?.length, 1);
+      assert.strictEqual(res.data?.conflicts[0].auctionId, 'auction-conflict-prot');
+      assert.strictEqual(res.data?.conflicts[0].existingSellerId, OTHER_SELLER_UID);
+
+      // Auction in store remained untouched
+      const auction = mockStore._store.get('auctions/auction-conflict-prot');
+      assert.strictEqual(auction.sellerId, OTHER_SELLER_UID);
+      assert.strictEqual(auction.sellerName, 'Other Seller');
+    });
+
+    test('Test 6 — Idempotent successful authorization', async () => {
+      mockStore._store.set('consignment_applications/app-idem-test', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-idem-test'
+      });
+      mockStore._store.set('auctions/auction-idem-test', {
+        id: 'auction-idem-test',
+        title: 'Idempotency Lot'
+      });
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+
+      // Call 1
+      const res1 = createMockResponse();
+      await handleAuthorizeApprovedConsignor(req, res1, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      assert.strictEqual(res1.statusCode, 200);
+      assert.strictEqual(res1.data?.authorized, true);
+      assert.deepStrictEqual(res1.data?.linkedAuctions, ['auction-idem-test']);
+
+      // Call 2
+      const res2 = createMockResponse();
+      await handleAuthorizeApprovedConsignor(req, res2, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      assert.strictEqual(res2.statusCode, 200);
+      assert.strictEqual(res2.data?.authorized, true);
+      assert.deepStrictEqual(res2.data?.linkedAuctions, ['auction-idem-test']);
+      assert.strictEqual(res2.data?.linkedAuctions?.length, 1);
+
+      // Verify consistency of user and bidder documents
+      const user = mockStore._store.get(`users/${SELLER_UID}`);
+      const bidder = mockStore._store.get(`bidders/${SELLER_UID}`);
+      assert.strictEqual(user.role, 'seller');
+      assert.strictEqual(bidder.role, 'seller');
+      assert.strictEqual(user.uid, SELLER_UID);
+      assert.strictEqual(bidder.uid, SELLER_UID);
+
+      // Verify auction assignment
+      const auction = mockStore._store.get('auctions/auction-idem-test');
+      assert.strictEqual(auction.sellerId, SELLER_UID);
+    });
+
+    test('Test 7 — Legacy consignments approval revoked before transaction authorization', async () => {
+      // 1. Initial approved legacy consignments document returned by lookup
+      mockStore._store.set('consignments/legacy-app-revoked-before-tx', {
+        sellerEmail: SELLER_EMAIL,
+        status: 'approved',
+        convertedAuctionId: 'auction-legacy-revoked-before-tx'
+      });
+      mockStore._store.set('auctions/auction-legacy-revoked-before-tx', {
+        id: 'auction-legacy-revoked-before-tx',
+        title: 'Legacy Revoked Before TX Lot'
+      });
+
+      // 2. Change status to revoked immediately before the transaction's authoritative read
+      let capturedStoreState: Map<string, any> | null = null;
+      mockStore._beforeTransaction = (store: Map<string, any>) => {
+        store.set('consignments/legacy-app-revoked-before-tx', {
+          sellerEmail: SELLER_EMAIL,
+          status: 'revoked',
+          convertedAuctionId: 'auction-legacy-revoked-before-tx'
+        });
+        // Capture complete Firestore mock store state after revocation and before transaction read
+        capturedStoreState = new Map(
+          Array.from(store.entries()).map(([k, v]) => [k, JSON.parse(JSON.stringify(v))])
+        );
+      };
+
+      const req = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${VALID_TOKEN}` }
+      };
+      const res = createMockResponse();
+
+      // 3. Exercise real endpoint handler and existing mock transaction implementation
+      await handleAuthorizeApprovedConsignor(req, res, {
+        adminServices: { auth: mockAuth, firestore: mockStore }
+      });
+
+      // 4. Assert HTTP 403 and authorized === false
+      assert.strictEqual(res.statusCode, 403);
+      assert.strictEqual(res.data?.authorized, false);
+      assert.strictEqual(res.data?.success, false);
+
+      // 5. Assert no user or bidder profile promotion
+      assert.strictEqual(mockStore._store.has(`users/${SELLER_UID}`), false, 'No user profile promotion');
+      assert.strictEqual(mockStore._store.has(`bidders/${SELLER_UID}`), false, 'No bidder profile promotion');
+
+      // 6. Assert no auction assignment
+      const auction = mockStore._store.get('auctions/auction-legacy-revoked-before-tx');
+      assert.strictEqual(auction.sellerId, undefined, 'No auction seller assignment');
+      assert.strictEqual(auction.sellerName, undefined);
+
+      // 7. Assert no authorization-related writes occurred (store identical to state captured after revocation)
+      assert.ok(capturedStoreState, 'Store state must be captured after revocation');
+      assert.strictEqual(mockStore._store.size, (capturedStoreState as Map<string, any>).size);
+      assert.deepStrictEqual(
+        Object.fromEntries(mockStore._store),
+        Object.fromEntries(capturedStoreState as Map<string, any>)
+      );
     });
   });
 });

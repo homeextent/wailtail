@@ -188,16 +188,18 @@ export async function handleAuthorizeApprovedConsignor(
       }
     }
 
-    const approvedApplications: any[] = [];
+    const candidateAppRefs: any[] = [];
+    const seenAppIds = new Set<string>();
     matchedAppDocs.forEach((docSnap) => {
       const data = docSnap.data();
-      if (data && data.status === 'approved') {
-        approvedApplications.push({ id: docSnap.id, ...data });
+      if (data && data.status === 'approved' && !seenAppIds.has(docSnap.id)) {
+        seenAppIds.add(docSnap.id);
+        candidateAppRefs.push(docSnap.ref);
       }
     });
 
     // If no approved applications exist
-    if (approvedApplications.length === 0) {
+    if (candidateAppRefs.length === 0) {
       return sendJson(res, 200, {
         success: true,
         authorized: false,
@@ -207,45 +209,85 @@ export async function handleAuthorizeApprovedConsignor(
       });
     }
 
-    // 5. Approved Consignor Confirmed — Determine Canonical Role & Auction Linkage
+    // 5. Approved Consignor Candidate Identified — Determine Canonical Role
     // Root of Trust: Designated administrators are never downgraded to 'seller' or 'bidder'
     const targetRole: 'admin' | 'seller' = isDesignatedAdmin ? 'admin' : 'seller';
 
     const tokenDisplayName = (decodedToken.name || '').trim();
     const sellerResolvedName = tokenDisplayName || rawEmail.split('@')[0] || 'Seller';
 
-    // Collect candidate auction IDs from matching approved applications
-    const candidateAuctionIds = Array.from(
-      new Set(
-        approvedApplications
-          .map((app) => (app.convertedAuctionId ? String(app.convertedAuctionId).trim() : ''))
-          .filter(Boolean)
-      )
-    );
-
-    const linkedAuctions: string[] = [];
-    const missingAuctions: string[] = [];
-    const conflicts: Array<{ auctionId: string; existingSellerId: string }> = [];
-
-    const now = Date.now();
     const userRef = firestore.collection('users').doc(verifiedUid);
     const bidderRef = firestore.collection('bidders').doc(verifiedUid);
 
-    // 6. Execute Atomic Firestore Transaction
-    await firestore.runTransaction(async (transaction) => {
-      // Step A: Read canonical profile documents
+    // 6. Execute Atomic Firestore Transaction with In-Transaction Approval Revalidation (Milestone M2.0B Correction D)
+    interface TransactionAuthorizedResult {
+      authorized: true;
+      linkedAuctions: string[];
+      missingAuctions: string[];
+      conflicts: Array<{ auctionId: string; existingSellerId: string }>;
+    }
+
+    interface TransactionUnauthorizedResult {
+      authorized: false;
+      reason: string;
+    }
+
+    type TransactionResult = TransactionAuthorizedResult | TransactionUnauthorizedResult;
+
+    const txResult: TransactionResult = await firestore.runTransaction(async (transaction: any) => {
+      // Fresh transaction-local result collections for retry safety (Milestone M2.0B Correction D)
+      const linkedAuctions: string[] = [];
+      const missingAuctions: string[] = [];
+      const conflicts: Array<{ auctionId: string; existingSellerId: string }> = [];
+
+      // Step A: Revalidate candidate applications inside the transaction
+      const eligibleApplications: any[] = [];
+      for (const appRef of candidateAppRefs) {
+        const appSnap = await transaction.get(appRef);
+        if (appSnap.exists) {
+          const appData = appSnap.data();
+          if (
+            appData &&
+            appData.status === 'approved' &&
+            normalizeEmail(appData.sellerEmail) === verifiedEmail
+          ) {
+            eligibleApplications.push({ id: appSnap.id, ...appData });
+          }
+        }
+      }
+
+      // If no eligible application remains, abort authorization inside transaction
+      if (eligibleApplications.length === 0) {
+        return {
+          authorized: false,
+          reason: 'No eligible approved consignment application found for this account.'
+        };
+      }
+
+      // Step B: Derive candidate auction IDs strictly from the freshly revalidated applications
+      const candidateAuctionIds = Array.from(
+        new Set(
+          eligibleApplications
+            .map((app) => (app.convertedAuctionId ? String(app.convertedAuctionId).trim() : ''))
+            .filter(Boolean)
+        )
+      );
+
+      // Step C: Read canonical profile documents
       const userSnap = await transaction.get(userRef);
       const bidderSnap = await transaction.get(bidderRef);
 
-      // Step B: Read candidate auction documents
-      const auctionSnaps: Array<{ id: string; snap: FirebaseFirestore.DocumentSnapshot }> = [];
+      // Step D: Read candidate auction documents
+      const auctionSnaps: Array<{ id: string; snap: any }> = [];
       for (const auctionId of candidateAuctionIds) {
         const aRef = firestore.collection('auctions').doc(auctionId);
         const aSnap = await transaction.get(aRef);
         auctionSnaps.push({ id: auctionId, snap: aSnap });
       }
 
-      // Step C: Write canonical profiles with merge semantics
+      // Step E: Perform all writes after reads have concluded (Preserve read-before-write ordering)
+      const now = Date.now();
+
       if (userSnap.exists) {
         transaction.set(
           userRef,
@@ -294,7 +336,7 @@ export async function handleAuthorizeApprovedConsignor(
         });
       }
 
-      // Step D: Safely link converted auctions
+      // Step F: Safely link converted auctions
       for (const item of auctionSnaps) {
         if (!item.snap.exists) {
           // Do not create missing auctions
@@ -325,16 +367,34 @@ export async function handleAuthorizeApprovedConsignor(
           });
         }
       }
+
+      return {
+        authorized: true,
+        linkedAuctions,
+        missingAuctions,
+        conflicts
+      };
     });
+
+    if (txResult.authorized === false) {
+      return sendJson(res, 403, {
+        success: false,
+        authorized: false,
+        role: isDesignatedAdmin ? 'admin' : 'bidder',
+        uid: verifiedUid,
+        reason: txResult.reason,
+        error: txResult.reason
+      });
+    }
 
     return sendJson(res, 200, {
       success: true,
       authorized: true,
       role: targetRole,
       uid: verifiedUid,
-      linkedAuctions,
-      missingAuctions,
-      conflicts
+      linkedAuctions: txResult.linkedAuctions,
+      missingAuctions: txResult.missingAuctions,
+      conflicts: txResult.conflicts
     });
   } catch (err: any) {
     console.error('[authorize-approved-consignor] Error processing consignor authorization:', err);
