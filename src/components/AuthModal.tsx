@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { isDesignatedAdminEmail } from '../config/adminConfig';
 import { 
   X, 
   Mail, 
@@ -106,20 +107,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return false;
     }
 
-    // Inspect user role from Firestore
-    let userRole = '';
-    try {
-      const userDocSnap = await getDoc(doc(db, 'users', authenticatedUid));
-      if (userDocSnap.exists()) {
-        userRole = (userDocSnap.data()?.role || '').toLowerCase();
-      }
-    } catch (err) {
-      console.warn('Could not read user role from Firestore:', err);
-    }
-
-    const cleanEmail = (userEmail || '').toLowerCase();
-    const isDesignatedAdmin = cleanEmail === 'jeremygoodmurphy@gmail.com' || cleanEmail === 'jeremy@theinnovativegroup.ca';
-    const isUserAdmin = userRole === 'admin' || isDesignatedAdmin;
+    const isUserAdmin = isDesignatedAdminEmail(userEmail);
 
     try {
       sessionStorage.removeItem('wailtail_pending_admin_deeplink');

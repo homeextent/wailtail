@@ -70,8 +70,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller, isEmailVerified, signOut } = useAuth();
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
-  const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
-  const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
+  const isAdmin = Boolean(contextAdmin);
+  const isSeller = Boolean(isAdmin || contextSeller || userProfile?.role?.toLowerCase() === 'seller');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);

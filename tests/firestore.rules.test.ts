@@ -628,7 +628,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const adminCtx = testEnv.authenticatedContext('admin-uid', {
-          email: ADMIN_EMAIL
+          email: ADMIN_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(adminCtx);
 
@@ -789,6 +790,330 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         { headers: { Authorization: 'Bearer owner' } }
       );
       assert.strictEqual(defaultRes.status, 404, 'Document must not exist in default database');
+    });
+  });
+
+  describe('Firestore Security Rules — M2.0B Canonical Profile Role Hardening', () => {
+    const PROFILE_COLLECTIONS = ['users', 'bidders'] as const;
+    const ADMIN_1_EMAIL = 'jeremygoodmurphy@gmail.com';
+    const ADMIN_2_EMAIL = 'jeremy@theinnovativegroup.ca';
+    const ORDINARY_USER_UID = 'ordinary-member-1';
+    const ORDINARY_USER_EMAIL = 'ordinary@wailtail.com';
+    const OTHER_UID = 'ordinary-member-2';
+    const OTHER_EMAIL = 'member2@wailtail.com';
+
+    for (const col of PROFILE_COLLECTIONS) {
+      describe(`Collection: ${col}`, () => {
+        // 1. Owner cannot create their own profile with role: 'admin'
+        test(`1. Owner cannot create their own ${col} profile with role: 'admin'`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              role: 'admin'
+            })
+          );
+        });
+
+        // 2. Owner cannot create their own profile with role: 'seller'
+        test(`2. Owner cannot create their own ${col} profile with role: 'seller'`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              role: 'seller'
+            })
+          );
+        });
+
+        // Baseline: Owner can create their own profile with baseline role: 'bidder' or omitted role
+        test(`Owner can create their own ${col} profile with role: 'bidder' or omitted role`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Ordinary Member',
+              role: 'bidder',
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // 3. Owner cannot create another UID's profile
+        test(`3. Owner cannot create another UID's ${col} profile`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, OTHER_UID), {
+              uid: OTHER_UID,
+              email: OTHER_EMAIL,
+              role: 'bidder'
+            })
+          );
+        });
+
+        // Owner cannot inject protected dealerId or ban status on create
+        test(`Owner cannot inject protected dealerId or ban status on ${col} create`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              dealerId: 'dealer-123',
+              role: 'bidder'
+            })
+          );
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              isBanned: false,
+              role: 'bidder'
+            })
+          );
+        });
+
+        // Setup existing baseline profile before update tests
+        describe('Update Guards', () => {
+          beforeEach(async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: true,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+              await setDoc(doc(rootDb, col, OTHER_UID), {
+                uid: OTHER_UID,
+                email: OTHER_EMAIL,
+                displayName: 'Other Member',
+                role: 'bidder',
+                isEmailVerified: true,
+                totalBidsPlaced: 0,
+                registeredAt: Date.now()
+              });
+            });
+          });
+
+          // 4. Owner cannot change their own role to 'admin'
+          test(`4. Owner cannot change their own role to 'admin' in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'admin'
+              })
+            );
+          });
+
+          // 5. Owner cannot change their own role to 'seller'
+          test(`5. Owner cannot change their own role to 'seller' in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+
+          // 6. Owner cannot change another user's role
+          test(`6. Owner cannot change another user's role in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, OTHER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+
+          // 7. Owner cannot change protected dealerId
+          test(`7. Owner cannot change protected dealerId in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                dealerId: 'dealer-fraud-1'
+              })
+            );
+          });
+
+          // Owner cannot modify ban flags
+          test(`Owner cannot modify ban flags in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isBanned: false,
+                bannedFromBidding: false
+              })
+            );
+          });
+
+          // 8. Ordinary permitted profile updates continue to work
+          test(`8. Ordinary permitted profile updates continue to work in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                displayName: 'Updated Name',
+                phone: '416-555-0199',
+                totalBidsPlaced: 2,
+                highestBidPlaced: 45000,
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // 9. Designated administrators retain authorized role-management capability
+          test(`9. Designated administrator 1 retains authorized role-management capability in ${col}`, async () => {
+            const adminCtx = testEnv.authenticatedContext('admin-uid-1', {
+              email: ADMIN_1_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(adminCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller',
+                updatedAt: Date.now()
+              })
+            );
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'admin',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // 11. Second designated administrator recognized
+          test(`11. Second designated administrator (${ADMIN_2_EMAIL}) retains authorized role-management capability in ${col}`, async () => {
+            const adminCtx = testEnv.authenticatedContext('admin-uid-2', {
+              email: ADMIN_2_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(adminCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // Admin with unverified email cannot modify roles
+          test(`Admin with unverified email cannot modify roles in ${col}`, async () => {
+            const unverifiedAdminCtx = testEnv.authenticatedContext('admin-uid-unverified', {
+              email: ADMIN_1_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedAdminCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+        });
+      });
+    }
+
+    // 10. An unrelated user cannot obtain admin privileges by storing role: 'admin' in a profile
+    test('10. An unrelated user cannot obtain admin privileges by having role: "admin" in their profile', async () => {
+      const attackerUid = 'attacker-uid';
+      const attackerEmail = 'attacker@evil.com';
+
+      // Seed an attacker profile document with role: 'admin' using rules-disabled admin bypass
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const rootDb = getNamedDb(context);
+        await setDoc(doc(rootDb, 'users', attackerUid), {
+          uid: attackerUid,
+          email: attackerEmail,
+          role: 'admin',
+          isEmailVerified: true
+        });
+      });
+
+      // Attacker signs in with attackerEmail and valid token
+      const attackerCtx = testEnv.authenticatedContext(attackerUid, {
+        email: attackerEmail,
+        email_verified: true
+      });
+      const db = getNamedDb(attackerCtx);
+
+      // Attempt to access administrative dealer_profiles collection (protected by isAdmin())
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'rogue-dealer'), {
+          legalBusinessName: 'Rogue Dealership Inc.',
+          dealerLicenseNumber: 'ROGUE-999'
+        })
+      );
+
+      // Attempt to update another user's role
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'admin'
+        })
+      );
     });
   });
 });

@@ -269,8 +269,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onOpenAccountHub,
   onOpenSocialKit
 }) => {
-  const { user, userProfile } = useAuth();
-  const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
+  const { user, userProfile, isAdmin } = useAuth();
 
   // Safe fallback for invalid workspace parameters: if id is 'new' or lot document does not exist
   useEffect(() => {

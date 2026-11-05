@@ -74,8 +74,8 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 }) => {
   const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller } = useAuth();
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
-  const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
-  const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
+  const isAdmin = Boolean(contextAdmin);
+  const isSeller = Boolean(isAdmin || contextSeller || userProfile?.role?.toLowerCase() === 'seller');
   
   const resolveValidTab = (tab?: string): 'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications' => {
     const validTabs = ['bids', 'watchlist', 'seller', 'consignments', 'notifications'];
@@ -202,13 +202,13 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 
   // Determine user role label and badge style
   const roleDisplay = useMemo(() => {
-    if (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN') {
+    if (isAdmin) {
       return {
         label: 'ADMIN',
         badgeClass: 'bg-red-950/80 text-red-300 border-red-800/80'
       };
     }
-    if (isSeller || userProfile?.role?.toUpperCase() === 'SELLER' || summary.sellerListings.length > 0) {
+    if (isSeller || summary.sellerListings.length > 0) {
       return {
         label: 'SELLER',
         badgeClass: 'bg-amber-950/80 text-amber-300 border-amber-800/80'
@@ -218,7 +218,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
       label: 'BIDDER',
       badgeClass: 'bg-sky-950/80 text-sky-300 border-sky-800/80'
     };
-  }, [isAdmin, isSeller, userProfile?.role, summary.sellerListings.length]);
+  }, [isAdmin, isSeller, summary.sellerListings.length]);
 
   // Tab visibility rules:
   // - Tab 1: My Bids & Activity: Always visible
@@ -227,15 +227,13 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   const showSellerTab = Boolean(
     isAdmin || 
     isSeller || 
-    userProfile?.role?.toUpperCase() === 'SELLER' || 
     summary.sellerListings.length > 0
   );
 
   const showConsignmentsTab = Boolean(
     summary.consignments.length > 0 || 
     isAdmin || 
-    isSeller || 
-    userProfile?.role?.toUpperCase() === 'SELLER'
+    isSeller
   );
 
   if (!isOpen || !user) return null;

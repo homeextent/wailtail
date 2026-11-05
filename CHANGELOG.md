@@ -9,17 +9,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Next Milestone
-- **M2.0B — Trusted Server-Side Role Authorization**:
-  - **Status**: NEXT MILESTONE — NOT YET IMPLEMENTED.
-  - Scope includes Firebase Admin SDK ID-token verification, trusted approved-consignor authorization, consistent users/bidders role assignment, prevention of client-side privilege escalation, and removal of client-side self-promotion.
+- **M2.1 — Administrative Consignment Application Review**: PLANNED. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
 ### Planned Milestones
-- **M2.1 — Administrative Consignment Application Review**: PLANNED. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 - **M2.2 — Dealer Application and Intake**: PLANNED. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
 - **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: PLANNED. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
 - **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
 - **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
+
+---
+
+## 2026-11-05 — Trusted Server-Side Role Authorization (M2.0B Milestone)
+
+### M2.0B — Trusted Server-Side Role Authorization
+
+> **Release Status**: COMPLETE — VERIFIED ON STAGING. Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections, removed vulnerable client-side self-promotion (`elevateApprovedConsignor`), aligned administrative root of trust to verified explicit email allowlist, and verified with 112 passing Firestore rules emulator unit tests and 25 isolated endpoint unit tests.
+
+- **Trusted Server-Side Consignor Authorization (`api/authorize-approved-consignor.ts`)**:
+  - **Verified Token Authorization**: Requires valid Firebase ID token in `Authorization: Bearer <token>` header, verified cryptographically via Firebase Admin SDK `verifyIdToken()`. Derives UID, email, and email verification status exclusively from token. Request body identity fields are strictly ignored.
+  - **Verified Consignment Verification**: Evaluates approved consignment applications in `consignment_applications` (with legacy collection fallback) matching normalized token email. Normalizes email casing while supporting historical original-case matches.
+  - **Atomic Canonical Profile Updates**: Executes Firestore transaction updating `users/{uid}` and `bidders/{uid}` with `role: 'seller'` (preserving `role: 'admin'` for designated administrators) with merge semantics and missing-doc creation.
+  - **Seller-to-Auction Linkage**: Links converted auctions referenced by approved applications, recording `sellerId` and `sellerName` while safeguarding existing assignments against overwrites and reporting conflicts without auto-transferring ownership.
+  - **Named Firestore Database Binding (`api/_lib/firebaseAdmin.ts`)**: Reusable Firebase Admin initialization targeting named instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, avoiding accidental `(default)` fallback.
+
+- **Canonical Profile Security Rules Hardening (`firestore.rules`)**:
+  - **Create Locks**: Non-admin callers can only create their own profile document (`isOwner(userId)` / `isOwner(bidderId)`), cannot set elevated roles (`seller` or `admin`), must supply baseline `bidder` role if role field is present, and cannot inject protected dealer (`dealerId`) or administrative ban flags (`isBanned`, `bannedFromBidding`, `bannedAt`).
+  - **Update Locks**: Ordinary profile owners are barred from mutating `role`, `dealerId`, `isBanned`, `bannedFromBidding`, and `bannedAt` fields. Ordinary permitted profile updates (`displayName`, `phone`, `totalBidsPlaced`, `updatedAt`, `isEmailVerified`) remain functional.
+  - **Explicit Admin Root of Trust**: `isAdmin()` helper requires authenticated context, `token.email != null`, verified email (`('email_verified' in request.auth.token && request.auth.token.email_verified == true)`), and exact match against the two designated administrator identities (`jeremygoodmurphy@gmail.com` and `jeremy@theinnovativegroup.ca`). Mutable profile roles cannot establish administrative authority.
+
+- **Client Privilege Escalation Removal (`src/context/AuthContext.tsx`)**:
+  - **Removed `elevateApprovedConsignor()`**: Eradicated client-side elevation mechanism querying applications and mutating roles from client.
+  - **Trusted Endpoint Invocation**: Replaced with `requestServerConsignorAuthorization()` invoking `/api/authorize-approved-consignor` and refreshing canonical profile from Firestore.
+  - **Registration Hardening**: Baseline registration creates ordinary members with `role: 'bidder'` only.
+  - **Centralized Admin Identity Configuration (`src/config/adminConfig.ts`)**: Unified administrator email allowlist and normalization utilities shared across client and server.
+
+- **UI Authorization & Route Guard Hardening (`src/App.tsx`, `src/components/ListingEditorWorkspace.tsx`, `src/components/AuthModal.tsx`, `src/components/Navbar.tsx`, `src/components/UserAccountHubModal.tsx`, `src/components/CommentSection.tsx`)**:
+  - Removed reliance on `userProfile.role === 'admin'` for administrative presentation and route guards.
+  - Hardened `/admin` operations portal route guard to derive exclusively from verified admin identity.
+  - Hardened `/dashboard/listings/[id]/edit` and inventory dropdowns to restrict access based on verified seller/admin authorization and `sellerId` ownership.
+  - Hardened `AuthModal.tsx` admin deep-link resolution to utilize centralized `isDesignatedAdminEmail()`.
+
+- **Comprehensive Verification & Regression Testing**:
+  - **112 Passing Firestore Rules Tests (`npm run test:rules`)**: 83 existing M2.0A/M1/M1.1 tests + 29 new tests validating user/bidder creation locks, role mutation prevention, dealerId protection, admin capability retention, and isolation from attacker `role: 'admin'` profiles.
+  - **25 Passing Isolated Endpoint Tests (`npm run test:endpoint`)**: Full unit test coverage across authentication, authorization decisions, casing normalization, request body injection defense, atomic transaction profile updates, and auction linkage conflict reporting.
+  - **Clean Build (`npm run build`)**: Zero TypeScript or bundling errors.
 
 ---
 

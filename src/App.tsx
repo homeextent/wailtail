@@ -69,7 +69,7 @@ import { formatExternalUrl } from './utils/formatters';
 import { trackPageView, trackProvenanceClick } from './utils/analytics';
 
 const AuctionAppContent: React.FC = () => {
-  const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin } = useAuth();
+  const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin, isSeller: authIsSeller } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(initialUserProfile);
 
   // Sync initial profile from auth context
@@ -93,11 +93,9 @@ const AuctionAppContent: React.FC = () => {
     };
   }, [user?.uid]);
 
-  const isAdmin = Boolean(
-    authIsAdmin || 
-    userProfile?.role?.toUpperCase() === 'ADMIN' || 
-    (user as any)?.role === 'ADMIN'
-  );
+  // Client-side administrative presentation state derives strictly from verified admin identity
+  const isAdmin = Boolean(authIsAdmin);
+  const isSeller = Boolean(isAdmin || authIsSeller || userProfile?.role === 'seller');
 
   // Synchronous localStorage Branding Hydration to eliminate initial loading flash
   const [globalBranding, setGlobalBranding] = useState(() => {
@@ -383,9 +381,7 @@ const AuctionAppContent: React.FC = () => {
     if (authLoading) return;
 
     if (isAdminRoute) {
-      const isAuthorized = Boolean(
-        user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-      );
+      const isAuthorized = Boolean(user && isAdmin);
       if (!isAuthorized) {
         const search = window.location.search || (currentPath.includes('?') ? currentPath.slice(currentPath.indexOf('?')) : '');
         const searchParams = new URLSearchParams(search);
@@ -423,9 +419,7 @@ const AuctionAppContent: React.FC = () => {
 
     if (!isProtectedListingRoute || isAdminRoute) return;
 
-    const isAuthorized = Boolean(
-      user && (user.role === 'seller' || user.role === 'admin' || isAdmin)
-    );
+    const isAuthorized = Boolean(user && isSeller);
 
     if (!isAuthorized) {
       setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
@@ -663,9 +657,7 @@ const AuctionAppContent: React.FC = () => {
 
   // Dedicated Full-Page Admin Operations Portal Route (/admin)
   if (isAdminRoute) {
-    const isAuthorized = Boolean(
-      user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-    );
+    const isAuthorized = Boolean(user && isAdmin);
     if (isAuthorized) {
       return (
         <AdminPortalPage
@@ -736,9 +728,7 @@ const AuctionAppContent: React.FC = () => {
         onUpdateMediaConfig={handleUpdateMediaConfig}
         onBackToPublic={() => navigateTo('/')}
         onBackToDashboard={() => {
-          const userIsAdmin = Boolean(
-            user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-          );
+          const userIsAdmin = Boolean(user && isAdmin);
           if (userIsAdmin) {
             navigateTo('/admin?tab=inventory');
           } else {
@@ -1181,9 +1171,7 @@ const AuctionAppContent: React.FC = () => {
         onClose={() => {
           setIsAuthModalOpen(false);
           if (isAdminRoute) {
-            const isAuthorized = Boolean(
-              user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-            );
+            const isAuthorized = Boolean(user && isAdmin);
             if (!isAuthorized) {
               navigateTo('/');
             }

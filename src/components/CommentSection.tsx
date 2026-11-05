@@ -88,16 +88,14 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     (user?.email && auction.sellerName && user.email.toLowerCase() === auction.sellerName.toLowerCase()) ||
     (auction.sellerName && auction.sellerName.toLowerCase() === 'wailtail' && userProfile?.displayName?.toLowerCase().includes('wailtail'))
   );
-  const isSellerOrAdmin = Boolean(user && (isAdmin || isSeller || user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com'));
+  const isSellerOrAdmin = Boolean(user && (isAdmin || isSeller));
 
   // Check if current user has pin privileges
   const canPinComment = Boolean(
     user && (
       user.uid === auction?.sellerId ||
       user.email?.toLowerCase() === auction?.sellerEmail?.toLowerCase() ||
-      userProfile?.role?.toUpperCase() === 'ADMIN' ||
-      isAdmin ||
-      user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com'
+      isAdmin
     )
   );
 
@@ -177,7 +175,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     try {
       // Determine badge
       let badge: 'Seller' | 'Verified Bidder' | 'High Bidder' | 'Admin' | 'Member' = 'Verified Bidder';
-      if (isAdmin || user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com') {
+      if (isAdmin) {
         badge = 'Admin';
       } else if (isSeller) {
         badge = 'Seller';
@@ -218,7 +216,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     setError(null);
 
     try {
-      const badge: 'Seller' | 'Admin' = isAdmin || user.email?.toLowerCase() === 'jeremygoodmurphy@gmail.com' ? 'Admin' : 'Seller';
+      const badge: 'Seller' | 'Admin' = isAdmin ? 'Admin' : 'Seller';
       const authorName = userProfile.displayName || (badge === 'Admin' ? 'Wailtail Admin' : (auction.sellerName || 'Seller'));
 
       await postComment(auction.id, {

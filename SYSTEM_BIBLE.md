@@ -2392,17 +2392,17 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Exit Criteria**: 83/83 rules unit tests pass; production deployment verified; Cloud Firestore rules deployed; production QA confirmed.
 
 #### M2.0B — Trusted Server-Side Role Authorization
-- **Status**: **NEXT MILESTONE — NOT YET IMPLEMENTED**.
+- **Status**: **COMPLETE — VERIFIED ON STAGING**.
 - **Objectives**: Transition role promotion and approved-consignor workspace authorization from legacy client-side execution to a secure, trusted server-side architecture.
 - **Business Rationale**: Eliminates the critical vulnerability where client-side code (`elevateApprovedConsignor`) promotes users to `'seller'` under client-controlled `isOwner(uid)` Firestore rules, preventing client-side privilege escalation or unauthorized self-promotion.
 - **Key Deliverables**:
-  - Secure serverless endpoint or Firebase Cloud Function utilizing Firebase Admin SDK.
+  - Secure serverless endpoint `/api/authorize-approved-consignor` utilizing Firebase Admin SDK with reusable initialization and named database instance targeting (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
   - Cryptographic validation of caller ID tokens (`admin.auth().verifyIdToken()`).
-  - Server-side verification that the authenticated user's verified email matches an approved consignment application document (`status == 'approved'`).
-  - Atomic, trusted server-side role assignment across `users/{uid}` and `bidders/{uid}` collections.
-  - Removal of client-side role elevation mutations from `AuthContext.tsx`.
-  - Hardening of Firestore security rules to deny non-admin users the ability to mutate `role` fields on their own `users` or `bidders` documents (`!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])`).
-  - Comprehensive unit and integration test coverage verifying positive approved promotion and rejecting unapproved or self-promotion attempts.
+  - Server-side verification that the authenticated user's verified email matches an approved consignment application document (`status == 'approved'`) with support for historical email casing.
+  - Atomic, trusted server-side role assignment across `users/{uid}` and `bidders/{uid}` collections, preserving administrator roles against demotion.
+  - Removal of client-side role elevation mutations (`elevateApprovedConsignor`) from `AuthContext.tsx`.
+  - Hardening of Firestore security rules to deny non-admin users the ability to mutate `role` fields on `users` or `bidders` documents (`!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])`) while retaining baseline `bidder` role creation.
+  - Comprehensive unit and integration test coverage: 112 passing Firestore rules unit tests and 25 passing isolated endpoint unit tests.
 - **Dependencies**: M2.0A production baseline.
 - **Exit Criteria**: Non-admin users cannot mutate `role` via Firestore SDK; approved consignor onboarding flow elevates roles exclusively through trusted serverless validation; passing test suite.
 

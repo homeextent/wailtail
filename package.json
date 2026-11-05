@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "test:rules": "firebase emulators:exec --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'"
+    "test:endpoint": "node --import tsx --test tests/authorize-approved-consignor.test.ts",
+    "test:rules": "firebase emulators:exec --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'",
+    "test": "npm run test:endpoint && npm run test:rules"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
