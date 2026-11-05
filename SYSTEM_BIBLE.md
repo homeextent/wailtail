@@ -34,7 +34,7 @@
 | Seller Social Marketing Kit (Modal) | `SocialPromoKitModal.tsx` | Authenticated (`ADMIN`, `SELLER`) | Decoupled global promotional modal enabling consignors and administrators to generate high-converting social graphics and enthusiast copy; managed via `App.tsx` root state (`isSocialKitOpen`, `socialKitAuction`) and triggered from `ListingEditorWorkspace.tsx` (top header), `UserAccountHubModal.tsx` (Seller Activity Hub), and `AdminPortalPage.tsx` (Vehicle Inventory table). |
 | Platform Trust & Educational Guide (Modal) | `HowItWorksModal.tsx` | Public | Global educational modal providing tabbed guidance on "Buying on Wailtail" (0% buyer fees, 2-minute anti-sniping soft close, Pre-Purchase Inspections), "Selling on Wailtail" (retail enthusiast marketplace vs wholesale dealer clearinghouses, no 3rd-party inspector bottlenecks, no post-sale green/red light arbitration, direct private-party CAD wire settlement), and "Trust & Security" (zero-tolerance anti-shill defense, verified bidder identities, upfront transparency); accessible globally via `App.tsx` state (`isHowItWorksModalOpen`, `howItWorksTab`) and triggered from `Navbar.tsx` (desktop header and mobile menu), `Footer.tsx`, and contextual deep links. |
 | Platform Legal Infrastructure (Modal) | `LegalModal.tsx` | Public | Tabbed modal dialog for platform Terms of Service (legally binding CAD bids, 0% buyer premium, 3-day direct offline settlement, as-is inspection disclaimers, consignor clean-title warranties) and Privacy Policy (PIPEDA compliance, winner disclosure, FCM token usage), triggered globally via `App.tsx` state (`isLegalModalOpen`, `legalModalTab`). |
-| Consignment Intake & Seller Application (Modal) | `ConsignmentModal.tsx` | Public | Curation-gated seller submission modal with 3-tier vehicle taxonomy, registered member auto-link detection, mandatory clickwrap agreement, and the contextual "Seller FAQ & Settlement Details" accordion directly addressing OMVIC dealer arbitration exemption, direct 100% CAD wire settlement before vehicle release, and consignor-provided photography with a secondary deep link to the Selling guide (`openHowItWorks('selling')`). |
+| Consignment Intake & Seller Application (Modal) | `ConsignmentModal.tsx` | Public | Curation-gated seller submission modal with 3-tier vehicle taxonomy, client-side registered member detection banner (distinguished from legacy auto-link metadata), mandatory clickwrap agreement, and the contextual "Seller FAQ & Settlement Details" accordion directly addressing OMVIC dealer arbitration exemption, direct 100% CAD wire settlement before vehicle release, and consignor-provided photography with a secondary deep link to the Selling guide (`openHowItWorks('selling')`). |
 | Global Footer | `Footer.tsx` | Public | Platform navigational footer presenting curated Canadian enthusiast vehicle auction copy, national tagline ("Consigning & Bidding Nationwide Across Canada 🇨🇦"), Legacy Marketplace link (https://marketplace.wailtail.com), direct vehicle submission inquiry trigger, "How It Works" educational modal trigger, Feedback & Bug Report trigger, and modal openers for Terms of Service and Privacy Policy. |
 | Floating Feedback Dock | `FloatingFeedbackWidget.tsx` | Public | Ergonomic, dark slate floating pill anchored across all viewports with dynamic prompt label/badge support; features route-aware collision avoidance dynamically shifting on single lot views (`bottom-24 right-4`) to prevent obstruction of `StickyBidBar.tsx`. |
 | Platform Feedback Modal | `FeedbackModal.tsx` | Public / Guest & Authenticated | Collector-grade dialog supporting 3 feedback categories (`bug`, `suggestion`, `general`), 10–1,500 character counter, auto-populated member contact credentials, and zero-friction client telemetry capture (URL, viewport dimensions, User Agent, UID/role) persisting to `/feedback` collection and dispatching via serverless email. |
@@ -332,10 +332,10 @@ export interface ConsignmentApplication {
   status?: 'pending' | 'reviewed' | 'approved' | 'declined' | 'rejected';
   convertedAuctionId?: string;  // Associated draft auction lot ID when approved
   
-  // Authenticated Member Cross-Reference (Option A Auto-Link)
-  registeredUserId?: string;    // UID of existing member if matched
-  isRegisteredUser?: boolean;   // Flag indicating registered member submission
-  registeredUserRole?: string;  // Active role ('ADMIN' | 'SELLER' | 'BIDDER') at submission
+  // Historical Member Registration Metadata (Legacy Records Only; Discontinued on New M2.0A Submissions)
+  registeredUserId?: string;    // Legacy UID of existing member (retained on historical records; not written on new submissions)
+  isRegisteredUser?: boolean;   // Legacy flag indicating registered member submission (retained on historical records)
+  registeredUserRole?: string;  // Legacy active role at submission (retained on historical records)
   sellerId?: string;            // Resolved UID of seller post-onboarding claim
 
   // Dealer Applicant Declarations (M1 Foundation)
@@ -353,18 +353,19 @@ export interface ConsignmentApplication {
 
 #### Lifecycle State Transitions & Seller Workspace Claim Integration:
 - **`status: 'rejected'`**: Marked when curation staff decline an intake submission. Automatically dispatches an asynchronous serverless rejection email (`type: 'consignment_rejected'`) via `/api/send-consignment-email` to `sellerEmail` (with fallback to `email`), conveying vehicle particulars and optional curator notes without blocking the administrative interface.
-- **`convertedAuctionId`**: Generated during administrative 1-click approval (`convertConsignmentToDraftListing`). References the new draft listing created in `auctions/{convertedAuctionId}` pre-populated with vehicle taxonomy, location, and reserve parameters.
-- **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. Upon authentication or account registration, `AuthContext.tsx` (`elevateApprovedConsignor`) queries `consignment_applications` by `sellerEmail`, executes security rule-compliant role promotion to `'seller'` across `users/{uid}` and `bidders/{uid}`, links `sellerId` and `sellerName` into `auctions/{convertedAuctionId}`, and associates `sellerId` on the consignment document.
+- **`convertedAuctionId`**: Generated during administrative 1-click approval (`convertConsignmentToDraftListing`). References the new draft listing created in `auctions/{convertedAuctionId}` pre-populated with vehicle taxonomy, location, and reserve parameters. During conversion, `convertConsignmentToDraftListing()` resolves the seller account via legacy `registeredUserId` if present on historical records, or dynamically queries for an existing member record matching `sellerEmail` when a legacy ID is absent, promoting the consignor to `SELLER` across `users` and `bidders` collections (preserving `ADMIN`).
+- **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. Upon authentication or account registration, `AuthContext.tsx` (`elevateApprovedConsignor`) queries `consignment_applications` by `sellerEmail`, checks for `status: 'approved'`, mutates user roles across `users/{uid}` and `bidders/{uid}` to `'seller'`, and links `sellerId` and `sellerName` into `auctions/{convertedAuctionId}`. *(Note: This client-side role elevation pathway represents legacy/current implementation pending M2.0B hardening. It is not a trusted server-side authorization architecture, and M2.0A did not resolve user/bidder role self-escalation; M2.0B remains responsible for server-side trusted authorization and preventing self-promotion.)*
 
 #### M2.0A Consignment Access Control & Security Model:
 - **Normalized Lowercase Seller Email**: All new submissions normalize `sellerEmail` via `(app.sellerEmail || '').trim().toLowerCase()` prior to database write, ensuring reliable alignment with lowercased authentication claims.
-- **Creation Constraints**: Guest (unauthenticated) submissions remain permitted. However, all non-admin submissions (guest or authenticated) must set `status: 'pending'` and are strictly barred from injecting administrator-controlled metadata or protected dealer verification fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`, `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`).
+- **Creation Constraints & Discontinued Registration Metadata**: Guest (unauthenticated) submissions remain permitted. However, all non-admin submissions (guest or authenticated) must set `status: 'pending'` and are strictly barred from injecting administrator-controlled metadata or protected dealer verification fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`, `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`). New M2.0A submissions no longer write `registeredUserId`, `isRegisteredUser`, or `registeredUserRole` into application documents.
+- **Legacy Records Retention & Backwards Compatibility**: Existing historical application documents may still contain legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`). These historical records have not been migrated or deleted, and existing administrative and lookup workflows retain backwards compatibility with them.
 - **Applicant Read Authorization**: Reading an application requires:
   1. An authenticated Firebase user (`isAuthenticated()`).
   2. A non-null Firebase Auth email claim (`request.auth.token.email != null`).
   3. A verified email address (`request.auth.token.email_verified == true`).
   4. Exact case-insensitive match between stored `sellerEmail` and the lowercased authenticated email claim (`resource.data.sellerEmail == request.auth.token.email.lower()`).
-- **Token Claim Authorization vs. Client Identifiers**: Authorization is anchored directly in the cryptographically verified auth token email claim, never in client-supplied or unverified properties such as `registeredUserId`.
+- **Token Claim Authorization vs. Client Identifiers**: Access authorization is derived strictly from the authenticated, cryptographically verified auth token email claim (`request.auth.token.email.lower()`). Client-supplied registration identifiers (such as `registeredUserId`) are not an authorization basis for applicant reads.
 - **Modification & Deletion Lock**: Non-admin callers cannot update or delete consignment records under any circumstances (`allow update, delete: if isAdmin();`).
 - **Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` share this identical access control model.
 
@@ -1246,7 +1247,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
     - Structured location fields: `locationCity`, `locationProvince`, `locationCountry`, and formatted `location`.
     - Editorial title auto-generated from taxonomy components.
     - Financial defaults: parsed reserve amount from `reserveExpectation` (or `$0 CAD` No Reserve), `$1,000 CAD` starting bid, `$250 CAD` minimum increment, and `status: 'upcoming'`.
-  - Promotes the applicant to the `SELLER` role in Firestore (`updateUserRole(app.registeredUserId, 'SELLER')`).
+  - Promotes the applicant to the `SELLER` role in Firestore across `users/{uid}` and `bidders/{uid}` (preserving `ADMIN`): checks legacy `app.registeredUserId` if present on historical records, or dynamically queries for an existing member record matching `app.sellerEmail` when a legacy registered user ID is unavailable.
   - Updates the consignment application record with `status: 'approved'` and `convertedAuctionId: newAuctionId`.
   - Immediately redirects the administrator into the authoring workspace at `/dashboard/listings/${newAuctionId}/edit`.
 
@@ -1358,9 +1359,12 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - Applicants are strictly restricted to "Close & Return to Catalog", enforcing mandatory administrative curation, identity verification, and manual approval prior to draft workspace provisioning.
 - **3-Column Structured Location Panel**:
   - Clean separation into City (`locationCity`), Province / State (`locationProvince`), and Country (`locationCountry`) with automatic composite string formatting (`formattedLocation`).
-- **Option A Registered Member Auto-Link Detection (`onBlur`)**:
-  - When an applicant enters their email address and blurs the input, `checkUserAccountByEmail(email)` queries Firestore `users` to detect if the consignor is already a registered Wailtail member.
-  - If recognized, a green notification banner surfaces displaying their member name and role (`REGISTERED BIDDER` or `REGISTERED SELLER`), auto-populating contact fields and linking `registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole` to the consignment document.
+- **Client-Side Registered Member Detection (`onBlur`) & Legacy Auto-Link Distinction**:
+  - **Client-Side Account Recognition**: When an applicant enters their email address and blurs the input, `checkUserAccountByEmail(email)` queries Firestore `users` to detect if the consignor is already a registered Wailtail member. If recognized, a green notification banner surfaces displaying their member name and role (`REGISTERED BIDDER` or `REGISTERED SELLER`) and auto-populates contact fields for applicant convenience.
+  - **Historical vs. Current M2.0A Document Association**:
+    - *Historical Behavior*: Prior submissions attached client-supplied registration metadata (`registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole`) directly into the persisted consignment document.
+    - *Current M2.0A Implementation*: New consignment submissions strictly omit these registration metadata fields and no longer write `registeredUserId`, `isRegisteredUser`, or `registeredUserRole` into application documents. Non-admin creation payloads attempting to set these fields are rejected by Firestore security rules (`firestore.rules`). Account association, administrative conversion (`convertConsignmentToDraftListing()`), and applicant read authorization operate via verified email claims matching normalized `sellerEmail`.
+    - *Historical Records Retention*: Existing historical consignment documents may still contain legacy registration metadata. These records have not been migrated or deleted, and workflows retain backwards compatibility with both legacy documents and new M2.0A submissions.
 - **Single-Pass Persistence & Consolidated Serverless Notification Pipeline (`auctionService.ts`)**:
   - **Normalized Lowercase Seller Email**: Consignment submissions normalize `sellerEmail` via `(app.sellerEmail || '').trim().toLowerCase()` before writing to Firestore, ensuring case alignment with authentication tokens.
   - **Primary Application Persistence & Error Propagation**: Submissions are written primarily to Firestore `consignment_applications` via `addDoc(collection(db, 'consignment_applications'), sanitizePayload(payload))`. If this primary write fails, the error propagates directly to the caller and the function aborts immediately; it does not fabricate synthetic application IDs or falsely signal success.
@@ -1371,11 +1375,9 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Seller Workspace Claim Onboarding Pipeline (`action=claim_seller`)**:
   - Upon consignment approval, the seller receives an email containing a dedicated claim onboarding deep-link targeting `/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${appId}&lot=${convertedAuctionId}&email=${sellerEmail}`.
   - When opened by an unauthenticated seller, `AuthModal.tsx` activates the registration tab, pre-fills the applicant's email address, and renders an emerald onboarding banner (`"Seller Onboarding & Listing Claim — Create your Wailtail account or sign in with your approved consignment email to claim your listing workspace."`).
-  - **Security Rule-Compliant Role Elevation (`AuthContext.tsx` via `elevateApprovedConsignor`)**:
-    - Evaluates approved consignment records matching `sellerEmail`.
-    - Directly mutates `users/{uid}` and `bidders/{uid}` documents to `role: 'seller'` under verified `isOwner(uid)` Firestore security rules.
-    - Atomically merges `sellerId: uid` and `sellerName` onto the draft vehicle lot (`auctions/{convertedAuctionId}`) and attaches `sellerId` to the application document.
-    - Hydrates in-memory React context (`userProfile.role = 'seller'`), immediately granting seamless authorization to the split-screen listing authoring workspace.
+  - **Approved-Consignor Role Elevation (`AuthContext.tsx` via `elevateApprovedConsignor`) — Legacy / Current Implementation Pending M2.0B Hardening**:
+    - *Current Client-Side Elevation Workflow*: Evaluates approved consignment records matching `sellerEmail`. Mutates `users/{uid}` and `bidders/{uid}` documents to `role: 'seller'` under client-side `isOwner(uid)` Firestore security rules, atomically merges `sellerId: uid` and `sellerName` onto the draft vehicle lot (`auctions/{convertedAuctionId}`), and hydrates in-memory React context (`userProfile.role = 'seller'`), immediately granting authorization to the listing authoring workspace.
+    - *Security Status & M2.0B Milestone Distinction*: This client-side pathway represents current legacy functionality and is **not** a trusted server-side authorization architecture. M2.0A hardened consignment intake and verified-email read access; it did **not** implement the M2.0B role-escalation fix. M2.0B remains responsible for closing client-side role elevation vulnerabilities, preventing potential user/bidder self-promotion, and transitioning role elevation to trusted server-side endpoints or Firebase Auth custom claims.
 
 ### 6.9 Strict Fresh Listing Isolation Guarantees
 - **Data Leak Prevention**:
@@ -1498,7 +1500,7 @@ Wailtail implements a tri-role access control model defined in `src/types.ts` vi
 | Platform Capability | Guest / Anonymous | BIDDER | SELLER | ADMIN |
 | :--- | :---: | :---: | :---: | :---: |
 | Browse Catalog & View Vehicle Lots (`/`, `/catalog`, `/auctions/[id]`) | ✅ | ✅ | ✅ | ✅ |
-| Submit Consignment Inquiry (`ConsignmentModal.tsx`) | ✅ (Mandatory Clickwrap Agreement) | ✅ (Auto-Linked + Clickwrap) | ✅ (Auto-Linked + Clickwrap) | ✅ (Auto-Linked + Clickwrap) |
+| Submit Consignment Inquiry (`ConsignmentModal.tsx`) | ✅ (Guest Intake + Clickwrap) | ✅ (Email-Associated + Clickwrap; Legacy Auto-Link) | ✅ (Email-Associated + Clickwrap; Legacy Auto-Link) | ✅ (Email-Associated + Clickwrap; Legacy Auto-Link) |
 | Place Real-Time Anti-Snipe Bids (`BidModal.tsx`) | ❌ | ✅ (Unbanned + Mandatory Clickwrap) | ✅ (Unbanned + Mandatory Clickwrap) | ✅ (Mandatory Clickwrap) |
 | Watchlist Auctions & Receive High-Bid Alerts | ❌ | ✅ | ✅ | ✅ |
 | Post Community Comments & Discussion Questions | ❌ | ✅ (`Verified Bidder`) | ✅ (`Seller`) | ✅ (`Staff / Admin`) |
@@ -2212,6 +2214,8 @@ The M2.0A security model hardens consignment application intake and access contr
      - 12 Protected dealer fields: `sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`.
      - 7 Administrative & user linkage fields: `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`.
    - Administrators (`isAdmin()`) bypass creation restrictions.
+   - **Discontinued Registration Metadata on New Submissions**: New M2.0A consignment submissions no longer write `registeredUserId`, `isRegisteredUser`, or `registeredUserRole` into application documents.
+   - **Historical Records Preserved**: Existing historical application documents may still contain legacy registration metadata. These historical records have not been migrated or deleted, and compatibility is maintained without altering historical records.
 
 2. **Verified-Email Applicant Read Authorization**:
    - Reading an application document requires:
@@ -2219,7 +2223,7 @@ The M2.0A security model hardens consignment application intake and access contr
      2. A non-null Firebase Auth email claim (`request.auth.token.email != null`).
      3. A verified email flag (`request.auth.token.email_verified == true`).
      4. Exact match between stored `sellerEmail` and the lowercased authenticated email claim (`resource.data.sellerEmail == request.auth.token.email.lower()`).
-   - Authorization is strictly derived from the authenticated, verified email claim in the Firebase Auth token (`request.auth.token.email`). The security model does **not** rely on client-supplied or unverified `registeredUserId` document properties.
+   - Authorization is strictly derived from the authenticated, verified email claim in the Firebase Auth token (`request.auth.token.email`). The security model does **not** rely on client-supplied or unverified `registeredUserId` document properties, and client-supplied registration identifiers are not an authorization basis for applicant reads.
    - Unauthenticated users, authenticated users with unverified emails, authenticated users lacking email claims, and unrelated authenticated users are denied read access (403 Permission Denied).
    - Administrators retain full access to read individual documents and execute collection-wide administrative queries.
 
@@ -2269,8 +2273,8 @@ The M2.0A security model hardens consignment application intake and access contr
   - Full production compilation and typechecking succeeded with zero errors (`npm run build`).
 
 ### 10.5 Milestone Boundaries & Outstanding Work
-- **M2.0A Status**: Consignment application security hardening is complete and verified on the `staging` branch.
-- **M2.0B Outstanding**: Role-escalation hardening remains outstanding as future work. Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) will be transitioned to a secure backend or administrative endpoint to prevent client-driven privilege escalation.
+- **M2.0A Status**: Consignment application security hardening is complete and verified on the `staging` branch. New submissions no longer write legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`), applicant reads require verified email claims matching normalized `sellerEmail`, and creation/modification locks prevent unauthorized state tampering. Historical application records are retained without migration or deletion.
+- **M2.0B Outstanding**: Role-escalation hardening remains outstanding as future work. Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) is a legacy/current implementation operating under client-side `isOwner(uid)` Firestore security rules and is not a fully secured trusted authorization architecture. M2.0A did not implement the M2.0B role-escalation fix. M2.0B remains responsible for preventing user/bidder self-promotion and implementing trusted server-side authorization (e.g. serverless admin endpoints or Firebase Auth custom claims).
 - **Deployment Status**: Production promotion and Firestore rules deployment (`npm run deploy:rules`) remain pending.
 
 ---
