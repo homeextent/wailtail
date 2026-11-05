@@ -8,7 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-- *No unreleased changes.*
+### M2.0A — Consignment Application Security Hardening (Staging Verification)
+
+> **Release Status**: Implemented, verified, committed, and pushed to the `staging` branch (Commits: `ebf277406a591f40454ef86ec35bce3c2b3e2c4b`, `488cefc5fc946f499df31d47842f4a5ae95dc15a`). Awaiting production promotion and Firestore security rules deployment to GCP project `studio-apps-483721`. M2.0B role-escalation hardening remains outstanding. This release is not yet deployed to production.
+
+- **Consignment Application Security Hardening (`firestore.rules`)**:
+  - **Verified-Email Authorization for Applicant Reads**: Restructured read authorization for consignment documents. Applicants must be authenticated, have a non-null email claim in their Firebase Auth token, have `email_verified == true`, and have their lowercased authenticated email claim match `resource.data.sellerEmail`.
+  - **Email-Claim Authorization vs. Client-Supplied Identifiers**: Access authorization is strictly derived from the verified Firebase Auth token email claim (`request.auth.token.email.lower()`), not client-supplied or unverified `registeredUserId` attributes on the document.
+  - **Strict Creation Safeguards**: Non-admin application creation requires `status == 'pending'` and strictly denies payloads attempting to set administrator-controlled metadata or protected dealer verification fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`, `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`).
+  - **Permitted Guest Submissions**: Unauthenticated (guest) submissions remain permitted, provided they satisfy the `status == 'pending'` requirement and do not include protected administrative or dealer verification fields.
+  - **Non-Admin Modification & Deletion Lock**: Completely locked update and deletion privileges for non-admin users (`allow update, delete: if isAdmin();`). Non-admin callers cannot mutate or delete existing consignment applications.
+  - **Full Administrator Access**: Administrators retain full read (including collection-wide queries), create, update, and delete privileges across consignment pipelines.
+  - **Matching Protections for Dual Collections**: Identical security rules applied symmetrically across both `consignment_applications` and legacy `consignments` collections.
+
+- **Client Persistence & Dispatch Hardening (`src/services/auctionService.ts`)**:
+  - **Normalized Lowercase Seller Email**: Standardized `sellerEmail` normalization (`(app.sellerEmail || '').trim().toLowerCase()`) on new submissions in `submitConsignmentApplication()`, guaranteeing case-insensitive alignment with lowercased auth token email claims.
+  - **Primary Persistence Error Propagation**: Primary write to `consignment_applications` propagates errors directly to caller. If the primary write fails, the function aborts and does not generate synthetic or fallback application IDs.
+  - **Best-Effort Legacy Dual-Write**: Secondary write to the legacy `consignments` collection executes inside an isolated `try/catch` block as non-fatal best effort, ensuring legacy write failures do not invalidate or roll back successful primary application persistence.
+  - **Non-Blocking Notification Processing**: Serverless email notification dispatch (`/api/send-consignment-email`) executes asynchronously post-persistence with a 5000ms timeout guard, ensuring SMTP or edge delivery latency cannot falsely report consignment submission failure to the user.
+
+- **Emulator Security Verification & Build Validation**:
+  - **83 Passing Firestore Rules Emulator Unit Tests (`tests/firestore.rules.test.ts`)**: Successfully executed full unit test suite targeting named Firestore database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` via `npm run test:rules`.
+  - **Test Suite Coverage**: Validated guest application creation, authenticated creation, creation status enforcement, rejection of unauthorized creation metadata (11 administrator/role fields + 12 protected dealer fields across both collections), verified-email applicant read authorization, unverified email read rejection, missing email claim read rejection, unrelated applicant read denial, unscoped query rejection, email-scoped query authorization, administrator full query/document access, non-admin update denial, non-admin delete denial, legacy collection parity, and named database isolation.
+  - **Testing Boundaries**: Emulator tests validate rule logic within local emulator suites (`@firebase/rules-unit-testing`) and do not constitute live production penetration testing, nor do they imply that production Firestore rules on GCP have been updated prior to formal deployment.
+  - **Build Verification**: Verified zero TypeScript or bundling errors via `npm run build`.
+
+- **Milestone Scope & Roadmap Distinction**:
+  - Implements the M2.0A Consignment Application Security Hardening scope.
+  - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains outstanding as upcoming work.
 
 ---
 

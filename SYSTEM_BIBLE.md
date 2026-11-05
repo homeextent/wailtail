@@ -356,6 +356,18 @@ export interface ConsignmentApplication {
 - **`convertedAuctionId`**: Generated during administrative 1-click approval (`convertConsignmentToDraftListing`). References the new draft listing created in `auctions/{convertedAuctionId}` pre-populated with vehicle taxonomy, location, and reserve parameters.
 - **Seller Claim Onboarding Integration**: Approval notifications include a personalized onboarding claim deep-link (`/dashboard/listings/${convertedAuctionId}/edit?action=claim_seller&appId=${id}&lot=${convertedAuctionId}&email=${sellerEmail}`). When accessed, `AuthModal.tsx` activates an emerald claim banner and pre-fills the consignor's email. Upon authentication or account registration, `AuthContext.tsx` (`elevateApprovedConsignor`) queries `consignment_applications` by `sellerEmail`, executes security rule-compliant role promotion to `'seller'` across `users/{uid}` and `bidders/{uid}`, links `sellerId` and `sellerName` into `auctions/{convertedAuctionId}`, and associates `sellerId` on the consignment document.
 
+#### M2.0A Consignment Access Control & Security Model:
+- **Normalized Lowercase Seller Email**: All new submissions normalize `sellerEmail` via `(app.sellerEmail || '').trim().toLowerCase()` prior to database write, ensuring reliable alignment with lowercased authentication claims.
+- **Creation Constraints**: Guest (unauthenticated) submissions remain permitted. However, all non-admin submissions (guest or authenticated) must set `status: 'pending'` and are strictly barred from injecting administrator-controlled metadata or protected dealer verification fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`, `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`).
+- **Applicant Read Authorization**: Reading an application requires:
+  1. An authenticated Firebase user (`isAuthenticated()`).
+  2. A non-null Firebase Auth email claim (`request.auth.token.email != null`).
+  3. A verified email address (`request.auth.token.email_verified == true`).
+  4. Exact case-insensitive match between stored `sellerEmail` and the lowercased authenticated email claim (`resource.data.sellerEmail == request.auth.token.email.lower()`).
+- **Token Claim Authorization vs. Client Identifiers**: Authorization is anchored directly in the cryptographically verified auth token email claim, never in client-supplied or unverified properties such as `registeredUserId`.
+- **Modification & Deletion Lock**: Non-admin callers cannot update or delete consignment records under any circumstances (`allow update, delete: if isAdmin();`).
+- **Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` share this identical access control model.
+
 ### 2.8 User Activity Summary & Telemetry Data Models
 
 Used by `fetchUserActivitySummary()` and `UserAccountHubModal.tsx` to compile real-time personal auction engagement across all roles:
@@ -1349,8 +1361,11 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 - **Option A Registered Member Auto-Link Detection (`onBlur`)**:
   - When an applicant enters their email address and blurs the input, `checkUserAccountByEmail(email)` queries Firestore `users` to detect if the consignor is already a registered Wailtail member.
   - If recognized, a green notification banner surfaces displaying their member name and role (`REGISTERED BIDDER` or `REGISTERED SELLER`), auto-populating contact fields and linking `registeredUserId`, `isRegisteredUser: true`, and `registeredUserRole` to the consignment document.
-- **Single-Pass Persistence & Consolidated Serverless Notification Pipeline**:
-  - Consignment submissions are persisted to Firestore `consignment_applications` via `submitConsignmentApplication()`.
+- **Single-Pass Persistence & Consolidated Serverless Notification Pipeline (`auctionService.ts`)**:
+  - **Normalized Lowercase Seller Email**: Consignment submissions normalize `sellerEmail` via `(app.sellerEmail || '').trim().toLowerCase()` before writing to Firestore, ensuring case alignment with authentication tokens.
+  - **Primary Application Persistence & Error Propagation**: Submissions are written primarily to Firestore `consignment_applications` via `addDoc(collection(db, 'consignment_applications'), sanitizePayload(payload))`. If this primary write fails, the error propagates directly to the caller and the function aborts immediately; it does not fabricate synthetic application IDs or falsely signal success.
+  - **Best-Effort Legacy Dual-Write**: For backwards compatibility, the application is also written to the legacy `consignments` collection (`setDoc(doc(db, 'consignments', createdId), sanitizePayload(payload))`) inside an isolated try/catch block. Failures on the legacy dual-write are logged as non-fatal warnings and do not invalidate or roll back a successful primary write.
+  - **Non-Blocking Post-Persistence Notification Dispatch**: Serverless email notification dispatch (`/api/send-consignment-email`) occurs asynchronously after primary persistence with an isolated 5000ms timeout guard (`AbortController`). Because notifications are triggered post-persistence in a non-blocking background routine, email delivery latency or external mailer errors never halt execution or falsely report submission failure to the applicant.
   - Consolidates intake processing into a single-pass serverless execution, removing redundant client-side receipt dispatches and enforcing case-insensitive admin recipient deduplication in `/api/send-consignment-email`.
   - Immediately triggers dual notifications: structured intake digest with triage deep-links to curation staff, and dual-branded receipt confirmation to the consignor.
 - **Seller Workspace Claim Onboarding Pipeline (`action=claim_seller`)**:
@@ -1613,87 +1628,71 @@ service cloud.firestore {
     }
 
     match /consignment_applications/{appId} {
-      allow create: if !request.resource.data.keys().hasAny([
-        'sellerType',
-        'dealerId',
-        'dealerSnapshot',
-        'dealerDocFee',
-        'taxHandling',
-        'taxDisclaimerVersion',
-        'verifiedAt',
-        'verifierUid',
-        'verificationStatus',
-        'verificationMethod',
-        'verificationExpiresAt',
-        'verificationRecordVersion'
-      ]) || isAdmin();
-      allow read: if isAuthenticated();
-      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'applicantType',
-        'dealershipName',
-        'submittedDealershipName',
-        'dealerLicenseNumber',
-        'submittedDealerLicenseNumber',
-        'licensingJurisdiction',
-        'submittedLicensingJurisdiction',
-        'dealershipOwnershipDeclaration',
-        'legalSellerOfRecordDeclaration',
-        'sellerType',
-        'dealerId',
-        'dealerSnapshot',
-        'dealerDocFee',
-        'taxHandling',
-        'taxDisclaimerVersion',
-        'verifiedAt',
-        'verifierUid',
-        'verificationStatus',
-        'verificationMethod',
-        'verificationExpiresAt',
-        'verificationRecordVersion'
-      ]));
-      allow delete: if isAuthenticated();
+      allow create: if isAdmin() || (
+        request.resource.data.status == 'pending' &&
+        !request.resource.data.keys().hasAny([
+          'sellerType',
+          'dealerId',
+          'dealerSnapshot',
+          'dealerDocFee',
+          'taxHandling',
+          'taxDisclaimerVersion',
+          'verifiedAt',
+          'verifierUid',
+          'verificationStatus',
+          'verificationMethod',
+          'verificationExpiresAt',
+          'verificationRecordVersion',
+          'reviewedAt',
+          'reviewedBy',
+          'convertedAuctionId',
+          'updatedAt',
+          'registeredUserId',
+          'isRegisteredUser',
+          'registeredUserRole'
+        ])
+      );
+      allow read: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
+        resource.data.sellerEmail == request.auth.token.email.lower()
+      );
+      allow update, delete: if isAdmin();
     }
 
     match /consignments/{consignmentId} {
-      allow create: if !request.resource.data.keys().hasAny([
-        'sellerType',
-        'dealerId',
-        'dealerSnapshot',
-        'dealerDocFee',
-        'taxHandling',
-        'taxDisclaimerVersion',
-        'verifiedAt',
-        'verifierUid',
-        'verificationStatus',
-        'verificationMethod',
-        'verificationExpiresAt',
-        'verificationRecordVersion'
-      ]) || isAdmin();
-      allow read: if isAuthenticated();
-      allow update: if isAuthenticated() && (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'applicantType',
-        'dealershipName',
-        'submittedDealershipName',
-        'dealerLicenseNumber',
-        'submittedDealerLicenseNumber',
-        'licensingJurisdiction',
-        'submittedLicensingJurisdiction',
-        'dealershipOwnershipDeclaration',
-        'legalSellerOfRecordDeclaration',
-        'sellerType',
-        'dealerId',
-        'dealerSnapshot',
-        'dealerDocFee',
-        'taxHandling',
-        'taxDisclaimerVersion',
-        'verifiedAt',
-        'verifierUid',
-        'verificationStatus',
-        'verificationMethod',
-        'verificationExpiresAt',
-        'verificationRecordVersion'
-      ]));
-      allow delete: if isAuthenticated();
+      allow create: if isAdmin() || (
+        request.resource.data.status == 'pending' &&
+        !request.resource.data.keys().hasAny([
+          'sellerType',
+          'dealerId',
+          'dealerSnapshot',
+          'dealerDocFee',
+          'taxHandling',
+          'taxDisclaimerVersion',
+          'verifiedAt',
+          'verifierUid',
+          'verificationStatus',
+          'verificationMethod',
+          'verificationExpiresAt',
+          'verificationRecordVersion',
+          'reviewedAt',
+          'reviewedBy',
+          'convertedAuctionId',
+          'updatedAt',
+          'registeredUserId',
+          'isRegisteredUser',
+          'registeredUserRole'
+        ])
+      );
+      allow read: if isAdmin() || (
+        isAuthenticated() &&
+        request.auth.token.email != null &&
+        request.auth.token.email_verified == true &&
+        resource.data.sellerEmail == request.auth.token.email.lower()
+      );
+      allow update, delete: if isAdmin();
     }
 
     match /inquiries/{inquiryId} {
@@ -2196,11 +2195,91 @@ Following the M1 and M1.1 foundation, three specific architectural boundaries di
 
 ---
 
-## 10. Planned Features & Upcoming Releases
+## 10. Consignment Application Security Hardening (M2.0A Milestone)
+
+### 10.1 Strategic Context & Release Posture
+- **Implementation Status**: Fully implemented, verified with local unit testing, committed, and pushed to the `staging` branch (Commits: `ebf277406a591f40454ef86ec35bce3c2b3e2c4b`, `488cefc5fc946f499df31d47842f4a5ae95dc15a`).
+- **Release Posture**: M2.0A is currently verified on `staging` and awaiting production promotion. It is **not** deployed to production. Production promotion (via PR to `main`) and live Cloud Firestore rules deployment to GCP project `studio-apps-483721` remain pending.
+- **Milestone Scope**: Addresses M2.0A Consignment Application Security Hardening. Downstream M2.0B role-escalation hardening (securing `elevateApprovedConsignor` from client-driven role assignment to trusted serverless backend or admin custom claims) remains outstanding and planned.
+
+### 10.2 Final M2.0A Security & Authorization Model
+The M2.0A security model hardens consignment application intake and access control across Cloud Firestore rules (`firestore.rules`):
+
+1. **Permitted Guest & Authenticated Creation**:
+   - Guest (unauthenticated) submissions remain permitted to preserve low-friction intake for prospective collectors.
+   - Non-admin callers (both guest and authenticated) must set `status: 'pending'` on creation.
+   - Non-admin callers cannot create an application containing administrator-controlled metadata or protected dealer verification fields:
+     - 12 Protected dealer fields: `sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`, `verifiedAt`, `verifierUid`, `verificationStatus`, `verificationMethod`, `verificationExpiresAt`, `verificationRecordVersion`.
+     - 7 Administrative & user linkage fields: `reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`.
+   - Administrators (`isAdmin()`) bypass creation restrictions.
+
+2. **Verified-Email Applicant Read Authorization**:
+   - Reading an application document requires:
+     1. An authenticated Firebase user (`isAuthenticated()`).
+     2. A non-null Firebase Auth email claim (`request.auth.token.email != null`).
+     3. A verified email flag (`request.auth.token.email_verified == true`).
+     4. Exact match between stored `sellerEmail` and the lowercased authenticated email claim (`resource.data.sellerEmail == request.auth.token.email.lower()`).
+   - Authorization is strictly derived from the authenticated, verified email claim in the Firebase Auth token (`request.auth.token.email`). The security model does **not** rely on client-supplied or unverified `registeredUserId` document properties.
+   - Unauthenticated users, authenticated users with unverified emails, authenticated users lacking email claims, and unrelated authenticated users are denied read access (403 Permission Denied).
+   - Administrators retain full access to read individual documents and execute collection-wide administrative queries.
+
+3. **Complete Non-Admin Modification & Deletion Lock**:
+   - Non-admin application updates are completely denied (`allow update: if isAdmin();`).
+   - Non-admin application deletions are completely denied (`allow delete: if isAdmin();`).
+   - Administrators retain exclusive authority to mutate application status, perform reviews, convert applications to draft listings, and purge application records.
+
+4. **Symmetric Dual-Collection Coverage**:
+   - Both the primary `consignment_applications` collection and the legacy `consignments` collection enforce the identical security rules and authorization model.
+
+### 10.3 Client Persistence & Notification Lifecycle (`auctionService.ts`)
+1. **Normalized Lowercase Seller Email**:
+   - `submitConsignmentApplication()` automatically trims and lowercases `sellerEmail` (`(app.sellerEmail || '').trim().toLowerCase()`) on new submissions prior to persistence, ensuring case consistency with Firebase Auth token email claims.
+2. **Primary Persistence Error Propagation**:
+   - Primary persistence to `consignment_applications` propagates errors directly to the caller. If the primary write fails, the function aborts and throws; it never returns synthetic or fallback application IDs.
+3. **Best-Effort Legacy Dual-Write**:
+   - Secondary writes to the legacy `consignments` collection execute within an isolated `try/catch` block as non-fatal best effort. Failures in legacy writes are logged as warnings and do not invalidate or roll back a successful primary write.
+4. **Post-Persistence Non-Blocking Notification Dispatch**:
+   - Consolidated serverless email notification dispatch (`/api/send-consignment-email`) executes asynchronously post-persistence with an isolated 5000ms timeout guard (`AbortController`). SMTP latency or third-party delivery issues will not halt execution or falsely report consignment submission failure to the user.
+
+### 10.4 Firestore Security Rules Emulator Verification
+- **Target Named Database**: Verification was conducted against the project's named Firestore database instance: `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` on GCP project `studio-apps-483721`.
+- **83 Passing Unit Tests (`tests/firestore.rules.test.ts`)**:
+  - Executed via Firebase Local Emulator Suite command: `npm run test:rules` (`firebase emulators:exec --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'`).
+  - **41 Checks per Collection ($41 \times 2 = 82$)**: Symmetrically validated across both `consignment_applications` and `consignments`:
+    - Guest creation of pending application without administrative metadata (permitted).
+    - Authenticated applicant creation of pending application (permitted).
+    - Guest and authenticated non-admin attempts to create with `status: 'approved'` (denied).
+    - Non-admin injection of administrative metadata on create (`reviewedAt`, `reviewedBy`, `convertedAuctionId`, `updatedAt`, `registeredUserId`, `isRegisteredUser`, `registeredUserRole`) (all denied).
+    - Verified-email applicant read authorization for matching email (permitted).
+    - Matching but unverified email read attempts (denied).
+    - Authenticated user without email claim read attempts (denied).
+    - Verified but unrelated email applicant read attempts (denied).
+    - Collection-wide query authorization for administrators (permitted) vs. unscoped query rejection for non-admins (denied).
+    - Email-scoped collection query authorization for verified applicants (permitted).
+    - Complete denial of non-admin update attempts (denied).
+    - Complete denial of non-admin delete attempts (denied).
+    - Administrator update and delete capabilities (permitted).
+    - All 12 protected dealer declaration and verification metadata fields rejected on non-admin create.
+    - Historical document read access without new metadata for authorized applicants and administrators (permitted).
+    - Explicit verification that access authorization does not depend on client-supplied `registeredUserId`.
+  - **1 Database Isolation Check**: Validated named database configuration and verified that tests run isolated from the default database instance.
+- **Testing Scope & Limitations**:
+  - Unit tests were executed locally within the Firebase Local Emulator Suite using `@firebase/rules-unit-testing`.
+  - Emulator testing validates rule logic in emulation; it does **not** constitute live production penetration testing, nor does it imply that deployed Firebase security rules on GCP are currently updated.
+  - Full production compilation and typechecking succeeded with zero errors (`npm run build`).
+
+### 10.5 Milestone Boundaries & Outstanding Work
+- **M2.0A Status**: Consignment application security hardening is complete and verified on the `staging` branch.
+- **M2.0B Outstanding**: Role-escalation hardening remains outstanding as future work. Specifically, the client-side role promotion pathway in `AuthContext.tsx` (`elevateApprovedConsignor`) will be transitioned to a secure backend or administrative endpoint to prevent client-driven privilege escalation.
+- **Deployment Status**: Production promotion and Firestore rules deployment (`npm run deploy:rules`) remain pending.
+
+---
+
+## 11. Planned Features & Upcoming Releases
 
 The following features represent architectural enhancements identified for subsequent platform milestones. Both features are currently **planned** and **not yet implemented**.
 
-### 10.1 Consignment Application Detail & Review
+### 11.1 Consignment Application Detail & Review
 - **Status**: PLANNED — NOT IMPLEMENTED.
 - **Proposed Capability**:
   - A comprehensive, read-only administrative detail view integrated into the existing Admin Consignment Pipeline (`AdminPortalPage.tsx`).
@@ -2215,7 +2294,7 @@ The following features represent architectural enhancements identified for subse
   - Status changes (approval, rejection, conversion to draft) must remain explicit administrative actions with confirmation dialogs.
   - Full backward compatibility with the existing private-seller curation workflow must be preserved.
 
-### 10.2 Optional Consignment Photo Upload
+### 11.2 Optional Consignment Photo Upload
 - **Status**: PLANNED — NOT IMPLEMENTED.
 - **Proposed Capability**:
   - Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`).

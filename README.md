@@ -64,14 +64,14 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
   - `feedback`: Platform feedback submissions and bug reports capturing category, message, reporter metadata, client telemetry diagnostics, and review status.
   - `settings/promotions`: Promotional campaign configurations, catalog card definitions, and lot header banner settings locked to admins.
   - `promo_analytics`: Decoupled guest click telemetry collection recording public atomic `increment(1)` interactions.
-  - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), member auto-link references, conversion statuses, and cascading deletion links.
+  - `consignment_applications` / `consignments`: Intake inquiries capturing structured locations (`locationCity`, `locationProvince`, `locationCountry`), normalized lowercase seller emails, verified-email applicant read access, member auto-link references, conversion statuses, and cascading deletion links.
   - `dealer_profiles`: Private canonical boutique dealer profiles (`dealer_profiles/{dealerId}`) restricted strictly to administrator access.
   - `dealer_verification_audits`: Append-only administrative verification audit trail (`dealer_verification_audits/{auditId}`) documenting verification methods, decisions, and timestamps; immutable and restricted to administrators.
   - `inquiries`: Direct private communications with consignors.
 - **Firebase Cloud Storage**: Vehicle photo and inspection document pipeline streaming assets directly to Storage buckets via `uploadImageToStorage` and storing lightweight HTTPS URLs in Firestore to bypass document size limits.
 - **Firebase Cloud Messaging (FCM)**: Native Web Push notification engine dispatching live outbid alerts and auction lifecycle events via root-scoped background service worker (`/firebase-messaging-sw.js`) with VAPID token exchange (`VITE_FIREBASE_VAPID_KEY`) and multi-device Firestore token merge synchronization.
 - **Firebase Authentication**: Email/password and Google OAuth authentication with email verification flags.
-- **Firebase Security Rules**: Role-based access control protecting administrative actions, campaign settings, and auction modifications (`firestore.rules`).
+- **Firebase Security Rules**: Role-based access control protecting administrative actions, campaign settings, auction modifications, and verified-email applicant read authorization with modification locks on consignment records (`firestore.rules`).
 
 ### Repository Directory Structure
 ```
@@ -205,13 +205,14 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
    - "🔗 Share" action copying canonical lot URLs directly to the system clipboard with instant high-visibility toast notifications.
 10. **Multi-Template Serverless Email Dispatcher & Consignment Curation Gating (`api/send-consignment-email.ts`, `ConsignmentModal.tsx`)**:
     - Multi-template serverless proxy handling vehicle consignment intake submissions (`type: 'consignment'`), private buyer inquiries (`type: 'inquiry'`), seller consignment receipts (`type: 'consignment_receipt'`), and verified bidder welcomes (`type: 'welcome_bidder'`) via Resend API (with SendGrid fallback).
-    - Consignment applications compile 3-tier taxonomy, universal gearbox selection, VIN, numeric-sanitized mileage, telephone-sanitized phone numbers, and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking.
+    - Consignment applications compile 3-tier taxonomy, universal gearbox selection, VIN, numeric-sanitized mileage, telephone-sanitized phone numbers, normalized lowercase seller emails (`sellerEmail`), and structured location fields (`locationCity`, `locationProvince`, `locationCountry`) with Option A registered member auto-linking. Primary persistence errors propagate directly to the caller, legacy dual-write is non-fatal best effort, and serverless notifications execute post-persistence in a non-blocking background routine. Applicant reads are strictly gated to authenticated users with verified email claims matching `sellerEmail`.
     - **Mandatory Clickwrap Compliance & Curation Gating Enforcement**: Unchecked controlled agreement checkbox requiring explicit agreement to Terms of Service and Privacy Policy before submission. Completely purged the unvetted "Ready to draft your listing right now?" bypass card, post-submission "Open Listing Workspace" CTA button, and `onLaunchDirectListing` prop from `ConsignmentModal.tsx`. Applicants are strictly restricted to "Close & Return to Catalog", enforcing mandatory administrative curation, identity verification, and manual approval prior to draft workspace provisioning.
     - Private buyer inquiries generate structured HTML digest tables compiling inquirer contact details, inquiry topic, target lot title, and message text, dispatched with client error isolation.
     - Dual-branded HTML templates provide polished buyer onboarding guidelines and official seller application receipts with direct deep links.
-11. **Terminal Firebase Security Rule Deployment Infrastructure**:
+11. **Terminal Firebase Security Rule Deployment & Emulator Testing Infrastructure**:
     - Direct rules deployment via `firebase.json` mapping to named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`, `.firebaserc` project binding (`studio-apps-483721`), and `"deploy:rules": "firebase deploy --only firestore:rules"` script in `package.json`.
     - Allows developers to deploy synchronized production `firestore.rules` directly from the terminal via `npm run deploy:rules` with zero drift.
+    - Local security rules unit testing via Firebase Local Emulator Suite executing `"test:rules": "firebase emulators:exec --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'"` (`npm run test:rules`), validating rule definitions against the project's named database instance.
 12. **Hero Media Carousel & Scoped Lightbox Viewer (`HeroMediaCarousel.tsx`)**:
     - **Lightbox Dataset Isolation**: Hero lightbox modal state is scoped strictly to `heroImages`, resolving index mismatch bugs with the full categorized photo gallery archive.
     - **Mobile Viewport Optimization**: Removed cluttering overlays on mobile screens (`hidden sm:flex` for "Fullscreen Lightbox", `hidden sm:block` for bottom photo count bar).
@@ -372,6 +373,13 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
       - Staging synchronized with `main` at the time of promotion.
       - Vercel production deployment confirmed Ready.
       - Cloud Firestore security rules separately deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
+40. **Consignment Application Security Hardening (M2.0A Milestone)**:
+    - **Verified-Email Read Authorization**: Consignment application access requires an authenticated Firebase user whose verified email claim (`email_verified == true`) exactly matches the document's normalized `sellerEmail`. Access authorization is derived strictly from the cryptographic token claim rather than unverified client-supplied identifiers (`registeredUserId`).
+    - **Creation & Modification Locks**: Non-admin creation strictly requires `status: 'pending'` and bars injection of administrator-controlled metadata or protected dealer verification fields. Non-admin document updates and deletions are completely locked (`allow update, delete: if isAdmin();`). Guest submissions remain supported for initial intake.
+    - **Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` enforce the identical security rules.
+    - **Persistence & Notification Resilience**: Submissions normalize `sellerEmail` to lowercase upon creation. Primary persistence errors in `consignment_applications` propagate directly to the caller without synthetic fallback IDs, legacy dual-write is non-fatal best effort, and serverless notifications execute post-persistence in a non-blocking background routine with a 5000ms timeout guard.
+    - **Emulator Verification**: 83 passing unit tests (`npm run test:rules`) executed against named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
+    - **Release Posture**: Implemented and verified on `staging`; awaiting production promotion. M2.0B role-escalation hardening remains outstanding.
 
 ---
 
@@ -395,6 +403,9 @@ cp .env.example .env.local
 
 # Start development server
 npm run dev
+
+# Run Firestore security rules emulator unit tests
+npm run test:rules
 ```
 
 ### Environment Configuration Requirements
