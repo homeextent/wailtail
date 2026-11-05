@@ -55,11 +55,6 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
   const videoTitle = (mediaConfig?.videoTitle || propVideoTitle || 'Video Documentation Series').trim();
   const videoSubtitle = (mediaConfig?.videoSubtitle || propVideoSubtitle || '').trim();
 
-  // Hide section completely on public listings if no playlist or chapters exist
-  if (!playlistUrl && chapters.length === 0) {
-    return null;
-  }
-
   const activeChapters = chapters;
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [hasUserInteracted, setHasUserInteracted] = useState<boolean>(false);
@@ -116,6 +111,11 @@ export const YouTubePlaylistSection: React.FC<YouTubePlaylistSectionProps> = ({
     const src = formatEmbedUrl(targetChap, selectedIndex, hasUserInteracted);
     setActiveIframeSrc(src);
   }, [selectedIndex, playlistUrl, chapters, activeChapters.length]);
+
+  // Hide section completely on public listings if no playlist or chapters exist
+  if (!playlistUrl && chapters.length === 0) {
+    return null;
+  }
 
   const handleSelectVideo = (idx: number) => {
     setSelectedIndex(idx);

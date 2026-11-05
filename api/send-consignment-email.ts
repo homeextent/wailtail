@@ -140,7 +140,7 @@ async function sendEmailNotification({
   // Dispatch via Resend (SDK if available or direct Resend HTTP API)
   if (process.env.RESEND_API_KEY) {
     try {
-      // @ts-ignore
+      // @ts-expect-error -- Resend is an optional runtime dependency; HTTP API fallback is provided.
       const { Resend } = await import('resend').catch(() => ({ Resend: null }));
       if (Resend) {
         const resend = new Resend(process.env.RESEND_API_KEY);
