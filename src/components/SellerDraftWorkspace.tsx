@@ -9,6 +9,8 @@ const videoFields = [
 
 interface ShowcaseChapter {
   id: string;
+  customTitle: boolean;
+  highlights: string[];
   title: string;
   subtitle: string;
   narrative: string;
@@ -100,10 +102,14 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const videoPatch = Object.fromEntries(videoFields
     .filter(([key]) => draft && video[key] !== draft[key])
     .map(([key]) => [key, video[key]]));
-  const showcaseEdits = chapters.flatMap(({ id, subtitle, narrative }, index) => {
+  const showcaseEdits = chapters.flatMap(({ id, title, customTitle, subtitle, narrative, highlights }, index) => {
     const saved = draft?.showcaseChapters[index];
-    return saved && (saved.subtitle !== subtitle || saved.narrative !== narrative)
-      ? [{ id, subtitle, narrative }] : [];
+    if (!saved) return [];
+    const titleChanged = customTitle && saved.title !== title;
+    const highlightsChanged = JSON.stringify(saved.highlights) !== JSON.stringify(highlights);
+    return titleChanged || highlightsChanged || saved.subtitle !== subtitle || saved.narrative !== narrative
+      ? [{ id, subtitle, narrative, ...(titleChanged ? { title } : {}), ...(highlightsChanged ? { highlights } : {}) }]
+      : [];
   });
   const dirty = draft !== null &&
     (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0 || showcaseEdits.length > 0);
@@ -197,6 +203,16 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
           </label>)}
           {chapters.map((chapter, index) => <fieldset key={chapter.id}>
             <legend>{chapter.title || 'Showcase chapter'}</legend>
+            {chapter.customTitle && <label className="block">Custom chapter title
+              <input className="block w-full rounded border p-2" maxLength={240} value={chapter.title}
+                onChange={event => setChapters(chapters.map((item, position) =>
+                  position === index ? { ...item, title: event.target.value } : item))} />
+            </label>}
+            <label className="block">Highlights (one per line, up to 20)
+              <textarea className="block w-full rounded border p-2" value={chapter.highlights.join('\n')}
+                onChange={event => setChapters(chapters.map((item, position) =>
+                  position === index ? { ...item, highlights: event.target.value ? event.target.value.split('\n') : [] } : item))} />
+            </label>
             <label className="block">Subtitle
               <input className="block w-full rounded border p-2" maxLength={240} value={chapter.subtitle}
                 onChange={event => setChapters(chapters.map((item, position) =>

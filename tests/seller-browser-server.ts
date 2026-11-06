@@ -48,7 +48,8 @@ await firestore.collection('auctions').doc(auctionId).set({
 
 await firestore.collection('settings').doc(`media-${auctionId}`).set({
   showcaseChapters: [{ id: 'overview-fixture', title: 'Exterior Highlights', category: 'EXTERIOR',
-    subtitle: 'Original subtitle', narrative: 'Original chapter narrative', specCards: [] }]
+    subtitle: 'Original subtitle', narrative: 'Original chapter narrative', specCards: [] },
+  { id: 'custom-fixture', title: 'Custom Details', category: 'CUSTOM', subtitle: '', narrative: '', highlights: [] }]
 });
 
 const adminEmail = 'jeremygoodmurphy@gmail.com';
