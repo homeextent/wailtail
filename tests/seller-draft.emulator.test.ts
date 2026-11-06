@@ -114,8 +114,69 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     const assetId = await addImage(1);
     const objectPath = `auctionDraft/${auctionId}/${assetId}`;
     assert.equal((await getStorage(app).bucket(bucket).file(objectPath).exists())[0], true);
-    const directRead = await fetch(`http://${storageHost}/v0/b/${bucket}/o/${encodeURIComponent(objectPath)}?alt=media`, { redirect: 'error' });
-    assert.ok([401, 403].includes(directRead.status), `Expected denied direct Storage read, got ${directRead.status}`);
+    const storageUrl = `http://${storageHost}/v0/b/${bucket}/o`;
+    function getObject(path: string, token?: string) {
+      return fetch(`${storageUrl}/${encodeURIComponent(path)}?alt=media`, {
+        headers: token ? { Authorization: `Firebase ${token}` } : {},
+        redirect: 'error'
+      });
+    }
+
+    async function assertDenied(response: Response, label: string) {
+      assert.ok([401, 403].includes(response.status), `${label}: expected permission denial, got ${response.status}`);
+    }
+
+    const publicPaths = [
+      `auctionPublic/${auctionId}/asset`,
+      'auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg',
+      'auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg'
+    ];
+    const privatePaths = [
+      objectPath,
+      `applicationPrivate/${auctionId}/asset`,
+      'auctions/1988-porsche-928-c3uyca60/gallery/unapproved.pdf'
+    ];
+    const storageBucket = getStorage(app).bucket(bucket);
+    await Promise.all([...publicPaths, ...privatePaths.slice(1)].map(path =>
+      storageBucket.file(path).save(jpeg, { resumable: false, contentType: 'image/jpeg' })
+    ));
+
+    for (const path of publicPaths) {
+      const response = await getObject(path);
+      assert.equal(response.status, 200, `anonymous public read: ${path}`);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), jpeg);
+    }
+    for (const path of privatePaths) {
+      await assertDenied(await getObject(path), `anonymous private read: ${path}`);
+      await assertDenied(await getObject(path, owner.idToken), `seller direct private read: ${path}`);
+    }
+    await assertDenied(await getObject(objectPath, other.idToken), 'unrelated seller direct draft read');
+
+    // Multipart format mirrors the Firebase client upload transport.
+    const boundary = 'stage3-rules-fixture';
+    for (const token of [undefined, owner.idToken, other.idToken]) {
+      const authorization = token ? { Authorization: `Firebase ${token}` } : {};
+      for (const path of [`auctionDraft/${auctionId}/direct-upload`, publicPaths[0]]) {
+        const body = Buffer.concat([
+          Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=utf-8\r\n\r\n${JSON.stringify({ name: path, contentType: 'image/jpeg' })}\r\n--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`),
+          jpeg,
+          Buffer.from(`\r\n--${boundary}--\r\n`)
+        ]);
+        await assertDenied(await fetch(`${storageUrl}?name=${encodeURIComponent(path)}`, {
+          method: 'POST', redirect: 'error',
+          headers: { ...authorization, 'X-Goog-Upload-Protocol': 'multipart',
+            'Content-Type': `multipart/related; boundary=${boundary}` },
+          body
+        }), `direct upload: ${path}`);
+      }
+      for (const path of [objectPath, publicPaths[0]]) {
+        await assertDenied(await fetch(`${storageUrl}/${encodeURIComponent(path)}`, {
+          method: 'DELETE', redirect: 'error', headers: authorization
+        }), `direct delete: ${path}`);
+        assert.equal((await storageBucket.file(path).exists())[0], true);
+      }
+    }
+    assert.equal((await storageBucket.file(`auctionDraft/${auctionId}/direct-upload`).exists())[0], false);
     const preview = { auctionId, assetId, action: 'preview' };
     assert.equal((await invoke(media, preview, other.idToken)).status, 404);
     assert.deepEqual(await invoke(media, preview, owner.idToken), { status: 200, payload: jpeg });
