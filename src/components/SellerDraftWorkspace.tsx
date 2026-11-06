@@ -44,6 +44,8 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   auctionId: string;
   user: User;
   onBack: () => void;
+  // React consumes this JSX attribute when remounting the workspace.
+  key?: string;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');

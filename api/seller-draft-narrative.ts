@@ -62,7 +62,7 @@ async function handleSellerDraftCommand(
         transaction.update(auctionRef, { status: 'pending_review', sellerDraftRevision: revision, updatedAt });
         return 200;
       }
-      if (!('overviewHeading' in input)) return 422;
+      if (!('overviewHeading' in input) || !('overviewParagraphs' in input)) return 422;
       transaction.set(mediaRef, {
         overviewHeading: input.overviewHeading,
         overviewParagraphs: input.overviewParagraphs,
