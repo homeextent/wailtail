@@ -157,9 +157,9 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
           (record.status !== 'draft' && record.status !== 'pending_review')) return null;
 
       const media = (await transaction.get(mediaRef)).data();
-      const assets = await transaction.get(auctionRef.collection('draftAssets').orderBy('createdAt').limit(100));
+      const assets = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
       return {
-        assetIds: assets.docs.filter(asset => !asset.get('removedAt')).map(asset => asset.id),
+        assetIds: assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
         auctionId,
         status: record.status,
         revision: record.sellerDraftRevision ?? 0,

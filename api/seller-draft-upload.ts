@@ -34,6 +34,11 @@ export default function handler(req: any, res: any) {
     const decision = checkDraftNarrativeWrite((await auction.get()).data(), uid, input.expectedRevision);
     if (decision !== 200) return res.status(decision).json({ error: 'draft-unavailable' });
 
+    const activeAssets = auction.collection('draftAssets').where('removedAt', '==', null).limit(100);
+    if ((await activeAssets.get()).size >= 100) {
+      return res.status(409).json({ error: 'draft-image-limit' });
+    }
+
     const bucket = process.env.FIREBASE_STORAGE_BUCKET?.trim();
     if (!bucket) return res.status(503).json({ error: 'draft-storage-unconfigured' });
     const assetId = randomUUID();
@@ -52,9 +57,11 @@ export default function handler(req: any, res: any) {
       const current = checkDraftNarrativeWrite((await transaction.get(auction)).data(), uid, input.expectedRevision);
       if (current !== 200) return current;
 
+      if ((await transaction.get(activeAssets)).size >= 100) return 409;
+
       const now = Date.now();
       transaction.create(auction.collection('draftAssets').doc(assetId), {
-        objectPath, contentType: 'image/jpeg', byteLength: input.bytes.length, createdAt: now
+        objectPath, contentType: 'image/jpeg', byteLength: input.bytes.length, createdAt: now, removedAt: null
       });
       transaction.update(auction, { sellerDraftRevision: input.expectedRevision + 1, updatedAt: now });
       return 200;
