@@ -4379,11 +4379,7 @@ export async function fetchUserActivitySummary(
 
     // 4. Query Seller Listings
     for (const auction of allAuctions) {
-      const isOwner =
-        (cleanEmail &&
-          auction.sellerEmail &&
-          auction.sellerEmail.trim().toLowerCase() === cleanEmail) ||
-        (userId && auction.sellerId === userId);
+      const isOwner = Boolean(userId) && auction.sellerId === userId;
 
       if (isOwner) {
         summary.sellerListings.push({
