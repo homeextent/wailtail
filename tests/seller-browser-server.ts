@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
 import returnToDraft from '../api/admin-return-auction-to-draft';
@@ -43,7 +44,7 @@ const email = `browser-${run}@example.test`;
 const password = `Synthetic-${run}`;
 const auctionId = `browser-${run}`;
 const { uid } = await auth.createUser({ email, password, emailVerified: true });
-await firestore.collection('users').doc(uid).set({ uid, email, displayName: 'Synthetic Seller', role: 'seller', emailVerified: true });
+await firestore.collection('users').doc(uid).set({ uid, email, displayName: 'Synthetic Seller', role: 'seller', isEmailVerified: true, welcomeEmailSent: true });
 await firestore.collection('auctions').doc(auctionId).set({
   sellerId: uid, status: 'draft', title: 'Synthetic browser listing', make: 'Test', model: 'Fixture', year: 2000
 });
@@ -56,7 +57,11 @@ await firestore.collection('settings').doc(`media-${auctionId}`).set({
 
 const adminEmail = 'jeremygoodmurphy@gmail.com';
 const adminPassword = `Synthetic-admin-${run}`;
-await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true });
+const { uid: adminUid } = await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true });
+await firestore.collection('users').doc(adminUid).set({
+  uid: adminUid, email: adminEmail, displayName: 'Synthetic Administrator',
+  role: 'admin', isEmailVerified: true, welcomeEmailSent: true
+});
 
 const server = express();
 server.use((_req, res, next) => {
@@ -97,7 +102,7 @@ const vite = await createServer({
   configFile: false,
   server: { middlewareMode: true, hmr: false },
   appType: 'mpa',
-  plugins: [{
+  plugins: [tailwindcss(), {
     name: 'isolated-firebase-fixture',
     enforce: 'pre',
     resolveId(source, importer) {
@@ -109,5 +114,7 @@ const vite = await createServer({
 });
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
-  console.log('Synthetic seller workspace: http://127.0.0.1:4178/tests/seller-browser.html');
+  console.log('Actual seller route: http://127.0.0.1:4178/?fixture=draft');
+  console.log('Actual admin portal: http://127.0.0.1:4178/admin?tab=inventory');
+  console.log('Component-only fixture: http://127.0.0.1:4178/tests/seller-browser.html');
 });
