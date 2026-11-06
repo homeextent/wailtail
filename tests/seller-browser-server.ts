@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
+import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
@@ -42,6 +43,7 @@ const email = `browser-${run}@example.test`;
 const password = `Synthetic-${run}`;
 const auctionId = `browser-${run}`;
 const { uid } = await auth.createUser({ email, password, emailVerified: true });
+await firestore.collection('users').doc(uid).set({ uid, email, displayName: 'Synthetic Seller', role: 'seller', emailVerified: true });
 await firestore.collection('auctions').doc(auctionId).set({
   sellerId: uid, status: 'draft', title: 'Synthetic browser listing', make: 'Test', model: 'Fixture', year: 2000
 });
@@ -59,7 +61,7 @@ await auth.createUser({ email: adminEmail, password: adminPassword, emailVerifie
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:9099");
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:9099 http://127.0.0.1:8080 http://127.0.0.1:9199");
   next();
 });
 server.use(express.json({ limit: '3mb' }));
@@ -86,7 +88,25 @@ server.get('/admin-fixture', async (_req, res, next) => {
 server.post('/api/admin-return-auction-to-draft', (req, res, next) => {
   Promise.resolve(returnToDraft(req, res)).catch(next);
 });
-const vite = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: 'mpa' });
+// Serve the real app at its real routes, with Firebase modules replaced only in this harness.
+server.get(['/','/admin','/dashboard/listings/:auctionId/edit'], (_req, res) => {
+  res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>Isolated Wailtail app</title><div id="root"></div><script type="module" src="/tests/full-app-browser.tsx"></script></html>');
+});
+const firebaseModules = ['src/firebase', 'src/services/firebase'].map(path => resolve(path));
+const vite = await createServer({
+  configFile: false,
+  server: { middlewareMode: true, hmr: false },
+  appType: 'mpa',
+  plugins: [{
+    name: 'isolated-firebase-fixture',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (!source.startsWith('.') || !importer) return;
+      const target = resolve(importer, '..', source).replace(/\.tsx?$/, '');
+      if (firebaseModules.includes(target)) return resolve('tests/full-app-firebase.ts');
+    }
+  }]
+});
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
   console.log('Synthetic seller workspace: http://127.0.0.1:4178/tests/seller-browser.html');
