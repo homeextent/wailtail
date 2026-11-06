@@ -7,7 +7,7 @@ const MAX_PARAGRAPH_LENGTH = 4000;
 export function parseDraftNarrative(body: unknown) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs'].includes(key))) {
+  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs', 'videoTitle', 'videoSubtitle', 'youtubePlaylistUrl'].includes(key))) {
     return null;
   }
   const { auctionId, expectedRevision, overviewHeading, overviewParagraphs } = input;
@@ -20,7 +20,23 @@ export function parseDraftNarrative(body: unknown) {
     return null;
   }
 
-  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs };
+  const { videoTitle, videoSubtitle, youtubePlaylistUrl } = input;
+  if ((videoTitle !== undefined && (typeof videoTitle !== 'string' || videoTitle.length > 240)) ||
+      (videoSubtitle !== undefined && (typeof videoSubtitle !== 'string' || videoSubtitle.length > 1000)) ||
+      (youtubePlaylistUrl !== undefined && (typeof youtubePlaylistUrl !== 'string' || !isPlaylistUrl(youtubePlaylistUrl)))) {
+    return null;
+  }
+  const video = {
+    ...(typeof videoTitle === 'string' ? { videoTitle } : {}),
+    ...(typeof videoSubtitle === 'string' ? { videoSubtitle } : {}),
+    ...(typeof youtubePlaylistUrl === 'string' ? { youtubePlaylistUrl } : {})
+  };
+  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs, ...video };
+}
+
+function isPlaylistUrl(value: string) {
+  if (value === '') return true;
+  return /^https:\/\/(?:www\.)?youtube\.com\/playlist\?list=[A-Za-z0-9_-]{1,128}$/.test(value);
 }
 
 export function checkDraftNarrativeWrite(
@@ -68,6 +84,9 @@ async function handleSellerDraftCommand(
       transaction.set(mediaRef, {
         overviewHeading: input.overviewHeading,
         overviewParagraphs: input.overviewParagraphs,
+        ...('videoTitle' in input ? { videoTitle: input.videoTitle } : {}),
+        ...('videoSubtitle' in input ? { videoSubtitle: input.videoSubtitle } : {}),
+        ...('youtubePlaylistUrl' in input ? { youtubePlaylistUrl: input.youtubePlaylistUrl } : {}),
         updatedAt
       }, { merge: true });
       transaction.update(auctionRef, {
@@ -163,6 +182,10 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
       const media = (await transaction.get(mediaRef)).data();
       const assets = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
       return {
+        videoTitle: typeof media?.videoTitle === 'string' ? media.videoTitle : '',
+        videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',
+        youtubePlaylistUrl: typeof media?.youtubePlaylistUrl === 'string' && isPlaylistUrl(media.youtubePlaylistUrl)
+          ? media.youtubePlaylistUrl : '',
         assetIds: assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
         auctionId,
         status: record.status,

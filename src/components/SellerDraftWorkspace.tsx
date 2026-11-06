@@ -1,7 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 
+const videoFields = [
+  ['videoTitle', 'Video title', 240],
+  ['videoSubtitle', 'Video subtitle', 1000],
+  ['youtubePlaylistUrl', 'YouTube playlist URL', 200]
+] as const;
+
 interface Draft {
+  videoTitle: string;
+  videoSubtitle: string;
+  youtubePlaylistUrl: string;
   title: string;
   status: 'draft' | 'pending_review';
   revision: number;
@@ -50,6 +59,9 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');
   const [paragraphs, setParagraphs] = useState('');
+  const [video, setVideo] = useState<Pick<Draft, 'videoTitle' | 'videoSubtitle' | 'youtubePlaylistUrl'>>({
+    videoTitle: '', videoSubtitle: '', youtubePlaylistUrl: ''
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -61,6 +73,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
       if (controller.signal.aborted) return;
       setDraft(record);
       setHeading(record.overviewHeading);
+      setVideo({ videoTitle: record.videoTitle, videoSubtitle: record.videoSubtitle, youtubePlaylistUrl: record.youtubePlaylistUrl });
       setParagraphs(record.overviewParagraphs.join('\n\n'));
     }).catch((err: Error) => {
       if (!controller.signal.aborted) setError(err.message);
@@ -68,8 +81,11 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     return () => controller.abort();
   }, [auctionId, user]);
 
+  const videoPatch = Object.fromEntries(videoFields
+    .filter(([key]) => draft && video[key] !== draft[key])
+    .map(([key]) => [key, video[key]]));
   const dirty = draft !== null &&
-    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n'));
+    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0);
   const editable = draft?.status === 'draft';
 
   async function apply(operation: 'narrative' | 'submit') {
@@ -82,14 +98,14 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
       const result = await draftRequest<{ revision: number; status?: Draft['status'] }>(user, operation, {
         auctionId,
         expectedRevision: draft.revision,
-        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs } : {})
+        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch } : {})
       });
       if (operation === 'narrative') setParagraphs(overviewParagraphs.join('\n\n'));
       setDraft({
         ...draft,
         revision: result.revision,
         status: result.status ?? draft.status,
-        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs } : {})
+        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch } : {})
       });
       setMessage(operation === 'submit' ? 'Listing submitted for review.' : 'Narrative saved.');
     } catch (err) {
@@ -153,6 +169,10 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <textarea className="block w-full rounded border p-2" rows={12}
               value={paragraphs} onChange={event => setParagraphs(event.target.value)} />
           </label>
+          {videoFields.map(([key, label, maxLength]) => <label className="block" key={key}>{label}
+            <input className="block w-full rounded border p-2" maxLength={maxLength}
+              value={video[key]} onChange={event => setVideo({ ...video, [key]: event.target.value })} />
+          </label>)}
           <div className="flex gap-4">
             <button type="button" disabled={!dirty} onClick={() => void apply('narrative')}>Save narrative</button>
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
