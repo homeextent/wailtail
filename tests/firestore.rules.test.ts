@@ -23,10 +23,16 @@ import {
   Firestore
 } from 'firebase/firestore';
 
-const PROJECT_ID = 'studio-apps-483721';
+// Keep this synthetic project ID aligned with the test:rules command.
+const PROJECT_ID = 'demo-wailtail-stage3';
 const DATABASE_ID = 'ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e';
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST?.split(':')[0] || '127.0.0.1';
-const EMULATOR_PORT = Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || '8080');
+const emulatorAddress = process.env.FIRESTORE_EMULATOR_HOST ?? '';
+const loopback = /^127\.0\.0\.1:(\d{1,5})$/.exec(emulatorAddress);
+if (!loopback || Number(loopback[1]) < 1 || Number(loopback[1]) > 65535) {
+  throw new Error('Firestore rules tests require a loopback emulator. Run npm run test:rules.');
+}
+const EMULATOR_HOST = '127.0.0.1';
+const EMULATOR_PORT = Number(loopback[1]);
 
 const APPLICANT_EMAIL = 'applicant@wailtail.com';
 const OTHER_USER_EMAIL = 'otheruser@wailtail.com';
