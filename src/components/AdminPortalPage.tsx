@@ -1,3 +1,4 @@
+import { requestAuctionReturnToDraft } from '../services/auctionReview';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -123,13 +124,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   async function returnListingToDraft(lot: Auction, notes = '') {
     if (!authUser) throw new Error('Administrator authentication required.');
     const { sellerDraftRevision } = lot as Auction & { sellerDraftRevision?: number };
-    const response = await fetch('/api/admin-return-auction-to-draft', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${await authUser.getIdToken()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ auctionId: lot.id, expectedRevision: sellerDraftRevision ?? 0, notes })
-    });
-    if (response.status === 409) throw new Error('The listing changed. Reload before trying again.');
-    if (!response.ok) throw new Error('Could not return the listing to draft.');
+    await requestAuctionReturnToDraft(authUser, lot.id, sellerDraftRevision ?? 0, notes);
   }
 
 

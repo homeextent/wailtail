@@ -4,6 +4,7 @@ import express from 'express';
 import { createServer } from 'vite';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
+import returnToDraft from '../api/admin-return-auction-to-draft';
 import read from '../api/seller-draft-read';
 import save from '../api/seller-draft-narrative';
 import submit from '../api/seller-draft-submit';
@@ -45,6 +46,10 @@ await firestore.collection('auctions').doc(auctionId).set({
   sellerId: uid, status: 'draft', title: 'Synthetic browser listing', make: 'Test', model: 'Fixture', year: 2000
 });
 
+const adminEmail = 'jeremygoodmurphy@gmail.com';
+const adminPassword = `Synthetic-admin-${run}`;
+await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true });
+
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
@@ -61,6 +66,20 @@ for (const [operation, handler] of Object.entries({ read, narrative: save, submi
     Promise.resolve(handler(req, res)).catch(next);
   });
 }
+server.get('/admin-fixture', async (_req, res, next) => {
+  try {
+    const listing = await firestore.collection('auctions').doc(auctionId).get();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST,
+      email: adminEmail, password: adminPassword, auctionId,
+      status: listing.get('status'), revision: listing.get('sellerDraftRevision') ?? 0 });
+  } catch (err) {
+    next(err);
+  }
+});
+server.post('/api/admin-return-auction-to-draft', (req, res, next) => {
+  Promise.resolve(returnToDraft(req, res)).catch(next);
+});
 const vite = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false }, appType: 'mpa' });
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
