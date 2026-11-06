@@ -46,6 +46,7 @@ import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
 import { HowItWorksModal, HowItWorksTab } from './components/HowItWorksModal';
 import { SocialPromoKitModal } from './components/SocialPromoKitModal';
+import { SellerDraftWorkspace } from './components/SellerDraftWorkspace';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
 import { AdminPortalPage } from './components/AdminPortalPage';
@@ -443,7 +444,7 @@ const AuctionAppContent: React.FC = () => {
     }
 
     // Check if lot exists in catalog once allAuctions is loaded
-    if (allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
+    if (isAdmin && allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
       const exists = allAuctions.some(a => a.id === rawId);
       if (!exists) {
         const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
@@ -708,6 +709,16 @@ const AuctionAppContent: React.FC = () => {
 
   // Dedicated Full-Page Authoring Route (/dashboard/listings/[id]/edit)
   if (isEditorRoute) {
+    if (authLoading) return <p role="status">Loading listing workspace…</p>;
+    if (!isAdmin) {
+      const auctionId = editorMatch?.[1];
+      if (!user || !isSeller || !auctionId) return <p>Listing workspace unavailable.</p>;
+      return <SellerDraftWorkspace key={`${user.uid}:${auctionId}`} auctionId={auctionId} user={user}
+        onBack={() => {
+          navigateTo('/');
+          handleOpenAccountHub('seller');
+        }} />;
+    }
     return (
       <ListingEditorWorkspace
         auction={auction}
