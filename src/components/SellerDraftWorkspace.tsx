@@ -7,9 +7,10 @@ interface Draft {
   revision: number;
   overviewHeading: string;
   overviewParagraphs: string[];
+  assetIds: string[];
 }
 
-async function draftRequest<T>(user: User, operation: string, body: object, signal?: AbortSignal): Promise<T> {
+async function request(user: User, operation: string, body: object, signal?: AbortSignal): Promise<Response> {
   const token = await user.getIdToken();
   const response = await fetch(`/api/seller-draft-${operation}`, {
     method: 'POST',
@@ -23,7 +24,20 @@ async function draftRequest<T>(user: User, operation: string, body: object, sign
     if (response.status === 422) throw new Error('Check the draft fields or ask an administrator to complete the listing details.');
     throw new Error('The listing operation failed. Please try again.');
   }
-  return response.json() as Promise<T>;
+  return response;
+}
+
+async function draftRequest<T>(user: User, operation: string, body: object, signal?: AbortSignal): Promise<T> {
+  return (await request(user, operation, body, signal)).json() as Promise<T>;
+}
+
+function readImage(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the image.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function SellerDraftWorkspace({ auctionId, user, onBack }: {
@@ -37,6 +51,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [preview, setPreview] = useState<{ assetId: string; image: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,6 +97,42 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     }
   }
 
+  async function updateMedia(action: 'upload' | 'preview' | 'remove', target: File | string) {
+    if (!draft || busy || (action !== 'preview' && !editable)) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      if (action === 'preview' && typeof target === 'string') {
+        const response = await request(user, 'media', { action, auctionId, assetId: target });
+        setPreview({ assetId: target, image: await readImage(await response.blob()) });
+        return;
+      }
+      if (action === 'upload' && target instanceof File) {
+        if (target.type !== 'image/jpeg' || target.size > 2 * 1024 * 1024) {
+          throw new Error('Choose a JPEG image no larger than 2 MiB.');
+        }
+        const image = await readImage(target);
+        const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
+          auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1]
+        });
+        setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId] });
+        setMessage('Image uploaded.');
+      } else if (action === 'remove' && typeof target === 'string') {
+        const result = await draftRequest<{ revision: number }>(user, 'media', {
+          action, auctionId, assetId: target, expectedRevision: draft.revision
+        });
+        setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target) });
+        if (preview?.assetId === target) setPreview(null);
+        setMessage('Image removed from the draft.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The media operation failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-3xl space-y-5 p-6">
       <button type="button" onClick={onBack}>Back to dashboard</button>
@@ -105,6 +156,27 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
           </div>
         </fieldset>
+        <section aria-labelledby="draft-media-heading" className="space-y-3">
+          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images</h2>
+          {editable && <label className="block">Upload JPEG (up to 2 MiB)
+            <input type="file" accept="image/jpeg" disabled={busy} onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              if (file) void updateMedia('upload', file);
+            }} />
+          </label>}
+          <ul className="space-y-2">
+            {draft.assetIds.map((assetId, index) => <li key={assetId} className="flex gap-4">
+              <span>Image {index + 1}</span>
+              <button type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
+              {editable && <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>}
+            </li>)}
+          </ul>
+          {preview && <div>
+            <button type="button" onClick={() => setPreview(null)}>Close preview</button>
+            <img src={preview.image} alt="Private draft preview" className="max-h-96 max-w-full" />
+          </div>}
+        </section>
       </>}
     </main>
   );
