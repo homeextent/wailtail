@@ -17,7 +17,14 @@ interface ShowcaseChapter {
   narrative: string;
 }
 
+interface SellerVideoChapter {
+  title: string;
+  description: string;
+  videoUrl: string;
+}
+
 interface Draft {
+  videoChapters: SellerVideoChapter[];
   showcaseChapters: ShowcaseChapter[];
   videoTitle: string;
   videoSubtitle: string;
@@ -84,6 +91,8 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     videoTitle: '', videoSubtitle: '', youtubePlaylistUrl: ''
   });
   const [chapters, setChapters] = useState<ShowcaseChapter[]>([]);
+  const [videoChapters, setVideoChapters] = useState<SellerVideoChapter[]>([]);
+  const [galleryOrder, setGalleryOrder] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -94,6 +103,8 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     draftRequest<Draft>(user, 'read', { auctionId }, controller.signal).then(record => {
       if (controller.signal.aborted) return;
       setDraft(record);
+      setGalleryOrder(record.assetIds);
+      setVideoChapters(record.videoChapters);
       setChapters(record.showcaseChapters);
       setHeading(record.overviewHeading);
       setVideo({ videoTitle: record.videoTitle, videoSubtitle: record.videoSubtitle, youtubePlaylistUrl: record.youtubePlaylistUrl });
@@ -118,8 +129,10 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
         ...(photoChanged ? { photoAssetId } : {}) }]
       : [];
   });
+  const galleryChanged = !!draft && galleryOrder.join() !== draft.assetIds.join();
+  const videoChaptersChanged = !!draft && JSON.stringify(videoChapters) !== JSON.stringify(draft.videoChapters);
   const dirty = draft !== null &&
-    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0 || showcaseEdits.length > 0);
+    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0 || showcaseEdits.length > 0 || galleryChanged || videoChaptersChanged);
   const editable = draft?.status === 'draft';
 
   async function apply(operation: 'narrative' | 'submit') {
@@ -133,14 +146,15 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
         auctionId,
         expectedRevision: draft.revision,
         ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch,
-          ...(showcaseEdits.length ? { showcaseEdits } : {}) } : {})
+          ...(showcaseEdits.length ? { showcaseEdits } : {}),
+          ...(galleryChanged ? { galleryOrder } : {}), ...(videoChaptersChanged ? { videoChapters } : {}) } : {})
       });
       if (operation === 'narrative') setParagraphs(overviewParagraphs.join('\n\n'));
       setDraft({
         ...draft,
         revision: result.revision,
         status: result.status ?? draft.status,
-        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch, showcaseChapters: chapters } : {})
+        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch, showcaseChapters: chapters, assetIds: galleryOrder, videoChapters } : {})
       });
       setMessage(operation === 'submit' ? 'Listing submitted for review.' : 'Narrative saved.');
     } catch (err) {
@@ -169,12 +183,14 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
         const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
           auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1]
         });
+        setGalleryOrder(order => [...order, result.assetId]);
         setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId] });
         setMessage('Image uploaded.');
       } else if (action === 'remove' && typeof target === 'string') {
         const result = await draftRequest<{ revision: number }>(user, 'media', {
           action, auctionId, assetId: target, expectedRevision: draft.revision
         });
+        setGalleryOrder(order => order.filter(id => id !== target));
         setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target) });
         if (preview?.assetId === target) setPreview(null);
         setMessage('Image removed from the draft.');
@@ -238,6 +254,19 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
                   position === index ? { ...item, narrative: event.target.value } : item))} />
             </label>
           </fieldset>)}
+          <section aria-label="Video chapters">
+            {videoChapters.map((chapter, index) => <fieldset key={index}>
+              <legend>Video chapter {index + 1}</legend>
+              {(['title', 'description', 'videoUrl'] as const).map(key => <label className="block" key={key}>
+                {key === 'videoUrl' ? 'YouTube video URL' : key === 'title' ? 'Video chapter title' : 'Description'}
+                <input value={chapter[key]} onChange={event => setVideoChapters(videoChapters.map((item, position) =>
+                  position === index ? { ...item, [key]: event.target.value } : item))} />
+              </label>)}
+              <button type="button" onClick={() => setVideoChapters(videoChapters.filter((_, position) => position !== index))}>Remove video chapter</button>
+            </fieldset>)}
+            <button type="button" disabled={videoChapters.length >= 20}
+              onClick={() => setVideoChapters([...videoChapters, { title: '', description: '', videoUrl: '' }])}>Add video chapter</button>
+          </section>
           <div className="flex gap-4">
             <button type="button" disabled={!dirty} onClick={() => void apply('narrative')}>Save narrative</button>
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
@@ -254,10 +283,17 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             }} />
           </label>}
           <ul className="space-y-2">
-            {draft.assetIds.map((assetId, index) => <li key={assetId} className="flex gap-4">
+            {galleryOrder.map((assetId, index) => <li key={assetId} className="flex gap-4">
               <span>Image {index + 1}</span>
               <button type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
-              {editable && <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>}
+              {editable && <>
+                <button type="button" disabled={busy || index === 0} onClick={() => {
+                  const next = [...galleryOrder];
+                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                  setGalleryOrder(next);
+                }}>Move up</button>
+                <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
+              </>}
             </li>)}
           </ul>
           {preview && <div>

@@ -7,7 +7,7 @@ const MAX_PARAGRAPH_LENGTH = 4000;
 export function parseDraftNarrative(body: unknown) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs', 'videoTitle', 'videoSubtitle', 'youtubePlaylistUrl', 'showcaseEdits'].includes(key))) {
+  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs', 'videoTitle', 'videoSubtitle', 'youtubePlaylistUrl', 'showcaseEdits', 'galleryOrder', 'videoChapters'].includes(key))) {
     return null;
   }
   const { auctionId, expectedRevision, overviewHeading, overviewParagraphs } = input;
@@ -31,12 +31,20 @@ export function parseDraftNarrative(body: unknown) {
       !showcaseEdits.every(isShowcaseEdit) || new Set(showcaseEdits.map(edit => edit.id)).size !== showcaseEdits.length)) {
     return null;
   }
+  const { galleryOrder, videoChapters } = input;
+  if (galleryOrder !== undefined && (!Array.isArray(galleryOrder) || galleryOrder.length > 100 ||
+      !galleryOrder.every(id => typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id)) ||
+      new Set(galleryOrder).size !== galleryOrder.length)) return null;
+  if (videoChapters !== undefined && (!Array.isArray(videoChapters) || videoChapters.length > 20 ||
+      !videoChapters.every(isVideoChapter))) return null;
   const video = {
     ...(typeof videoTitle === 'string' ? { videoTitle } : {}),
     ...(typeof videoSubtitle === 'string' ? { videoSubtitle } : {}),
     ...(typeof youtubePlaylistUrl === 'string' ? { youtubePlaylistUrl } : {})
   };
-  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs, ...video, ...(Array.isArray(showcaseEdits) ? { showcaseEdits } : {}) };
+  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs, ...video,
+    ...(Array.isArray(galleryOrder) ? { galleryOrder } : {}),
+    ...(Array.isArray(videoChapters) ? { videoChapters } : {}), ...(Array.isArray(showcaseEdits) ? { showcaseEdits } : {}) };
 }
 
 interface ShowcaseEdit {
@@ -75,6 +83,16 @@ function sellerShowcaseChapters(value: unknown) {
       narrative: typeof chapter.narrative === 'string' ? chapter.narrative : ''
     }];
   });
+}
+
+function isVideoChapter(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const chapter = value as Record<string, unknown>;
+  return Object.keys(chapter).every(key => ['title', 'description', 'videoUrl'].includes(key)) &&
+    typeof chapter.title === 'string' && chapter.title.trim().length > 0 && chapter.title.length <= 240 &&
+    typeof chapter.description === 'string' && chapter.description.length <= 1000 &&
+    typeof chapter.videoUrl === 'string' &&
+    /^https:\/\/(?:(?:www\.)?youtube\.com\/watch\?v=|youtu\.be\/)[A-Za-z0-9_-]{11}(?:[?&]si=[A-Za-z0-9_-]{1,128})?$/.test(chapter.videoUrl);
 }
 
 function isPlaylistUrl(value: string) {
@@ -129,6 +147,15 @@ async function handleSellerDraftCommand(
       }
       if (!('overviewHeading' in input) || !('overviewParagraphs' in input)) return 422;
       const mediaPatch: Record<string, unknown> = {};
+      if ('videoChapters' in input && Array.isArray(input.videoChapters)) {
+        mediaPatch.videoChapters = input.videoChapters;
+      }
+      if ('galleryOrder' in input && Array.isArray(input.galleryOrder)) {
+        const active = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
+        const ids = new Set(active.docs.map(asset => asset.id));
+        if (input.galleryOrder.length !== ids.size || !input.galleryOrder.every(id => ids.has(id))) return 422;
+        mediaPatch.sellerDraftGalleryOrder = input.galleryOrder;
+      }
       if ('showcaseEdits' in input && Array.isArray(input.showcaseEdits) && input.showcaseEdits.length) {
         const edits = new Map<string, ShowcaseEdit>(input.showcaseEdits.map(edit => [edit.id, edit]));
         const current = (await transaction.get(mediaRef)).get('showcaseChapters');
@@ -262,7 +289,18 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
         videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',
         youtubePlaylistUrl: typeof media?.youtubePlaylistUrl === 'string' && isPlaylistUrl(media.youtubePlaylistUrl)
           ? media.youtubePlaylistUrl : '',
-        assetIds: assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
+        assetIds: orderedDraftAssets(
+          assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
+          media?.sellerDraftGalleryOrder
+        ),
+        videoChapters: Array.isArray(media?.videoChapters) ? media.videoChapters.flatMap(chapter => {
+          if (!chapter || typeof chapter.title !== 'string') return [];
+          return [{
+            title: chapter.title,
+            description: typeof chapter.description === 'string' ? chapter.description : '',
+            videoUrl: typeof chapter.videoUrl === 'string' ? chapter.videoUrl : ''
+          }];
+        }) : [],
         auctionId,
         status: record.status,
         revision: record.sellerDraftRevision ?? 0,
@@ -277,6 +315,12 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
     if (!draft) return res.status(404).json({ error: 'draft-not-found' });
     return res.status(200).json(draft);
   });
+}
+
+function orderedDraftAssets(ids: string[], order: unknown) {
+  if (!Array.isArray(order)) return ids;
+  const remaining = new Set(ids);
+  return [...order.filter(id => typeof id === 'string' && remaining.delete(id)), ...remaining];
 }
 
 export function draftMediaId(auctionId: string) {
