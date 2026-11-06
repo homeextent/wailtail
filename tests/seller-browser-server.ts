@@ -7,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
 import returnToDraft from '../api/admin-return-auction-to-draft';
+import list from '../api/seller-draft-list';
 import read from '../api/seller-draft-read';
 import save from '../api/seller-draft-narrative';
 import submit from '../api/seller-draft-submit';
@@ -55,6 +56,10 @@ await firestore.collection('settings').doc(`media-${auctionId}`).set({
   { id: 'custom-fixture', title: 'Custom Details', category: 'CUSTOM', subtitle: '', narrative: '', highlights: [] }]
 });
 
+await firestore.collection('auctions').doc(`foreign-${run}`).set({
+  sellerId: 'unrelated-synthetic-owner', status: 'draft', title: 'Unrelated synthetic draft'
+});
+
 const adminEmail = 'jeremygoodmurphy@gmail.com';
 const adminPassword = `Synthetic-admin-${run}`;
 const { uid: adminUid } = await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true });
@@ -74,7 +79,7 @@ server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId });
 });
-for (const [operation, handler] of Object.entries({ read, narrative: save, submit, upload, media })) {
+for (const [operation, handler] of Object.entries({ list, read, narrative: save, submit, upload, media })) {
   server.post(`/api/seller-draft-${operation}`, (req, res, next) => {
     Promise.resolve(handler(req, res)).catch(next);
   });

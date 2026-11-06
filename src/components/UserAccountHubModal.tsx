@@ -133,6 +133,8 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   }, [isOpen, user, onClose]);
 
   // Load activity summary and saved watchlist from service
+  const [sellerListingsError, setSellerListingsError] = useState(false);
+
   const loadActivity = async (isManualRefresh = false) => {
     if (!user?.uid) {
       setLoading(false);
@@ -142,11 +144,24 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
     else setLoading(true);
 
     try {
-      const [data, watchlistData] = await Promise.all([
+      setSellerListingsError(false);
+      const [data, watchlistData, owned] = await Promise.all([
+
         fetchUserActivitySummary(user.uid, user.email || ''),
-        fetchUserWatchlist(user.uid)
+        fetchUserWatchlist(user.uid),
+        (async () => {
+          const response = await fetch('/api/seller-draft-list', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${await user.getIdToken()}` }
+          });
+          if (!response.ok) throw new Error('Could not load seller listings.');
+          const result = await response.json();
+          if (!Array.isArray(result.listings)) throw new Error('Invalid seller listing response.');
+          return result.listings as typeof summary.sellerListings;
+        })().catch(() => null)
       ]);
-      setSummary(data);
+      setSellerListingsError(owned === null);
+      setSummary({ ...data, sellerListings: owned ?? [] });
 
       if (watchlistData && watchlistData.length > 0) {
         if (allAuctions && allAuctions.length > 0) {
@@ -910,7 +925,9 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                     )}
                   </div>
 
-                  {summary.sellerListings.length === 0 ? (
+                  {sellerListingsError ? (
+                    <p role="alert">Could not load your listings. Refresh to try again.</p>
+                  ) : summary.sellerListings.length === 0 ? (
                     /* Zero-State Callout for Seller Listings */
                     <div className="p-8 rounded-xl bg-slate-800/40 border border-slate-800 text-center space-y-3">
                       <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
