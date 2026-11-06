@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
+import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin';
 import { checkDraftNarrativeWrite, withSellerDraftRequest } from './seller-draft-narrative';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -25,8 +25,8 @@ function parseUpload(body: unknown) {
   return { auctionId, expectedRevision, bytes };
 }
 
-export default function handler(req: any, res: any) {
-  return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid) => {
+export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseAdminServices) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
     const input = parseUpload(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-draft-image' });
 
@@ -43,7 +43,7 @@ export default function handler(req: any, res: any) {
     if (!bucket) return res.status(503).json({ error: 'draft-storage-unconfigured' });
     const assetId = randomUUID();
     const objectPath = `auctionDraft/${input.auctionId}/${assetId}`;
-    const file = getStorage(getFirebaseAdminServices().app).bucket(bucket).file(objectPath);
+    const file = getStorage((services ?? getFirebaseAdminServices()).app).bucket(bucket).file(objectPath);
     await file.save(input.bytes, {
       resumable: false,
       contentType: 'image/jpeg',
@@ -70,4 +70,8 @@ export default function handler(req: any, res: any) {
     if (status !== 200) return res.status(status).json({ error: 'draft-unavailable' });
     return res.status(201).json({ assetId, revision: input.expectedRevision + 1 });
   });
+}
+
+export default function handler(req: any, res: any) {
+  return handleSellerDraftUpload(req, res);
 }

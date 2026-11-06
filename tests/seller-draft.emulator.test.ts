@@ -8,7 +8,8 @@ import returnToDraft from '../api/admin-return-auction-to-draft';
 import read from '../api/seller-draft-read';
 import save from '../api/seller-draft-narrative';
 import submit from '../api/seller-draft-submit';
-import upload from '../api/seller-draft-upload';
+import upload, { handleSellerDraftUpload } from '../api/seller-draft-upload';
+import type { Transaction } from 'firebase-admin/firestore';
 import media from '../api/seller-draft-media';
 
 const projectId = 'demo-wailtail-stage3';
@@ -126,15 +127,58 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
       assert.ok([401, 403].includes(response.status), `${label}: expected permission denial, got ${response.status}`);
     }
 
+    const beforeFault = await auction.get();
+    const beforeAssets = await auction.collection('draftAssets').get();
+    const bucketForFault = getStorage(app).bucket(bucket);
+    const prefix = `auctionDraft/${auctionId}/`;
+    const [beforeObjects] = await bucketForFault.getFiles({ prefix });
+    let stagedRegistration = false;
+    const abortingFirestore = new Proxy(firestore, {
+      get(target, key) {
+        if (key === 'runTransaction') {
+          return (operation: (transaction: Transaction) => Promise<number>) =>
+            target.runTransaction(async transaction => {
+              const result = await operation(transaction);
+              stagedRegistration = result === 200;
+              throw new Error('Synthetic registration transaction abort');
+            });
+        }
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+    });
+    const failed = await invoke((req, res) => handleSellerDraftUpload(req, res, {
+      app, auth, firestore: abortingFirestore
+    }), {
+      auctionId, expectedRevision: beforeFault.get('sellerDraftRevision'), jpegBase64: jpeg.toString('base64')
+    }, owner.idToken);
+    assert.equal(failed.status, 503);
+    assert.equal(stagedRegistration, true);
+    assert.deepEqual((await auction.get()).data(), beforeFault.data());
+    assert.deepEqual((await auction.collection('draftAssets').get()).docs.map(doc => doc.id),
+      beforeAssets.docs.map(doc => doc.id));
+    const [afterObjects] = await bucketForFault.getFiles({ prefix });
+    const previousNames = new Set(beforeObjects.map(file => file.name));
+    const unattached = afterObjects.filter(file => !previousNames.has(file.name));
+    assert.equal(unattached.length, 1);
+    await assertDenied(await getObject(unattached[0].name), 'unattached upload public read');
+    await assertDenied(await getObject(unattached[0].name, owner.idToken), 'unattached upload direct seller read');
+    const unregisteredId = unattached[0].name.slice(prefix.length);
+    assert.equal((await invoke(media, { auctionId, assetId: unregisteredId, action: 'preview' }, owner.idToken)).status, 404);
+
     const publicPaths = [
       `auctionPublic/${auctionId}/asset`,
+      `auctionPublic/${auctionId}/branding-fixture`,
+      `auctionPublic/${auctionId}/promotion-fixture`,
       'auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg',
       'auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg'
     ];
     const privatePaths = [
       objectPath,
       `applicationPrivate/${auctionId}/asset`,
-      'auctions/1988-porsche-928-c3uyca60/gallery/unapproved.pdf'
+      'auctions/1988-porsche-928-c3uyca60/gallery/unapproved.pdf',
+      `auctions/${auctionId}/branding/legacy-logo.jpg`,
+      `auctions/${auctionId}/promotions/legacy-promo.jpg`
     ];
     const storageBucket = getStorage(app).bucket(bucket);
     await Promise.all([...publicPaths, ...privatePaths.slice(1)].map(path =>
