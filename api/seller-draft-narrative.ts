@@ -33,10 +33,11 @@ export function checkDraftNarrativeWrite(
   return 200;
 }
 
-export async function handleSellerDraftNarrative(
+async function handleSellerDraftCommand(
   req: any,
   res: any,
-  services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>
+  services: Pick<FirebaseAdminServices, 'auth' | 'firestore'> | undefined,
+  submit: boolean
 ) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') {
@@ -48,7 +49,7 @@ export async function handleSellerDraftNarrative(
     : null;
   if (!bearer) return res.status(401).json({ error: 'unauthorized' });
 
-  const input = parseDraftNarrative(req.body);
+  const input = submit ? parseDraftSubmission(req.body) : parseDraftNarrative(req.body);
   if (!input) return res.status(422).json({ error: 'invalid-draft-narrative' });
 
   try {
@@ -71,10 +72,23 @@ export async function handleSellerDraftNarrative(
     const mediaRef = firestore.collection('settings').doc(mediaId);
     const status = await firestore.runTransaction(async transaction => {
       const auction = await transaction.get(auctionRef);
-      const decision = checkDraftNarrativeWrite(auction.data(), uid, input.expectedRevision);
+      const record = auction.data();
+      const decision = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
       if (decision !== 200) return decision;
 
       const updatedAt = Date.now();
+      if (submit) {
+        if (!record || !hasReviewIdentity(record)) return 422;
+        const revision = input.expectedRevision + 1;
+        const event = firestore.collection('auctionReviewOutbox').doc(auctionRef.id).collection('events').doc(String(revision));
+        transaction.create(event, {
+          type: 'listing_submitted_for_review', auctionId: input.auctionId, sellerId: uid,
+          revision, status: 'queued', createdAt: updatedAt
+        });
+        transaction.update(auctionRef, { status: 'pending_review', sellerDraftRevision: revision, updatedAt });
+        return 200;
+      }
+      if (!('overviewHeading' in input)) return 422;
       transaction.set(mediaRef, {
         overviewHeading: input.overviewHeading,
         overviewParagraphs: input.overviewParagraphs,
@@ -89,10 +103,33 @@ export async function handleSellerDraftNarrative(
 
     if (status === 404) return res.status(404).json({ error: 'draft-not-found' });
     if (status === 409) return res.status(409).json({ error: 'draft-state-or-revision-conflict' });
-    return res.status(200).json({ revision: input.expectedRevision + 1 });
+    if (status === 422) return res.status(422).json({ error: 'incomplete-draft' });
+    return res.status(200).json({ revision: input.expectedRevision + 1, ...(submit ? { status: 'pending_review' } : {}) });
   } catch {
     return res.status(503).json({ error: 'draft-write-unavailable' });
   }
+}
+
+function parseDraftSubmission(body: unknown) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const input = body as Record<string, unknown>;
+  if (Object.keys(input).some(key => key !== 'auctionId' && key !== 'expectedRevision')) return null;
+  const parsed = parseDraftNarrative({ ...input, overviewHeading: '', overviewParagraphs: [] });
+  return parsed && { auctionId: parsed.auctionId, expectedRevision: parsed.expectedRevision };
+}
+
+function hasReviewIdentity(record: Record<string, unknown>) {
+  return ['title', 'make', 'model'].every(key => typeof record[key] === 'string' && String(record[key]).trim().length > 0) &&
+    (typeof record.year === 'number' ? Number.isInteger(record.year) && record.year > 0 :
+      typeof record.year === 'string' && /^\d{4}$/.test(record.year.trim()));
+}
+
+export function handleSellerDraftNarrative(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
+  return handleSellerDraftCommand(req, res, services, false);
+}
+
+export function handleSellerDraftSubmission(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
+  return handleSellerDraftCommand(req, res, services, true);
 }
 
 export default function handler(req: any, res: any) {
