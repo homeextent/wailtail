@@ -46,6 +46,11 @@ await firestore.collection('auctions').doc(auctionId).set({
   sellerId: uid, status: 'draft', title: 'Synthetic browser listing', make: 'Test', model: 'Fixture', year: 2000
 });
 
+await firestore.collection('settings').doc(`media-${auctionId}`).set({
+  showcaseChapters: [{ id: 'overview-fixture', title: 'Exterior Highlights', category: 'EXTERIOR',
+    subtitle: 'Original subtitle', narrative: 'Original chapter narrative', specCards: [] }]
+});
+
 const adminEmail = 'jeremygoodmurphy@gmail.com';
 const adminPassword = `Synthetic-admin-${run}`;
 await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true });

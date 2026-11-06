@@ -7,7 +7,7 @@ const MAX_PARAGRAPH_LENGTH = 4000;
 export function parseDraftNarrative(body: unknown) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs', 'videoTitle', 'videoSubtitle', 'youtubePlaylistUrl'].includes(key))) {
+  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'overviewHeading', 'overviewParagraphs', 'videoTitle', 'videoSubtitle', 'youtubePlaylistUrl', 'showcaseEdits'].includes(key))) {
     return null;
   }
   const { auctionId, expectedRevision, overviewHeading, overviewParagraphs } = input;
@@ -26,12 +26,45 @@ export function parseDraftNarrative(body: unknown) {
       (youtubePlaylistUrl !== undefined && (typeof youtubePlaylistUrl !== 'string' || !isPlaylistUrl(youtubePlaylistUrl)))) {
     return null;
   }
+  const showcaseEdits = input.showcaseEdits;
+  if (showcaseEdits !== undefined && (!Array.isArray(showcaseEdits) || showcaseEdits.length > 30 ||
+      !showcaseEdits.every(isShowcaseEdit) || new Set(showcaseEdits.map(edit => edit.id)).size !== showcaseEdits.length)) {
+    return null;
+  }
   const video = {
     ...(typeof videoTitle === 'string' ? { videoTitle } : {}),
     ...(typeof videoSubtitle === 'string' ? { videoSubtitle } : {}),
     ...(typeof youtubePlaylistUrl === 'string' ? { youtubePlaylistUrl } : {})
   };
-  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs, ...video };
+  return { auctionId, expectedRevision, overviewHeading, overviewParagraphs, ...video, ...(Array.isArray(showcaseEdits) ? { showcaseEdits } : {}) };
+}
+
+interface ShowcaseEdit {
+  id: string;
+  subtitle: string;
+  narrative: string;
+}
+
+function isShowcaseEdit(value: unknown): value is ShowcaseEdit {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const edit = value as Record<string, unknown>;
+  return Object.keys(edit).every(key => ['id', 'subtitle', 'narrative'].includes(key)) &&
+    typeof edit.id === 'string' && edit.id.length > 0 && edit.id.length <= 160 &&
+    typeof edit.subtitle === 'string' && edit.subtitle.length <= 240 &&
+    typeof edit.narrative === 'string' && edit.narrative.length <= 4000;
+}
+
+function sellerShowcaseChapters(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(chapter => {
+    if (!chapter || typeof chapter.id !== 'string') return [];
+    return [{
+      id: chapter.id,
+      title: typeof chapter.title === 'string' ? chapter.title : '',
+      subtitle: typeof chapter.subtitle === 'string' ? chapter.subtitle : '',
+      narrative: typeof chapter.narrative === 'string' ? chapter.narrative : ''
+    }];
+  });
 }
 
 function isPlaylistUrl(value: string) {
@@ -85,7 +118,22 @@ async function handleSellerDraftCommand(
         return 200;
       }
       if (!('overviewHeading' in input) || !('overviewParagraphs' in input)) return 422;
+      const mediaPatch: Record<string, unknown> = {};
+      if ('showcaseEdits' in input && Array.isArray(input.showcaseEdits) && input.showcaseEdits.length) {
+        const edits = new Map<string, ShowcaseEdit>(input.showcaseEdits.map(edit => [edit.id, edit]));
+        const current = (await transaction.get(mediaRef)).get('showcaseChapters');
+        if (!Array.isArray(current)) return 422;
+        const chapters = current.map(chapter => {
+          const edit = edits.get(chapter?.id);
+          if (!edit) return chapter;
+          edits.delete(edit.id);
+          return { ...chapter, subtitle: edit.subtitle, narrative: edit.narrative };
+        });
+        if (edits.size) return 422;
+        mediaPatch.showcaseChapters = chapters;
+      }
       transaction.set(mediaRef, {
+        ...mediaPatch,
         overviewHeading: input.overviewHeading,
         overviewParagraphs: input.overviewParagraphs,
         ...('videoTitle' in input ? { videoTitle: input.videoTitle } : {}),
@@ -186,6 +234,7 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
       const media = (await transaction.get(mediaRef)).data();
       const assets = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
       return {
+        showcaseChapters: sellerShowcaseChapters(media?.showcaseChapters),
         videoTitle: typeof media?.videoTitle === 'string' ? media.videoTitle : '',
         videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',
         youtubePlaylistUrl: typeof media?.youtubePlaylistUrl === 'string' && isPlaylistUrl(media.youtubePlaylistUrl)

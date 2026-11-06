@@ -7,7 +7,15 @@ const videoFields = [
   ['youtubePlaylistUrl', 'YouTube playlist URL', 200]
 ] as const;
 
+interface ShowcaseChapter {
+  id: string;
+  title: string;
+  subtitle: string;
+  narrative: string;
+}
+
 interface Draft {
+  showcaseChapters: ShowcaseChapter[];
   videoTitle: string;
   videoSubtitle: string;
   youtubePlaylistUrl: string;
@@ -68,6 +76,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const [video, setVideo] = useState<Pick<Draft, 'videoTitle' | 'videoSubtitle' | 'youtubePlaylistUrl'>>({
     videoTitle: '', videoSubtitle: '', youtubePlaylistUrl: ''
   });
+  const [chapters, setChapters] = useState<ShowcaseChapter[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -78,6 +87,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     draftRequest<Draft>(user, 'read', { auctionId }, controller.signal).then(record => {
       if (controller.signal.aborted) return;
       setDraft(record);
+      setChapters(record.showcaseChapters);
       setHeading(record.overviewHeading);
       setVideo({ videoTitle: record.videoTitle, videoSubtitle: record.videoSubtitle, youtubePlaylistUrl: record.youtubePlaylistUrl });
       setParagraphs(record.overviewParagraphs.join('\n\n'));
@@ -90,8 +100,13 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const videoPatch = Object.fromEntries(videoFields
     .filter(([key]) => draft && video[key] !== draft[key])
     .map(([key]) => [key, video[key]]));
+  const showcaseEdits = chapters.flatMap(({ id, subtitle, narrative }, index) => {
+    const saved = draft?.showcaseChapters[index];
+    return saved && (saved.subtitle !== subtitle || saved.narrative !== narrative)
+      ? [{ id, subtitle, narrative }] : [];
+  });
   const dirty = draft !== null &&
-    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0);
+    (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0 || showcaseEdits.length > 0);
   const editable = draft?.status === 'draft';
 
   async function apply(operation: 'narrative' | 'submit') {
@@ -104,14 +119,15 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
       const result = await draftRequest<{ revision: number; status?: Draft['status'] }>(user, operation, {
         auctionId,
         expectedRevision: draft.revision,
-        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch } : {})
+        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch,
+          ...(showcaseEdits.length ? { showcaseEdits } : {}) } : {})
       });
       if (operation === 'narrative') setParagraphs(overviewParagraphs.join('\n\n'));
       setDraft({
         ...draft,
         revision: result.revision,
         status: result.status ?? draft.status,
-        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch } : {})
+        ...(operation === 'narrative' ? { overviewHeading: heading, overviewParagraphs, ...videoPatch, showcaseChapters: chapters } : {})
       });
       setMessage(operation === 'submit' ? 'Listing submitted for review.' : 'Narrative saved.');
     } catch (err) {
@@ -179,6 +195,19 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <input className="block w-full rounded border p-2" maxLength={maxLength}
               value={video[key]} onChange={event => setVideo({ ...video, [key]: event.target.value })} />
           </label>)}
+          {chapters.map((chapter, index) => <fieldset key={chapter.id}>
+            <legend>{chapter.title || 'Showcase chapter'}</legend>
+            <label className="block">Subtitle
+              <input className="block w-full rounded border p-2" maxLength={240} value={chapter.subtitle}
+                onChange={event => setChapters(chapters.map((item, position) =>
+                  position === index ? { ...item, subtitle: event.target.value } : item))} />
+            </label>
+            <label className="block">Narrative
+              <textarea className="block w-full rounded border p-2" maxLength={4000} value={chapter.narrative}
+                onChange={event => setChapters(chapters.map((item, position) =>
+                  position === index ? { ...item, narrative: event.target.value } : item))} />
+            </label>
+          </fieldset>)}
           <div className="flex gap-4">
             <button type="button" disabled={!dirty} onClick={() => void apply('narrative')}>Save narrative</button>
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
