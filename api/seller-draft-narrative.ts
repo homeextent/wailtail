@@ -36,7 +36,7 @@ export function parseDraftNarrative(body: unknown) {
 
 function isPlaylistUrl(value: string) {
   if (value === '') return true;
-  return /^https:\/\/(?:www\.)?youtube\.com\/playlist\?list=[A-Za-z0-9_-]{1,128}$/.test(value);
+  return /^https:\/\/(?:www\.)?youtube\.com\/playlist\?list=[A-Za-z0-9_-]{1,128}(?:&si=[A-Za-z0-9_-]{1,128})?$/.test(value);
 }
 
 export function checkDraftNarrativeWrite(
@@ -56,6 +56,10 @@ async function handleSellerDraftCommand(
   submit: boolean
 ) {
   return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+    const playlist = req.body?.youtubePlaylistUrl;
+    if (!submit && playlist !== undefined && (typeof playlist !== 'string' || !isPlaylistUrl(playlist))) {
+      return res.status(422).json({ error: 'invalid-youtube-playlist-url' });
+    }
     const input = submit ? parseDraftSubmission(req.body) : parseDraftNarrative(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-draft-request' });
     const auctionRef = firestore.collection('auctions').doc(input.auctionId);

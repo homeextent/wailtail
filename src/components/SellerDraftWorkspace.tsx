@@ -30,6 +30,12 @@ async function request(user: User, operation: string, body: object, signal?: Abo
   if (!response.ok) {
     if (response.status === 409) throw new Error('The listing changed. Reload it before trying again.');
     if (response.status === 404) throw new Error('This listing is unavailable to your account.');
+    if (response.status === 422 && operation === 'narrative') {
+      const failure = await response.clone().json().catch(() => null);
+      if (failure?.error === 'invalid-youtube-playlist-url') {
+        throw new Error('Enter a YouTube playlist URL with a list ID, or leave the field blank.');
+      }
+    }
     if (response.status === 422) throw new Error('Check the draft fields or ask an administrator to complete the listing details.');
     throw new Error('The listing operation failed. Please try again.');
   }
@@ -177,6 +183,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <button type="button" disabled={!dirty} onClick={() => void apply('narrative')}>Save narrative</button>
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
           </div>
+          {editable && dirty && <p>Save your changes before submitting for review.</p>}
         </fieldset>
         <section aria-labelledby="draft-media-heading" className="space-y-3">
           <h2 id="draft-media-heading" className="text-xl font-bold">Draft images</h2>
