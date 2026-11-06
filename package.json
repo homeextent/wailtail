@@ -13,6 +13,7 @@
     "test:endpoint": "node --import tsx --test tests/authorize-approved-consignor.test.ts tests/admin-delete-user.test.ts tests/seller-draft-narrative.test.ts",
     "test:rules": "firebase emulators:exec --project demo-wailtail-stage3 --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'",
     "test:seller-emulator": "firebase emulators:exec --project demo-wailtail-stage3 --only auth,firestore,storage 'node --import tsx --test tests/seller-draft.emulator.test.ts'",
+    "test:seller-browser": "firebase emulators:exec --project demo-wailtail-stage3 --only auth,firestore,storage 'node --import tsx tests/seller-browser-server.ts'",
     "test": "npm run test:endpoint && npm run test:rules"
   },
   "dependencies": {
