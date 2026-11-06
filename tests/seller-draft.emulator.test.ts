@@ -166,6 +166,19 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     const unregisteredId = unattached[0].name.slice(prefix.length);
     assert.equal((await invoke(media, { auctionId, assetId: unregisteredId, action: 'preview' }, owner.idToken)).status, 404);
 
+    // Rehearse removal of the exact synthetic object from the aborted upload.
+    // Never infer that an arbitrary unregistered object is safe to delete.
+    assert.equal((await auction.collection('draftAssets').doc(unregisteredId).get()).exists, false);
+    const [metadata] = await unattached[0].getMetadata();
+    const generation = Number(metadata.generation);
+    assert.ok(Number.isSafeInteger(generation) && generation > 0, 'orphan must have a known generation');
+    await unattached[0].delete({ ifGenerationMatch: generation });
+    assert.equal((await unattached[0].exists())[0], false);
+    assert.equal((await bucketForFault.file(objectPath).exists())[0], true);
+    assert.deepEqual(await invoke(media, { auctionId, assetId, action: 'preview' }, owner.idToken),
+      { status: 200, payload: jpeg });
+    assert.deepEqual((await auction.get()).data(), beforeFault.data());
+
     const publicPaths = [
       `auctionPublic/${auctionId}/asset`,
       `auctionPublic/${auctionId}/branding-fixture`,
