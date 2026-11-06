@@ -137,9 +137,10 @@ test('submission commits pending review and exactly one review event together', 
   const result = await invokeSellerNarrative('seller-a', { sellerId: 'seller-a', status: 'draft' }, false, { submit: true });
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, { revision: 1, status: 'pending_review' });
-  assert.equal(result.writes.length, 2);
+  assert.equal(result.writes.length, 3);
   assert.match(JSON.stringify(result.writes[0]), /auctionReviewOutbox\/test-draft\/events\/1/);
-  assert.match(JSON.stringify(result.writes[1]), /pending_review/);
+  assert.match(JSON.stringify(result.writes[1]), /auctionReviewQueue\/test-draft:1/);
+  assert.match(JSON.stringify(result.writes[2]), /pending_review/);
 });
 
 test('submission retry rechecks state and commits neither change nor event', async () => {

@@ -59,6 +59,8 @@ async function handleSellerDraftCommand(
           type: 'listing_submitted_for_review', auctionId: input.auctionId, sellerId: uid,
           revision, status: 'queued', createdAt: updatedAt
         });
+        const queue = firestore.collection('auctionReviewQueue').doc(`${input.auctionId}:${revision}`);
+        transaction.create(queue, { auctionId: input.auctionId, revision, createdAt: updatedAt });
         transaction.update(auctionRef, { status: 'pending_review', sellerDraftRevision: revision, updatedAt });
         return 200;
       }
