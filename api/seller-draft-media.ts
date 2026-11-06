@@ -1,6 +1,6 @@
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
-import { checkDraftNarrativeWrite, withSellerDraftRequest } from './seller-draft-narrative';
+import { checkDraftNarrativeWrite, draftMediaId, withSellerDraftRequest } from './seller-draft-narrative';
 
 export default function handler(req: any, res: any) {
   return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid) => {
@@ -35,6 +35,9 @@ export default function handler(req: any, res: any) {
       if (!metadata || metadata.removedAt || metadata.objectPath !== objectPath) return 404;
 
       if (action === 'remove') {
+        const config = firestore.collection('settings').doc(draftMediaId(auctionId));
+        const chapters = (await transaction.get(config)).get('showcaseChapters');
+        if (Array.isArray(chapters) && chapters.some(chapter => chapter?.photoAssetId === assetId)) return 422;
         const now = Date.now();
         transaction.update(asset, { removedAt: now });
         transaction.update(auction, { sellerDraftRevision: expectedRevision + 1, updatedAt: now });
@@ -42,6 +45,7 @@ export default function handler(req: any, res: any) {
       return 200;
     });
 
+    if (decision === 422) return res.status(422).json({ error: 'draft-image-assigned' });
     if (decision !== 200) return res.status(decision).json({ error: 'draft-media-unavailable' });
     if (action === 'remove') return res.status(200).json({ revision: expectedRevision + 1 });
 

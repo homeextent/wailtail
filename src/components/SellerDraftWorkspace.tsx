@@ -11,6 +11,7 @@ interface ShowcaseChapter {
   id: string;
   customTitle: boolean;
   highlights: string[];
+  photoAssetId: string | null;
   title: string;
   subtitle: string;
   narrative: string;
@@ -45,6 +46,10 @@ async function request(user: User, operation: string, body: object, signal?: Abo
       if (failure?.error === 'invalid-youtube-playlist-url') {
         throw new Error('Enter a YouTube playlist URL with a list ID, or leave the field blank.');
       }
+    }
+    if (response.status === 422 && operation === 'media') {
+      const failure = await response.clone().json().catch(() => null);
+      if (failure?.error === 'draft-image-assigned') throw new Error('Clear the chapter photo assignment and save before removing this image.');
     }
     if (response.status === 422) throw new Error('Check the draft fields or ask an administrator to complete the listing details.');
     throw new Error('The listing operation failed. Please try again.');
@@ -102,13 +107,15 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const videoPatch = Object.fromEntries(videoFields
     .filter(([key]) => draft && video[key] !== draft[key])
     .map(([key]) => [key, video[key]]));
-  const showcaseEdits = chapters.flatMap(({ id, title, customTitle, subtitle, narrative, highlights }, index) => {
+  const showcaseEdits = chapters.flatMap(({ id, title, customTitle, subtitle, narrative, highlights, photoAssetId }, index) => {
     const saved = draft?.showcaseChapters[index];
     if (!saved) return [];
     const titleChanged = customTitle && saved.title !== title;
     const highlightsChanged = JSON.stringify(saved.highlights) !== JSON.stringify(highlights);
-    return titleChanged || highlightsChanged || saved.subtitle !== subtitle || saved.narrative !== narrative
-      ? [{ id, subtitle, narrative, ...(titleChanged ? { title } : {}), ...(highlightsChanged ? { highlights } : {}) }]
+    const photoChanged = saved.photoAssetId !== photoAssetId;
+    return photoChanged || titleChanged || highlightsChanged || saved.subtitle !== subtitle || saved.narrative !== narrative
+      ? [{ id, subtitle, narrative, ...(titleChanged ? { title } : {}), ...(highlightsChanged ? { highlights } : {}),
+        ...(photoChanged ? { photoAssetId } : {}) }]
       : [];
   });
   const dirty = draft !== null &&
@@ -208,6 +215,13 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
                 onChange={event => setChapters(chapters.map((item, position) =>
                   position === index ? { ...item, title: event.target.value } : item))} />
             </label>}
+            <label className="block">Chapter photo
+              <select value={chapter.photoAssetId ?? ''} onChange={event => setChapters(chapters.map((item, position) =>
+                position === index ? { ...item, photoAssetId: event.target.value || null } : item))}>
+                <option value="">No draft photo assigned</option>
+                {draft.assetIds.map((id, position) => <option key={id} value={id}>Image {position + 1}</option>)}
+              </select>
+            </label>
             <label className="block">Highlights (one per line, up to 20)
               <textarea className="block w-full rounded border p-2" value={chapter.highlights.join('\n')}
                 onChange={event => setChapters(chapters.map((item, position) =>

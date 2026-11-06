@@ -43,6 +43,7 @@ interface ShowcaseEdit {
   id: string;
   title?: string;
   highlights?: string[];
+  photoAssetId?: string | null;
   subtitle: string;
   narrative: string;
 }
@@ -50,10 +51,11 @@ interface ShowcaseEdit {
 function isShowcaseEdit(value: unknown): value is ShowcaseEdit {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const edit = value as Record<string, unknown>;
-  return Object.keys(edit).every(key => ['id', 'subtitle', 'narrative', 'title', 'highlights'].includes(key)) &&
+  return Object.keys(edit).every(key => ['id', 'subtitle', 'narrative', 'title', 'highlights', 'photoAssetId'].includes(key)) &&
     typeof edit.id === 'string' && edit.id.length > 0 && edit.id.length <= 160 &&
     typeof edit.subtitle === 'string' && edit.subtitle.length <= 240 &&
     typeof edit.narrative === 'string' && edit.narrative.length <= 4000 &&
+    (edit.photoAssetId == null || (typeof edit.photoAssetId === 'string' && /^[0-9a-f-]{36}$/.test(edit.photoAssetId))) &&
     (edit.title === undefined || (typeof edit.title === 'string' && edit.title.trim().length > 0 && edit.title.length <= 240)) &&
     (edit.highlights === undefined || (Array.isArray(edit.highlights) && edit.highlights.length <= 20 &&
       edit.highlights.every(item => typeof item === 'string' && item.length <= 240)));
@@ -65,6 +67,7 @@ function sellerShowcaseChapters(value: unknown) {
     if (!chapter || typeof chapter.id !== 'string') return [];
     return [{
       id: chapter.id,
+      photoAssetId: typeof chapter.photoAssetId === 'string' ? chapter.photoAssetId : null,
       customTitle: chapter.category === 'CUSTOM',
       highlights: Array.isArray(chapter.highlights) ? chapter.highlights.filter(item => typeof item === 'string') : [],
       title: typeof chapter.title === 'string' ? chapter.title : '',
@@ -130,6 +133,14 @@ async function handleSellerDraftCommand(
         const edits = new Map<string, ShowcaseEdit>(input.showcaseEdits.map(edit => [edit.id, edit]));
         const current = (await transaction.get(mediaRef)).get('showcaseChapters');
         if (!Array.isArray(current)) return 422;
+        const photoIds = new Set<string>();
+        for (const edit of edits.values()) {
+          if (edit.photoAssetId) photoIds.add(edit.photoAssetId);
+        }
+        for (const id of photoIds) {
+          const asset = (await transaction.get(auctionRef.collection('draftAssets').doc(id))).data();
+          if (!asset || asset.removedAt !== null || asset.objectPath !== `auctionDraft/${input.auctionId}/${id}`) return 422;
+        }
         const chapters = current.map(chapter => {
           const edit = edits.get(chapter?.id);
           if (!edit || (edit.title !== undefined && chapter.category !== 'CUSTOM')) return chapter;
@@ -137,7 +148,8 @@ async function handleSellerDraftCommand(
           return {
             ...chapter, subtitle: edit.subtitle, narrative: edit.narrative,
             ...(edit.title !== undefined ? { title: edit.title } : {}),
-            ...(edit.highlights !== undefined ? { highlights: edit.highlights } : {})
+            ...(edit.highlights !== undefined ? { highlights: edit.highlights } : {}),
+            ...(edit.photoAssetId !== undefined ? { photoAssetId: edit.photoAssetId } : {})
           };
         });
         if (edits.size) return 422;
@@ -267,7 +279,7 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
   });
 }
 
-function draftMediaId(auctionId: string) {
+export function draftMediaId(auctionId: string) {
   return auctionId === 'wailtail-1978-porsche-911' ? 'main-media-config' : `media-${auctionId}`;
 }
 
