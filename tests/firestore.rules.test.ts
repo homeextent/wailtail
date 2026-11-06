@@ -1330,3 +1330,90 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
     });
   });
 });
+
+
+describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
+  before(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: EMULATOR_HOST,
+        port: EMULATOR_PORT,
+        rules: fs.readFileSync('firestore.rules', 'utf8')
+      }
+    });
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  beforeEach(async () => {
+    await clearNamedDatabase();
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      const db = getNamedDb(ctx);
+      await Promise.all([
+        setDoc(doc(db, 'auctions/lot'), { sellerId: 'seller', status: 'draft', reserveAmount: 10000 }),
+        setDoc(doc(db, 'auctions/lot/bids/bid'), { bidderEmail: 'bidder@example.com' }),
+        setDoc(doc(db, 'auctions/lot/media/hero'), { private: true }),
+        setDoc(doc(db, 'auctionPublic/published'), { title: 'Published lot' }),
+        setDoc(doc(db, 'auctionPublic/published/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/unpublished/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/published/internal/item'), { private: true }),
+        setDoc(doc(db, 'users/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'bidders/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'settings/promotions'), { enabled: true })
+      ]);
+    });
+  });
+
+  for (const uid of ['guest', 'seller', 'other']) {
+    test(`${uid} cannot mutate canonical auctions or protected feeds`, async () => {
+      const ctx = uid === 'guest' ? testEnv.unauthenticatedContext() : testEnv.authenticatedContext(uid);
+      const db = getNamedDb(ctx);
+      await assertFails(setDoc(doc(db, 'auctions/new'), { sellerId: uid }));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: uid, reserveAmount: 1 }));
+      await assertFails(deleteDoc(doc(db, 'auctions/lot')));
+      for (const path of ['auctions/lot/bids/new', 'auctions/lot/media/new', 'auctions/lot/unknown/new',
+        'bids/new', 'comments/new', 'auctionPublic/new', 'settings/promotions', 'settings/media-lot',
+        'promo_analytics/new', 'inquiries/new', 'mail/new', 'emails/new', 'emailLogs/new']) {
+        await assertFails(setDoc(doc(db, path), { actor: uid }));
+      }
+    });
+  }
+
+  test('public reads are limited to published projections and explicit feeds', async () => {
+    const db = getNamedDb(testEnv.unauthenticatedContext());
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published')));
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published/media/hero')));
+    await assertSucceeds(getDoc(doc(db, 'settings/promotions')));
+    for (const path of ['auctions/lot', 'auctions/lot/bids/bid', 'auctions/lot/media/hero',
+      'auctionPublic/unpublished/media/hero', 'auctionPublic/published/internal/item']) {
+      await assertFails(getDoc(doc(db, path)));
+    }
+  });
+
+  test('profile reads are self-scoped and clients cannot delete their own moderation records', async () => {
+    const self = getNamedDb(testEnv.authenticatedContext('seller'));
+    const other = getNamedDb(testEnv.authenticatedContext('other'));
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(getDoc(doc(self, name, 'seller')));
+      await assertFails(getDoc(doc(other, name, 'seller')));
+      await assertFails(getDocs(collection(self, name)));
+      await assertFails(deleteDoc(doc(self, name, 'seller')));
+    }
+  });
+
+  for (const email of [ADMIN_EMAIL, 'jeremy@theinnovativegroup.ca']) {
+    test(`verified designated administrator retains privileged reads (${email})`, async () => {
+      const db = getNamedDb(testEnv.authenticatedContext('admin', { email, email_verified: true }));
+      const unverified = getNamedDb(testEnv.authenticatedContext('unverified', { email, email_verified: false }));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot')));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot/bids/bid')));
+      await assertSucceeds(getDocs(collection(db, 'users')));
+      await assertSucceeds(updateDoc(doc(db, 'settings/promotions'), { enabled: false }));
+      await assertFails(getDoc(doc(unverified, 'auctions/lot')));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: 'other' }));
+    });
+  }
+});
