@@ -904,6 +904,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Format for datetime-local
   const formatForInput = (timestamp: number) => {
     const d = new Date(timestamp);
+    if (!Number.isFinite(d.getTime())) return '';
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().slice(0, 16);
   };
