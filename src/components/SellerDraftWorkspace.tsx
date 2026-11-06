@@ -50,6 +50,9 @@ async function request(user: User, operation: string, body: object, signal?: Abo
     if (response.status === 404) throw new Error('This listing is unavailable to your account.');
     if (response.status === 422 && operation === 'narrative') {
       const failure = await response.clone().json().catch(() => null);
+      if (failure?.error === 'invalid-video-chapter-url') {
+        throw new Error(`Video chapter ${failure.chapter} needs a YouTube video URL (youtube.com/watch?v=… or youtu.be/…).`);
+      }
       if (failure?.error === 'invalid-youtube-playlist-url') {
         throw new Error('Enter a YouTube playlist URL with a list ID, or leave the field blank.');
       }
@@ -66,6 +69,10 @@ async function request(user: User, operation: string, body: object, signal?: Abo
 
 async function draftRequest<T>(user: User, operation: string, body: object, signal?: AbortSignal): Promise<T> {
   return (await request(user, operation, body, signal)).json() as Promise<T>;
+}
+
+function imageLabel(assetId: string) {
+  return `Image ${assetId.slice(0, 8)}`;
 }
 
 function readImage(file: Blob): Promise<string> {
@@ -235,7 +242,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
               <select value={chapter.photoAssetId ?? ''} onChange={event => setChapters(chapters.map((item, position) =>
                 position === index ? { ...item, photoAssetId: event.target.value || null } : item))}>
                 <option value="">No draft photo assigned</option>
-                {draft.assetIds.map((id, position) => <option key={id} value={id}>Image {position + 1}</option>)}
+                {galleryOrder.map(id => <option key={id} value={id}>{imageLabel(id)}</option>)}
               </select>
             </label>
             <label className="block">Highlights (one per line, up to 20)
@@ -284,13 +291,14 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
           </label>}
           <ul className="space-y-2">
             {galleryOrder.map((assetId, index) => <li key={assetId} className="flex gap-4">
-              <span>Image {index + 1}</span>
+              <span>{index + 1}. {imageLabel(assetId)}</span>
               <button type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
               {editable && <>
                 <button type="button" disabled={busy || index === 0} onClick={() => {
                   const next = [...galleryOrder];
                   [next[index - 1], next[index]] = [next[index], next[index - 1]];
                   setGalleryOrder(next);
+                  setMessage(`${imageLabel(assetId)} moved to position ${index}. Save narrative to keep this order.`);
                 }}>Move up</button>
                 <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
               </>}

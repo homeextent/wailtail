@@ -91,8 +91,11 @@ function isVideoChapter(value: unknown) {
   return Object.keys(chapter).every(key => ['title', 'description', 'videoUrl'].includes(key)) &&
     typeof chapter.title === 'string' && chapter.title.trim().length > 0 && chapter.title.length <= 240 &&
     typeof chapter.description === 'string' && chapter.description.length <= 1000 &&
-    typeof chapter.videoUrl === 'string' &&
-    /^https:\/\/(?:(?:www\.)?youtube\.com\/watch\?v=|youtu\.be\/)[A-Za-z0-9_-]{11}(?:[?&]si=[A-Za-z0-9_-]{1,128})?$/.test(chapter.videoUrl);
+    isVideoChapterUrl(chapter.videoUrl);
+}
+
+function isVideoChapterUrl(value: unknown) {
+  return typeof value === 'string' && /^https:\/\/(?:(?:www\.)?youtube\.com\/watch\?v=|youtu\.be\/)[A-Za-z0-9_-]{11}(?:[?&]si=[A-Za-z0-9_-]{1,128})?$/.test(value);
 }
 
 function isPlaylistUrl(value: string) {
@@ -120,6 +123,13 @@ async function handleSellerDraftCommand(
     const playlist = req.body?.youtubePlaylistUrl;
     if (!submit && playlist !== undefined && (typeof playlist !== 'string' || !isPlaylistUrl(playlist))) {
       return res.status(422).json({ error: 'invalid-youtube-playlist-url' });
+    }
+    const videoChapters = req.body?.videoChapters;
+    if (!submit && Array.isArray(videoChapters) && videoChapters.length <= 20) {
+      const invalidIndex = videoChapters.findIndex(chapter => !isVideoChapterUrl(chapter?.videoUrl));
+      if (invalidIndex !== -1) {
+        return res.status(422).json({ error: 'invalid-video-chapter-url', chapter: invalidIndex + 1 });
+      }
     }
     const input = submit ? parseDraftSubmission(req.body) : parseDraftNarrative(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-draft-request' });
