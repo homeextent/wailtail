@@ -108,7 +108,7 @@ export async function withSellerDraftRequest(
   req: any,
   res: any,
   services: Pick<FirebaseAdminServices, 'auth' | 'firestore'> | undefined,
-  execute: (services: Pick<FirebaseAdminServices, 'auth' | 'firestore'>, uid: string) => Promise<unknown>
+  execute: (services: Pick<FirebaseAdminServices, 'auth' | 'firestore'>, uid: string, email: string | undefined) => Promise<unknown>
 ) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') {
@@ -124,16 +124,18 @@ export async function withSellerDraftRequest(
   try {
     const resolved = services ?? getFirebaseAdminServices();
     let uid: string;
+    let email: string | undefined;
     try {
       const token = await resolved.auth.verifyIdToken(bearer[1], true);
       if (!token.uid || token.email_verified !== true) {
         return res.status(401).json({ error: 'unauthorized' });
       }
       uid = token.uid;
+      email = token.email;
     } catch {
       return res.status(401).json({ error: 'unauthorized' });
     }
-    return await execute(resolved, uid);
+    return await execute(resolved, uid, email);
   } catch {
     return res.status(503).json({ error: 'draft-operation-unavailable' });
   }

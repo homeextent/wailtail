@@ -120,6 +120,19 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 }) => {
   const { user: authUser, userProfile: authUserProfile } = useAuth();
 
+  async function returnListingToDraft(lot: Auction, notes = '') {
+    if (!authUser) throw new Error('Administrator authentication required.');
+    const { sellerDraftRevision } = lot as Auction & { sellerDraftRevision?: number };
+    const response = await fetch('/api/admin-return-auction-to-draft', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await authUser.getIdToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auctionId: lot.id, expectedRevision: sellerDraftRevision ?? 0, notes })
+    });
+    if (response.status === 409) throw new Error('The listing changed. Reload before trying again.');
+    if (!response.ok) throw new Error('Could not return the listing to draft.');
+  }
+
+
   // Active Management Tab: 'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'
   const [activeTab, setActiveTab] = useState<'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'>('bidders');
 
@@ -2716,7 +2729,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                         );
                                         if (revisionNotes === null) return;
                                         try {
-                                          await batchUpdateAuctionStatus([lot.id], 'draft');
+                                          await returnListingToDraft(lot, revisionNotes);
                                           sendListingRevisionRequestedEmail(lot, revisionNotes).catch(err => {
                                             console.warn('Non-blocking revision request email error:', err);
                                           });
@@ -2753,7 +2766,11 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                   onChange={async (e) => {
                                     const nextSt = e.target.value as Auction['status'];
                                     try {
-                                      await batchUpdateAuctionStatus([lot.id], nextSt);
+                                      if (lotStatus === 'pending_review' && nextSt === 'draft') {
+                                        await returnListingToDraft(lot);
+                                      } else {
+                                        await batchUpdateAuctionStatus([lot.id], nextSt);
+                                      }
                                       showToast(`Successfully updated status for 1 vehicle lot to ${nextSt.toUpperCase()}.`);
                                     } catch (err: any) {
                                       showToast(`Failed to update status: ${err.message}`, 'error');

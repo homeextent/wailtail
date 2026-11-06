@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
+import returnToDraft from '../api/admin-return-auction-to-draft';
 import read from '../api/seller-draft-read';
 import save from '../api/seller-draft-narrative';
 import submit from '../api/seller-draft-submit';
@@ -52,8 +53,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     const unassignedId = `legacy-${run}`;
     const identity = { status: 'draft', title: 'Synthetic vehicle', make: 'Test', model: 'Fixture', year: 2000 };
 
-    async function seller(label: string) {
-      const email = `${label}-${run}@example.test`;
+    async function seller(label: string, email = `${label}-${run}@example.test`) {
       const password = `Synthetic-${run}`;
       const { uid } = await auth.createUser({ email, password, emailVerified: true });
       const result = await fetch(`http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-key`, {
@@ -194,6 +194,28 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     assert.equal((await invoke(save, { ...patch, expectedRevision: 5 }, owner.idToken)).status, 409);
     assert.equal((await invoke(upload, { ...submission, expectedRevision: 5, jpegBase64: jpeg.toString('base64') }, owner.idToken)).status, 409);
     assert.equal((await invoke(media, { ...preview, assetId: retainedId, action: 'remove', expectedRevision: 5 }, owner.idToken)).status, 409);
+    const reopen = { auctionId, expectedRevision: 5, notes: 'Check the overview.' };
+    assert.equal((await invoke(returnToDraft, reopen, owner.idToken)).status, 403);
+    assert.equal((await auction.get()).get('status'), 'pending_review');
+    for (const [index, email] of ['jeremygoodmurphy@gmail.com', 'jeremy@theinnovativegroup.ca'].entries()) {
+      const admin = await seller('admin', email);
+      const expectedRevision = 5 + index * 2;
+      const command = { ...reopen, expectedRevision };
+      assert.equal((await invoke(returnToDraft, { ...command, expectedRevision: expectedRevision - 1 }, admin.idToken)).status, 409);
+      assert.deepEqual(await invoke(returnToDraft, command, admin.idToken), {
+        status: 200, payload: { status: 'draft', revision: expectedRevision + 1 }
+      });
+      const record = await auction.get();
+      assert.equal(record.get('sellerId'), owner.uid);
+      assert.equal(record.get('status'), 'draft');
+      const history = await auction.collection('reviewHistory').doc(String(expectedRevision + 1)).get();
+      assert.equal(history.get('administratorUid'), admin.uid);
+      assert.equal((await invoke(returnToDraft, command, admin.idToken)).status, 409);
+      if (index === 0) {
+        assert.equal((await invoke(submit, { auctionId, expectedRevision: expectedRevision + 1 }, owner.idToken)).status, 200);
+      }
+    }
+    assert.equal((await invoke(save, { ...patch, expectedRevision: 8 }, owner.idToken)).status, 200);
   } finally {
     await deleteApp(app);
   }
