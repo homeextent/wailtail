@@ -104,7 +104,7 @@ export function handleSellerDraftSubmission(req: any, res: any, services?: Pick<
   return handleSellerDraftCommand(req, res, services, true);
 }
 
-async function withSellerDraftRequest(
+export async function withSellerDraftRequest(
   req: any,
   res: any,
   services: Pick<FirebaseAdminServices, 'auth' | 'firestore'> | undefined,
