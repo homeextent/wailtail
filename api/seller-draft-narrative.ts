@@ -39,37 +39,11 @@ async function handleSellerDraftCommand(
   services: Pick<FirebaseAdminServices, 'auth' | 'firestore'> | undefined,
   submit: boolean
 ) {
-  res.setHeader('Cache-Control', 'no-store');
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'method-not-allowed' });
-  }
-  const bearer = typeof req.headers?.authorization === 'string'
-    ? /^Bearer ([^\s]+)$/i.exec(req.headers.authorization)
-    : null;
-  if (!bearer) return res.status(401).json({ error: 'unauthorized' });
-
-  const input = submit ? parseDraftSubmission(req.body) : parseDraftNarrative(req.body);
-  if (!input) return res.status(422).json({ error: 'invalid-draft-narrative' });
-
-  try {
-    const { auth, firestore } = services ?? getFirebaseAdminServices();
-    let uid: string;
-    try {
-      const token = await auth.verifyIdToken(bearer[1], true);
-      if (!token.uid || token.email_verified !== true) {
-        return res.status(401).json({ error: 'unauthorized' });
-      }
-      uid = token.uid;
-    } catch {
-      return res.status(401).json({ error: 'unauthorized' });
-    }
-
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+    const input = submit ? parseDraftSubmission(req.body) : parseDraftNarrative(req.body);
+    if (!input) return res.status(422).json({ error: 'invalid-draft-request' });
     const auctionRef = firestore.collection('auctions').doc(input.auctionId);
-    const mediaId = input.auctionId === 'wailtail-1978-porsche-911'
-      ? 'main-media-config'
-      : `media-${input.auctionId}`;
-    const mediaRef = firestore.collection('settings').doc(mediaId);
+    const mediaRef = firestore.collection('settings').doc(draftMediaId(input.auctionId));
     const status = await firestore.runTransaction(async transaction => {
       const auction = await transaction.get(auctionRef);
       const record = auction.data();
@@ -105,9 +79,7 @@ async function handleSellerDraftCommand(
     if (status === 409) return res.status(409).json({ error: 'draft-state-or-revision-conflict' });
     if (status === 422) return res.status(422).json({ error: 'incomplete-draft' });
     return res.status(200).json({ revision: input.expectedRevision + 1, ...(submit ? { status: 'pending_review' } : {}) });
-  } catch {
-    return res.status(503).json({ error: 'draft-write-unavailable' });
-  }
+  });
 }
 
 function parseDraftSubmission(body: unknown) {
@@ -130,6 +102,80 @@ export function handleSellerDraftNarrative(req: any, res: any, services?: Pick<F
 
 export function handleSellerDraftSubmission(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
   return handleSellerDraftCommand(req, res, services, true);
+}
+
+async function withSellerDraftRequest(
+  req: any,
+  res: any,
+  services: Pick<FirebaseAdminServices, 'auth' | 'firestore'> | undefined,
+  execute: (services: Pick<FirebaseAdminServices, 'auth' | 'firestore'>, uid: string) => Promise<unknown>
+) {
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'method-not-allowed' });
+  }
+
+  const bearer = typeof req.headers?.authorization === 'string'
+    ? /^Bearer ([^\s]+)$/i.exec(req.headers.authorization)
+    : null;
+  if (!bearer) return res.status(401).json({ error: 'unauthorized' });
+
+  try {
+    const resolved = services ?? getFirebaseAdminServices();
+    let uid: string;
+    try {
+      const token = await resolved.auth.verifyIdToken(bearer[1], true);
+      if (!token.uid || token.email_verified !== true) {
+        return res.status(401).json({ error: 'unauthorized' });
+      }
+      uid = token.uid;
+    } catch {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    return await execute(resolved, uid);
+  } catch {
+    return res.status(503).json({ error: 'draft-operation-unavailable' });
+  }
+}
+
+export function handleSellerDraftRead(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).length !== 1 || typeof body.auctionId !== 'string' ||
+        !/^[a-zA-Z0-9_-]{1,160}$/.test(body.auctionId)) {
+      return res.status(422).json({ error: 'invalid-draft-request' });
+    }
+
+    const auctionId: string = body.auctionId;
+    const auctionRef = firestore.collection('auctions').doc(auctionId);
+    const mediaRef = firestore.collection('settings').doc(draftMediaId(auctionId));
+    const draft = await firestore.runTransaction(async transaction => {
+      const record = (await transaction.get(auctionRef)).data();
+      if (!record || record.sellerId !== uid ||
+          (record.status !== 'draft' && record.status !== 'pending_review')) return null;
+
+      const media = (await transaction.get(mediaRef)).data();
+      return {
+        auctionId,
+        status: record.status,
+        revision: record.sellerDraftRevision ?? 0,
+        title: typeof record.title === 'string' ? record.title : '',
+        overviewHeading: typeof media?.overviewHeading === 'string' ? media.overviewHeading : '',
+        overviewParagraphs: Array.isArray(media?.overviewParagraphs)
+          ? media.overviewParagraphs.filter(value => typeof value === 'string')
+          : []
+      };
+    }, { readOnly: true });
+
+    if (!draft) return res.status(404).json({ error: 'draft-not-found' });
+    return res.status(200).json(draft);
+  });
+}
+
+function draftMediaId(auctionId: string) {
+  return auctionId === 'wailtail-1978-porsche-911' ? 'main-media-config' : `media-${auctionId}`;
 }
 
 export default function handler(req: any, res: any) {
