@@ -1,3 +1,4 @@
+import auctionClock from '../api/auction-clock';
 import retractAuctionBid from '../api/admin-retract-auction-bid';
 import settleAuction from '../api/admin-settle-auction';
 import uploadAuctionImage from '../api/admin-upload-auction-image';
@@ -152,6 +153,34 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     assert.equal(anonymousComment.upvotedBy, undefined);
     assert.equal((await invoke(auctionComments, { action: 'delete', commentId }, other.idToken)).status, 200);
     assert.equal((await comment.get()).exists, false);
+
+    const clockId = `clock-${run}`;
+    const clockRef = firestore.collection('auctions').doc(clockId);
+    await clockRef.set({ status: 'upcoming', startTime: Date.now() + 60000, endTime: Date.now() + 120000,
+      reserveAmount: 1000, currentBid: 0, startingBid: 1000, minimumIncrement: 250 });
+    assert.equal((await invoke(auctionClock, { auctionId: clockId, now: Date.now() + 180000 })).status, 422);
+    assert.equal((await invoke(auctionClock, { auctionId: clockId })).status, 409);
+    assert.equal((await clockRef.get()).get('status'), 'upcoming');
+    await clockRef.update({ startTime: Date.now() - 60000 });
+    assert.equal((await invoke(auctionClock, { auctionId: clockId })).status, 200);
+    assert.equal((await clockRef.get()).get('status'), 'active');
+    assert.equal((await invoke(auctionClock, { auctionId: clockId })).status, 409);
+    await clockRef.collection('bids').doc('winner').set({
+      amount: 1250, bidderId: other.uid, bidderEmail: other.email, timestamp: now, bidderName: 'Test bidder'
+    });
+    await clockRef.update({ endTime: Date.now() - 1 });
+    const clockResults = await Promise.all([
+      invoke(auctionClock, { auctionId: clockId }), invoke(auctionClock, { auctionId: clockId })
+    ]);
+    assert.ok(clockResults.every(result => result.status === 200));
+    assert.equal((await clockRef.get()).get('status'), 'sold');
+    const clockMail = firestore.collection('mail').doc(`auction-winner-${clockId}`);
+    assert.equal((await clockMail.get()).exists, true);
+    const clockMailTime = (await clockMail.get()).get('createdAt');
+    assert.equal((await invoke(auctionClock, { auctionId: clockId })).status, 200);
+    assert.equal((await clockMail.get()).get('createdAt'), clockMailTime);
+    assert.equal((await invoke(auctionClock, { auctionId })).status, 409);
+    assert.equal((await auction.get()).get('status'), 'draft');
 
     const command = { auctionId, expectedRevision: 0 };
     const patch = { ...command, overviewHeading: 'Synthetic overview', overviewParagraphs: ['Test paragraph'] };
