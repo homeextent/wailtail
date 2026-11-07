@@ -557,81 +557,22 @@ export function subscribeToAllAuctions(
  * and default CAD financials ($1,000 starting bid, $250 increment, 7-day duration).
  */
 export async function createNewListing(title: string): Promise<Auction> {
-  const cleanTitle = (title || '').trim() || 'New Vehicle Listing';
-  const slug = slugifyTitle(cleanTitle);
-  const newId = `${slug}-${generateShortHash(8)}`;
-  const defaultStartingBid = 1000;
-
-  const newAuction: Auction = {
-    id: newId,
-    title: cleanTitle,
-    subtitle: '',
-    headline: '',
-    make: '',
-    model: '',
-    year: '' as any,
-    vin: '',
-    mileage: '',
-    distanceUnit: 'km',
-    leadHeroImage: '',
-    heroImages: [],
-    highlightsBadge: '',
-    hagertyValuationUrl: '',
-    watchCount: 0,
-    location: '',
-    sellerName: '',
-    engine: '',
-    drivetrain: '',
-    exteriorColor: '',
-    interior: '',
-    titleStatus: '',
-    currency: 'CAD',
-    startTime: Date.now(),
-    endTime: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    startingBid: defaultStartingBid,
-    minimumIncrement: 250,
-    currentBid: defaultStartingBid,
-    reserveAmount: 0,
-    isReserveMet: true,
-    bidCount: 0,
-    highBidderId: '',
-    highBidderName: '',
-    highBidderEmail: '',
-    status: 'upcoming',
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  try {
-    const docRef = doc(db, 'auctions', newId);
-    await setDoc(docRef, sanitizePayload(newAuction));
-
-    // Also initialize a completely clean media config for this specific auction with empty arrays
-    const mediaRef = doc(db, 'settings', `media-${newId}`);
-    const cleanMediaConfig: MediaConfiguration = {
-      vehicleName: cleanTitle,
-      heroImages: [],
-      overviewHeading: '',
-      overviewParagraphs: [],
-      overviewImage: {
-        url: '',
-        caption: '',
-        alt: ''
-      },
-      overviewSpecs: [],
-      inlineShowcase: [],
-      fullGallery: [],
-      youtubePlaylistUrl: '',
-      videoTitle: '',
-      videoSubtitle: '',
-      videoChapters: []
-    };
-    await setDoc(mediaRef, sanitizePayload(cleanMediaConfig));
-  } catch (err) {
-    console.warn('Saved new auction locally:', err);
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
+  const response = await fetch('/api/admin-create-auction', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ title: title.trim() })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.auction) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to create the listing.');
   }
-
-  return newAuction;
+  return result.auction;
 }
 
 /**
