@@ -14,7 +14,8 @@
     "test:rules": "firebase emulators:exec --project demo-wailtail-stage3 --only firestore 'node --import tsx --test tests/firestore.rules.test.ts'",
     "test:seller-emulator": "firebase emulators:exec --project demo-wailtail-stage3 --only auth,firestore,storage 'node --import tsx --test tests/seller-draft.emulator.test.ts'",
     "test:seller-browser": "firebase emulators:exec --project demo-wailtail-stage3 --only auth,firestore,storage 'node --import tsx tests/seller-browser-server.ts'",
-    "test": "npm run test:endpoint && npm run test:rules"
+    "test": "npm run test:endpoint && npm run test:rules",
+    "test:auction-browser": "firebase emulators:exec --project demo-wailtail-stage3 --only auth,firestore,storage 'node --import tsx --test tests/auction-browser.test.ts'"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
