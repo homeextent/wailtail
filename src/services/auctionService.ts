@@ -3337,53 +3337,26 @@ export async function updateAuctionConfig(
   auctionId: string,
   updates: Partial<Auction>
 ): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
   const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
-  const auctionRef = doc(db, 'auctions', targetId);
-  let isWinningEmailSent = false;
-
-  try {
-    const snap = await getDoc(auctionRef);
-    if (snap.exists()) {
-      const data = snap.data() as Auction;
-      isWinningEmailSent = Boolean(data.winningEmailSent);
-
-      // If status is being updated, verify it doesn't regress expired auction with bids to draft
-      if (updates.status === 'draft') {
-        const now = Date.now();
-        const hasValidEndTime = typeof data.endTime === 'number' && data.endTime > 0;
-        const isExpired = hasValidEndTime && now >= data.endTime;
-        const hasBids = (Number(data.currentBid) > 0) || (Number(data.bidCount) > 0);
-        if (isExpired && hasBids) {
-          const isReserveMet = Boolean(
-            data.isReserveMet ||
-            (data.reserveAmount > 0 ? data.currentBid >= data.reserveAmount : true)
-          );
-          updates.status = isReserveMet ? 'sold' : 'ended';
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[updateAuctionConfig] Pre-fetch auction config check notice:', err);
-  }
-
-  const cleanUpdates = sanitizePayload({
-    ...updates,
-    ...(updates.status ? { status: updates.status } : {}),
-    updatedAt: Date.now()
+  const response = await fetch('/api/admin-update-auction', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId: targetId, updates: sanitizePayload(updates) })
   });
-
-  await withTimeout(
-    setDoc(auctionRef, cleanUpdates, { merge: true }),
-    8000
-  );
-
-  const normStatus = (updates.status || '').toLowerCase().trim();
-  if (normStatus === 'sold' || normStatus === 'ended') {
-    if (!isWinningEmailSent && updates.winningEmailSent !== true) {
-      reconcileAuctionClosureAndNotifyWinner(targetId).catch((err) => {
-        console.warn('[Settlement] Manual force-close reconcileAuctionClosureAndNotifyWinner in updateAuctionConfig error:', err);
-      });
-    }
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to save auction settings.');
+  }
+  if (updates.status && (result.status === 'sold' || result.status === 'ended') && !result.winningEmailSent) {
+    reconcileAuctionClosureAndNotifyWinner(targetId).catch((error) => {
+      console.warn('Auction closure reconciliation failed:', error);
+    });
   }
 }
 
