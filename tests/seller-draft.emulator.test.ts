@@ -321,6 +321,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal(created.status, 201);
         const { auction: createdAuction } = created.payload as { auction: { id: string; status: string } };
         assert.equal(createdAuction.status, 'draft');
+        assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, true);
         const edit = { auctionId: createdAuction.id, updates: { title: 'Edited inventory draft' } };
         assert.equal((await invoke(updateAuction, edit, other.idToken)).status, 403);
         assert.equal((await invoke(updateAuction, { ...edit, updates: { sellerId: other.uid } }, admin.idToken)).status, 422);
@@ -341,7 +342,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, other.idToken)).status, 403);
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, admin.idToken)).status, 200);
         assert.equal((await firestore.collection('comments').doc(publicId).get()).get('isPinned'), true);
-        assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, true);
+        assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, false);
         assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: createdAuction.id })).status, 404);
       }
       const expectedRevision = 5 + index * 2;
