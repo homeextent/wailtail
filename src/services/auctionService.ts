@@ -453,14 +453,25 @@ export function subscribeToPublicAuctions(callback: (auctions: Auction[]) => voi
   return pollPublicAuctions('/api/public-auctions', (result) => callback(result?.auctions ?? []));
 }
 
-export function subscribeToPublicAuction(auctionId: string, callback: (auction: Auction | null) => void) {
+type PublicAuctionResponse = {
+  auctions?: Auction[];
+  auction?: Auction;
+  media?: MediaConfiguration | null;
+  bids?: Bid[];
+  comments?: Comment[];
+};
+
+export function subscribeToPublicAuction(
+  auctionId: string,
+  callback: (auction: Auction | null, detail: PublicAuctionResponse | null) => void
+) {
   return pollPublicAuctions(`/api/public-auctions?auctionId=${encodeURIComponent(auctionId)}`,
-    (result) => callback(result?.auction ?? null));
+    (result) => callback(result?.auction ?? null, result));
 }
 
 function pollPublicAuctions(
   url: string,
-  callback: (result: { auctions?: Auction[]; auction?: Auction } | null) => void
+  callback: (result: PublicAuctionResponse | null) => void
 ) {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
