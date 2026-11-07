@@ -86,6 +86,18 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal(publicData.auction.reserveAmount, undefined);
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
+    await eventually(text, value => value.includes('Vehicle Inventory & Lots'), 'administrator portal');
+    const selected = await command('Runtime.evaluate', {
+      expression: `(() => {
+        const button = Array.from(document.querySelectorAll('button')).find(element =>
+          element.textContent?.includes('Vehicle Inventory & Lots'));
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`,
+      returnByValue: true
+    });
+    assert.equal(selected.result?.value, true, 'Inventory tab must be selectable');
     await eventually(text, value => value.includes('Synthetic browser listing'), 'administrator inventory');
   } catch (error) {
     console.error(serverLog);
