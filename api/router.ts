@@ -1,6 +1,8 @@
 // The only Vercel Function entry point. Endpoint modules live outside api/ so they
 // remain independently testable without each consuming a deployed function.
 const endpoints: Record<string, () => Promise<{ default: (req: any, res: any) => any }>> = {
+  'auction-member-actions': () => import('../server/api/auction-member-actions.js'),
+  'public-settings': () => import('../server/api/public-settings.js'),
   'admin-create-auction': () => import('../server/api/admin-create-auction.js'),
   'admin-delete-auction': () => import('../server/api/admin-delete-auction.js'),
   'admin-delete-user': () => import('../server/api/admin-delete-user.js'),

@@ -31,7 +31,7 @@ export default function handler(req: any, res: any) {
       tx.update(auction, {
         ...(startingBid !== undefined ? { startingBid } : {}),
         currentBid: 0, bidCount: 0, highBidderId: '', highBidderName: '', highBidderEmail: '',
-        isReserveMet: false, updatedAt: Date.now()
+        isReserveMet: (Number(record.reserveAmount) || 0) <= 0, updatedAt: Date.now()
       });
       return 200;
     });

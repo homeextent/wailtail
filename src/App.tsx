@@ -142,10 +142,13 @@ const AuctionAppContent: React.FC = () => {
     siteTagline: globalBranding.siteTagline
   }));
 
+  const [brandingLoaded, setBrandingLoaded] = useState(false);
+
   // Real-time Firestore synchronization for global branding (/settings/global)
   useEffect(() => {
     const unsubBranding = subscribeToGlobalBranding((cloudBranding) => {
       if (cloudBranding) {
+        setBrandingLoaded(true);
         const next = {
           siteLogo: cloudBranding.siteLogo !== undefined ? cloudBranding.siteLogo : globalBranding.siteLogo,
           siteName: cloudBranding.siteName || globalBranding.siteName,
@@ -502,21 +505,7 @@ const AuctionAppContent: React.FC = () => {
         const applyMedia = (cloudMedia: MediaConfiguration | null) => {
           if (cloudMedia) {
             setCurrentMedia(cloudMedia);
-            if (cloudMedia.siteLogo !== undefined || cloudMedia.siteName || cloudMedia.siteTagline) {
-              setGlobalBranding((prev) => {
-                const next = {
-                  siteLogo: cloudMedia.siteLogo !== undefined ? cloudMedia.siteLogo : prev.siteLogo,
-                  siteName: cloudMedia.siteName || prev.siteName,
-                  siteTagline: cloudMedia.siteTagline || prev.siteTagline
-                };
-                try {
-                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
-                } catch {
-                  // ignore
-                }
-                return next;
-              });
-            }
+
             try {
               localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
             } catch (e) {
@@ -529,21 +518,7 @@ const AuctionAppContent: React.FC = () => {
         const applyAuction = (data: Auction | null) => {
           if (data) {
             setAuction(data);
-            if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
-              setGlobalBranding((prev) => {
-                const next = {
-                  siteLogo: data.siteLogo !== undefined ? data.siteLogo : prev.siteLogo,
-                  siteName: data.siteName || prev.siteName,
-                  siteTagline: data.siteTagline || prev.siteTagline
-                };
-                try {
-                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
-                } catch {
-                  // ignore
-                }
-                return next;
-              });
-            }
+
           } else {
             setAuction(BLANK_AUCTION);
             if (isEditorRoute) {
@@ -596,10 +571,10 @@ const AuctionAppContent: React.FC = () => {
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
-    setIsWatching(next);
-    localStorage.setItem('wailtail_watching', String(next));
     try {
       const newCount = await toggleWatchAuction(auction.id, next);
+      setIsWatching(next);
+      localStorage.setItem('wailtail_watching', String(next));
       setAuction((prev) => ({ ...prev, watchCount: newCount }));
     } catch (e) {
       console.warn('Could not update watchlist count:', e);
@@ -770,9 +745,9 @@ const AuctionAppContent: React.FC = () => {
   }
 
   // Dedicated Full-Page Public Vehicle Catalog Route (/catalog)
-  const effectiveSiteLogo = currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
-  const effectiveSiteName = currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
-  const effectiveSiteTagline = currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
+  const effectiveSiteLogo = brandingLoaded ? globalBranding.siteLogo : currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
+  const effectiveSiteName = brandingLoaded ? globalBranding.siteName : currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
+  const effectiveSiteTagline = brandingLoaded ? globalBranding.siteTagline : currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
 
   if (isCatalogRoute) {
     return (

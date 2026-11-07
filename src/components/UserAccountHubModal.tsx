@@ -753,6 +753,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
               )}
 
               {/* TAB: WATCHLIST */}
+              {summary.historyLimitReached && <p role="status" className="px-6 py-2 text-sm text-amber-300">This account has more activity than can be displayed here.</p>}
               {activeTab === 'watchlist' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">

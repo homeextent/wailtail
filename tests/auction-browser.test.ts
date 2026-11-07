@@ -23,7 +23,7 @@ async function eventually<T>(read: () => Promise<T>, accept: (value: T) => boole
   throw new Error(`${label} timed out. Last result: ${JSON.stringify(last)}`);
 }
 
-test('signed-out catalog and lot render, and administrator inventory renders under candidate rules', { timeout: 150_000 }, async () => {
+test('signed-out catalog and lot render, and administrator inventory renders under candidate rules', { timeout: 240_000 }, async () => {
   assert.equal(process.env.GCLOUD_PROJECT, 'demo-wailtail-stage3');
   const profile = await mkdtemp(join(tmpdir(), 'wailtail-browser-'));
   const server = spawn(process.execPath, ['--import', 'tsx', 'tests/seller-browser-server.ts'], {
@@ -99,6 +99,58 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     assert.equal(selected.result?.value, true, 'Inventory tab must be selectable');
     await eventually(text, value => value.includes('Synthetic browser listing'), 'administrator inventory');
+    // Use real controls for member actions and check persisted emulator state.
+    await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
+    await eventually(text, value => value.includes('Synthetic public description'), 'authenticated public lot');
+    const click = async (expression: string) => {
+      const result = await command('Runtime.evaluate', { expression, returnByValue: true });
+      assert.equal(result.result?.value, true, expression);
+    };
+    const state = async () => (await fetch(origin + '/acceptance-fixture')).json();
+    await click(`(() => { const b = document.querySelector('button[title="Add to Watchlist"]'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(state, value => value.watchCount === 1, 'watchlist persisted');
+    await eventually(text, value => value.includes('★ Watching'), 'watching state');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Contact Consignor / Private Inquiry')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Inquiry Topic'), 'inquiry modal');
+    await click(`(() => { const field = document.querySelector('textarea[placeholder^="Please describe your specific question"]'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, 'Synthetic browser inquiry'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Submit Inquiry')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(state, value => value.inquiries === 1, 'inquiry persisted');
+    await eventually(text, value => value.includes('Inquiry saved. Notification queued'), 'inquiry acknowledgement');
+
+    // Global branding is independent of the currently selected listing.
+    await command('Page.navigate', { url: origin + '/admin?tab=branding' });
+    await eventually(text, value => value.includes('Site Branding & Global Settings'), 'branding tab available');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Site Branding & Global Settings')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Platform Brand Name'), 'branding form');
+    const disabledPurge = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).some(b => b.textContent?.includes('Purge All Catalog Listings') && b.disabled)`, returnByValue: true });
+    assert.equal(disabledPurge.result?.value, true);
+    await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('Platform Brand Name')); const field = label?.parentElement?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Updated browser brand'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Save Global Settings')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(state, value => value.siteName === 'Updated browser brand', 'branding persisted');
+    const publicBranding = await (await fetch(origin + '/api/public-settings')).json();
+    assert.equal(publicBranding.branding.siteName, 'Updated browser brand');
+    assert.equal(publicBranding.branding.privateAdminField, undefined);
+
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Consignment Pipeline')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Synthetic Seller'), 'consignment fixture');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).some(b => b.disabled && b.title.includes('Unavailable in this staging revision') && /Approve|Convert/.test(b.textContent || ''))`, returnByValue: true });
+      return result.result?.value;
+    }, Boolean, 'disabled consignment conversion');
+
+    // Seller narrative edits go through the same router and survive reload.
+    await command('Page.navigate', { url: origin + '/catalog?fixture=draft' });
+    await eventually(text, value => value.includes('Overview heading'), 'seller editor');
+    await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Browser saved overview'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Narrative saved.'), 'seller save acknowledgement');
+    await eventually(state, value => value.heading === 'Browser saved overview', 'seller narrative persisted');
+    await command('Page.reload');
+    await eventually(async () => {
+      const value = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('input')).some(input => input.value === 'Browser saved overview')`, returnByValue: true });
+      return value.result?.value;
+    }, Boolean, 'seller narrative after reload');
+
   } catch (error) {
     console.error(serverLog);
     throw error;

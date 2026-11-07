@@ -1,3 +1,4 @@
+import { checkLegacyPaths } from './legacy-paths-checks';
 import dispatchAuctionNotifications from '../server/api/dispatch-auction-notifications';
 import duplicateAuction from '../server/api/admin-duplicate-auction';
 import resetAuctionBids from '../server/api/admin-reset-auction-bids';
@@ -381,6 +382,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     for (const [index, email] of ['jeremygoodmurphy@gmail.com', 'jeremy@theinnovativegroup.ca'].entries()) {
       const admin = await seller('admin', email);
       if (index === 0) {
+        await checkLegacyPaths({ firestore, owner, other, admin, run, invoke, storageHost });
         const created = await invoke(createAuction, { title: 'Synthetic inventory draft' }, admin.idToken);
         assert.equal(created.status, 201);
         const { auction: createdAuction } = created.payload as { auction: { id: string; status: string } };

@@ -1425,4 +1425,28 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
       await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: 'other' }));
     });
   }
+  test('member administration, branding and promotions remain administrator-scoped', async () => {
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    const member = getNamedDb(testEnv.authenticatedContext('seller', { email: APPLICANT_EMAIL, email_verified: true }));
+    const guest = getNamedDb(testEnv.unauthenticatedContext());
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(updateDoc(doc(admin, name, 'seller'), { role: 'bidder', isBanned: true, bannedFromBidding: true }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { isBanned: false }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { role: 'admin' }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { watchlist: ['lot'] }));
+      await assertSucceeds(updateDoc(doc(member, name, 'seller'), { displayName: 'My display name' }));
+    }
+    await assertSucceeds(setDoc(doc(admin, 'settings/global'), { siteName: 'Test brand', privateAdminField: 'private' }));
+    await assertFails(getDoc(doc(guest, 'settings/global')));
+    await assertFails(updateDoc(doc(member, 'settings/global'), { siteName: 'Spoofed' }));
+    await assertSucceeds(updateDoc(doc(admin, 'settings/promotions'), { enabled: false, cards: [{ imageUrl: 'https://example.test/promo.jpg' }] }));
+    await assertSucceeds(getDoc(doc(guest, 'settings/promotions')));
+    await assertFails(updateDoc(doc(member, 'settings/promotions'), { enabled: true }));
+    for (const context of [admin, member, guest]) {
+      await assertFails(setDoc(doc(context, 'inquiries/client-spoof'), { senderId: 'seller' }));
+      await assertFails(setDoc(doc(context, 'memberActionLimits/seller'), { lastInquiryAt: 0 }));
+      await assertFails(deleteDoc(doc(context, 'auctions/lot')));
+    }
+  });
+
 });

@@ -1,3 +1,4 @@
+import { isDesignatedAdminEmail } from '../config/adminConfig';
 import {
   doc,
   getDoc,
@@ -13,15 +14,10 @@ import {
   getDocs,
   deleteDoc,
   writeBatch,
-  arrayUnion,
-  arrayRemove,
-  DocumentReference,
-  increment,
-  serverTimestamp
+  DocumentReference
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from '../firebase';
+import { db, auth } from '../firebase';
 import { 
   Auction, 
   Bid, 
@@ -43,7 +39,17 @@ import {
 } from '../types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from '../mediaConfig';
 export { DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG };
-import { sendSellerInquiryEmail } from './emailService';
+async function memberAction(body: Record<string, unknown>): Promise<any> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in to continue.');
+  const response = await fetch('/api/auction-member-actions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+    body: JSON.stringify(body)
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || 'Unable to complete this request.');
+  return result;
+}
 
 export const MAIN_AUCTION_ID = 'wailtail-1978-porsche-911';
 export const MEDIA_CONFIG_DOC_ID = 'main-media-config';
@@ -141,24 +147,17 @@ export function compressImageDataUrl(dataUrl: string, maxDim = 1200, quality = 0
 /**
  * Uploads a Base64 data URL to Firebase Cloud Storage and returns its public HTTPS download URL.
  */
-export async function uploadImageToStorage(
-  auctionId: string,
-  dataUrl: string,
-  folder = 'gallery'
-): Promise<string> {
-  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
-    return dataUrl; // Return existing HTTPS URLs as-is
-  }
-  try {
-    const targetId = auctionId?.trim() || 'common';
-    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.jpg`;
-    const storageRef = ref(storage, `auctions/${targetId}/${folder}/${filename}`);
-    await uploadString(storageRef, dataUrl, 'data_url');
-    return await getDownloadURL(storageRef);
-  } catch (err) {
-    console.warn('Cloud Storage upload fallback to compressed data URL:', err);
-    return dataUrl;
-  }
+export async function uploadImageToStorage(auctionId: string, dataUrl: string, folder = 'gallery'): Promise<string> {
+  if (!dataUrl?.startsWith('data:')) return dataUrl;
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in to upload images.');
+  const response = await fetch('/api/admin-upload-auction-image', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+    body: JSON.stringify({ auctionId: ['branding', 'promotions'].includes(folder) ? 'common' : auctionId, dataUrl })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || typeof result?.url !== 'string') throw new Error(result?.error || 'Image upload failed.');
+  return result.url;
 }
 
 /**
@@ -452,6 +451,7 @@ export function subscribeToPublicAuctions(callback: (auctions: Auction[]) => voi
 }
 
 type PublicAuctionResponse = {
+  branding?: GlobalBrandingSettings;
   auctions?: Auction[];
   auction?: Auction;
   media?: MediaConfiguration | null;
@@ -593,7 +593,8 @@ export async function sendConsignmentReceiptEmail(
     const res = await fetch('/api/send-consignment-email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
       },
       body: JSON.stringify({
         ...applicationData,
@@ -687,7 +688,8 @@ export async function sendWelcomeBidderEmail(
       res = await fetch('/api/send-consignment-email', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
         },
         body: JSON.stringify({
           type: 'welcome_bidder',
@@ -789,7 +791,8 @@ export async function sendListingSubmittedForReviewEmail(
     const res = await fetch('/api/send-consignment-email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
       },
       body: JSON.stringify({
         type: 'listing_submitted_for_review',
@@ -839,7 +842,8 @@ export async function sendListingApprovedEmail(
     const res = await fetch('/api/send-consignment-email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
       },
       body: JSON.stringify({
         type: 'listing_approved',
@@ -888,7 +892,8 @@ export async function sendListingRevisionRequestedEmail(
     const res = await fetch('/api/send-consignment-email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
       },
       body: JSON.stringify({
         type: 'listing_revision_requested',
@@ -938,7 +943,8 @@ export async function sendOutbidNotificationEmail(params: {
     const res = await fetch('/api/send-consignment-email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
       },
       body: JSON.stringify({
         type: 'outbid_notification',
@@ -1004,7 +1010,8 @@ export async function sendWinningBidConfirmationEmail(params: {
       res = await fetch('/api/send-consignment-email', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
         },
         body: JSON.stringify(payload),
         signal: controller.signal
@@ -1111,7 +1118,8 @@ export async function submitConsignmentApplication(
       await fetch('/api/send-consignment-email', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
         },
         body: JSON.stringify({
           ...payload,
@@ -1287,62 +1295,8 @@ export async function resolveUserAndBidderDocuments(userId: string): Promise<{
 /**
  * Admin: Approve a consignment application, promote user to 'seller', and provision a blank assigned lot.
  */
-export async function approveConsignmentAndPromoteSeller(
-  applicationId: string,
-  userUid?: string,
-  vehicleTitle?: string
-): Promise<Auction> {
-  // 1. Update consignment application status in both collections
-  try {
-    const appRef = doc(db, 'consignment_applications', applicationId);
-    await updateDoc(appRef, {
-      status: 'approved',
-      reviewedAt: Date.now()
-    });
-  } catch (err) {
-    console.warn('Could not update consignment_applications doc status:', err);
-  }
-  try {
-    const legacyRef = doc(db, 'consignments', applicationId);
-    await updateDoc(legacyRef, {
-      status: 'approved',
-      reviewedAt: Date.now()
-    });
-  } catch {
-    // Ignore legacy doc status failure
-  }
-
-  // 2. Promote user to 'seller' role if userUid exists and not admin
-  if (userUid) {
-    try {
-      const { userDocRefs, bidderDocRefs, userData } = await resolveUserAndBidderDocuments(userUid);
-      const currentRole = (userData?.role || '').toUpperCase();
-      if (currentRole !== 'ADMIN') {
-        const batch = writeBatch(db);
-        const payload = {
-          uid: userUid,
-          ...(userData?.email ? { email: userData.email } : {}),
-          ...(userData?.displayName ? { displayName: userData.displayName } : {}),
-          role: 'seller',
-          updatedAt: Date.now()
-        };
-        for (const ref of userDocRefs) {
-          batch.set(ref, payload, { merge: true });
-        }
-        for (const ref of bidderDocRefs) {
-          batch.set(ref, payload, { merge: true });
-        }
-        await batch.commit();
-      }
-    } catch (err) {
-      console.warn('Could not promote user to seller:', err);
-    }
-  }
-
-  // 3. Provision a blank assigned lot
-  const lotTitle = vehicleTitle || 'Consigned Vehicle Lot';
-  const newLot = await createNewListing(lotTitle);
-  return newLot;
+export async function approveConsignmentAndPromoteSeller(_applicationId: string, _userUid?: string, _vehicleTitle?: string): Promise<Auction> {
+  throw new Error('One-click consignment conversion is disabled in staging. Create a draft through Vehicle Inventory instead.');
 }
 
 /**
@@ -1374,221 +1328,8 @@ export function parseReserveAmount(reserveExpectation?: string | number | null):
  * 1-Click Consignment Approval & Draft Conversion
  * Converts incoming consignment submissions directly into pre-populated vehicle listing drafts.
  */
-export async function convertConsignmentToDraftListing(consignmentId: string): Promise<string> {
-  const cleanId = consignmentId?.trim();
-  if (!cleanId) {
-    throw new Error('Consignment ID is required for conversion.');
-  }
-
-  // 1. Fetch target consignment application
-  const appRef = doc(db, 'consignment_applications', cleanId);
-  let appSnap = await getDoc(appRef);
-
-  if (!appSnap.exists()) {
-    const legacyRef = doc(db, 'consignments', cleanId);
-    appSnap = await getDoc(legacyRef);
-  }
-
-  if (!appSnap.exists()) {
-    throw new Error(`Consignment application with ID "${cleanId}" not found.`);
-  }
-
-  const app = appSnap.data() as ConsignmentApplication;
-
-  // 2. Prepare taxonomy, title, location, identification & financial parameters
-  const yearStr = app.year != null ? String(app.year).trim() : '';
-  const makeStr = (app.make || '').trim();
-  const modelStr = (app.model || '').trim();
-  const genStr = (app.generation || '').trim();
-
-  const titleParts = [yearStr, makeStr, modelStr].filter(Boolean);
-  const fullTitle = titleParts.length > 0 ? titleParts.join(' ') : 'Consigned Vehicle Listing';
-
-  const highlightsBadge = [yearStr, makeStr, modelStr, genStr].filter(Boolean).map(s => String(s).trim()).filter(Boolean).join(' ');
-
-  const city = (app.locationCity || '').trim();
-  const province = (app.locationProvince || '').trim();
-  const country = (app.locationCountry || '').trim();
-  const structuredParts = [city, province, country].filter(Boolean);
-  const locationCombined = structuredParts.length > 0
-    ? structuredParts.join(', ')
-    : (app.location || '').trim();
-
-  const reserve = parseReserveAmount(app.reserveExpectation);
-
-  const slug = slugifyTitle(fullTitle);
-  const newAuctionId = `${slug}-${generateShortHash(8)}`;
-
-  const now = Date.now();
-  const newAuction: Auction = {
-    id: newAuctionId,
-    title: fullTitle,
-    subtitle: genStr,
-    headline: '',
-    year: app.year,
-    make: makeStr,
-    model: modelStr,
-    generation: genStr,
-    vin: (app.vin || '').trim(),
-    mileage: (app.mileage || '').trim(),
-    distanceUnit: 'km',
-    location: locationCombined,
-    locationCity: city || undefined,
-    locationProvince: province || undefined,
-    locationCountry: country || undefined,
-    sellerName: (app.sellerName || '').trim(),
-    sellerEmail: (app.sellerEmail || '').trim(),
-    sellerPhone: (app.sellerPhone || '').trim(),
-    engine: '',
-    drivetrain: '',
-    exteriorColor: '',
-    interior: '',
-    titleStatus: 'Clean Registration',
-    currency: 'CAD',
-    startTime: now,
-    endTime: now + 7 * 24 * 60 * 60 * 1000,
-    startingBid: 1000,
-    minimumIncrement: 250,
-    currentBid: 1000,
-    reserveAmount: reserve,
-    isReserveMet: reserve <= 0,
-    bidCount: 0,
-    highBidderId: '',
-    highBidderName: '',
-    highBidderEmail: '',
-    highlightsBadge: highlightsBadge,
-    hagertyValuationUrl: '',
-    watchCount: 0,
-    status: 'draft',
-    createdAt: now,
-    updatedAt: now
-  };
-
-  const cleanMediaConfig: MediaConfiguration = {
-    vehicleName: fullTitle,
-    heroImages: [],
-    overviewHeading: '',
-    overviewParagraphs: [],
-    overviewImage: {
-      url: '',
-      caption: '',
-      alt: ''
-    },
-    overviewSpecs: [],
-    inlineShowcase: [],
-    fullGallery: [],
-    youtubePlaylistUrl: '',
-    videoTitle: '',
-    videoSubtitle: '',
-    videoChapters: []
-  };
-
-  // 3. Atomically create Auction document, media config & update consignment application status
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'auctions', newAuctionId), sanitizePayload(newAuction));
-  batch.set(doc(db, 'settings', `media-${newAuctionId}`), sanitizePayload(cleanMediaConfig));
-
-  const targetAppRef = doc(db, 'consignment_applications', cleanId);
-  batch.set(targetAppRef, {
-    status: 'approved',
-    convertedAuctionId: newAuctionId,
-    reviewedAt: now
-  }, { merge: true });
-
-  const legacyRef = doc(db, 'consignments', cleanId);
-  batch.set(legacyRef, {
-    status: 'approved',
-    convertedAuctionId: newAuctionId,
-    reviewedAt: now
-  }, { merge: true });
-
-  // Promote consignor user to 'seller' if registered user exists and current role is 'BIDDER' or 'GUEST', preserving 'ADMIN'
-  let targetUserId = app.registeredUserId;
-  let targetRole = (app.registeredUserRole || 'GUEST').toUpperCase();
-
-  if (!targetUserId && app.sellerEmail) {
-    try {
-      const cleanEmail = app.sellerEmail.trim().toLowerCase();
-      const userQ = query(collection(db, 'users'), where('email', '==', cleanEmail));
-      const userSnap = await getDocs(userQ);
-      if (!userSnap.empty) {
-        const uDoc = userSnap.docs[0];
-        targetUserId = uDoc.data()?.uid || uDoc.id;
-        targetRole = (uDoc.data()?.role || 'BIDDER').toUpperCase();
-      } else {
-        const bidderQ = query(collection(db, 'bidders'), where('email', '==', cleanEmail));
-        const bidderSnap = await getDocs(bidderQ);
-        if (!bidderSnap.empty) {
-          const bDoc = bidderSnap.docs[0];
-          targetUserId = bDoc.data()?.uid || bDoc.id;
-          targetRole = (bDoc.data()?.role || 'BIDDER').toUpperCase();
-        }
-      }
-    } catch (err) {
-      console.warn('Could not resolve user for consignment seller promotion:', err);
-    }
-  }
-
-  if (targetUserId && targetRole !== 'ADMIN') {
-    try {
-      const { userDocRefs, bidderDocRefs, userData } = await resolveUserAndBidderDocuments(targetUserId);
-      const payload = {
-        uid: targetUserId,
-        ...(userData?.email ? { email: userData.email } : {}),
-        ...(userData?.displayName ? { displayName: userData.displayName } : {}),
-        role: 'seller',
-        updatedAt: now
-      };
-      for (const ref of userDocRefs) {
-        batch.set(ref, payload, { merge: true });
-      }
-      for (const ref of bidderDocRefs) {
-        batch.set(ref, payload, { merge: true });
-      }
-    } catch (err) {
-      console.warn('Could not resolve user doc refs for seller upgrade:', err);
-      batch.set(doc(db, 'users', targetUserId), { role: 'seller', updatedAt: now }, { merge: true });
-      batch.set(doc(db, 'bidders', targetUserId), { role: 'seller', updatedAt: now }, { merge: true });
-    }
-  }
-
-  await batch.commit();
-
-  // Non-blocking background consignment approved email dispatch with AbortController 5000ms timeout
-  const cleanSellerEmail = (app.sellerEmail || '').trim().toLowerCase();
-  if (cleanSellerEmail) {
-    (async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        await fetch('/api/send-consignment-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            type: 'consignment_approved',
-            sellerEmail: cleanSellerEmail,
-            sellerName: (app.sellerName || '').trim(),
-            year: app.year,
-            make: makeStr,
-            model: modelStr,
-            generation: genStr,
-            convertedAuctionId: newAuctionId
-          }),
-          signal: controller.signal
-        }).catch((fetchErr) => {
-          console.warn('Non-blocking consignment approved email dispatch failed:', fetchErr);
-        }).finally(() => {
-          clearTimeout(timeoutId);
-        });
-      } catch (emailErr) {
-        console.warn('Non-blocking consignment approved email error:', emailErr);
-      }
-    })();
-  }
-
-  return newAuctionId;
+export async function convertConsignmentToDraftListing(_consignmentId: string): Promise<string> {
+  throw new Error('One-click consignment conversion is disabled in staging. Create a draft through Vehicle Inventory instead.');
 }
 
 /**
@@ -1654,7 +1395,8 @@ export async function updateConsignmentStatus(
         await fetch('/api/send-consignment-email', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
           },
           body: JSON.stringify({
             type: 'consignment_rejected',
@@ -1819,7 +1561,8 @@ export async function batchUpdateConsignmentStatus(
             await fetch('/api/send-consignment-email', {
               method: 'POST',
               headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+        ...(auth.currentUser ? { Authorization: `Bearer ${await auth.currentUser.getIdToken()}` } : {})
               },
               body: JSON.stringify({
                 type: 'consignment_rejected',
@@ -2104,67 +1847,10 @@ export const placeBid = placeBidWithAntiSnipe;
 
 /**
  * Remove or Ban a Bidder (Moderation)
- * Clears their active bids from the bid log and revokes bidding privileges.
+ * Legacy combined purge is disabled; bans and audited retractions remain separate actions.
  */
-export async function banOrRemoveBidder(userId: string, auctionId: string): Promise<void> {
-  // 1. Mark user as banned in 'users' collection
-  try {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      bannedFromBidding: true,
-      bannedAt: Date.now()
-    });
-  } catch (err) {
-    console.warn('Could not update user doc for ban:', err);
-  }
-
-  // 2. Delete all bids from 'bids' collection placed by this user for this auction
-  try {
-    const bidsCol = collection(db, 'bids');
-    const bidsSnap = await getDocs(query(bidsCol, where('bidderId', '==', userId), where('auctionId', '==', auctionId)));
-    const batch = writeBatch(db);
-    bidsSnap.docs.forEach(d => batch.delete(d.ref));
-
-    // 3. Delete bid comments placed by this user
-    const commentsCol = collection(db, 'comments');
-    const commentsSnap = await getDocs(query(commentsCol, where('userId', '==', userId), where('isBid', '==', true)));
-    commentsSnap.docs.forEach(d => batch.delete(d.ref));
-
-    await batch.commit();
-
-    // 4. Recalculate high bidder and current bid from remaining bids
-    const remainingBidsSnap = await getDocs(query(bidsCol, where('auctionId', '==', auctionId), orderBy('amount', 'desc')));
-    const auctionRef = doc(db, 'auctions', auctionId);
-    const auctionSnap = await getDoc(auctionRef);
-    const auctionData = auctionSnap.exists() ? (auctionSnap.data() as Auction) : null;
-    const reserveAmount = auctionData?.reserveAmount || 0;
-
-    if (remainingBidsSnap.empty) {
-      await updateDoc(auctionRef, {
-        currentBid: auctionData?.startingBid || 0,
-        bidCount: 0,
-        highBidderId: '',
-        highBidderName: '',
-        highBidderEmail: '',
-        isReserveMet: false,
-        updatedAt: Date.now()
-      });
-    } else {
-      const highestRemaining = remainingBidsSnap.docs[0].data() as Bid;
-      await updateDoc(auctionRef, {
-        currentBid: highestRemaining.amount,
-        bidCount: remainingBidsSnap.docs.length,
-        highBidderId: highestRemaining.bidderId,
-        highBidderName: highestRemaining.bidderName,
-        highBidderEmail: highestRemaining.bidderEmail,
-        isReserveMet: highestRemaining.amount >= reserveAmount,
-        updatedAt: Date.now()
-      });
-    }
-  } catch (err) {
-    console.error('Error during bidder purge:', err);
-    throw err;
-  }
+export async function banOrRemoveBidder(_userId: string, _auctionId: string): Promise<void> {
+  throw new Error('Legacy bidder purge is disabled. Ban the member or retract individual bids through the moderation controls.');
 }
 
 /**
@@ -2417,198 +2103,43 @@ export async function checkUserAccountByEmail(
  * Toggle Watchlist Count
  */
 export async function toggleWatchAuction(auctionId: string, isWatching: boolean): Promise<number> {
-  try {
-    const auctionRef = doc(db, 'auctions', auctionId);
-    const snap = await getDoc(auctionRef);
-    const currentCount = snap.exists() ? (snap.data().watchCount ?? 18) : 18;
-    const newCount = Math.max(0, isWatching ? currentCount + 1 : currentCount - 1);
-    await updateDoc(auctionRef, { watchCount: newCount });
-    return newCount;
-  } catch (err) {
-    console.warn('Failed to update watch count on server:', err);
-    return isWatching ? 19 : 18;
-  }
+  const result = await memberAction({ action: 'watch', auctionId, watching: isWatching });
+  return result.watchCount;
 }
 
 /**
  * Toggle a lot in the user's personal saved watchlist array in Firestore (users/{uid}).
  */
-export async function toggleWatchlistLot(
-  userId: string,
-  auctionId: string
-): Promise<{ isWatching: boolean; watchlist: string[] }> {
-  const cleanUid = userId?.trim();
-  const cleanAuctionId = auctionId?.trim();
-  if (!cleanUid || !cleanAuctionId) {
-    throw new Error('User ID and Auction ID are required to toggle watchlist.');
-  }
-
-  const userRef = doc(db, 'users', cleanUid);
-  const snap = await getDoc(userRef);
-  let currentList: string[] = [];
-
-  if (snap.exists()) {
-    const data = snap.data() as UserProfile;
-    currentList = Array.isArray(data.watchlist) ? data.watchlist : [];
-  }
-
-  const isCurrentlyWatching = currentList.includes(cleanAuctionId);
-  const nextIsWatching = !isCurrentlyWatching;
-
-  if (isCurrentlyWatching) {
-    try {
-      await updateDoc(userRef, {
-        watchlist: arrayRemove(cleanAuctionId)
-      });
-    } catch {
-      await setDoc(userRef, { watchlist: currentList.filter(id => id !== cleanAuctionId) }, { merge: true });
-    }
-
-    try {
-      const bidderRef = doc(db, 'bidders', cleanUid);
-      const bSnap = await getDoc(bidderRef);
-      if (bSnap.exists()) {
-        await updateDoc(bidderRef, { watchlist: arrayRemove(cleanAuctionId) });
-      }
-    } catch {
-      // ignore
-    }
-  } else {
-    try {
-      await updateDoc(userRef, {
-        watchlist: arrayUnion(cleanAuctionId)
-      });
-    } catch {
-      await setDoc(userRef, { watchlist: [...currentList, cleanAuctionId] }, { merge: true });
-    }
-
-    try {
-      const bidderRef = doc(db, 'bidders', cleanUid);
-      const bSnap = await getDoc(bidderRef);
-      if (bSnap.exists()) {
-        await updateDoc(bidderRef, { watchlist: arrayUnion(cleanAuctionId) });
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // Synchronize auction aggregate watchCount
-  try {
-    await toggleWatchAuction(cleanAuctionId, nextIsWatching);
-  } catch (err) {
-    console.warn('Failed to sync auction watchCount:', err);
-  }
-
-  const updatedWatchlist = nextIsWatching
-    ? [...currentList.filter(id => id !== cleanAuctionId), cleanAuctionId]
-    : currentList.filter(id => id !== cleanAuctionId);
-
-  return { isWatching: nextIsWatching, watchlist: updatedWatchlist };
+export async function toggleWatchlistLot(userId: string, auctionId: string): Promise<{ isWatching: boolean; watchlist: string[] }> {
+  if (auth.currentUser?.uid !== userId) throw new Error('Sign in to manage your watchlist.');
+  const profile = await getDoc(doc(db, 'users', userId));
+  const current = profile.data()?.watchlist;
+  return memberAction({ action: 'watch', auctionId, watching: !(Array.isArray(current) && current.includes(auctionId)) });
 }
 
 /**
  * Fetch all saved vehicle auctions in a user's watchlist array.
  */
 export async function fetchUserWatchlist(userId: string): Promise<Auction[]> {
-  const cleanUid = userId?.trim();
-  if (!cleanUid) return [];
-
-  try {
-    const userRef = doc(db, 'users', cleanUid);
-    const snap = await getDoc(userRef);
-    let watchlistIds: string[] = [];
-
-    if (snap.exists()) {
-      const data = snap.data() as UserProfile;
-      watchlistIds = Array.isArray(data.watchlist) ? data.watchlist : [];
-    } else {
-      const bidderRef = doc(db, 'bidders', cleanUid);
-      const bSnap = await getDoc(bidderRef);
-      if (bSnap.exists()) {
-        const bData = bSnap.data() as UserProfile;
-        watchlistIds = Array.isArray(bData.watchlist) ? bData.watchlist : [];
-      }
-    }
-
-    if (!watchlistIds || watchlistIds.length === 0) {
-      return [];
-    }
-
-    const auctionPromises = watchlistIds.map(async (lotId) => {
-      try {
-        const lotRef = doc(db, 'auctions', lotId);
-        const lotSnap = await getDoc(lotRef);
-        if (lotSnap.exists()) {
-          const data = lotSnap.data() as Auction;
-          let heroImgs: string[] = Array.isArray(data.heroImages) ? data.heroImages : [];
-          if (heroImgs.length === 0 && lotId === MAIN_AUCTION_ID) {
-            heroImgs = DEFAULT_MEDIA_CONFIG.heroImages;
-          }
-          const leadHero = data.leadHeroImage || heroImgs[0] || '';
-          return {
-            ...data,
-            id: lotSnap.id,
-            heroImages: heroImgs,
-            leadHeroImage: leadHero
-          } as Auction;
-        }
-      } catch (err) {
-        console.warn(`Failed to fetch watchlisted auction "${lotId}":`, err);
-      }
-      return null;
-    });
-
-    const results = await Promise.all(auctionPromises);
-    return results.filter((a): a is Auction => a !== null);
-  } catch (err) {
-    console.error('Error fetching user watchlist:', err);
-    return [];
-  }
+  if (auth.currentUser?.uid !== userId) return [];
+  const profile = await getDoc(doc(db, 'users', userId));
+  const ids = profile.data()?.watchlist;
+  if (!Array.isArray(ids) || !ids.length) return [];
+  const response = await fetch('/api/public-auctions');
+  if (!response.ok) throw new Error('Unable to load saved vehicles.');
+  const data = await response.json();
+  return (data.auctions as Auction[]).filter(lot => ids.includes(lot.id));
 }
 
 /**
  * Submit Seller Inquiry (Contact Seller)
  */
 export async function submitSellerInquiry(inquiry: {
-  auctionId: string;
-  senderId: string;
-  senderName: string;
-  senderEmail: string;
-  senderPhone?: string;
-  topic: string;
-  message: string;
-  vehicleTitle: string;
-  sellerEmail?: string;
+  auctionId: string; senderId: string; senderName: string; senderEmail: string;
+  senderPhone?: string; topic: string; message: string; vehicleTitle: string; sellerEmail?: string;
 }): Promise<void> {
-  try {
-    const inquiriesCol = collection(db, 'inquiries');
-    await addDoc(inquiriesCol, {
-      auctionId: inquiry.auctionId,
-      senderId: inquiry.senderId,
-      senderName: inquiry.senderName,
-      senderEmail: inquiry.senderEmail,
-      senderPhone: inquiry.senderPhone || '',
-      topic: inquiry.topic,
-      message: inquiry.message,
-      timestamp: Date.now(),
-      status: 'new'
-    });
-  } catch (err) {
-    console.warn('Failed to save inquiry to Firestore:', err);
-  }
-
-  // Dispatch email notification to seller
-  const targetSellerEmail = inquiry.sellerEmail || 'jeremy@theinnovativegroup.ca';
-  await sendSellerInquiryEmail({
-    sellerEmail: targetSellerEmail,
-    senderName: inquiry.senderName,
-    senderEmail: inquiry.senderEmail,
-    senderPhone: inquiry.senderPhone,
-    topic: inquiry.topic,
-    message: inquiry.message,
-    vehicleTitle: inquiry.vehicleTitle
-  }).catch(err => console.warn('Inquiry email notice:', err));
+  await memberAction({ action: 'inquiry', auctionId: inquiry.auctionId, topic: inquiry.topic,
+    message: inquiry.message, senderPhone: inquiry.senderPhone || '', requestId: crypto.randomUUID() });
 }
 
 export const submitInquiry = submitSellerInquiry;
@@ -2794,6 +2325,10 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
  * Persists global branding settings both to Firestore /settings/global and synchronously to localStorage.
  */
 export async function saveGlobalBranding(branding: Partial<GlobalBrandingSettings>): Promise<void> {
+  if ((branding.defaultStartingBid !== undefined && (!Number.isSafeInteger(branding.defaultStartingBid) || branding.defaultStartingBid < 0)) ||
+      (branding.defaultMinIncrement !== undefined && (!Number.isSafeInteger(branding.defaultMinIncrement) || branding.defaultMinIncrement <= 0))) {
+    throw new Error('Use a nonnegative starting bid and a positive minimum increment.');
+  }
   const current = getStoredGlobalBranding();
   const brandingData = {
     siteLogo: branding.siteLogo !== undefined ? branding.siteLogo : current.siteLogo,
@@ -2805,6 +2340,7 @@ export async function saveGlobalBranding(branding: Partial<GlobalBrandingSetting
     updatedAt: Date.now()
   };
 
+  await withTimeout(setDoc(doc(db, 'settings', 'global'), sanitizePayload(brandingData), { merge: true }), 8000);
   try {
     localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify({
       siteLogo: brandingData.siteLogo,
@@ -2815,12 +2351,7 @@ export async function saveGlobalBranding(branding: Partial<GlobalBrandingSetting
     console.warn('Failed to save global branding to localStorage:', err);
   }
 
-  try {
-    const globalRef = doc(db, 'settings', 'global');
-    await withTimeout(setDoc(globalRef, sanitizePayload(brandingData), { merge: true }), 8000);
-  } catch (err) {
-    console.warn('Failed to save global branding to Firestore:', err);
-  }
+
 }
 
 /**
@@ -2829,6 +2360,8 @@ export async function saveGlobalBranding(branding: Partial<GlobalBrandingSetting
 export function subscribeToGlobalBranding(
   callback: (branding: GlobalBrandingSettings | null) => void
 ) {
+  const isAdmin = auth.currentUser?.emailVerified === true && isDesignatedAdminEmail(auth.currentUser.email);
+  if (!isAdmin) return pollPublicAuctions('/api/public-settings', result => callback(result?.branding ?? null));
   const globalRef = doc(db, 'settings', 'global');
   return onSnapshot(globalRef, (snap) => {
     if (snap.exists()) {
@@ -2951,32 +2484,7 @@ export function subscribeToAllBidders(
  * Executes batch deletions across all auctions documents and media/config subcollections.
  */
 export async function purgeAllListings(): Promise<void> {
-  try {
-    const batch = writeBatch(db);
-    
-    // 1. Fetch and purge all auctions
-    const auctionsSnap = await getDocs(collection(db, 'auctions'));
-    auctionsSnap.docs.forEach(d => batch.delete(d.ref));
-    
-    // 2. Fetch and purge all media settings
-    const settingsSnap = await getDocs(collection(db, 'settings'));
-    settingsSnap.docs.forEach(d => batch.delete(d.ref));
-
-    // 3. Purge all media subcollections (recursive)
-    for (const auctionDoc of auctionsSnap.docs) {
-      batch.delete(doc(db, 'auctions', auctionDoc.id, 'media', 'config'));
-      const mediaSubColSnap = await getDocs(collection(db, 'auctions', auctionDoc.id, 'media'));
-      mediaSubColSnap.docs.forEach(d => batch.delete(d.ref));
-    }
-    
-    await batch.commit();
-
-    // 4. Clear localStorage
-    localStorage.clear();
-  } catch (err) {
-    console.error('Error during bulk purge:', err);
-    throw err;
-  }
+  throw new Error('Broad catalog purge is disabled. Use selected-listing deletion in Vehicle Inventory.');
 }
 
 /**
@@ -3272,272 +2780,9 @@ export async function fetchPaginatedConsignments({
  * 3. Seller Listings (Telemetry, Bid count, Draft edit deep links)
  * 4. Consignment Submissions (Status, Converted draft auction ID)
  */
-export async function fetchUserActivitySummary(
-  userId: string,
-  userEmail: string
-): Promise<UserActivitySummary> {
-  const cleanEmail = (userEmail || '').trim().toLowerCase();
-  const summary: UserActivitySummary = {
-    activeBids: [],
-    wonAuctions: [],
-    sellerListings: [],
-    consignments: []
-  };
-
-  if (!userId && !cleanEmail) {
-    return summary;
-  }
-
-  try {
-    // 1. Fetch all auctions to join with bids and seller listings
-    const auctionsSnap = await getDocs(collection(db, 'auctions'));
-    let allAuctions: Auction[] = auctionsSnap.docs.map((d) => {
-      const data = d.data() as Auction;
-      const lotId = d.id;
-      let heroImgs: string[] = Array.isArray(data.heroImages) ? data.heroImages : [];
-      if (heroImgs.length === 0 && lotId === MAIN_AUCTION_ID) {
-        heroImgs = DEFAULT_MEDIA_CONFIG.heroImages;
-      }
-      const leadHero = data.leadHeroImage || heroImgs[0] || '';
-      return {
-        ...data,
-        id: lotId,
-        heroImages: heroImgs,
-        leadHeroImage: leadHero
-      };
-    });
-
-    // If Firestore auctions collection is empty or missing MAIN_AUCTION_ID, add default if it exists
-    if (!allAuctions.some((a) => a.id === MAIN_AUCTION_ID)) {
-      try {
-        const mainDoc = await getDoc(doc(db, 'auctions', MAIN_AUCTION_ID));
-        if (mainDoc.exists()) {
-          const mData = mainDoc.data() as Auction;
-          allAuctions.push({
-            ...mData,
-            id: MAIN_AUCTION_ID,
-            leadHeroImage: mData.leadHeroImage || mData.heroImages?.[0] || DEFAULT_MEDIA_CONFIG.heroImages[0]
-          });
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    const auctionMap = new Map<string, Auction>(allAuctions.map((a) => [a.id, a]));
-
-    // 2. Query user bids across all auctions
-    const userBids: Bid[] = [];
-    if (userId) {
-      try {
-        const bidsSnap = await getDocs(
-          query(collection(db, 'bids'), where('bidderId', '==', userId))
-        );
-        userBids.push(...(bidsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Bid[]));
-      } catch (err) {
-        console.warn('Could not query bids by bidderId:', err);
-      }
-    }
-
-    if (cleanEmail) {
-      try {
-        const bidsByEmailSnap = await getDocs(
-          query(collection(db, 'bids'), where('bidderEmail', '==', cleanEmail))
-        );
-        const existingIds = new Set(userBids.map((b) => b.id));
-        bidsByEmailSnap.docs.forEach((d) => {
-          if (!existingIds.has(d.id)) {
-            userBids.push({ id: d.id, ...d.data() } as Bid);
-            existingIds.add(d.id);
-          }
-        });
-      } catch (err) {
-        console.warn('Could not query bids by bidderEmail:', err);
-      }
-    }
-
-    // Map user bids by auctionId to find highest bid placed by user
-    const userAuctionBids = new Map<string, { maxBid: number; count: number }>();
-    for (const b of userBids) {
-      if (!b.auctionId) continue;
-      const current = userAuctionBids.get(b.auctionId) || { maxBid: 0, count: 0 };
-      userAuctionBids.set(b.auctionId, {
-        maxBid: Math.max(current.maxBid, Number(b.amount) || 0),
-        count: current.count + 1
-      });
-    }
-
-    // Also include any auctions where the user is registered as highBidderId or highBidderEmail
-    for (const auction of allAuctions) {
-      const isHighBidder =
-        (userId && auction.highBidderId === userId) ||
-        (cleanEmail && auction.highBidderEmail?.toLowerCase() === cleanEmail);
-      if (isHighBidder && !userAuctionBids.has(auction.id)) {
-        userAuctionBids.set(auction.id, {
-          maxBid: auction.currentBid || auction.startingBid || 0,
-          count: 1
-        });
-      }
-    }
-
-    const now = Date.now();
-
-    // 3. Process Active Bids & Won Auctions
-    for (const [auctionId, bidInfo] of userAuctionBids.entries()) {
-      const auction = auctionMap.get(auctionId);
-      if (!auction) continue;
-
-      // Automated Clock Safeguard: Draft and Pending Review lots bypass active countdown/bidding evaluations
-      if (auction.status === 'draft' || auction.status === 'pending_review') {
-        continue;
-      }
-
-      const isEnded =
-        auction.status === 'ended' ||
-        auction.status === 'sold' ||
-        (auction.endTime > 0 && now >= auction.endTime);
-
-      const isWinningBidder =
-        (userId && auction.highBidderId === userId) ||
-        (cleanEmail && auction.highBidderEmail?.toLowerCase() === cleanEmail);
-
-      const isReserveSatisfied =
-        auction.isReserveMet ||
-        (auction.reserveAmount ? auction.currentBid >= auction.reserveAmount : true);
-
-      if (isEnded) {
-        // Check if Won Auction (holds winning bid and reserve met or sold)
-        if (isWinningBidder && (isReserveSatisfied || auction.status === 'sold')) {
-          summary.wonAuctions.push({
-            auctionId: auction.id,
-            auctionTitle: auction.title || 'Collector Vehicle Lot',
-            auctionHeroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
-            winningBid: auction.currentBid || bidInfo.maxBid || 0,
-            currency: auction.currency || 'CAD',
-            endTime: auction.endTime || now,
-            sellerName: auction.sellerName || 'Verified Consignor',
-            sellerEmail: auction.sellerEmail || '',
-            sellerPhone: auction.sellerPhone || '',
-            location:
-              [auction.locationCity, auction.locationProvince, auction.locationCountry]
-                .filter(Boolean)
-                .join(', ') ||
-              auction.location ||
-              'Canada',
-            vin: auction.vin || ''
-          });
-        }
-      } else {
-        // Active auction bid
-        const isLeading =
-          isWinningBidder ||
-          (auction.currentBid > 0 && bidInfo.maxBid >= auction.currentBid);
-
-        summary.activeBids.push({
-          auctionId: auction.id,
-          auctionTitle: auction.title || 'Collector Vehicle Lot',
-          auctionHeroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
-          currentHighBid: auction.currentBid || auction.startingBid || 0,
-          userHighestBid: bidInfo.maxBid,
-          status: isLeading ? 'LEADING' : 'OUTBID',
-          endTime: auction.endTime || (now + 7 * 24 * 60 * 60 * 1000),
-          bidCount: auction.bidCount || 0,
-          currency: auction.currency || 'CAD',
-          isReserveMet: auction.isReserveMet
-        });
-      }
-    }
-
-    // Sort active bids by urgency (endTime ascending)
-    summary.activeBids.sort((a, b) => a.endTime - b.endTime);
-    // Sort won auctions by recent completion (endTime descending)
-    summary.wonAuctions.sort((a, b) => b.endTime - a.endTime);
-
-    // 4. Query Seller Listings
-    for (const auction of allAuctions) {
-      const isOwner = Boolean(userId) && auction.sellerId === userId;
-
-      if (isOwner) {
-        summary.sellerListings.push({
-          auctionId: auction.id,
-          title: auction.title || 'Untitled Listing',
-          heroImage: auction.leadHeroImage || auction.heroImages?.[0] || '',
-          status: auction.status || 'preview',
-          currentBid: auction.currentBid || auction.startingBid || 0,
-          bidCount: auction.bidCount || 0,
-          currency: auction.currency || 'CAD',
-          draftEditUrl: `/dashboard/listings/${auction.id}/edit`,
-          endTime: auction.endTime || now,
-          startTime: auction.startTime
-        });
-      }
-    }
-    // Sort seller listings by start/end time descending
-    summary.sellerListings.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
-
-    // 5. Query Consignment Submissions (Scoped to normalized applicant email)
-    const consignmentsList: ConsignmentApplication[] = [];
-    if (cleanEmail) {
-      try {
-        const qEmail = query(
-          collection(db, 'consignment_applications'),
-          where('sellerEmail', '==', cleanEmail)
-        );
-        const snapEmail = await getDocs(qEmail);
-        snapEmail.docs.forEach((d) => {
-          consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
-        });
-      } catch (err) {
-        console.warn('Error querying consignment_applications by sellerEmail:', err);
-      }
-
-      // Fallback to legacy 'consignments' collection if empty, using email-scoped query
-      if (consignmentsList.length === 0) {
-        try {
-          const legacyQ = query(
-            collection(db, 'consignments'),
-            where('sellerEmail', '==', cleanEmail)
-          );
-          const legacySnap = await getDocs(legacyQ);
-          legacySnap.docs.forEach((d) => {
-            consignmentsList.push({ id: d.id, ...d.data() } as ConsignmentApplication);
-          });
-        } catch (legacyErr) {
-          console.warn('Error querying legacy consignments by sellerEmail:', legacyErr);
-        }
-      }
-    }
-
-    summary.consignments = consignmentsList.map((c) => {
-      let normalizedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEWED' | string = 'PENDING';
-      const rawStatus = (c.status || 'pending').toLowerCase();
-      if (rawStatus === 'approved') normalizedStatus = 'APPROVED';
-      else if (rawStatus === 'rejected' || rawStatus === 'declined') normalizedStatus = 'REJECTED';
-      else if (rawStatus === 'reviewed') normalizedStatus = 'REVIEWED';
-      else normalizedStatus = 'PENDING';
-
-      return {
-        id: c.id || '',
-        year: c.year,
-        make: c.make,
-        model: c.model,
-        generation: c.generation,
-        submittedAt: c.submittedAt || now,
-        status: normalizedStatus,
-        convertedAuctionId: c.convertedAuctionId,
-        reserveExpectation: c.reserveExpectation,
-        location:
-          [c.locationCity, c.locationProvince, c.locationCountry].filter(Boolean).join(', ') ||
-          c.location
-      };
-    });
-
-    summary.consignments.sort((a, b) => b.submittedAt - a.submittedAt);
-  } catch (err) {
-    console.error('Error executing fetchUserActivitySummary:', err);
-  }
-
-  return summary;
+export async function fetchUserActivitySummary(userId: string, _userEmail: string): Promise<UserActivitySummary> {
+  if (auth.currentUser?.uid !== userId) throw new Error('Sign in to view your activity.');
+  return memberAction({ action: 'activity' });
 }
 
 export const DEFAULT_PROMO_SETTINGS: PlatformPromoSettings = {
@@ -3718,27 +2963,10 @@ export async function savePromoSettings(settings: PlatformPromoSettings): Promis
 }
 
 /**
- * Uses Firestore increment(1) to update atomic click counters in decoupled 'promo_analytics' collection.
- * Isolated in non-blocking try/catch logic to ensure telemetry failures never degrade user navigation.
+ * Client-written promotion counters are disabled under the candidate rules.
  */
-export async function recordPromoClick(promoId: string, isBanner?: boolean): Promise<void> {
-  try {
-    const targetId = promoId || (isBanner ? 'lot_header_banner' : '');
-    if (!targetId) return;
-
-    const analyticsRef = doc(db, 'promo_analytics', targetId);
-    await setDoc(
-      analyticsRef,
-      {
-        clickCount: increment(1),
-        lastClickedAt: serverTimestamp()
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    // Silently swallow telemetry error to guarantee uninterrupted guest navigation
-    console.warn('Silent promo telemetry failover:', err);
-  }
+export async function recordPromoClick(_promoId: string, _isBanner?: boolean): Promise<void> {
+  // Client-written promotion telemetry is disabled under the candidate rules.
 }
 
 /**

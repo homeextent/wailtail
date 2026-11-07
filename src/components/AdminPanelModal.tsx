@@ -244,11 +244,11 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [mainView, setMainView] = useState<'inventory' | 'bids' | 'bidders' | 'winner' | 'branding' | 'editor' | 'consignments'>('inventory');
   const [bidders, setBidders] = useState<UserProfile[]>([]);
   const [consignments, setConsignments] = useState<ConsignmentApplication[]>([]);
-  
+
   const { user: authUser, userProfile: authUserProfile } = useAuth();
   const [moderatingBidderId, setModeratingBidderId] = useState<string | null>(null);
   const [convertingConsignmentId, setConvertingConsignmentId] = useState<string | null>(null);
-  
+
   // Inventory Management State
   const [inventory, setInventory] = useState<Auction[]>(allAuctions || [auction]);
   const [inventorySearch, setInventorySearch] = useState<string>('');
@@ -272,7 +272,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     });
     return () => unsub();
   }, []);
-  
+
   // Section Scroll Anchor Tracker
   const [activeSectionAnchor, setActiveSectionAnchor] = useState('sec-specs');
 
@@ -691,7 +691,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Media state
   const [heroImages, setHeroImages] = useState<string[]>(mediaConfig.heroImages || []);
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>(mediaConfig.fullGallery || []);
-  
+
   // Image picker modal state
   const [pickerTarget, setPickerTarget] = useState<{
     type: 'overview' | 'showcase' | 'hero' | 'gallery';
@@ -1042,7 +1042,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       const meta = await fetchYouTubeMetadata(targetChapter.videoUrl);
       // Deep clone array of objects to guarantee isolation across video items
       const copy = videoChapters.map(c => ({ ...c }));
-      
+
       // Auto-populate title if empty or placeholder
       if (
         !copy[index].title || 
@@ -3044,7 +3044,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             No Image
                           </div>
                         )}
-                        
+
                         {/* Always visible position badge */}
                         <div className="absolute top-1 left-1 z-10 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-xs text-[10px] font-mono font-bold text-white shadow-xs">
                           #{hIdx + 1}
@@ -4333,9 +4333,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
                           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
                             {!isConverted ? (
-                              <button
+                              <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                                 type="button"
-                                disabled={convertingConsignmentId === app.id || isConverted}
+
                                 onClick={handleConvert}
                                 className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               >
@@ -4569,7 +4569,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <button
+                  <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                     type="button"
                     onClick={async () => {
                       if (confirm('Permanently purge all catalog listings, media configurations, and local cache? This cannot be undone.')) {

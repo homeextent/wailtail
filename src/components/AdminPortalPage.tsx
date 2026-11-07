@@ -36,6 +36,7 @@ import {
   purgeAllListings,
   updateAuctionConfig,
   saveGlobalBranding,
+  subscribeToGlobalBranding,
   getStoredGlobalBranding,
   compressImageDataUrl,
   uploadImageToStorage,
@@ -981,6 +982,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const [defaultStartingBid, setDefaultStartingBid] = useState<number>(auction.startingBid || 1000);
   const [defaultMinIncrement, setDefaultMinIncrement] = useState<number>(auction.minimumIncrement || 250);
   const [savingBranding, setSavingBranding] = useState<boolean>(false);
+  useEffect(() => subscribeToGlobalBranding(data => {
+    if (!data) return;
+    if (typeof data.siteLogo === 'string') setSiteLogo(data.siteLogo);
+    if (typeof data.siteName === 'string') setSiteName(data.siteName);
+    if (typeof data.siteTagline === 'string') setSiteTagline(data.siteTagline);
+    if (Number.isSafeInteger(data.defaultStartingBid)) setDefaultStartingBid(data.defaultStartingBid!);
+    if (Number.isSafeInteger(data.defaultMinIncrement)) setDefaultMinIncrement(data.defaultMinIncrement!);
+  }), []);
+
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1016,7 +1026,6 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const handleSaveGlobalSettings = async () => {
     setSavingBranding(true);
     try {
-      const targetAuctionId = auction.id?.trim() || MAIN_AUCTION_ID;
       await saveGlobalBranding({
         siteLogo,
         siteName,
@@ -1025,23 +1034,6 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         defaultMinIncrement: Number(defaultMinIncrement),
         currency: 'CAD'
       });
-
-      await updateAuctionConfig(targetAuctionId, {
-        siteLogo,
-        siteName,
-        siteTagline,
-        startingBid: Number(defaultStartingBid),
-        minimumIncrement: Number(defaultMinIncrement),
-        currency: 'CAD'
-      });
-
-      const updatedMedia: MediaConfiguration = {
-        ...mediaConfig,
-        siteLogo,
-        siteName,
-        siteTagline
-      };
-      await onUpdateMediaConfig(updatedMedia);
 
       showToast('Branding identity and CAD defaults saved successfully across the platform!');
     } catch (err: any) {
@@ -2302,7 +2294,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 <span>→</span>
                               </button>
                             ) : (
-                              <button
+                              <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                                 type="button"
                                 onClick={() => setConfirmApproveApp(app)}
                                 className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
@@ -2342,10 +2334,10 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                         ) : (
                           /* PENDING */
                           <div className="flex items-center gap-2">
-                            <button
+                            <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                               type="button"
                               onClick={() => setConfirmApproveApp(app)}
-                              disabled={convertingId === app.id}
+
                               className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                             >
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -3271,7 +3263,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     Purge all auction documents and restore clean baseline state
                   </p>
                 </div>
-                <button
+                <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                   type="button"
                   onClick={async () => {
                     if (confirm('Permanently purge all catalog listings, media configurations, and local cache? This cannot be undone.')) {
@@ -4249,14 +4241,14 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               >
                 Cancel
               </button>
-              <button
+              <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                 type="button"
                 onClick={async () => {
                   const target = confirmApproveApp;
                   setConfirmApproveApp(null);
                   await handleConvertConsignment(target);
                 }}
-                disabled={convertingId === confirmApproveApp.id}
+
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />

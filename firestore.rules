@@ -63,6 +63,7 @@ service cloud.firestore {
       allow create: if isAdmin() || (
         isOwner(userId) &&
         (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
@@ -72,6 +73,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isOwner(userId) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
           'role',
           'dealerId',
           'isBanned',
@@ -91,6 +93,7 @@ service cloud.firestore {
       allow create: if isAdmin() || (
         isOwner(bidderId) &&
         (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
@@ -100,6 +103,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isOwner(bidderId) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
           'role',
           'dealerId',
           'isBanned',

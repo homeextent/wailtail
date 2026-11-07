@@ -2,6 +2,8 @@
 
 ## Auction security implementation review
 
+The staging compatibility audit is implemented in this PR. Watchlists, member activity and private inquiries use authenticated server operations. Public branding exposes three approved display fields; platform image uploads use the trusted administrator uploader. Designated administrators retain member moderation and global/promotion configuration under candidate rules. Broad catalog purge, legacy bidder purge, one-click consignment conversion and client promotion counters are explicitly disabled. Create drafts and delete selected listings through Vehicle Inventory instead. See [Stage 3 staging acceptance](docs/stage3-staging-acceptance.md) for the release boundary and coverage.
+
 PR #3 on `security/auction-security-gate` introduces trusted seller editing, public field projections, bidding, administrator inventory and gallery operations, comment authorization, bid retraction, scoped bid reset, draft duplication, and transactional settlement. Review and staging acceptance are pending. Production release and Firebase rules publication are separate decisions.
 
 Deployment uses one Vercel Function, `api/router.ts`, to stay within the Hobby plan function limit. Handler implementations and shared server helpers live in `server/api/`. `vercel.json` preserves existing `/api/<endpoint>` URLs through an explicit allowlist router, ahead of the SPA fallback. New endpoint implementations belong in `server/api/` and must be added to the router. Each handler retains its own method and authorization checks. Server imports use explicit `.js` extensions for native Node ESM. Endpoint tests also compile and load every handler in native Node, without the development loader.

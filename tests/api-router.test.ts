@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import router from '../api/router';
+import { projectPublicBranding } from '../server/api/public-settings';
 
 function response() {
   return {
@@ -38,7 +39,7 @@ test('router rejects unknown, nested, prototype and ambiguous endpoint names', a
 
 test('every deployed handler remains reachable and retains its method guard', async () => {
   const names = readdirSync(new URL('../server/api/', import.meta.url)).filter(name => name.endsWith('.ts'));
-  assert.equal(names.length, 28);
+  assert.equal(names.length, 30);
   for (const name of names) {
     const res = response();
     await router({ method: 'DELETE', query: { __endpoint: name.slice(0, -3) }, headers: {} }, res);
@@ -47,7 +48,7 @@ test('every deployed handler remains reachable and retains its method guard', as
 });
 
 test('routed administrator and seller mutations still require credentials', async () => {
-  for (const endpoint of ['admin-create-auction', 'admin-delete-auction', 'admin-duplicate-auction',
+  for (const endpoint of ['auction-member-actions', 'admin-create-auction', 'admin-delete-auction', 'admin-duplicate-auction',
     'admin-reset-auction-bids', 'admin-update-auction', 'seller-draft-narrative', 'place-auction-bid', 'auction-comments']) {
     const res = response();
     await router({ method: 'POST', query: { __endpoint: endpoint }, headers: {}, body: {} }, res);
@@ -77,4 +78,11 @@ test('routed workers retain scheduler authorization', async () => {
     if (previous === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = previous;
   }
+});
+
+
+test('public branding excludes administrative and financial settings', () => {
+  assert.deepEqual(projectPublicBranding({ siteName: 'Wailtail', siteTagline: 'Collector cars',
+    siteLogo: 'https://example.test/logo.png', defaultStartingBid: 5000, privateAdminEmail: 'private@example.test',
+    secret: 'private' }), { siteName: 'Wailtail', siteTagline: 'Collector cars', siteLogo: 'https://example.test/logo.png' });
 });

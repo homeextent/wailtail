@@ -29,10 +29,12 @@ export default function handler(req: any, res: any) {
       return res.status(422).json({ error: 'Invalid or oversized image.' });
     }
 
-    const listing = await firestore.collection('auctions').doc(auctionId).get();
-    if (!listing.exists) return res.status(404).json({ error: 'Listing not found.' });
-    if (!publicStatuses.has(listing.get('status'))) {
-      return res.status(409).json({ error: 'Public image upload requires a published listing.' });
+    if (auctionId !== 'common') {
+      const listing = await firestore.collection('auctions').doc(auctionId).get();
+      if (!listing.exists) return res.status(404).json({ error: 'Listing not found.' });
+      if (!publicStatuses.has(listing.get('status'))) {
+        return res.status(409).json({ error: 'Public image upload requires a published listing.' });
+      }
     }
     const bucket = process.env.FIREBASE_STORAGE_BUCKET?.trim();
     if (!bucket) return res.status(503).json({ error: 'Auction storage is unavailable.' });

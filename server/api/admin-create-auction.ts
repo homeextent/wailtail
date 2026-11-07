@@ -14,13 +14,16 @@ export default function handler(req: any, res: any) {
     const title = input.title.trim() || 'New Vehicle Listing';
     const id = firestore.collection('auctions').doc().id;
     const now = Date.now();
+    const defaults = (await firestore.collection('settings').doc('global').get()).data() ?? {};
+    const startingBid = Number.isSafeInteger(defaults.defaultStartingBid) && defaults.defaultStartingBid >= 0 ? defaults.defaultStartingBid : 1000;
+    const minimumIncrement = Number.isSafeInteger(defaults.defaultMinIncrement) && defaults.defaultMinIncrement > 0 ? defaults.defaultMinIncrement : 250;
     const auction = {
       id, title, subtitle: '', headline: '', make: '', model: '', year: '', vin: '',
       mileage: '', distanceUnit: 'km', leadHeroImage: '', heroImages: [],
       highlightsBadge: '', hagertyValuationUrl: '', watchCount: 0, location: '',
       sellerName: '', engine: '', drivetrain: '', exteriorColor: '', interior: '',
       titleStatus: '', currency: 'CAD', startTime: now, endTime: now + 604800000,
-      startingBid: 1000, minimumIncrement: 250, currentBid: 1000, reserveAmount: 0,
+      startingBid, minimumIncrement, currentBid: 0, reserveAmount: 0,
       isReserveMet: true, bidCount: 0, highBidderId: '', highBidderName: '',
       highBidderEmail: '', status: 'draft', createdAt: now, updatedAt: now
     };

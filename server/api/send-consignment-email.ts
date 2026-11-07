@@ -1,3 +1,5 @@
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 /**
  * Vercel Serverless Function: /api/send-consignment-email
  * Proxies new consignment applications, consignment receipts,
@@ -1278,6 +1280,17 @@ export default async function handler(req: any, res: any) {
   try {
     const payload = await parseRequestBody(req);
     const type = payload?.type || 'consignment';
+    if (['inquiry', 'outbid_notification', 'winning_bid_confirmation'].includes(type)) {
+      return sendJson(res, 410, { success: false, error: 'Use the trusted auction operation.' });
+    }
+    if (['consignment_approved', 'consignment_rejected', 'listing_submitted_for_review', 'listing_approved', 'listing_revision_requested'].includes(type)) {
+      const bearer = typeof req.headers?.authorization === 'string' ? /^Bearer ([^\s]+)$/i.exec(req.headers.authorization) : null;
+      if (!bearer) return sendJson(res, 401, { success: false, error: 'Sign in as an administrator.' });
+      const token = await getFirebaseAdminServices().auth.verifyIdToken(bearer[1], true).catch(() => null);
+      if (!token || token.email_verified !== true || !isDesignatedAdminEmail(token.email)) {
+        return sendJson(res, 403, { success: false, error: 'Administrator access required.' });
+      }
+    }
 
     const adminEmail =
       process.env.ADMIN_NOTIFICATION_EMAIL ||

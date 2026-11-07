@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security — Auction Security Gate (implementation review)
 
+- Finished the staging legacy-path compatibility implementation: trusted watchlists and bounded own-account activity, atomic private inquiries with server-derived identity and recipients, public branding projection, trusted platform uploads and administrator-scoped legacy notifications. Branding failures now propagate and global settings no longer mutate the selected auction. New drafts read validated CAD defaults.
+- Explicitly disabled broad catalog purge, legacy bidder purge, one-click consignment conversion and client-written promotion counters. Inventory draft creation, selected-listing deletion, member moderation and audited bid retraction remain available.
+- Expanded acceptance coverage for member privacy, watch retry safety, inquiry persistence/notifications, branding, promotions, member permissions, gallery order, showcase/video continuity and browser controls with reload persistence. Staging merge acceptance uses required CI and preview checks on the exact PR head; production Storage and rules changes remain separate.
+
 - Fixed native Node ESM module resolution in the consolidated API after preview runtime logs exposed extensionless import failures. Added a regression test that compiles and loads all 28 handlers with native Node rather than the development TypeScript loader.
 
 - Consolidated 28 API handlers behind one allowlisted Vercel Function to resolve the Hobby plan deployment rejection. Existing API URLs and per-handler authorization remain in place. Handler source moved to `server/api/`; browser integration uses the same router. Added focused routing, method, credential, scheduler and deployment-layout regression coverage.
@@ -19,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Added audited bid retraction, draft duplication from saved source data and a selected-auction bid reset that preserves unrelated auctions and ordinary comments. Removed client fallback that reported successful duplication after a failed save.
 - Moved start, expiry and settlement decisions to server time. Added a bearer-protected worker for unattended transitions and a private notification outbox with Resend dispatch, stable idempotency keys and reconciliation for expired retry windows. Scheduler activation and real email delivery remain deployment acceptance items.
 - CI run 42382737880 passed at `36d539d`, covering build, lint, 97 endpoint tests, 133 rules tests, integrated auction workflows and headless Chrome. Routing consolidation requires fresh head-revision CI and a successful Vercel preview. Notification tests use mocked provider responses and simulate both provider failure and failure after provider acceptance.
-- PR #3 remains under review for staging. Remaining direct-client workflows require compatibility checks before full-site release acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
+- PR #3 remains under review for staging. The staging legacy compatibility audit is documented in `docs/stage3-staging-acceptance.md`; deliberately disabled actions are excluded from staging acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
 
 ### Security — Server-Authorized Administrator Account Deletion (Staging)
 
