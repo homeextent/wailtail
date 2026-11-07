@@ -1,3 +1,4 @@
+import updateAuction from '../api/admin-update-auction';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
@@ -319,6 +320,13 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal(created.status, 201);
         const { auction: createdAuction } = created.payload as { auction: { id: string; status: string } };
         assert.equal(createdAuction.status, 'draft');
+        const edit = { auctionId: createdAuction.id, updates: { title: 'Edited inventory draft' } };
+        assert.equal((await invoke(updateAuction, edit, other.idToken)).status, 403);
+        assert.equal((await invoke(updateAuction, { ...edit, updates: { sellerId: other.uid } }, admin.idToken)).status, 422);
+        assert.equal((await invoke(updateAuction, edit, admin.idToken)).status, 200);
+        const edited = await firestore.collection('auctions').doc(createdAuction.id).get();
+        assert.equal(edited.get('title'), 'Edited inventory draft');
+        assert.equal(edited.get('sellerId'), undefined);
         assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, true);
         assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: createdAuction.id })).status, 404);
       }
