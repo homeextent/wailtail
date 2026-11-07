@@ -44,6 +44,13 @@ await firestore.collection('auctions').doc(auctionId).set({
   sellerId: uid, status: 'draft', title: 'Synthetic browser listing', make: 'Test', model: 'Fixture', year: 2000
 });
 
+// Oversized fixture exercises the real administrator error toast without deletion.
+const oversizedBatch = firestore.batch();
+for (let index = 0; index < 401; index++) {
+  oversizedBatch.set(firestore.collection('auctions').doc(auctionId).collection('bids').doc(String(index)), { amount: 1000 });
+}
+await oversizedBatch.commit();
+
 await firestore.collection('settings').doc(`media-${auctionId}`).set({
   showcaseChapters: [{ id: 'overview-fixture', title: 'Exterior Highlights', category: 'EXTERIOR',
     subtitle: 'Original subtitle', narrative: 'Original chapter narrative', specCards: [] },

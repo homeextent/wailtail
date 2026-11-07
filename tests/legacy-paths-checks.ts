@@ -1,3 +1,4 @@
+import deleteAuction from '../server/api/admin-delete-auction';
 import resetBids from '../server/api/admin-reset-auction-bids';
 import createAuction from '../server/api/admin-create-auction';
 import assert from 'node:assert/strict';
@@ -110,6 +111,24 @@ export async function checkLegacyPaths({ firestore, owner, other, admin, run, in
   await firestore.collection('auctions').doc(created.payload.auction.id).update({ isReserveMet: false });
   assert.equal((await invoke(resetBids, { auctionId: created.payload.auction.id }, admin.idToken)).status, 200);
   assert.equal((await firestore.collection('auctions').doc(created.payload.auction.id).get()).get('isReserveMet'), true);
+  const oversizedId = `oversized-${run}`;
+  const oversized = firestore.collection('auctions').doc(oversizedId);
+  await oversized.set({ status: 'draft', currentBid: 1200, bidCount: 401 });
+  const batch = firestore.batch();
+  for (let index = 0; index < 401; index++) {
+    batch.set(oversized.collection('bids').doc(String(index)), { amount: 1200, auctionId: oversizedId });
+  }
+  await batch.commit();
+  const beforeOversized = (await oversized.get()).data();
+  const resetTooLarge = await invoke(resetBids, { auctionId: oversizedId }, admin.idToken);
+  assert.equal(resetTooLarge.status, 409);
+  assert.match(resetTooLarge.payload.error, /separate large-record cleanup/);
+  const deleteTooLarge = await invoke(deleteAuction, { auctionId: oversizedId, cascadeDeleteConsignment: false }, admin.idToken);
+  assert.equal(deleteTooLarge.status, 409);
+  assert.match(deleteTooLarge.payload.error, /separate large-record cleanup/);
+  assert.deepEqual((await oversized.get()).data(), beforeOversized);
+  assert.equal((await oversized.collection('bids').get()).size, 401, 'Oversized operations must make no partial writes');
+
   const image = { auctionId: 'common', dataUrl: `data:image/jpeg;base64,${Buffer.from([255,216,255,224,255,217]).toString('base64')}` };
   assert.equal((await invoke(uploadImage, image, other.idToken)).status, 403);
   const uploaded = await invoke(uploadImage, image, admin.idToken);

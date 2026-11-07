@@ -571,11 +571,20 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
       assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
       const first = deliveryRequests[0];
       assert.ok(first);
-      const pendingNotification = await firestore.collection('auctionNotificationOutbox').where('status', '==', 'queued').get();
+      const pendingNotification = await firestore.collection('auctionNotificationOutbox').where('status', '==', 'retrying').get();
       assert.equal(pendingNotification.size, 1);
+      const retryRecord = pendingNotification.docs[0].ref;
+      const firstRetry = (await retryRecord.get()).data();
+      assert.equal(firstRetry.attempts, 1);
+      assert.ok(firstRetry.nextAttemptAt - firstRetry.lastAttemptAt >= 60_000);
+      assert.ok(firstRetry.nextAttemptAt - firstRetry.lastAttemptAt < 65_000);
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 200);
+      assert.equal(deliveryRequests.filter(request => request.key === first.key).length, 1, 'Backoff must suppress early retry');
+      await retryRecord.update({ nextAttemptAt: 1 });
+      const beforeLostAck = deliveryRequests.length;
       let loseAcknowledgement = true;
       firestore.runTransaction = async (...args: Parameters<typeof originalRunTransaction>) => {
-        if (loseAcknowledgement) {
+        if (loseAcknowledgement && deliveryRequests.length > beforeLostAck) {
           loseAcknowledgement = false;
           throw new Error('Synthetic failure after provider acceptance');
         }
@@ -583,6 +592,11 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
       };
       assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
       firestore.runTransaction = originalRunTransaction;
+      const secondRetry = (await retryRecord.get()).data();
+      assert.equal(secondRetry.attempts, 2);
+      assert.ok(secondRetry.nextAttemptAt - secondRetry.lastAttemptAt >= 120_000);
+      assert.ok(secondRetry.nextAttemptAt - secondRetry.lastAttemptAt < 125_000);
+      await retryRecord.update({ nextAttemptAt: 1 });
       assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 200);
       const retries = deliveryRequests.filter(request => request.key === first.key);
       assert.equal(retries.length, 3);
@@ -592,11 +606,35 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
       const requestsAfterAcceptance = deliveryRequests.length;
       assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 200);
       assert.equal(deliveryRequests.length, requestsAfterAcceptance);
+      const baseRecord = { ...pendingNotification.docs[0].data(), status: 'queued', attempts: 0, nextAttemptAt: null, createdAt: Date.now() - 2 * 3600000 };
+      const delayed = firestore.collection('auctionNotificationOutbox').doc(`delayed-${run}`);
+      await delayed.set(baseRecord);
+      await Promise.all([invoke(dispatchAuctionNotifications, {}, secret, 'GET'), invoke(dispatchAuctionNotifications, {}, secret, 'GET')]);
+      assert.equal((await delayed.get()).get('status'), 'accepted', 'An outage beyond one hour must remain recoverable');
+      assert.equal(deliveryRequests.filter(request => request.key.endsWith(delayed.id)).length, 1, 'Concurrent workers share a claim');
+      const afterDelayed = deliveryRequests.length;
       const oldNotification = firestore.collection('auctionNotificationOutbox').doc(`expired-${run}`);
-      await oldNotification.set({ ...pendingNotification.docs[0].data(), status: 'queued', createdAt: Date.now() - 3600001 });
+      await oldNotification.set({ ...baseRecord, createdAt: Date.now() - 23 * 3600000 });
+      const exhausted = firestore.collection('auctionNotificationOutbox').doc(`exhausted-${run}`);
+      await exhausted.set({ ...baseRecord, attempts: 24 });
       assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
       assert.equal((await oldNotification.get()).get('status'), 'reconciliation_required');
-      assert.equal(deliveryRequests.length, requestsAfterAcceptance);
+      assert.equal((await exhausted.get()).get('status'), 'reconciliation_required');
+      assert.equal(deliveryRequests.length, afterDelayed);
+      const finalAttempt = firestore.collection('auctionNotificationOutbox').doc(`final-attempt-${run}`);
+      await finalAttempt.set({ ...baseRecord, attempts: 23 });
+      failNextDelivery = true;
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
+      assert.equal((await finalAttempt.get()).get('attempts'), 24);
+      assert.equal((await finalAttempt.get()).get('status'), 'reconciliation_required');
+      // A worker killed after claiming leaves a lease, not a permanently stuck item.
+      const abandoned = firestore.collection('auctionNotificationOutbox').doc(`lease-${run}`);
+      await abandoned.set({ ...baseRecord, status: 'retrying', attempts: 1, nextAttemptAt: Date.now() + 120000 });
+      await invoke(dispatchAuctionNotifications, {}, secret, 'GET');
+      assert.equal((await abandoned.get()).get('status'), 'retrying');
+      await abandoned.update({ nextAttemptAt: 1 });
+      await invoke(dispatchAuctionNotifications, {}, secret, 'GET');
+      assert.equal((await abandoned.get()).get('status'), 'accepted');
     } finally {
       globalThis.fetch = originalFetch;
       firestore.runTransaction = originalRunTransaction;

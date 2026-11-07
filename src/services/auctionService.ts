@@ -1,3 +1,4 @@
+import { startVisiblePolling } from './visiblePolling';
 import { isDesignatedAdminEmail } from '../config/adminConfig';
 import {
   doc,
@@ -471,41 +472,32 @@ function pollPublicAuctions(
   url: string,
   callback: (result: PublicAuctionResponse | null) => void
 ) {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let received = false;
-
-  const poll = async () => {
+  return startVisiblePolling(async signal => {
     try {
       const user = url.includes('?auctionId=') ? auth.currentUser : null;
       const token = user ? await user.getIdToken() : null;
+      if (signal.aborted) return;
       const response = await fetch(url, {
-        signal: controller.signal,
+        signal,
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
+      if (signal.aborted) return;
       if (response.status === 404) {
         callback(null);
       } else {
         if (!response.ok) throw new Error(`Public auction request failed: ${response.status}`);
         const result = await response.json();
-        if (!controller.signal.aborted) callback(result);
+        if (!signal.aborted) callback(result);
       }
       received = true;
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (!signal.aborted) {
         console.error('Public auction request failed:', error);
         if (!received) callback(null);
       }
-    } finally {
-      if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
     }
-  };
-
-  void poll();
-  return () => {
-    controller.abort();
-    clearTimeout(timer);
-  };
+  }, url.includes('?auctionId=') ? 5000 : 30_000);
 }
 
 export function subscribeToAllAuctions(

@@ -99,6 +99,33 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     assert.equal(selected.result?.value, true, 'Inventory tab must be selectable');
     await eventually(text, value => value.includes('Synthetic browser listing'), 'administrator inventory');
+    const oversizedDelete = await command('Runtime.evaluate', {
+      expression: `(() => {
+        const row = Array.from(document.querySelectorAll('tr')).find(row => row.textContent?.includes('Synthetic browser listing'));
+        const button = row?.querySelector('button[title="Delete Lot"]');
+        if (!button) return false; button.click(); return true;
+      })()`, returnByValue: true
+    });
+    assert.equal(oversizedDelete.result?.value, true);
+    await eventually(text, value => value.includes('Yes, Delete Lot'), 'delete confirmation');
+    await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Yes, Delete Lot')).click()` });
+    await eventually(text, value => value.includes('Failed to delete lot: Listing requires a separate large-record cleanup.'), 'oversized deletion error toast');
+    assert.ok((await text()).includes('Synthetic browser listing'), 'Rejected deletion must retain the listing');
+    // Service entry points must also reject retired actions before network writes.
+    const retired = await command('Runtime.evaluate', {
+      expression: `(async () => {
+        const service = await import('/src/services/auctionService.ts');
+        const messages = [];
+        for (const name of ['purgeAllListings', 'banOrRemoveBidder', 'convertConsignmentToDraftListing']) {
+          if (typeof service[name] !== 'function') continue;
+          try { await service[name](); messages.push('unexpected-success'); }
+          catch (error) { messages.push(error.message); }
+        }
+        return messages;
+      })()`, awaitPromise: true, returnByValue: true
+    });
+    assert.equal(retired.result?.value.length, 3);
+    assert.ok(retired.result.value.every((message: string) => message.includes('disabled')));
     // Use real controls for member actions and check persisted emulator state.
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
     await eventually(text, value => value.includes('Synthetic public description'), 'authenticated public lot');

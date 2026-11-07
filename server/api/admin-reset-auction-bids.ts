@@ -25,7 +25,7 @@ export default function handler(req: any, res: any) {
       for (const query of queries) {
         const snapshot = await tx.get(query.limit(MAX_RECORDS));
         refs.push(...snapshot.docs.map(doc => doc.ref));
-        if (refs.length + 1 > MAX_RECORDS) return 409;
+        if (refs.length + 1 > MAX_RECORDS) return 413;
       }
       for (const ref of refs) tx.delete(ref);
       tx.update(auction, {
@@ -35,6 +35,7 @@ export default function handler(req: any, res: any) {
       });
       return 200;
     });
+    if (status === 413) return res.status(409).json({ error: 'Auction has too many related records for a single reset. A separate large-record cleanup is required; no changes were made.' });
     if (status !== 200) return res.status(status).json({ error: 'Auction reset requires review.' });
     return res.status(200).json({ success: true });
   });
