@@ -57,3 +57,6 @@ jobs:
 
       - name: Run isolated auction workflow tests
         run: npm run test:seller-emulator
+
+      - name: Run isolated auction browser tests
+        run: npm run test:auction-browser
