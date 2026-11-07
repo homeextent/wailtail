@@ -1,10 +1,16 @@
 # Wailtail Collector Car Auction Platform
 
-## Auction security implementation review
+## Staging development workflow
 
-The staging compatibility audit is implemented in this PR. Watchlists, member activity and private inquiries use authenticated server operations. Public branding exposes three approved display fields; platform image uploads use the trusted administrator uploader. Designated administrators retain member moderation and global/promotion configuration under candidate rules. Broad catalog purge, legacy bidder purge, one-click consignment conversion and client promotion counters are explicitly disabled. Create drafts and delete selected listings through Vehicle Inventory instead. See [Stage 3 staging acceptance](docs/stage3-staging-acceptance.md) for the release boundary and coverage.
+Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: confirm `git status -sb` and `git branch --show-current` before editing. Start focused task branches from synchronized `staging`, review them through a PR into `staging`, and reserve `main` for separately approved production releases. The existing `wailtail-auction` folder holds the shared Git repository and must remain while linked worktrees depend on it.
 
-PR #3 on `security/auction-security-gate` introduces trusted seller editing, public field projections, bidding, administrator inventory and gallery operations, comment authorization, bid retraction, scoped bid reset, draft duplication, and transactional settlement. Review and staging acceptance are pending. Production release and Firebase rules publication are separate decisions.
+See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
+
+## Auction security staging checkpoint
+
+The staging compatibility audit was integrated through PR #3. Watchlists, member activity and private inquiries use authenticated server operations. Public branding exposes three approved display fields; platform image uploads use the trusted administrator uploader. Designated administrators retain member moderation and global/promotion configuration under candidate rules. Broad catalog purge, legacy bidder purge, one-click consignment conversion and client promotion counters are explicitly disabled. Create drafts and delete selected listings through Vehicle Inventory instead. See [Stage 3 staging acceptance](docs/stage3-staging-acceptance.md) for the release boundary and coverage.
+
+PR #3, merged into `staging` on November 7, 2026 as `1bf4d6a`, integrates trusted seller editing, public field projections, bidding, administrator inventory and gallery operations, comment authorization, bid retraction, scoped bid reset, draft duplication, and transactional settlement. Independent review accepted head `293ffbb`; post-merge CI and Vercel preview passed. The staging security integration milestone is complete. Production release and Firebase rules publication are separate decisions.
 
 Deployment uses one Vercel Function, `api/router.ts`, to stay within the Hobby plan function limit. Handler implementations and shared server helpers live in `server/api/`. `vercel.json` preserves existing `/api/<endpoint>` URLs through an explicit allowlist router, ahead of the SPA fallback. New endpoint implementations belong in `server/api/` and must be added to the router. Each handler retains its own method and authorization checks. Server imports use explicit `.js` extensions for native Node ESM. Endpoint tests also compile and load every handler in native Node, without the development loader.
 
@@ -402,24 +408,22 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 - Java 21 (required for Firebase emulator-backed security rules tests)
 - Firebase project configured with Firestore and Authentication
 
-### Installation
+### Installation and safe interactive preview
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/wailtail-auction.git
-cd wailtail-auction
+# New independent clone; existing linked worktrees should follow docs/local-development.md.
+git clone https://github.com/homeextent/wailtail.git wailtail-staging
+cd wailtail-staging
+git switch staging
+npm ci
 
-# Install dependencies
-npm install
-
-# Setup environment variables
-cp .env.example .env.local
-
-# Start development server
-npm run dev
-
-# Run Firestore security rules emulator unit tests
-npm run test:rules
+# Guarded demo Auth, Firestore and Storage with synthetic public/admin/seller fixtures.
+npm run test:seller-browser
 ```
+
+Open the URLs printed by the harness on `http://127.0.0.1:4178`. The preview uses synthetic data, not a copy of the production catalog. Stop it with Ctrl+C. Close other emulator instances that use its ports before starting.
+
+`npm run dev` starts Vite with the checked-in Firebase project configuration. Its local middleware serves only the email and YouTube handlers; other `/api` requests proxy to `http://localhost:3000`, or the configured `VERCEL_URL` host. It is not a complete isolated API environment. Confirm API and Firebase targets before any normal-development mutation testing. Do not copy credentials from archived test workspaces into a new environment without checking their project scope.
+
 
 ### Continuous Integration & Local Validation
 
