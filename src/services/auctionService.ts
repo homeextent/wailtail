@@ -3230,6 +3230,26 @@ export const submitInquiry = submitSellerInquiry;
 /**
  * Post a public Q&A comment
  */
+async function mutateAuctionComment(body: Record<string, unknown>): Promise<{ id: string }> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in to join the conversation.');
+  const response = await fetch('/api/auction-comments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
+    body: JSON.stringify(body)
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.id) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to update the comment.');
+  }
+  return result;
+}
+
+export async function setCommentPinned(commentId: string, pinned: boolean) {
+  await mutateAuctionComment({ action: 'pin', commentId, pinned });
+}
+
 export async function postComment(
   auctionId: string,
   commentData: {
@@ -3241,48 +3261,21 @@ export async function postComment(
     replyToId?: string;
   }
 ) {
-  const commentsCol = collection(db, 'comments');
-  
-  // Construct object with only defined values to prevent Firestore undefined errors
-  const payload: Record<string, any> = {
-    auctionId,
-    userId: commentData.userId,
-    userName: commentData.userName,
-    userBadge: commentData.userBadge || 'Member',
-    text: commentData.text,
-    timestamp: Date.now(),
-    upvotes: 0,
-    upvotedBy: []
-  };
-
-  if (commentData.userEmail) {
-    payload.userEmail = commentData.userEmail;
-  }
-  if (commentData.replyToId) {
-    payload.replyToId = commentData.replyToId;
-  }
-
-  return await addDoc(commentsCol, payload);
+  return mutateAuctionComment({ action: 'post', auctionId, text: commentData.text, replyToId: commentData.replyToId });
 }
 
 /**
  * Edit a previously posted comment (Author or Admin)
  */
 export async function editComment(commentId: string, newText: string): Promise<void> {
-  const commentRef = doc(db, 'comments', commentId);
-  await updateDoc(commentRef, {
-    text: newText.trim(),
-    isEdited: true,
-    editedAt: Date.now()
-  });
+  await mutateAuctionComment({ action: 'edit', commentId, text: newText });
 }
 
 /**
  * Delete a comment (Author or Admin)
  */
 export async function deleteComment(commentId: string): Promise<void> {
-  const commentRef = doc(db, 'comments', commentId);
-  await deleteDoc(commentRef);
+  await mutateAuctionComment({ action: 'delete', commentId });
 }
 
 /**
@@ -3329,25 +3322,7 @@ export async function clearAllBidsAndReset(auctionId: string, resetStartingBid?:
  * Upvote/Like a comment
  */
 export async function toggleUpvoteComment(commentId: string, userId: string) {
-  const commentRef = doc(db, 'comments', commentId);
-  const snap = await getDoc(commentRef);
-  if (!snap.exists()) return;
-
-  const data = snap.data() as Comment;
-  const upvotedBy = data.upvotedBy || [];
-  const hasUpvoted = upvotedBy.includes(userId);
-
-  if (hasUpvoted) {
-    await updateDoc(commentRef, {
-      upvotes: Math.max(0, (data.upvotes || 1) - 1),
-      upvotedBy: arrayRemove(userId)
-    });
-  } else {
-    await updateDoc(commentRef, {
-      upvotes: (data.upvotes || 0) + 1,
-      upvotedBy: arrayUnion(userId)
-    });
-  }
+  await mutateAuctionComment({ action: 'vote', commentId });
 }
 
 /**
