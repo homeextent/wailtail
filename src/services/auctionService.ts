@@ -449,6 +449,51 @@ export function subscribeToUserProfile(
 /**
  * Subscribe to all vehicle listings in Firestore
  */
+export function subscribeToPublicAuctions(callback: (auctions: Auction[]) => void) {
+  return pollPublicAuctions('/api/public-auctions', (result) => callback(result?.auctions ?? []));
+}
+
+export function subscribeToPublicAuction(auctionId: string, callback: (auction: Auction | null) => void) {
+  return pollPublicAuctions(`/api/public-auctions?auctionId=${encodeURIComponent(auctionId)}`,
+    (result) => callback(result?.auction ?? null));
+}
+
+function pollPublicAuctions(
+  url: string,
+  callback: (result: { auctions?: Auction[]; auction?: Auction } | null) => void
+) {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let received = false;
+
+  const poll = async () => {
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (response.status === 404) {
+        callback(null);
+      } else {
+        if (!response.ok) throw new Error(`Public auction request failed: ${response.status}`);
+        const result = await response.json();
+        if (!controller.signal.aborted) callback(result);
+      }
+      received = true;
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.error('Public auction request failed:', error);
+        if (!received) callback(null);
+      }
+    } finally {
+      if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
+    }
+  };
+
+  void poll();
+  return () => {
+    controller.abort();
+    clearTimeout(timer);
+  };
+}
+
 export function subscribeToAllAuctions(
   callback: (auctions: Auction[]) => void
 ) {
