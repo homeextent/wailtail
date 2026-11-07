@@ -54,3 +54,6 @@ jobs:
 
       - name: Run Firestore security rules tests
         run: npm run test:rules
+
+      - name: Run isolated auction workflow tests
+        run: npm run test:seller-emulator
