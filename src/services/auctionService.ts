@@ -51,8 +51,6 @@ export const GLOBAL_BRANDING_STORAGE_KEY = 'wailtail_global_branding';
 export const ANTI_SNIPING_WINDOW_MS = 2 * 60 * 1000; // 2 minutes in ms
 export const ANTI_SNIPING_EXTENSION_MS = 2 * 60 * 1000; // 2 minutes extension
 
-const settledAuctionSessionIds = new Set<string>();
-const inFlightSettlementIds = new Set<string>();
 
 export interface GlobalBrandingSettings {
   siteLogo?: string;
@@ -1973,377 +1971,33 @@ export function isTransientContentionError(err: any): boolean {
 export async function reconcileAuctionClosureAndNotifyWinner(
   auctionId: string
 ): Promise<{ success: boolean; settled: boolean; winnerEmail?: string }> {
-  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
-  if (!targetId) return { success: false, settled: false };
-
-  if (settledAuctionSessionIds.has(auctionId) || settledAuctionSessionIds.has(targetId)) {
-    return { success: true, settled: false };
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
+  const response = await fetch('/api/admin-settle-auction', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId: auctionId.trim() || MAIN_AUCTION_ID })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.success !== true) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to settle the auction.');
   }
-  settledAuctionSessionIds.add(auctionId);
-  settledAuctionSessionIds.add(targetId);
-
-  if (inFlightSettlementIds.has(auctionId) || inFlightSettlementIds.has(targetId)) {
-    console.log('[Settlement] Skipped: Lock active or winningEmailSent already set');
-    return { success: true, settled: false };
-  }
-
-  inFlightSettlementIds.add(auctionId);
-  inFlightSettlementIds.add(targetId);
-
-  try {
-    const auctionRef = doc(db, 'auctions', targetId);
-
-    let txResult: {
-      status: 'success' | 'already_sent' | 'no_winner' | 'not_found';
-      winnerEmail?: string;
-      winnerName?: string;
-      winningBid?: number;
-      vehicleTitle?: string;
-      sellerName?: string;
-      sellerEmail?: string;
-      sellerPhone?: string;
-    } | null = null;
-
-    try {
-      txResult = await runTransaction(db, async (transaction) => {
-        // Transaction Read: Read auctions/{auctionId}. If winningEmailSent === true, return { status: 'already_sent' }.
-        const auctionSnap = await transaction.get(auctionRef);
-        if (!auctionSnap.exists()) {
-          return { status: 'not_found' as const };
-        }
-
-        const auctionData = auctionSnap.data() as Auction & { winningEmailSent?: boolean };
-        if (auctionData.winningEmailSent === true) {
-          return { status: 'already_sent' as const };
-        }
-
-        // Winning Bid Resolution: Query the highest active bid and evaluate reserve satisfaction (currentBid >= reserveAmount or reserveAmount === 0). If no bids exist or reserve is not met, update status accordingly and return { status: 'no_winner' }.
-        let bids: Bid[] = [];
-        try {
-          const subBidsSnap = await getDocs(collection(db, 'auctions', targetId, 'bids'));
-          bids = subBidsSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() } as Bid))
-            .filter((b) => b.status !== 'retracted');
-        } catch (e) {
-          console.warn(`[Settlement] Could not query subcollection bids for ${targetId}:`, e);
-        }
-
-        if (bids.length === 0) {
-          try {
-            const rootBidsSnap = await getDocs(
-              query(collection(db, 'bids'), where('auctionId', '==', targetId))
-            );
-            bids = rootBidsSnap.docs
-              .map((d) => ({ id: d.id, ...d.data() } as Bid))
-              .filter((b) => b.status !== 'retracted');
-          } catch (e) {
-            console.warn(`[Settlement] Could not query root bids for ${targetId}:`, e);
-          }
-        }
-
-        bids.sort((a, b) => {
-          if (b.amount !== a.amount) return b.amount - a.amount;
-          return (a.timestamp || 0) - (b.timestamp || 0);
-        });
-
-        if (bids.length === 0) {
-          console.log(`[Settlement] Skipped: No active bids found for auction ${targetId}`);
-          if (auctionData.status !== 'ended') {
-            transaction.update(auctionRef, {
-              status: 'ended',
-              updatedAt: Date.now()
-            });
-          }
-          return { status: 'no_winner' as const };
-        }
-
-        const winningBid = bids[0];
-        const currentBid = winningBid.amount;
-        const reserveAmount = Number(auctionData.reserveAmount) || 0;
-        const isReserveMet = currentBid >= reserveAmount || reserveAmount === 0;
-
-        if (!isReserveMet) {
-          console.log(`[Settlement] Skipped: Reserve not met ($${currentBid} CAD < $${reserveAmount} CAD reserve)`);
-          if (auctionData.status !== 'ended' || auctionData.isReserveMet !== false) {
-            transaction.update(auctionRef, {
-              status: 'ended',
-              isReserveMet: false,
-              updatedAt: Date.now()
-            });
-          }
-          return { status: 'no_winner' as const };
-        }
-
-        // 4-Tier Email Fallback: Resolve winning bidder email via:
-        // 1. winningBid.bidderEmail
-        // 2. users/{winningBid.bidderId}.email
-        // 3. bidders/{winningBid.bidderId}.email
-        // 4. auction.highBidderEmail
-        let winnerEmail = (winningBid.bidderEmail || '').trim().toLowerCase();
-        let winnerName = winningBid.bidderName || winningBid.bidderHandle || '';
-        const bidderId = winningBid.bidderId;
-
-        if ((!winnerEmail || !winnerEmail.includes('@')) && bidderId) {
-          try {
-            const userSnap = await transaction.get(doc(db, 'users', bidderId));
-            if (userSnap.exists()) {
-              const uData = userSnap.data();
-              if (uData?.email) winnerEmail = uData.email.trim().toLowerCase();
-              if (!winnerName && uData?.displayName) winnerName = uData.displayName;
-            }
-          } catch (err) {
-            console.warn(`[Settlement] Could not resolve winner email from users/${bidderId}:`, err);
-          }
-        }
-
-        if ((!winnerEmail || !winnerEmail.includes('@')) && bidderId) {
-          try {
-            const bidderSnap = await transaction.get(doc(db, 'bidders', bidderId));
-            if (bidderSnap.exists()) {
-              const bData = bidderSnap.data();
-              if (bData?.email) winnerEmail = bData.email.trim().toLowerCase();
-              if (!winnerName && bData?.displayName) winnerName = bData.displayName;
-            }
-          } catch (err) {
-            console.warn(`[Settlement] Could not resolve winner email from bidders/${bidderId}:`, err);
-          }
-        }
-
-        if (!winnerEmail || !winnerEmail.includes('@')) {
-          if (auctionData.highBidderEmail && auctionData.highBidderEmail.includes('@')) {
-            winnerEmail = auctionData.highBidderEmail.trim().toLowerCase();
-            if (!winnerName && auctionData.highBidderName) winnerName = auctionData.highBidderName;
-          }
-        }
-
-        if (!winnerEmail || !winnerEmail.includes('@')) {
-          console.log(`[Settlement] Error: Unable to resolve winning bidder email for user ${bidderId}`);
-          return { status: 'no_winner' as const };
-        }
-
-        // Consignor Contact Fallback Resolution Chain:
-        // sellerEmail: freshAuction.sellerEmail -> users/{sellerId}.email -> consignment_applications.sellerEmail -> 'contact@wailtail.com'
-        let resolvedSellerEmail = (auctionData.sellerEmail || '').trim();
-        let resolvedSellerPhone: string | undefined = (auctionData.sellerPhone || '').trim() || undefined;
-
-        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@') || !resolvedSellerPhone) {
-          if (auctionData.sellerId) {
-            try {
-              const sellerUserSnap = await transaction.get(doc(db, 'users', auctionData.sellerId));
-              if (sellerUserSnap.exists()) {
-                const sUserData = sellerUserSnap.data();
-                if ((!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) && sUserData?.email) {
-                  resolvedSellerEmail = String(sUserData.email).trim();
-                }
-                if (!resolvedSellerPhone && sUserData?.phone) {
-                  resolvedSellerPhone = String(sUserData.phone).trim() || undefined;
-                }
-              }
-            } catch (err) {
-              console.warn(`[Settlement] Could not resolve seller credentials from users/${auctionData.sellerId}:`, err);
-            }
-          }
-        }
-
-        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@') || !resolvedSellerPhone) {
-          try {
-            const appQ = query(
-              collection(db, 'consignment_applications'),
-              where('convertedAuctionId', '==', targetId)
-            );
-            const appSnap = await getDocs(appQ);
-            if (!appSnap.empty) {
-              const appData = appSnap.docs[0].data();
-              if ((!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) && appData?.sellerEmail) {
-                resolvedSellerEmail = String(appData.sellerEmail).trim();
-              }
-              if (!resolvedSellerPhone && appData?.sellerPhone) {
-                resolvedSellerPhone = String(appData.sellerPhone).trim() || undefined;
-              }
-            }
-          } catch (err) {
-            console.warn(`[Settlement] Could not resolve seller credentials from consignment_applications for ${targetId}:`, err);
-          }
-        }
-
-        if (!resolvedSellerEmail || !resolvedSellerEmail.includes('@')) {
-          resolvedSellerEmail = 'contact@wailtail.com';
-        }
-
-        // Transaction Write: Atomically set winningEmailSent: true and status: 'sold' on the auctions/{auctionId} document.
-        transaction.update(auctionRef, {
-          status: 'sold',
-          isReserveMet: true,
-          winningEmailSent: true,
-          currentBid: winningBid.amount,
-          highBidderId: winningBid.bidderId,
-          highBidderName: winnerName || winningBid.bidderName || '',
-          highBidderEmail: winnerEmail,
-          updatedAt: Date.now()
-        });
-
-        // Return Email Context: Return the resolved winner email, vehicle details, hammer price, and seller credentials from the transaction callback.
-        return {
-          status: 'success' as const,
-          winnerEmail,
-          winnerName: winnerName || winnerEmail.split('@')[0],
-          winningBid: winningBid.amount,
-          vehicleTitle: auctionData.title || 'Vehicle Listing',
-          sellerName: auctionData.sellerName || 'Verified Consignor',
-          sellerEmail: resolvedSellerEmail,
-          sellerPhone: resolvedSellerPhone
-        };
-      });
-    } catch (txnErr: any) {
-      console.log('[Settlement] Skipped: Lock active or winningEmailSent already set');
-      return { success: true, settled: false };
-    }
-
-    if (!txResult || txResult.status === 'already_sent') {
-      console.log('[Settlement] Skipped: Lock active or winningEmailSent already set');
-      return { success: true, settled: false };
-    }
-
-    if (txResult.status === 'not_found') {
-      console.warn(`[Settlement] Auction ${targetId} not found in Firestore.`);
-      return { success: false, settled: false };
-    }
-
-    if (txResult.status === 'no_winner') {
-      return { success: true, settled: false };
-    }
-
-    // HTTP Serverless Fetch Executed strictly AFTER Transaction:
-    // Execute fetch('/api/send-consignment-email') only if runTransaction() resolves successfully and returns a valid winner email context.
-    if (txResult.status === 'success' && txResult.winnerEmail) {
-      const emailPayload = {
-        type: 'winning_bid_confirmation',
-        auctionId: targetId,
-        vehicleTitle: txResult.vehicleTitle,
-        winningBid: txResult.winningBid,
-        winnerEmail: txResult.winnerEmail,
-        winnerName: txResult.winnerName,
-        sellerName: txResult.sellerName,
-        sellerEmail: txResult.sellerEmail,
-        sellerPhone: txResult.sellerPhone
-      };
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        let emailResponse: Response | null = null;
-        try {
-          emailResponse = await fetch('/api/send-consignment-email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(emailPayload),
-            signal: controller.signal
-          });
-        } catch (fetchErr: any) {
-          console.error(`[Settlement] Email dispatch failed for ${txResult.winnerEmail}:`, fetchErr);
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (emailResponse) {
-          console.log(`[Settlement] HTTP ${emailResponse.status}: Winning bid confirmation dispatch ${emailResponse.ok ? 'completed' : 'failed'} for ${txResult.winnerEmail}`);
-          if (emailResponse.ok) {
-            console.log(`[Settlement] SUCCESS: Dispatched winning bid confirmation email to ${txResult.winnerEmail}.`);
-          } else {
-            console.error(`[Settlement] Email dispatch returned error status HTTP ${emailResponse.status} for ${txResult.winnerEmail}`);
-          }
-        }
-      } catch (err: any) {
-        console.error(`[Settlement] Email dispatch error:`, err);
-      }
-
-      return {
-        success: true,
-        settled: true,
-        winnerEmail: txResult.winnerEmail
-      };
-    }
-
-    return { success: true, settled: false };
-  } catch (err) {
-    console.warn(`[Settlement] reconcileAuctionClosureAndNotifyWinner error for ${targetId}:`, err);
-    return { success: false, settled: false };
-  } finally {
-    inFlightSettlementIds.delete(auctionId);
-    inFlightSettlementIds.delete(targetId);
-  }
+  return result;
 }
 
 /**
- * Update a single auction's status in Firestore.
+ * Update a single auction's status through the trusted admin endpoint.
  */
-export async function updateAuctionStatus(
-  auctionId: string,
-  status: Auction['status'] | string
-): Promise<void> {
+export async function updateAuctionStatus(auctionId: string, status: Auction['status'] | string): Promise<void> {
   if (!auctionId) return;
-  const targetId = auctionId.trim() || MAIN_AUCTION_ID;
-  const auctionRef = doc(db, 'auctions', targetId);
-
-  let targetStatus = status;
-  let shouldReconcileClosure = false;
-  let isWinningEmailSent = false;
-
-  try {
-    const snap = await getDoc(auctionRef);
-    if (snap.exists()) {
-      const data = snap.data() as Auction;
-      isWinningEmailSent = Boolean(data.winningEmailSent);
-      const now = Date.now();
-      const hasValidEndTime = typeof data.endTime === 'number' && data.endTime > 0;
-      const isExpired = hasValidEndTime && now >= data.endTime;
-      const currentBidVal = Number(data.currentBid) || 0;
-      const bidCountVal = Number(data.bidCount) || 0;
-      const hasBids = currentBidVal > 0 || bidCountVal > 0;
-
-      // Strictly enforce terminal status rules upon auction expiration (now >= endTime)
-      if (isExpired) {
-        if (hasBids) {
-          const reserveAmount = Number(data.reserveAmount) || 0;
-          const isReserveMet = Boolean(
-            data.isReserveMet ||
-            (reserveAmount > 0 ? currentBidVal >= reserveAmount : true) ||
-            targetStatus === 'sold' ||
-            data.status === 'sold'
-          );
-          // Never allow expired auctions with bids to regress or default to 'draft'
-          targetStatus = isReserveMet ? 'sold' : 'ended';
-        } else {
-          // Never regress expired auction to draft
-          if (targetStatus === 'draft' || targetStatus === 'upcoming' || targetStatus === 'active' || targetStatus === 'ending_soon') {
-            targetStatus = 'ended';
-          }
-        }
-        shouldReconcileClosure = true;
-      } else if (hasBids && targetStatus === 'draft') {
-        // Active or upcoming auction with bids must not regress to draft
-        console.warn(`[updateAuctionStatus] Blocked attempting to set status 'draft' on auction with bids: ${targetId}`);
-        return;
-      }
-    }
-  } catch (err) {
-    console.warn('[updateAuctionStatus] Status enforcement pre-check notice:', err);
-  }
-
-  await setDoc(auctionRef, { status: targetStatus, updatedAt: Date.now() }, { merge: true });
-
-  // Post-auction settlement routine / Manual force-close integration:
-  // When an auction transitions to ended or sold with winningEmailSent: false,
-  // trigger reconcileAuctionClosureAndNotifyWinner immediately.
-  const normStatus = (targetStatus || '').toLowerCase().trim();
-  if (shouldReconcileClosure || normStatus === 'ended' || normStatus === 'sold') {
-    if (!isWinningEmailSent) {
-      reconcileAuctionClosureAndNotifyWinner(targetId).catch((err) => {
-        console.warn('Non-blocking reconcileAuctionClosureAndNotifyWinner in updateAuctionStatus warning:', err);
-      });
-    }
+  const id = auctionId.trim() || MAIN_AUCTION_ID;
+  const result = await requestAdminAuctionUpdate({ auctionId: id, updates: { status } });
+  if ((result.status === 'sold' || result.status === 'ended') && !result.winningEmailSent) {
+    await reconcileAuctionClosureAndNotifyWinner(id);
   }
 }
 
