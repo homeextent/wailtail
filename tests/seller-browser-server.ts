@@ -1,3 +1,4 @@
+import uploadAuctionImage from '../api/admin-upload-auction-image';
 import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
 import updateAuction from '../api/admin-update-auction';
@@ -85,7 +86,7 @@ await firestore.collection('auctions').doc(publicAuctionId).set({
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:9099 http://127.0.0.1:8080 http://127.0.0.1:9199");
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://127.0.0.1:9199; connect-src 'self' http://127.0.0.1:9099 http://127.0.0.1:8080 http://127.0.0.1:9199");
   next();
 });
 server.use(express.json({ limit: '3mb' }));
@@ -94,6 +95,9 @@ server.get('/api/public-auctions', (req, res, next) => {
 });
 server.post('/api/admin-delete-auction', (req, res, next) => {
   Promise.resolve(deleteAuction(req, res)).catch(next);
+});
+server.post('/api/admin-upload-auction-image', (req, res, next) => {
+  Promise.resolve(uploadAuctionImage(req, res)).catch(next);
 });
 server.post('/api/admin-save-auction-media', (req, res, next) => {
   Promise.resolve(saveAuctionMedia(req, res)).catch(next);
