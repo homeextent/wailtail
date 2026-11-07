@@ -3,6 +3,10 @@ import { auth } from './full-app-firebase';
 
 async function start() {
   const query = new URLSearchParams(location.search);
+  if (query.get('actor') === 'public') {
+    await import('../src/main');
+    return;
+  }
   const admin = query.get('actor') === 'admin' || location.pathname === '/admin';
   const response = await fetch(admin ? '/admin-fixture' : '/fixture', { redirect: 'error' });
   if (!response.ok) throw new Error('Synthetic fixture unavailable.');
