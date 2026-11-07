@@ -40,10 +40,11 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   chrome.on('error', error => { browserError = error; });
   let socket: WebSocket | undefined;
   try {
-    const fixture = await eventually(async () => {
+    const fixture = await eventually<{ projectId: string; publicAuctionId: string } | null>(async () => {
       const response = await fetch(origin + '/fixture', { signal: AbortSignal.timeout(2000) });
       return response.ok ? await response.json() : null;
     }, Boolean, 'isolated app');
+    assert.ok(fixture, 'Synthetic fixture must be available');
     assert.equal(fixture.projectId, 'demo-wailtail-stage3');
     const targets = await eventually(async () => {
       if (browserError) throw browserError;
