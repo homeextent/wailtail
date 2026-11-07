@@ -1,3 +1,4 @@
+import updateAuction from '../api/admin-update-auction';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
@@ -88,6 +89,9 @@ server.use((_req, res, next) => {
 server.use(express.json({ limit: '3mb' }));
 server.get('/api/public-auctions', (req, res, next) => {
   Promise.resolve(publicAuctions(req, res)).catch(next);
+});
+server.post('/api/admin-update-auction', (req, res, next) => {
+  Promise.resolve(updateAuction(req, res)).catch(next);
 });
 server.post('/api/admin-create-auction', (req, res, next) => {
   Promise.resolve(createAuction(req, res)).catch(next);
