@@ -1968,6 +1968,15 @@ export function isTransientContentionError(err: any): boolean {
  * directly captures top bidder email credentials from winningBid.bidderEmail,
  * and updates auctions/{auctionId} state atomically.
  */
+export async function advanceAuctionClock(auctionId: string): Promise<void> {
+  const response = await fetch('/api/auction-clock', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auctionId })
+  });
+  if (!response.ok) throw new Error(`Auction clock request failed: ${response.status}`);
+}
+
 export async function reconcileAuctionClosureAndNotifyWinner(
   auctionId: string
 ): Promise<{ success: boolean; settled: boolean; winnerEmail?: string }> {
