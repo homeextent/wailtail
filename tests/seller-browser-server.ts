@@ -1,3 +1,4 @@
+import settleAuction from '../api/admin-settle-auction';
 import uploadAuctionImage from '../api/admin-upload-auction-image';
 import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
@@ -101,6 +102,9 @@ server.post('/api/admin-upload-auction-image', (req, res, next) => {
 });
 server.post('/api/admin-save-auction-media', (req, res, next) => {
   Promise.resolve(saveAuctionMedia(req, res)).catch(next);
+});
+server.post('/api/admin-settle-auction', (req, res, next) => {
+  Promise.resolve(settleAuction(req, res)).catch(next);
 });
 server.post('/api/admin-update-auction', (req, res, next) => {
   Promise.resolve(updateAuction(req, res)).catch(next);
