@@ -2219,177 +2219,25 @@ export async function retractBid(
   auctionId: string,
   bidId: string,
   reason: string,
-  adminUserId: string,
-  adminDisplayName?: string
+  _adminUserId: string,
+  _adminDisplayName?: string
 ): Promise<{ success: boolean; message?: string }> {
-  if (!reason || !reason.trim()) {
-    throw new Error('A valid reason for retraction is required.');
-  }
-  if (!bidId || !bidId.trim()) {
-    throw new Error('bidId is required to retract a bid.');
-  }
-
-  const cleanReason = reason.trim();
-  const cleanAuctionId = auctionId?.trim() || '';
-  const topBidRef = doc(db, 'bids', bidId.trim());
-  const subBidRef = cleanAuctionId ? doc(db, 'auctions', cleanAuctionId, 'bids', bidId.trim()) : null;
-  const auctionRef = cleanAuctionId ? doc(db, 'auctions', cleanAuctionId) : null;
-
-  return await runTransaction(db, async (transaction) => {
-    // 1. Transactional reads must precede writes
-    const auctionSnap = auctionRef ? await transaction.get(auctionRef) : null;
-    const topBidSnap = await transaction.get(topBidRef);
-    const subBidSnap = subBidRef ? await transaction.get(subBidRef) : null;
-
-    let targetBidRef = topBidSnap.exists() ? topBidRef : (subBidSnap?.exists() && subBidRef ? subBidRef : null);
-    let bidSnap = topBidSnap.exists() ? topBidSnap : (subBidSnap?.exists() ? subBidSnap : null);
-
-    // If targetBidRef not resolved yet, check if topBidSnap has auctionId
-    if (!targetBidRef && topBidSnap.exists()) {
-      targetBidRef = topBidRef;
-      bidSnap = topBidSnap;
-    }
-
-    const parentAuctionExists = auctionSnap?.exists() ?? false;
-    const now = Date.now();
-    const retractionAuditPayload = {
-      status: 'retracted' as const,
-      retractedAt: now,
-      retractionReason: cleanReason,
-      retractedBy: adminUserId || 'admin',
-      retractedByName: adminDisplayName || adminUserId || 'admin'
-    };
-
-    // -------------------------------------------------------------
-    // ORPHANED BID FALLBACK SCENARIO (PARENT AUCTION DOES NOT EXIST)
-    // -------------------------------------------------------------
-    if (!parentAuctionExists) {
-      if (bidSnap && targetBidRef) {
-        const bidData = bidSnap.data() as Bid;
-        if (bidData.status === 'retracted') {
-          throw new Error('This bid has already been retracted.');
-        }
-
-        // Bypass lot high-bid/count recalculation logic, update bid document status
-        transaction.set(targetBidRef, retractionAuditPayload, { merge: true });
-
-        // If bid exists in both root and subcollection, update both paths
-        if (topBidSnap.exists() && targetBidRef.path !== topBidRef.path) {
-          transaction.set(topBidRef, retractionAuditPayload, { merge: true });
-        }
-        if (subBidSnap?.exists() && subBidRef && targetBidRef.path !== subBidRef.path) {
-          transaction.set(subBidRef, retractionAuditPayload, { merge: true });
-        }
-
-        return {
-          success: true,
-          message: 'Orphaned bid record marked as retracted (parent lot does not exist).'
-        };
-      } else {
-        // Unresolvable bid record: delete references directly if possible or resolve cleanly
-        try {
-          transaction.delete(topBidRef);
-          if (subBidRef) transaction.delete(subBidRef);
-        } catch {
-          // ignore
-        }
-        return {
-          success: true,
-          message: 'Orphaned bid was unresolvable and references purged.'
-        };
-      }
-    }
-
-    // -------------------------------------------------------------
-    // ACTIVE LOT SCENARIO (PARENT AUCTION EXISTS)
-    // -------------------------------------------------------------
-    if (!bidSnap || !targetBidRef) {
-      throw new Error(`Bid record "${bidId}" does not exist.`);
-    }
-
-    const bidData = bidSnap.data() as Bid;
-    if (bidData.status === 'retracted') {
-      throw new Error('This bid has already been retracted.');
-    }
-
-    // Query remaining bids for this auction across top-level 'bids' and 'auctions/{auctionId}/bids'
-    const topBidsSnap = await getDocs(
-      query(collection(db, 'bids'), where('auctionId', '==', cleanAuctionId))
-    );
-    const collectedBids: Bid[] = topBidsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Bid));
-
-    try {
-      const subBidsSnap = await getDocs(
-        collection(db, 'auctions', cleanAuctionId, 'bids')
-      );
-      subBidsSnap.docs.forEach(d => {
-        if (!collectedBids.some(b => b.id === d.id)) {
-          collectedBids.push({ id: d.id, ...d.data() } as Bid);
-        }
-      });
-    } catch {
-      // Subcollection fallback
-    }
-
-    // Filter remaining active bids:
-    // Exclude the bid currently being retracted
-    // Exclude any bid where status === 'retracted' (legacy documents where status is undefined are treated as 'active')
-    const remainingActiveBids = collectedBids
-      .filter(b => b.id !== bidId && b.status !== 'retracted')
-      .sort((a, b) => {
-        if (b.amount !== a.amount) return b.amount - a.amount;
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-
-    // Mark target bid record with status: 'retracted', retractedAt, retractionReason, retractedBy
-    transaction.set(targetBidRef, retractionAuditPayload, { merge: true });
-
-    // If bid was stored in top-level, also update subcollection doc if it exists
-    if (topBidSnap.exists() && targetBidRef.path !== topBidRef.path) {
-      transaction.set(topBidRef, retractionAuditPayload, { merge: true });
-    }
-    if (subBidSnap?.exists() && subBidRef && targetBidRef.path !== subBidRef.path) {
-      transaction.set(subBidRef, retractionAuditPayload, { merge: true });
-    }
-
-    // Recalculate root document auctions/{auctionId} telemetry
-    const auctionData = auctionSnap!.data() as Auction;
-    const startingBid = Number(auctionData.startingBid) || 0;
-    const reserveAmount = Number(auctionData.reserveAmount) || 0;
-
-    if (remainingActiveBids.length > 0) {
-      const highestActiveBid = remainingActiveBids[0];
-      const currentBid = highestActiveBid.amount;
-      const bidCount = remainingActiveBids.length;
-      const isReserveMet = currentBid >= reserveAmount;
-
-      transaction.update(auctionRef!, {
-        currentBid,
-        bidCount,
-        isReserveMet,
-        highBidderId: highestActiveBid.bidderId || '',
-        highBidderName: highestActiveBid.bidderName || '',
-        highBidderEmail: highestActiveBid.bidderEmail || '',
-        updatedAt: now
-      });
-    } else {
-      // Zero active bids remain: reset currentBid = startingBid, bidCount = 0, isReserveMet = false
-      transaction.update(auctionRef!, {
-        currentBid: startingBid,
-        bidCount: 0,
-        isReserveMet: false,
-        highBidderId: '',
-        highBidderName: '',
-        highBidderEmail: '',
-        updatedAt: now
-      });
-    }
-
-    return {
-      success: true,
-      message: 'Bid successfully retracted and auction telemetry recalculated.'
-    };
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
+  const response = await fetch('/api/admin-retract-auction-bid', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId: auctionId.trim(), bidId: bidId.trim(), reason: reason.trim() })
   });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.success !== true) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to retract the bid.');
+  }
+  return result;
 }
 
 /**
