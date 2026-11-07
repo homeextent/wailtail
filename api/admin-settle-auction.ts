@@ -1,3 +1,4 @@
+import type { Firestore } from 'firebase-admin/firestore';
 import { isDesignatedAdminEmail } from '../src/config/adminConfig';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 
@@ -8,12 +9,28 @@ export default function handler(req: any, res: any) {
     if (typeof auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(auctionId)) {
       return res.status(422).json({ error: 'Invalid auction ID.' });
     }
-    const ref = firestore.collection('auctions').doc(auctionId);
-    const result = await firestore.runTransaction(async tx => {
+    const result = await settleAuction(firestore, auctionId);
+    if (result >= 400) return res.status(result).json({ error: 'Auction cannot be settled.' });
+    return res.status(200).json({ success: true, settled: result === 201 });
+  });
+}
+
+export async function settleAuction(firestore: Firestore, auctionId: string, clockOnly = false) {
+  const ref = firestore.collection('auctions').doc(auctionId);
+    return firestore.runTransaction(async tx => {
       const data = (await tx.get(ref)).data();
       if (!data) return 404;
-      if (data.winningEmailSent === true || data.settlementCompletedAt) return 200;
       const now = Date.now();
+      if (clockOnly) {
+        if (!['active', 'live', 'ending_soon', 'upcoming', 'ended', 'sold', 'reserve_not_met'].includes(data.status) ||
+            !Number.isFinite(data.startTime) || !Number.isFinite(data.endTime) || now < data.startTime) return 409;
+        if (now < data.endTime) {
+          if (data.status !== 'upcoming') return 409;
+          tx.update(ref, { status: 'active', updatedAt: now });
+          return 202;
+        }
+      }
+      if (data.winningEmailSent === true || data.settlementCompletedAt) return 200;
       if (!['active', 'live', 'ending_soon', 'upcoming', 'ended', 'sold', 'reserve_not_met'].includes(data.status) ||
           (!['ended', 'sold', 'reserve_not_met'].includes(data.status) &&
             (!Number.isFinite(data.endTime) || now < data.endTime))) return 409;
@@ -66,7 +83,4 @@ export default function handler(req: any, res: any) {
       });
       return 201;
     });
-    if (result >= 400) return res.status(result).json({ error: 'Auction cannot be settled.' });
-    return res.status(200).json({ success: true, settled: result === 201 });
-  });
 }
