@@ -7,6 +7,8 @@ import {
   initializeMediaConfigIfNotExists,
   subscribeToAuction, 
   subscribeToAllAuctions,
+  subscribeToPublicAuction,
+  subscribeToPublicAuctions,
   subscribeToBids, 
   subscribeToComments, 
   subscribeToMediaConfig,
@@ -466,11 +468,9 @@ const AuctionAppContent: React.FC = () => {
 
   // Subscribe to all auctions catalog
   useEffect(() => {
-    const unsub = subscribeToAllAuctions((list) => {
-      setAllAuctions(list || []);
-    });
-    return () => unsub();
-  }, []);
+    const subscribe = isAdmin ? subscribeToAllAuctions : subscribeToPublicAuctions;
+    return subscribe(setAllAuctions);
+  }, [isAdmin]);
 
   // Initialize and subscribe to Firestore for active vehicle auction
   useEffect(() => {
@@ -490,10 +490,13 @@ const AuctionAppContent: React.FC = () => {
 
     const setupFirestore = async () => {
       try {
-        await initializeAuctionIfNotExists();
-        await initializeMediaConfigIfNotExists(targetAuctionId);
-        
-        unsubAuction = subscribeToAuction(targetAuctionId, (data) => {
+        if (isAdmin && isEditorRoute) {
+          await initializeAuctionIfNotExists();
+          await initializeMediaConfigIfNotExists(targetAuctionId);
+        }
+
+        const subscribe = isAdmin && isEditorRoute ? subscribeToAuction : subscribeToPublicAuction;
+        unsubAuction = subscribe(targetAuctionId, (data) => {
           if (data) {
             setAuction(data);
             if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
@@ -572,7 +575,7 @@ const AuctionAppContent: React.FC = () => {
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute, allAuctions.length]);
+  }, [activeAuctionId, isEditorRoute, isAdmin, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
