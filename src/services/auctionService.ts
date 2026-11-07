@@ -3300,14 +3300,33 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
   const user = auth.currentUser;
   if (!user) throw new Error('Administrator authentication required.');
 
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${await user.getIdToken()}`
+  };
+  async function uploadGalleryImage(dataUrl: string): Promise<string> {
+    if (!dataUrl?.startsWith('data:')) return dataUrl;
+    const response = await fetch('/api/admin-upload-auction-image', {
+      method: 'POST', headers, body: JSON.stringify({ auctionId: targetAuctionId, dataUrl })
+    });
+    const result = await response.json().catch(() => null);
+    // The draft remains private in Firestore until publication.
+    if (response.status === 409) return dataUrl;
+    if (!response.ok || typeof result?.url !== 'string') {
+      throw new Error(response.status < 500 && typeof result?.error === 'string'
+        ? result.error : 'Unable to upload gallery image.');
+    }
+    return result.url;
+  }
+
   // Compress and upload any high-res Base64 images in hero and gallery arrays to Firebase Storage before persisting
   const compressedHero = await Promise.all((config.heroImages || []).map(async img => {
     const comp = await compressImageDataUrl(img);
-    return await uploadImageToStorage(targetAuctionId, comp, 'hero');
+    return await uploadGalleryImage(comp);
   }));
   const compressedGallery = await Promise.all((config.fullGallery || []).map(async item => {
     const comp = await compressImageDataUrl(item.url);
-    const url = await uploadImageToStorage(targetAuctionId, comp, item.category || 'gallery');
+    const url = await uploadGalleryImage(comp);
     return {
       ...item,
       url
@@ -3316,10 +3335,7 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
 
   const response = await fetch('/api/admin-save-auction-media', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${await user.getIdToken()}`
-    },
+    headers,
     body: JSON.stringify({ auctionId: targetAuctionId, config: sanitizePayload({
       ...config, heroImages: compressedHero, fullGallery: compressedGallery
     }) })
