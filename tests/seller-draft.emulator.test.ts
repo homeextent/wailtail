@@ -11,6 +11,9 @@ import submit from '../api/seller-draft-submit';
 import upload, { handleSellerDraftUpload } from '../api/seller-draft-upload';
 import type { Transaction } from 'firebase-admin/firestore';
 import media from '../api/seller-draft-media';
+import publicAuctions from '../api/public-auctions';
+import placeBid from '../api/place-auction-bid';
+import createAuction from '../api/admin-create-auction';
 
 const projectId = 'demo-wailtail-stage3';
 const bucket = `${projectId}.appspot.com`;
@@ -76,7 +79,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     await auction.set({ ...identity, sellerId: owner.uid, sellerEmail: other.email });
     await firestore.collection('auctions').doc(unassignedId).set({ ...identity, sellerEmail: other.email });
 
-    async function invoke(handler: typeof read, body: object, token?: string) {
+    async function invoke(handler: typeof read, body: object, token?: string, method = 'POST', query?: object) {
       let status = 0;
       let payload: unknown;
       const response = {
@@ -85,9 +88,42 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         json(value: unknown) { payload = value; },
         send(value: unknown) { payload = value; }
       };
-      await handler({ method: 'POST', headers: token ? { authorization: `Bearer ${token}` } : {}, body }, response);
+      await handler({ method, headers: token ? { authorization: `Bearer ${token}` } : {}, body, query }, response);
       return { status, payload };
     }
+
+    const publicId = `public-${run}`;
+    const publicRef = firestore.collection('auctions').doc(publicId);
+    const now = Date.now();
+    await publicRef.set({
+      status: 'active', title: 'Synthetic public vehicle', startTime: now - 60_000, endTime: now + 90_000,
+      startingBid: 1000, currentBid: 0, minimumIncrement: 250, reserveAmount: 5000, sellerEmail: other.email
+    });
+    await firestore.collection('settings').doc(`media-${publicId}`).set({
+      fullGallery: [{ id: 'image', url: 'https://example.test/image.jpg', privateField: other.email }]
+    });
+    await firestore.collection('comments').doc(publicId).set({
+      auctionId: publicId, text: 'Synthetic comment', userEmail: other.email, timestamp: now
+    });
+    assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId })).status, 404);
+    assert.equal((await invoke(placeBid, { auctionId: publicId, amount: 1000 })).status, 401);
+    assert.equal((await invoke(placeBid, { auctionId: publicId, amount: 999 }, other.idToken)).status, 409);
+    assert.equal((await publicRef.get()).get('currentBid'), 0);
+    const bid = await invoke(placeBid, { auctionId: publicId, amount: 1000 }, other.idToken);
+    assert.equal(bid.status, 200);
+    assert.equal((await publicRef.get()).get('highBidderId'), other.uid);
+    const detail = await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: publicId });
+    assert.equal(detail.status, 200);
+    const view = detail.payload as any;
+    assert.equal(view.auction.currentBid, 1000);
+    assert.equal(view.auction.reserveAmount, undefined);
+    assert.equal(view.auction.sellerEmail, undefined);
+    assert.deepEqual(view.media.fullGallery, [{ id: 'image', url: 'https://example.test/image.jpg' }]);
+    assert.equal(view.bids.length, 1);
+    assert.equal(view.bids[0].bidderEmail, undefined);
+    assert.equal(view.comments.length, 2);
+    assert.ok(view.comments.every((comment: any) => comment.userEmail === undefined));
+    assert.equal((await invoke(createAuction, { title: 'Unauthorized' }, other.idToken)).status, 403);
 
     const command = { auctionId, expectedRevision: 0 };
     const patch = { ...command, overviewHeading: 'Synthetic overview', overviewParagraphs: ['Test paragraph'] };
@@ -256,6 +292,14 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     assert.equal((await auction.get()).get('status'), 'pending_review');
     for (const [index, email] of ['jeremygoodmurphy@gmail.com', 'jeremy@theinnovativegroup.ca'].entries()) {
       const admin = await seller('admin', email);
+      if (index === 0) {
+        const created = await invoke(createAuction, { title: 'Synthetic inventory draft' }, admin.idToken);
+        assert.equal(created.status, 201);
+        const { auction: createdAuction } = created.payload as { auction: { id: string; status: string } };
+        assert.equal(createdAuction.status, 'draft');
+        assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, true);
+        assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: createdAuction.id })).status, 404);
+      }
       const expectedRevision = 5 + index * 2;
       const command = { ...reopen, expectedRevision };
       assert.equal((await invoke(returnToDraft, { ...command, expectedRevision: expectedRevision - 1 }, admin.idToken)).status, 409);
