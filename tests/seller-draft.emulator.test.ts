@@ -1,3 +1,4 @@
+import deleteAuction from '../api/admin-delete-auction';
 import updateAuction from '../api/admin-update-auction';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -327,6 +328,19 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const edited = await firestore.collection('auctions').doc(createdAuction.id).get();
         assert.equal(edited.get('title'), 'Edited inventory draft');
         assert.equal(edited.get('sellerId'), undefined);
+        const related = firestore.collection('comments').doc(createdAuction.id);
+        await related.set({ auctionId: createdAuction.id, text: 'Related comment' });
+        const removal = { auctionId: createdAuction.id, cascadeDeleteConsignment: false };
+        assert.equal((await invoke(deleteAuction, removal, other.idToken)).status, 403);
+        assert.equal((await related.get()).exists, true);
+        assert.equal((await invoke(deleteAuction, removal, admin.idToken)).status, 200);
+        assert.equal((await edited.ref.get()).exists, false);
+        assert.equal((await related.get()).exists, false);
+        assert.equal((await publicRef.get()).exists, true);
+        assert.equal((await firestore.collection('comments').doc(publicId).get()).exists, true);
+        assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, other.idToken)).status, 403);
+        assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, admin.idToken)).status, 200);
+        assert.equal((await firestore.collection('comments').doc(publicId).get()).get('isPinned'), true);
         assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, true);
         assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: createdAuction.id })).status, 404);
       }
