@@ -479,7 +479,12 @@ function pollPublicAuctions(
 
   const poll = async () => {
     try {
-      const response = await fetch(url, { signal: controller.signal });
+      const user = url.includes('?auctionId=') ? auth.currentUser : null;
+      const token = user ? await user.getIdToken() : null;
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
       if (response.status === 404) {
         callback(null);
       } else {
