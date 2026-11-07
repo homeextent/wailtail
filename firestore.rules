@@ -24,41 +24,46 @@ service cloud.firestore {
         ('email_verified' in request.auth.token && request.auth.token.email_verified == true);
     }
 
-    // Auctions & Media Subcollections
+    // Canonical auction writes are owned by trusted server operations.
+    // Keep these rules on the security branch until replacement clients are ready.
     match /auctions/{auctionId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && 
-        (!request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']) || isAdmin());
-      allow update: if isAuthenticated() && 
-        (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']));
-      allow delete: if isAuthenticated();
+      allow read: if isAdmin();
 
-      match /{document=**} {
-        allow read: if true;
-        allow create, update, delete: if isAuthenticated();
+      match /bids/{bidId} {
+        allow read: if isAdmin();
+      }
+
+      match /media/{mediaId} {
+        allow read: if isAdmin();
       }
     }
 
-    // Bids & Bidding Telemetry
     match /bids/{bidId} {
-      allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isAdmin();
     }
 
-    // Comments & Community Q&A
     match /comments/{commentId} {
+      allow read: if isAdmin();
+    }
+
+    // The server creates a projection only after approving public visibility.
+    match /auctionPublic/{auctionId} {
       allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+
+      match /{feed}/{itemId} {
+        allow read: if feed in ['bids', 'comments', 'media'] &&
+          exists(/databases/$(database)/documents/auctionPublic/$(auctionId));
+      }
     }
 
     // User Accounts & Moderation Registry
     match /users/{userId} {
-      allow read: if true;
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
       allow create: if isAdmin() || (
         isOwner(userId) &&
         (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
@@ -68,6 +73,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isOwner(userId) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
           'role',
           'dealerId',
           'isBanned',
@@ -78,14 +84,16 @@ service cloud.firestore {
          request.resource.data.isEmailVerified == false ||
          isTokenEmailVerified())
       );
-      allow delete: if isOwner(userId) || isAdmin();
+      // Account deletion and moderation cleanup are server operations.
     }
 
     match /bidders/{bidderId} {
-      allow read: if true;
+      allow get: if isOwner(bidderId) || isAdmin();
+      allow list: if isAdmin();
       allow create: if isAdmin() || (
         isOwner(bidderId) &&
         (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
         (!('isBanned' in request.resource.data)) &&
         (!('bannedFromBidding' in request.resource.data)) &&
         (!('bannedAt' in request.resource.data)) &&
@@ -95,6 +103,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isOwner(bidderId) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
           'role',
           'dealerId',
           'isBanned',
@@ -105,7 +114,7 @@ service cloud.firestore {
          request.resource.data.isEmailVerified == false ||
          isTokenEmailVerified())
       );
-      allow delete: if isOwner(bidderId) || isAdmin();
+      // Account deletion and moderation cleanup are server operations.
     }
 
     // Dealer Profiles (Private Canonical Records)
@@ -126,25 +135,22 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Promo Analytics & Click Telemetry
-    match /promo_analytics/{promoId} {
-      allow read: if true;
-      allow create, update: if true;
+    // Generic settings rules must never overlap with a broader client grant.
+    match /settings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() && settingId == 'global';
     }
 
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+    match /promo_analytics/{promoId} {
+      allow read: if isAdmin();
     }
 
     match /mediaConfig/{configId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /media/{docId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     // Intake Forms & Direct Communications
@@ -222,24 +228,23 @@ service cloud.firestore {
     }
 
     match /inquiries/{inquiryId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
-    // Outbox Queues
+    match /auctionNotificationOutbox/{notificationId} {
+      allow read: if isAdmin();
+    }
+
     match /mail/{mailId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /emails/{emailId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /emailLogs/{logId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
   }
 }

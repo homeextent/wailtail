@@ -9,8 +9,8 @@
  * for incomplete cleanup if subsequent Firestore operations fail.
  */
 
-import { getFirebaseAdminServices, FirebaseAdminServices } from './_lib/firebaseAdmin';
-import { DESIGNATED_ADMIN_EMAILS, isDesignatedAdminEmail, normalizeEmail } from '../src/config/adminConfig';
+import { getFirebaseAdminServices, FirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { DESIGNATED_ADMIN_EMAILS, isDesignatedAdminEmail, normalizeEmail } from '../../src/config/adminConfig.js';
 
 function sendJson(res: any, status: number, data: any) {
   if (res.setHeader) {

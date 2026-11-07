@@ -9,8 +9,7 @@ import {
   recordPromoClick,
   isPromoScheduleActive,
   isPromoAudienceMatch,
-  updateAuctionStatus,
-  reconcileAuctionClosureAndNotifyWinner
+  advanceAuctionClock
 } from '../services/auctionService';
 import { 
   Clock, 
@@ -202,109 +201,23 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
     now
   );
 
-  const reconciledStatusRef = useRef<string>('');
-  const settledLotsRef = useRef<Set<string>>(new Set());
-
-  // Real-time clock ticker settlement:
-  // When real-time clock tickers detect an active lot crossing endTime (now >= endTime),
-  // directly invoke reconcileAuctionClosureAndNotifyWinner(auction.id) to guarantee settlement execution.
+  const clockRequestRef = useRef({ key: '', pending: false, retryAt: 0 });
   useEffect(() => {
-    const hasValidEndTime = typeof auction.endTime === 'number' && auction.endTime > 0;
-    const isDraftOrPending = auction.status === 'draft' || auction.status === 'pending_review';
-
-    if (
-      auction.id &&
-      !isDraftOrPending &&
-      hasValidEndTime &&
-      now >= auction.endTime &&
-      auction.winningEmailSent !== true &&
-      !settledLotsRef.current.has(auction.id)
-    ) {
-      settledLotsRef.current.add(auction.id);
-      console.log(`[Settlement] Real-time clock ticker in AuctionHeader detected active lot ${auction.id} crossing endTime. Directly invoking reconcileAuctionClosureAndNotifyWinner.`);
-      reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
-        console.warn(`[Settlement] AuctionHeader reconcileAuctionClosureAndNotifyWinner error for ${auction.id}:`, err);
-      });
-    }
-  }, [auction.id, auction.endTime, auction.status, auction.winningEmailSent, now]);
-
-  // Silent background reconciliation effect to keep Firestore synchronized with real-time status transitions
-  useEffect(() => {
-    const hasValidEndTime = typeof auction.endTime === 'number' && auction.endTime > 0;
-    const isTerminal = auction.status === 'ended' || auction.status === 'sold' || auction.status === 'reserve_not_met';
-    const isDraftOrPending = auction.status === 'draft' || auction.status === 'pending_review';
-
-    // Skip if auction is already in terminal state or draft/pending
-    if (!auction.id || isTerminal || isDraftOrPending) {
-      return;
-    }
-
-    // Skip if effective status matches current document status
-    if (effectiveStatus === auction.status) {
-      return;
-    }
-
-    // Prevent background status tickers from firing updates while auction is actively receiving bids
-    // (e.g. do not persist client-side visual states like 'ending_soon' to the auction document)
-    if (effectiveStatus === 'ending_soon' && (auction.status === 'active' || auction.status === 'live')) {
-      return;
-    }
-
-    // Verify valid endTime exists before evaluating expiration
-    const isExpired = hasValidEndTime && now >= auction.endTime;
-    const isUpcomingToActive = auction.status === 'upcoming' && now >= auction.startTime && (!hasValidEndTime || now < auction.endTime);
-
-    if (!isExpired && !isUpcomingToActive) {
-      return;
-    }
-
-    // If lot is expired, guard against repeated reconciliation across 1-second ticks
-    if (isExpired && settledLotsRef.current.has(auction.id)) {
-      return;
-    }
-
-    // Target terminal status upon expiration or active upon start
-    const isReserveMet = Boolean(
-      auction.isReserveMet ||
-      (auction.reserveAmount > 0 ? auction.currentBid >= auction.reserveAmount : true)
-    );
-    const targetStatus = isExpired ? (isReserveMet ? 'sold' : 'ended') : 'active';
-
-    if (targetStatus === auction.status) {
-      return;
-    }
-
-    const key = `${auction.id}:${targetStatus}`;
-    if (reconciledStatusRef.current === key) {
-      return;
-    }
-    reconciledStatusRef.current = key;
-
-    if (isExpired) {
-      settledLotsRef.current.add(auction.id);
-    }
-
-    updateAuctionStatus(auction.id, targetStatus).catch((err) => {
-      console.warn('Silent auction status reconciliation failed:', err);
+    if (!auction.id || !['upcoming', 'active', 'live', 'ending_soon'].includes(auction.status) ||
+        !Number.isFinite(auction.startTime) || !Number.isFinite(auction.endTime)) return;
+    const shouldAdvance = now >= auction.endTime || (auction.status === 'upcoming' && now >= auction.startTime);
+    if (!shouldAdvance) return;
+    const key = `${auction.id}:${auction.status}:${auction.startTime}:${auction.endTime}`;
+    const previous = clockRequestRef.current;
+    if (previous.key === key && (previous.pending || now < previous.retryAt)) return;
+    const request = { key, pending: true, retryAt: now + 5000 };
+    clockRequestRef.current = request;
+    void advanceAuctionClock(auction.id).catch(error => {
+      console.warn('Auction clock reconciliation failed:', error);
+    }).finally(() => {
+      request.pending = false;
     });
-
-    if (isExpired) {
-      console.log(`[Settlement] AuctionHeader: Lot ${auction.id} expired. Invoking reconcileAuctionClosureAndNotifyWinner.`);
-      reconcileAuctionClosureAndNotifyWinner(auction.id).catch((err) => {
-        console.warn('Silent auction closure reconciliation failed:', err);
-      });
-    }
-  }, [
-    effectiveStatus,
-    auction.id,
-    auction.status,
-    auction.endTime,
-    auction.startTime,
-    auction.isReserveMet,
-    auction.currentBid,
-    auction.reserveAmount,
-    now
-  ]);
+  }, [auction.id, auction.status, auction.startTime, auction.endTime, now]);
 
   const timeData = formatAuctionCountdown(
     auction.startTime, 
@@ -316,7 +229,7 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   const isUpcoming = effectiveStatus === 'upcoming';
 
   // Dynamic reserve status: strictly never reveals the dollar amount
-  const reserveMet = Boolean(auction.isReserveMet || auction.currentBid >= auction.reserveAmount);
+  const reserveMet = auction.isReserveMet === true;
 
   return (
     <div className="bg-white border-b border-zinc-200">

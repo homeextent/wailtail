@@ -23,10 +23,16 @@ import {
   Firestore
 } from 'firebase/firestore';
 
-const PROJECT_ID = 'studio-apps-483721';
+// Keep this synthetic project ID aligned with the test:rules command.
+const PROJECT_ID = 'demo-wailtail-stage3';
 const DATABASE_ID = 'ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e';
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST?.split(':')[0] || '127.0.0.1';
-const EMULATOR_PORT = Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || '8080');
+const emulatorAddress = process.env.FIRESTORE_EMULATOR_HOST ?? '';
+const loopback = /^127\.0\.0\.1:(\d{1,5})$/.exec(emulatorAddress);
+if (!loopback || Number(loopback[1]) < 1 || Number(loopback[1]) > 65535) {
+  throw new Error('Firestore rules tests require a loopback emulator. Run npm run test:rules.');
+}
+const EMULATOR_HOST = '127.0.0.1';
+const EMULATOR_PORT = Number(loopback[1]);
 
 const APPLICANT_EMAIL = 'applicant@wailtail.com';
 const OTHER_USER_EMAIL = 'otheruser@wailtail.com';
@@ -1329,4 +1335,118 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
       );
     });
   });
+});
+
+
+describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
+  before(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: EMULATOR_HOST,
+        port: EMULATOR_PORT,
+        rules: fs.readFileSync('firestore.rules', 'utf8')
+      }
+    });
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  beforeEach(async () => {
+    await clearNamedDatabase();
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      const db = getNamedDb(ctx);
+      await Promise.all([
+        setDoc(doc(db, 'auctions/lot'), { sellerId: 'seller', status: 'draft', reserveAmount: 10000 }),
+        setDoc(doc(db, 'auctions/lot/bids/bid'), { bidderEmail: 'bidder@example.com' }),
+        setDoc(doc(db, 'auctions/lot/media/hero'), { private: true }),
+        setDoc(doc(db, 'auctionPublic/published'), { title: 'Published lot' }),
+        setDoc(doc(db, 'auctionPublic/published/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/unpublished/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/published/internal/item'), { private: true }),
+        setDoc(doc(db, 'users/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'bidders/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'auctionNotificationOutbox/private'), { to: ['private@example.test'], status: 'queued' }),
+        setDoc(doc(db, 'settings/promotions'), { enabled: true })
+      ]);
+    });
+  });
+
+  for (const uid of ['guest', 'seller', 'other']) {
+    test(`${uid} cannot mutate canonical auctions or protected feeds`, async () => {
+      const ctx = uid === 'guest' ? testEnv.unauthenticatedContext() : testEnv.authenticatedContext(uid);
+      const db = getNamedDb(ctx);
+      await assertFails(setDoc(doc(db, 'auctions/new'), { sellerId: uid }));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: uid, reserveAmount: 1 }));
+      await assertFails(deleteDoc(doc(db, 'auctions/lot')));
+      for (const path of ['auctions/lot/bids/new', 'auctions/lot/media/new', 'auctions/lot/unknown/new',
+        'bids/new', 'comments/new', 'auctionPublic/new', 'settings/promotions', 'settings/media-lot',
+        'promo_analytics/new', 'inquiries/new', 'auctionNotificationOutbox/new', 'mail/new', 'emails/new', 'emailLogs/new']) {
+        await assertFails(setDoc(doc(db, path), { actor: uid }));
+      }
+    });
+  }
+
+  test('public reads are limited to published projections and explicit feeds', async () => {
+    const db = getNamedDb(testEnv.unauthenticatedContext());
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published')));
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published/media/hero')));
+    await assertSucceeds(getDoc(doc(db, 'settings/promotions')));
+    for (const path of ['auctions/lot', 'auctions/lot/bids/bid', 'auctions/lot/media/hero',
+      'auctionPublic/unpublished/media/hero', 'auctionPublic/published/internal/item', 'auctionNotificationOutbox/private']) {
+      await assertFails(getDoc(doc(db, path)));
+    }
+  });
+
+  test('profile reads are self-scoped and clients cannot delete their own moderation records', async () => {
+    const self = getNamedDb(testEnv.authenticatedContext('seller'));
+    const other = getNamedDb(testEnv.authenticatedContext('other'));
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(getDoc(doc(self, name, 'seller')));
+      await assertFails(getDoc(doc(other, name, 'seller')));
+      await assertFails(getDocs(collection(self, name)));
+      await assertFails(deleteDoc(doc(self, name, 'seller')));
+    }
+  });
+
+  for (const email of [ADMIN_EMAIL, 'jeremy@theinnovativegroup.ca']) {
+    test(`verified designated administrator retains privileged reads (${email})`, async () => {
+      const db = getNamedDb(testEnv.authenticatedContext('admin', { email, email_verified: true }));
+      const unverified = getNamedDb(testEnv.authenticatedContext('unverified', { email, email_verified: false }));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot')));
+      await assertSucceeds(getDoc(doc(db, 'auctionNotificationOutbox/private')));
+      await assertFails(setDoc(doc(db, 'auctionNotificationOutbox/direct'), { status: 'queued' }));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot/bids/bid')));
+      await assertSucceeds(getDocs(collection(db, 'users')));
+      await assertSucceeds(updateDoc(doc(db, 'settings/promotions'), { enabled: false }));
+      await assertFails(getDoc(doc(unverified, 'auctions/lot')));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: 'other' }));
+    });
+  }
+  test('member administration, branding and promotions remain administrator-scoped', async () => {
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    const member = getNamedDb(testEnv.authenticatedContext('seller', { email: APPLICANT_EMAIL, email_verified: true }));
+    const guest = getNamedDb(testEnv.unauthenticatedContext());
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(updateDoc(doc(admin, name, 'seller'), { role: 'bidder', isBanned: true, bannedFromBidding: true }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { isBanned: false }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { role: 'admin' }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { watchlist: ['lot'] }));
+      await assertSucceeds(updateDoc(doc(member, name, 'seller'), { displayName: 'My display name' }));
+    }
+    await assertSucceeds(setDoc(doc(admin, 'settings/global'), { siteName: 'Test brand', privateAdminField: 'private' }));
+    await assertFails(getDoc(doc(guest, 'settings/global')));
+    await assertFails(updateDoc(doc(member, 'settings/global'), { siteName: 'Spoofed' }));
+    await assertSucceeds(updateDoc(doc(admin, 'settings/promotions'), { enabled: false, cards: [{ imageUrl: 'https://example.test/promo.jpg' }] }));
+    await assertSucceeds(getDoc(doc(guest, 'settings/promotions')));
+    await assertFails(updateDoc(doc(member, 'settings/promotions'), { enabled: true }));
+    for (const context of [admin, member, guest]) {
+      await assertFails(setDoc(doc(context, 'inquiries/client-spoof'), { senderId: 'seller' }));
+      await assertFails(setDoc(doc(context, 'memberActionLimits/seller'), { lastInquiryAt: 0 }));
+      await assertFails(deleteDoc(doc(context, 'auctions/lot')));
+    }
+  });
+
 });

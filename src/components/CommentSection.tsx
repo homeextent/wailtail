@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Comment, Auction } from '../types';
-import { postComment, toggleUpvoteComment, editComment, deleteComment } from '../services/auctionService';
+import { postComment, toggleUpvoteComment, editComment, deleteComment, setCommentPinned } from '../services/auctionService';
 import { formatCurrency, formatRelativeTime, formatExternalUrl } from '../utils/formatters';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { 
   MessageSquare, 
   ThumbsUp, 
@@ -94,7 +92,6 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
   const canPinComment = Boolean(
     user && (
       user.uid === auction?.sellerId ||
-      user.email?.toLowerCase() === auction?.sellerEmail?.toLowerCase() ||
       isAdmin
     )
   );
@@ -105,23 +102,7 @@ export const CommentSection: React.FC<CommentSectionProps> = ({
     const nextPinned = !targetComment.isPinned;
 
     try {
-      if (nextPinned) {
-        // Unpin any other existing pinned comment for this auction lot
-        const currentlyPinned = comments.filter((c) => c.isPinned && c.id !== targetComment.id);
-        await Promise.all(
-          currentlyPinned.map((c) =>
-            updateDoc(doc(db, 'comments', c.id), {
-              isPinned: false
-            })
-          )
-        );
-      }
-
-      await updateDoc(doc(db, 'comments', targetComment.id), {
-        isPinned: nextPinned,
-        pinnedAt: nextPinned ? Date.now() : null,
-        pinnedBy: nextPinned ? user.uid : null
-      });
+      await setCommentPinned(targetComment.id, nextPinned);
 
       setActionNotice(nextPinned ? 'Comment pinned to top of discussion.' : 'Comment unpinned.');
       setTimeout(() => setActionNotice(null), 3000);
