@@ -43,7 +43,7 @@ import {
 } from '../types';
 import { mediaConfig as DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG } from '../mediaConfig';
 export { DEFAULT_MEDIA_CONFIG, BLANK_MEDIA_CONFIG };
-import { sendBidPlacedEmail, sendOutbidAlertEmail, sendSellerInquiryEmail } from './emailService';
+import { sendSellerInquiryEmail } from './emailService';
 
 export const MAIN_AUCTION_ID = 'wailtail-1978-porsche-911';
 export const MEDIA_CONFIG_DOC_ID = 'main-media-config';
@@ -2540,267 +2540,28 @@ export function subscribeToComments(
 export async function placeBidWithAntiSnipe(
   auctionId: string,
   amount: number,
-  bidder: {
-    uid: string;
-    displayName: string;
-    email: string;
-  }
+  _bidder: { uid: string; displayName: string; email: string }
 ): Promise<{ success: boolean; message?: string; antiSniped?: boolean; newEndTime?: number }> {
-  if (!auth.currentUser) {
-    throw new Error("Please log in to place a bid");
+  const user = auth.currentUser;
+  if (!user) throw new Error('Please log in to place a bid');
+
+  const response = await fetch('/api/place-auction-bid', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId, amount })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.success !== true) {
+    throw new Error(
+      response.status < 500 && typeof result?.error === 'string'
+        ? result.error
+        : 'Bidding is temporarily unavailable.'
+    );
   }
-
-  const auctionRef = doc(db, 'auctions', auctionId);
-
-  let txResult: {
-    success: boolean;
-    antiSniped?: boolean;
-    newEndTime?: number;
-    outbidDetails: {
-      auctionId: string;
-      vehicleTitle: string;
-      currentBid: number;
-      minimumIncrement: number;
-      bidderEmail: string;
-      bidderName: string;
-      previousBidAmount?: number;
-      newEndTime?: number;
-    } | null;
-    bidPlacedDetails: {
-      toEmail: string;
-      bidderName: string;
-      bidAmount: number;
-      vehicleTitle: string;
-      auctionId: string;
-      isReserveMet: boolean;
-      endTime: number;
-      antiSniped: boolean;
-    } | null;
-  } | null = null;
-
-  const maxAttempts = 4;
-  let lastError: any = null;
-
-  // Transaction Concurrency Retry Loop with fast backoff for transient contention
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      txResult = await runTransaction(db, async (transaction) => {
-        const auctionSnap = await transaction.get(auctionRef);
-        if (!auctionSnap.exists()) {
-          throw new Error("Auction does not exist.");
-        }
-
-        const auctionData = auctionSnap.data() as Auction;
-        const now = Date.now();
-
-        // Check if bidder has been revoked or banned by administrator
-        if (bidder.uid) {
-          const userRef = doc(db, 'users', bidder.uid);
-          const userSnap = await transaction.get(userRef);
-          if (userSnap.exists()) {
-            const userData = userSnap.data() as UserProfile;
-            if (userData.bannedFromBidding) {
-              throw new Error("Your bidding privileges have been revoked by the auction administrator.");
-            }
-          }
-        }
-
-        // Check if auction is active
-        if (now < auctionData.startTime) {
-          throw new Error("Auction has not started yet.");
-        }
-        if (now > auctionData.endTime || auctionData.status === 'ended') {
-          throw new Error("Auction has already ended.");
-        }
-
-        // Minimum required bid validation
-        const minRequired = auctionData.currentBid > 0 
-          ? auctionData.currentBid + auctionData.minimumIncrement 
-          : auctionData.startingBid;
-
-        if (amount < minRequired) {
-          throw new Error(`Bid must be at least $${minRequired.toLocaleString()}.`);
-        }
-
-        // Check reserve status
-        const isReserveMet = amount >= auctionData.reserveAmount || auctionData.isReserveMet;
-
-        // Capture previous lead bidder during the transaction read phase
-        const previousBidderEmail = auctionData.highBidderEmail;
-        const previousBidderName = auctionData.highBidderName;
-        const previousBidderId = auctionData.highBidderId;
-        const prevAmount = auctionData.currentBid;
-
-        // Anti-sniping logic:
-        // If a bid is placed within the final 2 minutes, extend the countdown timer back to 2 minutes
-        let newEndTime = auctionData.endTime;
-        let antiSniped = false;
-        const remainingTime = auctionData.endTime - now;
-
-        if (remainingTime <= ANTI_SNIPING_WINDOW_MS) {
-          newEndTime = now + ANTI_SNIPING_EXTENSION_MS;
-          antiSniped = true;
-        }
-
-        // Update auction doc
-        transaction.update(auctionRef, {
-          currentBid: amount,
-          bidCount: (auctionData.bidCount || 0) + 1,
-          highBidderId: bidder.uid,
-          highBidderName: bidder.displayName,
-          highBidderEmail: bidder.email,
-          isReserveMet,
-          endTime: newEndTime,
-          updatedAt: now
-        });
-
-        // Create bid record in auctions/{auctionId}/bids and root bids collection
-        const subBidRef = doc(collection(db, 'auctions', auctionId, 'bids'));
-        const bidId = subBidRef.id;
-        const newBidRef = doc(db, 'bids', bidId);
-        const bidderHandle = bidder.displayName || (bidder.email ? bidder.email.split('@')[0] : 'Bidder');
-        const bidRecord: Bid = {
-          id: bidId,
-          auctionId,
-          amount,
-          bidderId: bidder.uid,
-          bidderName: bidder.displayName,
-          bidderHandle,
-          bidderEmail: bidder.email,
-          timestamp: now,
-          antiSniped
-        };
-        transaction.set(subBidRef, bidRecord);
-        transaction.set(newBidRef, bidRecord);
-
-        // Also add an automated comment entry in public comment feed for live bid tracking
-        const newCommentRef = doc(collection(db, 'comments'));
-        const bidComment: Comment = {
-          id: newCommentRef.id,
-          auctionId,
-          userId: bidder.uid,
-          userName: bidder.displayName,
-          userBadge: 'Verified Bidder',
-          text: `Bid placed for $${amount.toLocaleString()}${antiSniped ? ' (Timer extended +2:00 via Anti-Sniping)' : ''}`,
-          timestamp: now,
-          upvotes: 0,
-          upvotedBy: [],
-          isBid: true,
-          bidAmount: amount
-        };
-        transaction.set(newCommentRef, bidComment);
-
-        // Record outbid parameters for post-transaction execution (prevent self-outbid emails)
-        const isDistinctBidder = Boolean(
-          previousBidderEmail &&
-          previousBidderEmail.includes('@') &&
-          previousBidderId &&
-          previousBidderId !== bidder.uid &&
-          previousBidderEmail.toLowerCase() !== (bidder.email || '').toLowerCase()
-        );
-
-        const outbidDetails = isDistinctBidder
-          ? {
-              auctionId,
-              vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
-              currentBid: amount,
-              minimumIncrement: auctionData.minimumIncrement || 250,
-              bidderEmail: previousBidderEmail!,
-              bidderName: previousBidderName || "Registered Bidder",
-              previousBidAmount: prevAmount,
-              newEndTime
-            }
-          : null;
-
-        const bidPlacedDetails = bidder.email
-          ? {
-              toEmail: bidder.email,
-              bidderName: bidder.displayName,
-              bidAmount: amount,
-              vehicleTitle: auctionData.title || "Wailtail Single-Car Auction",
-              auctionId,
-              isReserveMet,
-              endTime: newEndTime,
-              antiSniped
-            }
-          : null;
-
-        return {
-          success: true,
-          antiSniped,
-          newEndTime: antiSniped ? newEndTime : undefined,
-          outbidDetails,
-          bidPlacedDetails
-        };
-      });
-
-      // Transaction succeeded: break retry loop
-      break;
-    } catch (err: any) {
-      lastError = err;
-      const isTransient = isTransientContentionError(err);
-      if (isTransient && attempt < maxAttempts) {
-        const backoffs = [50, 150, 300];
-        const backoffMs = backoffs[attempt - 1] ?? 300;
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-
-  if (!txResult) {
-    throw lastError || new Error("Failed to place bid after multiple attempts.");
-  }
-
-  const { outbidDetails, bidPlacedDetails } = txResult;
-
-  // NON-BLOCKING EMAIL DISPATCH - Executed strictly OUTSIDE and AFTER runTransaction completes
-  if (bidPlacedDetails) {
-    const details = bidPlacedDetails;
-    try {
-      sendBidPlacedEmail(details).catch((err) => console.warn('Transactional email send error:', err));
-    } catch (err) {
-      console.warn('Transactional email send invocation error:', err);
-    }
-  }
-
-  if (outbidDetails) {
-    const details = outbidDetails;
-    try {
-      sendOutbidAlertEmail({
-        toEmail: details.bidderEmail,
-        bidderName: details.bidderName,
-        previousBidAmount: details.previousBidAmount || 0,
-        newBidAmount: details.currentBid,
-        vehicleTitle: details.vehicleTitle,
-        auctionId: details.auctionId,
-        endTime: details.newEndTime || Date.now()
-      }).catch((err) => console.warn('Outbid alert email error:', err));
-    } catch (err) {
-      console.warn('Outbid alert email invocation error:', err);
-    }
-
-    try {
-      // Asynchronously dispatch serverless transactional email notification via /api/send-consignment-email
-      sendOutbidNotificationEmail({
-        auctionId: details.auctionId,
-        vehicleTitle: details.vehicleTitle,
-        currentBid: details.currentBid,
-        minimumIncrement: details.minimumIncrement,
-        bidderEmail: details.bidderEmail,
-        bidderName: details.bidderName
-      }).catch((err) => console.warn('Serverless outbid notification email error:', err));
-    } catch (err) {
-      console.warn('Serverless outbid notification email invocation error:', err);
-    }
-  }
-
-  return {
-    success: txResult.success,
-    antiSniped: txResult.antiSniped,
-    newEndTime: txResult.newEndTime
-  };
+  return result;
 }
 
 export const placeBid = placeBidWithAntiSnipe;
