@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security — Auction Security Gate Stage 3 (implementation review)
+
+- Added ownership-scoped seller draft discovery, trusted narrative and media operations, private draft previews, submission for review, and designated-administrator return to draft.
+- Added candidate Firestore and Storage restrictions plus endpoint, rules and isolated seller workflow coverage. Local build, lint, 95 endpoint tests and seller lifecycle verification were reported at `7cff7f6`; the proposed staging revision requires its own verification.
+- Staging integration remains under review. The candidate rules restrict canonical auction access, and existing catalog, bidding and inventory clients require compatibility verification. The separate Storage cutover rehearsal and live rollout are outside this change.
+
+
 ### Security — Server-Authorized Administrator Account Deletion (Staging)
 
 - **Implementation commit**: [`860042bc35fcc98246f6385a035fc08d3c84d01f`](https://github.com/homeextent/wailtail/commit/860042bc35fcc98246f6385a035fc08d3c84d01f) hardens `api/admin-delete-user.ts` and the production client service `deleteUserRecord()`.
