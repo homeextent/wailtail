@@ -1,3 +1,4 @@
+import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
 import updateAuction from '../api/admin-update-auction';
 import assert from 'node:assert/strict';
@@ -329,6 +330,17 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const edited = await firestore.collection('auctions').doc(createdAuction.id).get();
         assert.equal(edited.get('title'), 'Edited inventory draft');
         assert.equal(edited.get('sellerId'), undefined);
+        const hero = 'https://example.test/hero.jpg';
+        const gallery = {
+          auctionId: createdAuction.id,
+          config: { heroImages: [hero], fullGallery: [{ id: 'example', url: hero, sellerEmail: other.email }] }
+        };
+        assert.equal((await invoke(saveAuctionMedia, gallery, other.idToken)).status, 403);
+        assert.equal((await invoke(saveAuctionMedia, gallery, admin.idToken)).status, 200);
+        assert.equal((await edited.ref.get()).get('leadHeroImage'), hero);
+        const savedGallery = await firestore.collection('settings').doc(`media-${createdAuction.id}`).get();
+        assert.deepEqual(savedGallery.get('fullGallery'), [{ id: 'example', url: hero }]);
+
         const bulk = { auctionIds: [createdAuction.id, 'missing-inventory-lot'], updates: { status: 'preview' } };
         assert.equal((await invoke(updateAuction, bulk, other.idToken)).status, 403);
         assert.equal((await invoke(updateAuction, bulk, admin.idToken)).status, 404);
