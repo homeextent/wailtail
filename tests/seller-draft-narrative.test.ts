@@ -1,8 +1,8 @@
-import { projectPublicAuction } from '../api/public-auctions';
-import { handlePlaceAuctionBid } from '../api/place-auction-bid';
+import { projectPublicAuction } from '../server/api/public-auctions';
+import { handlePlaceAuctionBid } from '../server/api/place-auction-bid';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkDraftNarrativeWrite, handleSellerDraftNarrative, handleSellerDraftSubmission, parseDraftNarrative } from '../api/seller-draft-narrative';
+import { checkDraftNarrativeWrite, handleSellerDraftNarrative, handleSellerDraftSubmission, parseDraftNarrative } from '../server/api/seller-draft-narrative';
 
 const payload = {
   auctionId: 'test-draft',

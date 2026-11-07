@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { isDesignatedAdminEmail } from '../src/config/adminConfig';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 
 export default function handler(req: any, res: any) {

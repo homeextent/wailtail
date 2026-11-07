@@ -10,11 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security — Auction Security Gate (implementation review)
 
+- Consolidated 28 API handlers behind one allowlisted Vercel Function to resolve the Hobby plan deployment rejection. Existing API URLs and per-handler authorization remain in place. Handler source moved to `server/api/`; browser integration uses the same router. Added focused routing, method, credential, scheduler and deployment-layout regression coverage.
+
 - Added ownership-scoped seller draft discovery, trusted narrative and media operations, private previews, submission for review and designated-administrator return to draft.
 - Replaced public canonical reads with field projections for catalog, lot media, bid history and comments. Added server-authorized bidding, comment mutations, inventory edits and bounded deletion, atomic bulk statuses, gallery persistence and published image uploads.
 - Added audited bid retraction, draft duplication from saved source data and a selected-auction bid reset that preserves unrelated auctions and ordinary comments. Removed client fallback that reported successful duplication after a failed save.
 - Moved start, expiry and settlement decisions to server time. Added a bearer-protected worker for unattended transitions and a private notification outbox with Resend dispatch, stable idempotency keys and reconciliation for expired retry windows. Scheduler activation and real email delivery remain deployment acceptance items.
-- CI run 42337023934 passed at `076b022`, covering build, lint, endpoint tests, rules, integrated auction workflows and headless Chrome. The later duplication, reset and notification changes require head-revision CI. Notification tests use mocked provider responses and simulate both provider failure and failure after provider acceptance.
+- CI run 42382737880 passed at `36d539d`, covering build, lint, 97 endpoint tests, 133 rules tests, integrated auction workflows and headless Chrome. Routing consolidation requires fresh head-revision CI and a successful Vercel preview. Notification tests use mocked provider responses and simulate both provider failure and failure after provider acceptance.
 - PR #3 remains under review for staging. Remaining direct-client workflows require compatibility checks before full-site release acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
 
 ### Security — Server-Authorized Administrator Account Deletion (Staging)

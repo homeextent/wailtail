@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { handleAdminDeleteUser } from '../api/admin-delete-user';
+import { handleAdminDeleteUser } from '../server/api/admin-delete-user';
 import { isDesignatedAdminEmail } from '../src/config/adminConfig';
 import { deleteUserRecord } from '../src/services/auctionService';
 

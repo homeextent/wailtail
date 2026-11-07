@@ -7,6 +7,7 @@ The changes on `security/auction-security-gate` are under review in PR #3 target
 ### Trusted application paths
 
 - Seller discovery, draft reads, narrative and media edits, submission, and administrator-requested revisions use verified Firebase identity, assigned seller UID, draft state and revision checks. Submission records its review event in the same transaction. A submitted draft is read-only for the seller.
+- Deployment has a single entry point at `api/router.ts`. Handler implementations and Firebase Admin helpers live under `server/api/` and are imported through a fixed allowlist. `vercel.json` routes `/api/<endpoint>` to this function before the SPA fallback, preserving existing HTTP paths and per-handler method, identity and authorization checks. Unknown API routes return JSON 404. The function has a 60-second execution budget. The browser emulator harness exercises the same router.
 - Public catalog and lot detail use `/api/public-auctions`, with explicit field lists for auctions, media, bids and comments. Drafts and pending-review lots are excluded. Reserve amounts, seller contact information, bidder emails and other viewers' author IDs and votes stay private. Public views poll every five seconds and unsubscribe on navigation. Administrator inventory and editor reads retain canonical access.
 - Bid placement, administrator inventory creation, edits, bulk status changes, deletion, media saves and published image uploads use trusted endpoints. Mutations derive caller authority from revocation-aware token verification and the designated administrator allowlist where applicable. Bid placement preserves the two-minute soft close and writes the auction, both bid histories, a bid comment and notification records together.
 - Comment authorship, edits, deletion, votes and pinning use server validation. Retraction uses the verified administrator identity, preserves both bid-history records, and recalculates the next active bid within the transaction. Post-settlement retraction requires separate review.
@@ -66,10 +67,10 @@ Remaining legacy workflow review includes watchlists, inquiries, global branding
 | Floating Feedback Dock | `FloatingFeedbackWidget.tsx` | Public | Ergonomic, dark slate floating pill anchored across all viewports with dynamic prompt label/badge support; features route-aware collision avoidance dynamically shifting on single lot views (`bottom-24 right-4`) to prevent obstruction of `StickyBidBar.tsx`. |
 | Platform Feedback Modal | `FeedbackModal.tsx` | Public / Guest & Authenticated | Collector-grade dialog supporting 3 feedback categories (`bug`, `suggestion`, `general`), 10–1,500 character counter, auto-populated member contact credentials, and zero-friction client telemetry capture (URL, viewport dimensions, User Agent, UID/role) persisting to `/feedback` collection and dispatching via serverless email. |
 | Background Service Worker | `public/firebase-messaging-sw.js` | Public / Worker | Standalone background service worker listening for FCM push messages (`onBackgroundMessage`), displaying native outbid, closing warning, and status notifications with deep linking and notification click focus. |
-| `/api/send-consignment-email` | `api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
-| `/api/admin-delete-user` | `api/admin-delete-user.ts` | Verified designated administrator / Serverless | Server-authorized account deletion endpoint. Verifies a revocation-aware Firebase ID token, requires a verified designated administrator, rejects self-deletion and protected administrator targets, deletes the target Auth identity, then performs retryable server-side Firestore profile cleanup. |
-| `/api/youtube-playlist` | `api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
-| `/api/ai-assistant` | `api/ai-assistant.ts` | Authenticated (`ADMIN`, `SELLER`) / Serverless | Vercel serverless AI writing assistant and editorial synthesis engine leveraging Google Gemini 2.5 Flash with fallback candidate models, 4.5MB payload capacity, and 60-second execution budget. |
+| `/api/send-consignment-email` | `server/api/send-consignment-email.ts` | Public / Serverless | Vercel serverless proxy endpoint dispatching structured HTML intake notifications via Resend API to platform administrators and dual-branded confirmation emails. |
+| `/api/admin-delete-user` | `server/api/admin-delete-user.ts` | Verified designated administrator / Serverless | Server-authorized account deletion endpoint. Verifies a revocation-aware Firebase ID token, requires a verified designated administrator, rejects self-deletion and protected administrator targets, deletes the target Auth identity, then performs retryable server-side Firestore profile cleanup. |
+| `/api/youtube-playlist` | `server/api/youtube-playlist.ts` | Public / Serverless | Vercel serverless proxy bypassing browser CORS to parse YouTube playlist XML Atom feeds into driving video chapters. |
+| `/api/ai-assistant` | `server/api/ai-assistant.ts` | Authenticated (`ADMIN`, `SELLER`) / Serverless | Vercel serverless AI writing assistant and editorial synthesis engine leveraging Google Gemini 2.5 Flash with fallback candidate models, 4.5MB payload capacity, and 60-second execution budget. |
 
 #### Reactive Document Title Synchronization (`src/App.tsx`)
 The platform implements a centralized, reactive `useEffect` lifecycle hook in `App.tsx` that dynamically synchronizes `document.title` to the active application route and listing entity state, replacing legacy hardcoded fallbacks with structured branding:
@@ -846,7 +847,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - **Native `#view=FitH` Embedding**: Appends `#toolbar=1&navpanes=0&view=FitH` URL parameters to embedded iframe sources, ensuring inspection PDFs automatically fit container width and present native browser zoom/pagination controls without manual user zooming.
 
 ### 5.2 Serverless YouTube Video Ingestion Pipeline
-1. **Vercel Serverless Proxy Endpoint (`api/youtube-playlist.ts`)**:
+1. **Vercel Serverless Proxy Endpoint (`server/api/youtube-playlist.ts`)**:
    - Bypasses browser cross-origin resource sharing (CORS) restrictions that block client-side requests to YouTube feed endpoints.
    - Exposes `/api/youtube-playlist?list={playlistId}` returning sanitized JSON chapter data with permissive CORS headers (`Access-Control-Allow-Origin: *`).
 2. **Server-Side RSS XML Feed Ingestion**:
@@ -862,7 +863,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ### 5.3 Serverless Email Dispatcher (`/api/send-consignment-email`)
 1. **Endpoint Architecture & Multi-Template Proxy Pipeline**:
-   - Vercel Serverless Function hosted at `/api/send-consignment-email` (`api/send-consignment-email.ts`).
+   - Vercel Serverless Function hosted at `/api/send-consignment-email` (`server/api/send-consignment-email.ts`).
    - Supports a multi-mode payload interface via `type: 'consignment' | 'inquiry' | 'consignment_receipt' | 'welcome_bidder' | 'consignment_approved' | 'consignment_rejected' | 'outbid_notification' | 'winning_bid_confirmation' | 'feedback_report'` (defaulting to `'consignment'` if unspecified):
      - **Consignment Intake (`type: 'consignment'`)**: Handles incoming JSON payloads from the public consignment modal (`ConsignmentModal.tsx`) and dispatches structured HTML notification emails directly to curation administrators with 1-click admin triage deep-links. Includes case-insensitive admin recipient deduplication.
      - **Private Buyer Inquiries (`type: 'inquiry'`)**: Handles private direct inquiries dispatched from `ContactSellerModal.tsx`, transmitting prospective buyer messages and seller inquiry details directly to administrators/sellers with zero client-side credential exposure.
@@ -1003,7 +1004,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
 
 ### 5.6 Serverless AI Writing Assistant & Editorial Synthesis Engine (`/api/ai-assistant`)
 1. **Endpoint Architecture & Gemini 2.5 Flash Migration**:
-   - Vercel Serverless Function hosted at `/api/ai-assistant` (`api/ai-assistant.ts`) powering Wailtail's AI Editorial Assistant modal (`AiAssistantModal.tsx`).
+   - Vercel Serverless Function hosted at `/api/ai-assistant` (`server/api/ai-assistant.ts`) powering Wailtail's AI Editorial Assistant modal (`AiAssistantModal.tsx`).
    - Integrated with Google Gemini generative AI using `gemini-2.5-flash` as primary synthesis engine, supported by a resilient candidate model fallback array (`gemini-flash-latest`, `gemini-2.0-flash`) that automatically cascades if rate-limiting or service deprecations occur.
    - Configured with `maxDuration = 60` (60-second Vercel execution timeout extension) and `maxOutputTokens: 8192` to accommodate deep, multi-paragraph vehicle history synthesis and complete 7-section listing draft generations.
 2. **Serverless Payload Expansion & Edge BodyParser**:
@@ -1147,7 +1148,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
   - **Section 3 (Technical Specifications)**: Automatic real-time synchronization from Section 1 into Section 3 table and public highlights card, with support for appending, reordering, and deleting custom specification rows.
   - **Section 4 (Showcase Chapters)**: Narrative chapter cards with photo uploader (file upload, gallery modal picker, manual URL), multiline checkmark bullet highlights, dynamic technical spec key-value pills, and chapter reordering/deletion.
   - **Section 5 (Hero Carousel & Full Photo Gallery)**: Drag-and-drop and positional hero carousel reordering (`← Left` / `Right →`) with `★ Lead Hero` indicator; categorized gallery supporting exterior, interior, engine, underbody, and PDF inspection documents with non-clipping category selectors and high-visibility delete buttons. Integrated with the collapsible **Collector Photography Guide (`PhotoGuideDrawer.tsx`)** detailing the 5 visual pillars (Exterior Walkaround [30–40 photos], Cabin & Cockpit [20–30 photos], Powertrain & Mechanical [10–15 photos], Undercarriage & Suspension [15–20 photos], Transparency, Flaws & Paint Depth [10–15 photos]) along with golden hour composition and 45° front wheel alignment pro-tips, collapsed by default to prevent UI displacement.
-  - **Section 6 (Videos & Driving Chapters)**: 1-click YouTube playlist video chapter ingestion via serverless proxy (`api/youtube-playlist.ts`), video metadata auto-fetching, driving chapter timeline cards with live thumbnail previews, and complete eradication of video duration metadata.
+  - **Section 6 (Videos & Driving Chapters)**: 1-click YouTube playlist video chapter ingestion via serverless proxy (`server/api/youtube-playlist.ts`), video metadata auto-fetching, driving chapter timeline cards with live thumbnail previews, and complete eradication of video duration metadata.
   - **Section 7 (Auction Financials & Schedule)**: Canadian Dollar (`CAD $`) financial ledger (starting bid, reserve, minimum increment), lifecycle status dropdown, interactive native datetime pickers with calendar trigger icons and native `.showPicker()` modal invocation styled with `[color-scheme:dark]`, and "Simulate Final 2 Minutes" Anti-Sniping test button.
 - **Full Public Preview Parity & Demo Fallback String Purge**:
   - Legacy demo fallback strings (`9118200142`, `126,200 km`, `Guards Red`, `3.0L Flat-Six CIS`) are stripped across public components and workspace preview panes, cleanly rendering empty/unentered fields with `'—'`.
@@ -1820,7 +1821,7 @@ To ensure reproducible, zero-drift rule synchronization directly from developer 
 
 ### 7.5 Serverless Edge & Administrator Account Deletion Architecture (`/api/admin-delete-user.ts`)
 
-The account-deletion endpoint is a trusted server-side administrative operation. Its security model is documented in Section 5.4 and implemented in `api/admin-delete-user.ts`.
+The account-deletion endpoint is a trusted server-side administrative operation. Its security model is documented in Section 5.4 and implemented in `server/api/admin-delete-user.ts`.
 
 - **Caller authentication**: POST only; requires a Bearer Firebase ID token verified by Firebase Admin with revocation checking (`verifyIdToken(idToken, true)`).
 - **Administrator authorization**: requires a verified email matching the shared designated-administrator allowlist. The acting administrator identity is derived from the verified token, never from request-body identity fields.

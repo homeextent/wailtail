@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
-import { isDesignatedAdminEmail } from '../src/config/adminConfig';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
 import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 

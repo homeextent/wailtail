@@ -10,7 +10,7 @@
  */
 
 import { getFirebaseAdminServices, FirebaseAdminServices } from './_lib/firebaseAdmin';
-import { DESIGNATED_ADMIN_EMAILS, isDesignatedAdminEmail, normalizeEmail } from '../src/config/adminConfig';
+import { DESIGNATED_ADMIN_EMAILS, isDesignatedAdminEmail, normalizeEmail } from '../../src/config/adminConfig';
 
 function sendJson(res: any, status: number, data: any) {
   if (res.setHeader) {

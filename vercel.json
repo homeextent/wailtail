@@ -1,5 +1,17 @@
 {
+  "functions": {
+    "api/router.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/:endpoint*",
+      "destination": "/api/router?__endpoint=:endpoint*"
+    },
+    {
+      "source": "/((?!api(?:/|$)).*)",
+      "destination": "/index.html"
+    }
   ]
 }

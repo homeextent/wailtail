@@ -1,4 +1,4 @@
-import { isDesignatedAdminEmail } from '../src/config/adminConfig';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
 import { projectPublicMedia } from './public-auctions';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 

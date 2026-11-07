@@ -1,4 +1,4 @@
-import { isDesignatedAdminEmail } from '../src/config/adminConfig';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 
 const id = (value: unknown): value is string =>

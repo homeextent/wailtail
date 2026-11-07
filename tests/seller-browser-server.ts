@@ -1,12 +1,5 @@
-import duplicateAuction from '../api/admin-duplicate-auction';
-import resetAuctionBids from '../api/admin-reset-auction-bids';
-import auctionClock from '../api/auction-clock';
-import retractAuctionBid from '../api/admin-retract-auction-bid';
-import settleAuction from '../api/admin-settle-auction';
-import uploadAuctionImage from '../api/admin-upload-auction-image';
-import saveAuctionMedia from '../api/admin-save-auction-media';
-import deleteAuction from '../api/admin-delete-auction';
-import updateAuction from '../api/admin-update-auction';
+import apiRouter from '../api/router';
+import { getFirebaseAdminServices } from '../server/api/_lib/firebaseAdmin';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
@@ -14,18 +7,6 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import { initializeApp } from 'firebase-admin/app';
-import { getFirebaseAdminServices } from '../api/_lib/firebaseAdmin';
-import returnToDraft from '../api/admin-return-auction-to-draft';
-import list from '../api/seller-draft-list';
-import read from '../api/seller-draft-read';
-import save from '../api/seller-draft-narrative';
-import submit from '../api/seller-draft-submit';
-import upload from '../api/seller-draft-upload';
-import media from '../api/seller-draft-media';
-import publicAuctions from '../api/public-auctions';
-import placeBid from '../api/place-auction-bid';
-import auctionComments from '../api/auction-comments';
-import createAuction from '../api/admin-create-auction';
 
 const projectId = 'demo-wailtail-stage3';
 const bucket = `${projectId}.appspot.com`;
@@ -103,54 +84,14 @@ server.use((_req, res, next) => {
   next();
 });
 server.use(express.json({ limit: '3mb' }));
-server.get('/api/public-auctions', (req, res, next) => {
-  Promise.resolve(publicAuctions(req, res)).catch(next);
-});
-server.post('/api/admin-delete-auction', (req, res, next) => {
-  Promise.resolve(deleteAuction(req, res)).catch(next);
-});
-server.post('/api/admin-upload-auction-image', (req, res, next) => {
-  Promise.resolve(uploadAuctionImage(req, res)).catch(next);
-});
-server.post('/api/admin-save-auction-media', (req, res, next) => {
-  Promise.resolve(saveAuctionMedia(req, res)).catch(next);
-});
-server.post('/api/admin-retract-auction-bid', (req, res, next) => {
-  Promise.resolve(retractAuctionBid(req, res)).catch(next);
-});
-server.post('/api/auction-clock', (req, res, next) => {
-  Promise.resolve(auctionClock(req, res)).catch(next);
-});
-server.post('/api/admin-duplicate-auction', (req, res, next) => {
-  Promise.resolve(duplicateAuction(req, res)).catch(next);
-});
-server.post('/api/admin-reset-auction-bids', (req, res, next) => {
-  Promise.resolve(resetAuctionBids(req, res)).catch(next);
-});
-server.post('/api/admin-settle-auction', (req, res, next) => {
-  Promise.resolve(settleAuction(req, res)).catch(next);
-});
-server.post('/api/admin-update-auction', (req, res, next) => {
-  Promise.resolve(updateAuction(req, res)).catch(next);
-});
-server.post('/api/admin-create-auction', (req, res, next) => {
-  Promise.resolve(createAuction(req, res)).catch(next);
-});
-server.post('/api/auction-comments', (req, res, next) => {
-  Promise.resolve(auctionComments(req, res)).catch(next);
-});
-server.post('/api/place-auction-bid', (req, res, next) => {
-  Promise.resolve(placeBid(req, res)).catch(next);
+server.all('/api/:endpoint', (req, res, next) => {
+  req.query = { ...req.query, __endpoint: req.params.endpoint };
+  Promise.resolve(apiRouter(req, res)).catch(next);
 });
 server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId, publicAuctionId });
 });
-for (const [operation, handler] of Object.entries({ list, read, narrative: save, submit, upload, media })) {
-  server.post(`/api/seller-draft-${operation}`, (req, res, next) => {
-    Promise.resolve(handler(req, res)).catch(next);
-  });
-}
 server.get('/admin-fixture', async (_req, res, next) => {
   try {
     const listing = await firestore.collection('auctions').doc(auctionId).get();
@@ -161,9 +102,6 @@ server.get('/admin-fixture', async (_req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
-server.post('/api/admin-return-auction-to-draft', (req, res, next) => {
-  Promise.resolve(returnToDraft(req, res)).catch(next);
 });
 // Serve the real app at its real routes, with Firebase modules replaced only in this harness.
 server.get(['/','/catalog','/auctions/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (_req, res) => {
