@@ -1,3 +1,4 @@
+import uploadAuctionImage from '../api/admin-upload-auction-image';
 import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
 import updateAuction from '../api/admin-update-auction';
@@ -330,7 +331,17 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const edited = await firestore.collection('auctions').doc(createdAuction.id).get();
         assert.equal(edited.get('title'), 'Edited inventory draft');
         assert.equal(edited.get('sellerId'), undefined);
-        const hero = 'https://example.test/hero.jpg';
+        const image = { auctionId: publicId, dataUrl: `data:image/jpeg;base64,${jpeg.toString('base64')}` };
+        assert.equal((await invoke(uploadAuctionImage, image, other.idToken)).status, 403);
+        assert.equal((await invoke(uploadAuctionImage, { ...image, auctionId: createdAuction.id }, admin.idToken)).status, 409);
+        assert.equal((await invoke(uploadAuctionImage, { ...image, dataUrl: 'data:image/jpeg;base64,YQ==' }, admin.idToken)).status, 422);
+        const uploaded = await invoke(uploadAuctionImage, image, admin.idToken);
+        assert.equal(uploaded.status, 201);
+        const { url: hero } = uploaded.payload as { url: string };
+        assert.equal(new URL(hero).host, storageHost);
+        const publicImage = await fetch(hero, { redirect: 'error' });
+        assert.equal(publicImage.status, 200);
+        assert.deepEqual(Buffer.from(await publicImage.arrayBuffer()), jpeg);
         const gallery = {
           auctionId: createdAuction.id,
           config: { heroImages: [hero], fullGallery: [{ id: 'example', url: hero, sellerEmail: other.email }] }
