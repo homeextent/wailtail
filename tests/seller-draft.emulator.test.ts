@@ -1,3 +1,4 @@
+import reconcileAuctionClock from '../api/reconcile-auction-clock';
 import auctionClock from '../api/auction-clock';
 import retractAuctionBid from '../api/admin-retract-auction-bid';
 import settleAuction from '../api/admin-settle-auction';
@@ -181,6 +182,33 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     assert.equal((await clockMail.get()).get('createdAt'), clockMailTime);
     assert.equal((await invoke(auctionClock, { auctionId })).status, 409);
     assert.equal((await auction.get()).get('status'), 'draft');
+
+    const originalCronSecret = process.env.CRON_SECRET;
+    const workerSecret = `synthetic-worker-${run}`;
+    try {
+      delete process.env.CRON_SECRET;
+      assert.equal((await invoke(reconcileAuctionClock, {}, undefined, 'GET')).status, 503);
+      process.env.CRON_SECRET = workerSecret;
+      assert.equal((await invoke(reconcileAuctionClock, {}, undefined, 'GET')).status, 401);
+      assert.equal((await invoke(reconcileAuctionClock, {}, other.idToken, 'GET')).status, 401);
+      const expiredRef = firestore.collection('auctions').doc(`worker-expired-${run}`);
+      const startingRef = firestore.collection('auctions').doc(`worker-starting-${run}`);
+      await expiredRef.set({ status: 'active', startTime: Date.now() - 60000, endTime: Date.now() - 1000,
+        currentBid: 0, reserveAmount: 1000 });
+      await startingRef.set({ status: 'upcoming', startTime: Date.now() - 1000, endTime: Date.now() + 60000 });
+      const drained = await invoke(reconcileAuctionClock, {}, workerSecret, 'GET');
+      assert.equal(drained.status, 200);
+      assert.equal((drained.payload as any).pending, 0);
+      assert.equal((await expiredRef.get()).get('status'), 'ended');
+      assert.equal((await startingRef.get()).get('status'), 'active');
+      const workerSettledAt = (await expiredRef.get()).get('settlementCompletedAt');
+      assert.equal((await invoke(reconcileAuctionClock, {}, workerSecret, 'GET')).status, 200);
+      assert.equal((await expiredRef.get()).get('settlementCompletedAt'), workerSettledAt);
+      assert.equal((await auction.get()).get('status'), 'draft');
+    } finally {
+      if (originalCronSecret === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = originalCronSecret;
+    }
 
     const command = { auctionId, expectedRevision: 0 };
     const patch = { ...command, overviewHeading: 'Synthetic overview', overviewParagraphs: ['Test paragraph'] };
