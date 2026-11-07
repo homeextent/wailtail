@@ -1883,78 +1883,21 @@ export async function getConsignmentApplication(appId: string): Promise<Consignm
 export async function deleteListing(auctionId: string, cascadeDeleteConsignment = false): Promise<void> {
   const targetId = auctionId?.trim();
   if (!targetId) return;
-
-  const docRefsMap = new Map<string, DocumentReference>();
-
-  // 1. Root auction document
-  const auctionRef = doc(db, 'auctions', targetId);
-  docRefsMap.set(auctionRef.path, auctionRef);
-
-  // 2. Media configuration references (settings doc, subcollection media docs)
-  const settingsMediaRef = doc(db, 'settings', `media-${targetId}`);
-  const subMediaConfigRef = doc(db, 'auctions', targetId, 'media', 'config');
-  docRefsMap.set(settingsMediaRef.path, settingsMediaRef);
-  docRefsMap.set(subMediaConfigRef.path, subMediaConfigRef);
-
-  try {
-    const mediaSubColSnap = await getDocs(collection(db, 'auctions', targetId, 'media'));
-    mediaSubColSnap.docs.forEach(d => docRefsMap.set(d.ref.path, d.ref));
-  } catch (err) {
-    console.warn(`Could not query media subcollection for lot ${targetId}:`, err);
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
+  const response = await fetch('/api/admin-delete-auction', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId: targetId, cascadeDeleteConsignment })
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to delete the listing.');
   }
-
-  // 3. Child bid documents in subcollection auctions/{auctionId}/bids
-  try {
-    const subBidsSnap = await getDocs(collection(db, 'auctions', targetId, 'bids'));
-    subBidsSnap.docs.forEach(d => docRefsMap.set(d.ref.path, d.ref));
-  } catch (err) {
-    console.warn(`Could not query subcollection bids for lot ${targetId}:`, err);
-  }
-
-  // 4. Root bids collection documents matching auctionId
-  try {
-    const rootBidsSnap = await getDocs(query(collection(db, 'bids'), where('auctionId', '==', targetId)));
-    rootBidsSnap.docs.forEach(d => docRefsMap.set(d.ref.path, d.ref));
-  } catch (err) {
-    console.warn(`Could not query root bids for lot ${targetId}:`, err);
-  }
-
-  // 5. Associated comments matching auctionId (e.g. bid comments & public feed)
-  try {
-    const commentsSnap = await getDocs(query(collection(db, 'comments'), where('auctionId', '==', targetId)));
-    commentsSnap.docs.forEach(d => docRefsMap.set(d.ref.path, d.ref));
-  } catch (err) {
-    console.warn(`Could not query comments for lot ${targetId}:`, err);
-  }
-
-  // 6. Optional cascade delete for consignment applications
-  if (cascadeDeleteConsignment) {
-    try {
-      const q = query(collection(db, 'consignment_applications'), where('convertedAuctionId', '==', targetId));
-      const snap = await getDocs(q);
-      snap.forEach(d => {
-        const appRef = doc(db, 'consignment_applications', d.id);
-        const legacyRef = doc(db, 'consignments', d.id);
-        docRefsMap.set(appRef.path, appRef);
-        docRefsMap.set(legacyRef.path, legacyRef);
-      });
-    } catch (e) {
-      console.warn('Could not cascade delete consignment for listing:', e);
-    }
-  }
-
-  // 7. Atomically commit deletions chunked in groups of 400 (Firestore limit is 500)
-  const allDocRefs = Array.from(docRefsMap.values());
-  const CHUNK_SIZE = 400;
-  for (let i = 0; i < allDocRefs.length; i += CHUNK_SIZE) {
-    const chunk = allDocRefs.slice(i, i + CHUNK_SIZE);
-    const batch = writeBatch(db);
-    for (const ref of chunk) {
-      batch.delete(ref);
-    }
-    await batch.commit();
-  }
-
   localStorage.removeItem(`wailtail_custom_media_${targetId}`);
   localStorage.removeItem('wailtail_custom_media');
   localStorage.removeItem('wailtail_active_lot');
