@@ -472,8 +472,11 @@ const AuctionAppContent: React.FC = () => {
     return subscribe(setAllAuctions);
   }, [isAdmin]);
 
-  // Initialize and subscribe to Firestore for active vehicle auction
+  // Seller editors load their assigned draft through their own trusted endpoints.
   useEffect(() => {
+    if (isEditorRoute && !isAdmin) return;
+
+    let disposed = false;
     let unsubAuction = () => {};
     let unsubBids = () => {};
     let unsubComments = () => {};
@@ -494,6 +497,7 @@ const AuctionAppContent: React.FC = () => {
           await initializeAuctionIfNotExists();
           await initializeMediaConfigIfNotExists(targetAuctionId);
         }
+        if (disposed) return;
 
         const applyMedia = (cloudMedia: MediaConfiguration | null) => {
           if (cloudMedia) {
@@ -582,6 +586,7 @@ const AuctionAppContent: React.FC = () => {
     setupFirestore();
 
     return () => {
+      disposed = true;
       unsubAuction();
       unsubBids();
       unsubComments();
