@@ -1,3 +1,4 @@
+import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
 import updateAuction from '../api/admin-update-auction';
 import assert from 'node:assert/strict';
@@ -93,6 +94,9 @@ server.get('/api/public-auctions', (req, res, next) => {
 });
 server.post('/api/admin-delete-auction', (req, res, next) => {
   Promise.resolve(deleteAuction(req, res)).catch(next);
+});
+server.post('/api/admin-save-auction-media', (req, res, next) => {
+  Promise.resolve(saveAuctionMedia(req, res)).catch(next);
 });
 server.post('/api/admin-update-auction', (req, res, next) => {
   Promise.resolve(updateAuction(req, res)).catch(next);
