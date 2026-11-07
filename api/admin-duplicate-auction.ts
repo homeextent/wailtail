@@ -22,6 +22,7 @@ export default function handler(req: any, res: any) {
         ...data, id: target.id, title,
         headline: typeof data.headline === 'string' && data.headline ? `${data.headline} (Copy)` : title,
         status: 'draft', currentBid: 0, bidCount: 0, highBidderId: '', highBidderName: '', highBidderEmail: '',
+        isReserveMet: (Number(data.reserveAmount) || 0) <= 0,
         watchCount: 0, sellerDraftRevision: 0, startTime: now, endTime: now + 604800000,
         createdAt: now, updatedAt: now
       };

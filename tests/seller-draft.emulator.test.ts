@@ -416,7 +416,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
 
         const sourceRef = firestore.collection('auctions').doc(`duplicate-source-${run}`);
         await sourceRef.set({ title: 'Completed source', status: 'sold', currentBid: 5000, bidCount: 3,
-          startingBid: 1000, sellerId: owner.uid, winningEmailSent: true, settlementCompletedAt: 123,
+          startingBid: 1000, reserveAmount: 5000, isReserveMet: true, sellerId: owner.uid, winningEmailSent: true, settlementCompletedAt: 123,
           winnerNotificationQueuedAt: 123, watchlist: [other.uid], highBidderEmail: other.email });
         await firestore.collection('settings').doc(`media-${sourceRef.id}`).set({ heroImages: [hero], fullGallery: [] });
         assert.equal((await invoke(duplicateAuction, { auctionId: sourceRef.id }, other.idToken)).status, 403);
@@ -428,6 +428,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal(copied.status, 'draft');
         assert.equal(copied.currentBid, 0);
         assert.equal(copied.bidCount, 0);
+        assert.equal(copied.isReserveMet, false);
         assert.equal(copied.sellerId, owner.uid);
         assert.equal(copied.settlementCompletedAt, undefined);
         assert.equal(copied.winningEmailSent, undefined);
