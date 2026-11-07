@@ -1927,33 +1927,13 @@ export async function batchUpdateAuctionStatus(
   auctionIds: string[],
   status: Auction['status']
 ): Promise<number> {
-  const validIds = auctionIds.map(id => id?.trim()).filter(Boolean) as string[];
-  if (validIds.length === 0) return 0;
-
-  const now = Date.now();
-  const updateData: Record<string, any> = {
-    status,
-    updatedAt: now
-  };
-
-  const CHUNK_SIZE = 400;
-  for (let i = 0; i < validIds.length; i += CHUNK_SIZE) {
-    const chunk = validIds.slice(i, i + CHUNK_SIZE);
-    const batch = writeBatch(db);
-    for (const id of chunk) {
-      batch.set(doc(db, 'auctions', id), updateData, { merge: true });
-    }
-    await batch.commit();
+  const ids = [...new Set(auctionIds.map(id => id?.trim()).filter(Boolean))];
+  if (ids.length === 0) return 0;
+  const result = await requestAdminAuctionUpdate({ auctionIds: ids, updates: { status } });
+  for (const listing of result.listings) {
+    reconcileUpdatedAuction(listing.auctionId, listing);
   }
-
-  const normStatus = (status || '').toLowerCase().trim();
-  if (normStatus === 'ended' || normStatus === 'sold') {
-    for (const id of validIds) {
-      updateAuctionStatus(id, status).catch(e => console.warn('Batch updateAuctionStatus notification notice:', e));
-    }
-  }
-
-  return validIds.length;
+  return result.listings.length;
 }
 
 /**
@@ -3280,27 +3260,36 @@ export async function updateAuctionConfig(
   auctionId: string,
   updates: Partial<Auction>
 ): Promise<void> {
+  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
+  const result = await requestAdminAuctionUpdate({ auctionId: targetId, updates: sanitizePayload(updates) });
+  if (updates.status) reconcileUpdatedAuction(targetId, result);
+}
+
+function reconcileUpdatedAuction(auctionId: string, result: { status: string; winningEmailSent: boolean }) {
+  if ((result.status === 'sold' || result.status === 'ended') && !result.winningEmailSent) {
+    reconcileAuctionClosureAndNotifyWinner(auctionId).catch((error) => {
+      console.warn('Auction closure reconciliation failed:', error);
+    });
+  }
+}
+
+async function requestAdminAuctionUpdate(body: Record<string, unknown>) {
   const user = auth.currentUser;
   if (!user) throw new Error('Administrator authentication required.');
-  const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
   const response = await fetch('/api/admin-update-auction', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${await user.getIdToken()}`
     },
-    body: JSON.stringify({ auctionId: targetId, updates: sanitizePayload(updates) })
+    body: JSON.stringify(body)
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || !result) {
     throw new Error(response.status < 500 && typeof result?.error === 'string'
       ? result.error : 'Unable to save auction settings.');
   }
-  if (updates.status && (result.status === 'sold' || result.status === 'ended') && !result.winningEmailSent) {
-    reconcileAuctionClosureAndNotifyWinner(targetId).catch((error) => {
-      console.warn('Auction closure reconciliation failed:', error);
-    });
-  }
+  return result;
 }
 
 /**
