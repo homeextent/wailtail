@@ -1368,6 +1368,7 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
         setDoc(doc(db, 'auctionPublic/published/internal/item'), { private: true }),
         setDoc(doc(db, 'users/seller'), { uid: 'seller', role: 'seller' }),
         setDoc(doc(db, 'bidders/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'auctionNotificationOutbox/private'), { to: ['private@example.test'], status: 'queued' }),
         setDoc(doc(db, 'settings/promotions'), { enabled: true })
       ]);
     });
@@ -1382,7 +1383,7 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
       await assertFails(deleteDoc(doc(db, 'auctions/lot')));
       for (const path of ['auctions/lot/bids/new', 'auctions/lot/media/new', 'auctions/lot/unknown/new',
         'bids/new', 'comments/new', 'auctionPublic/new', 'settings/promotions', 'settings/media-lot',
-        'promo_analytics/new', 'inquiries/new', 'mail/new', 'emails/new', 'emailLogs/new']) {
+        'promo_analytics/new', 'inquiries/new', 'auctionNotificationOutbox/new', 'mail/new', 'emails/new', 'emailLogs/new']) {
         await assertFails(setDoc(doc(db, path), { actor: uid }));
       }
     });
@@ -1394,7 +1395,7 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
     await assertSucceeds(getDoc(doc(db, 'auctionPublic/published/media/hero')));
     await assertSucceeds(getDoc(doc(db, 'settings/promotions')));
     for (const path of ['auctions/lot', 'auctions/lot/bids/bid', 'auctions/lot/media/hero',
-      'auctionPublic/unpublished/media/hero', 'auctionPublic/published/internal/item']) {
+      'auctionPublic/unpublished/media/hero', 'auctionPublic/published/internal/item', 'auctionNotificationOutbox/private']) {
       await assertFails(getDoc(doc(db, path)));
     }
   });
@@ -1415,6 +1416,8 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
       const db = getNamedDb(testEnv.authenticatedContext('admin', { email, email_verified: true }));
       const unverified = getNamedDb(testEnv.authenticatedContext('unverified', { email, email_verified: false }));
       await assertSucceeds(getDoc(doc(db, 'auctions/lot')));
+      await assertSucceeds(getDoc(doc(db, 'auctionNotificationOutbox/private')));
+      await assertFails(setDoc(doc(db, 'auctionNotificationOutbox/direct'), { status: 'queued' }));
       await assertSucceeds(getDoc(doc(db, 'auctions/lot/bids/bid')));
       await assertSucceeds(getDocs(collection(db, 'users')));
       await assertSucceeds(updateDoc(doc(db, 'settings/promotions'), { enabled: false }));

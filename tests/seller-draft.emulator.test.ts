@@ -1,3 +1,6 @@
+import dispatchAuctionNotifications from '../api/dispatch-auction-notifications';
+import duplicateAuction from '../api/admin-duplicate-auction';
+import resetAuctionBids from '../api/admin-reset-auction-bids';
 import reconcileAuctionClock from '../api/reconcile-auction-clock';
 import auctionClock from '../api/auction-clock';
 import retractAuctionBid from '../api/admin-retract-auction-bid';
@@ -175,7 +178,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     ]);
     assert.ok(clockResults.every(result => result.status === 200));
     assert.equal((await clockRef.get()).get('status'), 'sold');
-    const clockMail = firestore.collection('mail').doc(`auction-winner-${clockId}`);
+    const clockMail = firestore.collection('auctionNotificationOutbox').doc(`auction-winner-${clockId}`);
     assert.equal((await clockMail.get()).exists, true);
     const clockMailTime = (await clockMail.get()).get('createdAt');
     assert.equal((await invoke(auctionClock, { auctionId: clockId })).status, 200);
@@ -411,6 +414,53 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const savedGallery = await firestore.collection('settings').doc(`media-${createdAuction.id}`).get();
         assert.deepEqual(savedGallery.get('fullGallery'), [{ id: 'example', url: hero }]);
 
+        const sourceRef = firestore.collection('auctions').doc(`duplicate-source-${run}`);
+        await sourceRef.set({ title: 'Completed source', status: 'sold', currentBid: 5000, bidCount: 3,
+          startingBid: 1000, sellerId: owner.uid, winningEmailSent: true, settlementCompletedAt: 123,
+          winnerNotificationQueuedAt: 123, watchlist: [other.uid], highBidderEmail: other.email });
+        await firestore.collection('settings').doc(`media-${sourceRef.id}`).set({ heroImages: [hero], fullGallery: [] });
+        assert.equal((await invoke(duplicateAuction, { auctionId: sourceRef.id }, other.idToken)).status, 403);
+        assert.equal((await invoke(duplicateAuction, { auctionId: 'missing-duplicate-source' }, admin.idToken)).status, 404);
+        const duplicated = await invoke(duplicateAuction, { auctionId: sourceRef.id }, admin.idToken);
+        assert.equal(duplicated.status, 201);
+        const copied = (duplicated.payload as any).auction;
+        assert.notEqual(copied.id, sourceRef.id);
+        assert.equal(copied.status, 'draft');
+        assert.equal(copied.currentBid, 0);
+        assert.equal(copied.bidCount, 0);
+        assert.equal(copied.sellerId, owner.uid);
+        assert.equal(copied.settlementCompletedAt, undefined);
+        assert.equal(copied.winningEmailSent, undefined);
+        assert.equal(copied.watchlist, undefined);
+        assert.equal(copied.highBidderEmail, '');
+        assert.deepEqual((await firestore.collection('settings').doc(`media-${copied.id}`).get()).get('heroImages'), [hero]);
+        assert.equal((await sourceRef.get()).get('status'), 'sold');
+
+        const resetRef = firestore.collection('auctions').doc(`reset-target-${run}`);
+        await resetRef.set({ status: 'active', currentBid: 2500, bidCount: 1, startingBid: 1000 });
+        const resetBidId = `reset-bid-${run}`;
+        const rootResetBid = firestore.collection('bids').doc(resetBidId);
+        await rootResetBid.set({ auctionId: resetRef.id, amount: 2500 });
+        await resetRef.collection('bids').doc(resetBidId).set({ auctionId: resetRef.id, amount: 2500 });
+        const bidComment = firestore.collection('comments').doc(resetBidId);
+        const ordinaryComment = firestore.collection('comments').doc(`reset-ordinary-${run}`);
+        await bidComment.set({ auctionId: resetRef.id, isBid: true });
+        await ordinaryComment.set({ auctionId: resetRef.id, text: 'Preserved ordinary comment' });
+        const foreignBidCount = (await firestore.collection('bids').where('auctionId', '==', publicId).get()).size;
+        const reset = { auctionId: resetRef.id, startingBid: 1500 };
+        assert.equal((await invoke(resetAuctionBids, reset, other.idToken)).status, 403);
+        assert.equal((await rootResetBid.get()).exists, true);
+        assert.equal((await invoke(resetAuctionBids, { auctionId: sourceRef.id }, admin.idToken)).status, 409);
+        assert.equal((await invoke(resetAuctionBids, reset, admin.idToken)).status, 200);
+        assert.equal((await rootResetBid.get()).exists, false);
+        assert.equal((await resetRef.collection('bids').doc(resetBidId).get()).exists, false);
+        assert.equal((await bidComment.get()).exists, false);
+        assert.equal((await ordinaryComment.get()).exists, true);
+        assert.equal((await resetRef.get()).get('currentBid'), 0);
+        assert.equal((await resetRef.get()).get('startingBid'), 1500);
+        assert.equal((await firestore.collection('bids').where('auctionId', '==', publicId).get()).size, foreignBidCount);
+        assert.equal((await invoke(resetAuctionBids, reset, admin.idToken)).status, 200);
+
         const bulk = { auctionIds: [createdAuction.id, 'missing-inventory-lot'], updates: { status: 'preview' } };
         assert.equal((await invoke(updateAuction, bulk, other.idToken)).status, 403);
         assert.equal((await invoke(updateAuction, bulk, admin.idToken)).status, 404);
@@ -462,7 +512,7 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const settled = await publicRef.get();
         assert.equal(settled.get('status'), 'sold');
         assert.equal(settled.get('currentBid'), 1000);
-        const notification = firestore.collection('mail').doc(`auction-winner-${publicId}`);
+        const notification = firestore.collection('auctionNotificationOutbox').doc(`auction-winner-${publicId}`);
         assert.deepEqual((await notification.get()).get('to'), [other.email]);
         const queuedAt = (await notification.get()).get('createdAt');
         assert.deepEqual(await invoke(settleAuction, settlement, admin.idToken), {
@@ -489,6 +539,70 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
       }
     }
     assert.equal((await invoke(save, { ...patch, expectedRevision: 8 }, owner.idToken)).status, 200);
+
+    const originalFetch = globalThis.fetch;
+    const originalCron = process.env.CRON_SECRET;
+    const originalApiKey = process.env.RESEND_API_KEY;
+    const originalRunTransaction = firestore.runTransaction.bind(firestore);
+    const deliveryRequests: Array<{ key: string; body: string }> = [];
+    let failNextDelivery = true;
+    try {
+      process.env.CRON_SECRET = `synthetic-delivery-${run}`;
+      process.env.RESEND_API_KEY = 'synthetic-api-key';
+      globalThis.fetch = async (input, init) => {
+        if (String(input) !== 'https://api.resend.com/emails') return originalFetch(input, init);
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get('Authorization'), 'Bearer synthetic-api-key');
+        const key = headers.get('Idempotency-Key');
+        assert.ok(key);
+        deliveryRequests.push({ key, body: String(init?.body) });
+        if (failNextDelivery) {
+          failNextDelivery = false;
+          return new Response('{}', { status: 503 });
+        }
+        return new Response(JSON.stringify({ id: `provider-${key}` }), { status: 200 });
+      };
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, undefined, 'GET')).status, 401);
+      assert.equal(deliveryRequests.length, 0);
+      const secret = process.env.CRON_SECRET;
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
+      const first = deliveryRequests[0];
+      assert.ok(first);
+      const pendingNotification = await firestore.collection('auctionNotificationOutbox').where('status', '==', 'queued').get();
+      assert.equal(pendingNotification.size, 1);
+      let loseAcknowledgement = true;
+      firestore.runTransaction = async (...args: Parameters<typeof originalRunTransaction>) => {
+        if (loseAcknowledgement) {
+          loseAcknowledgement = false;
+          throw new Error('Synthetic failure after provider acceptance');
+        }
+        return originalRunTransaction(...args);
+      };
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
+      firestore.runTransaction = originalRunTransaction;
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 200);
+      const retries = deliveryRequests.filter(request => request.key === first.key);
+      assert.equal(retries.length, 3);
+      assert.ok(retries.every(request => request.body === first.body));
+      assert.equal((await pendingNotification.docs[0].ref.get()).get('status'), 'accepted');
+      assert.equal((await publicRef.get()).get('winningEmailSent'), true);
+      const requestsAfterAcceptance = deliveryRequests.length;
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 200);
+      assert.equal(deliveryRequests.length, requestsAfterAcceptance);
+      const oldNotification = firestore.collection('auctionNotificationOutbox').doc(`expired-${run}`);
+      await oldNotification.set({ ...pendingNotification.docs[0].data(), status: 'queued', createdAt: Date.now() - 3600001 });
+      assert.equal((await invoke(dispatchAuctionNotifications, {}, secret, 'GET')).status, 503);
+      assert.equal((await oldNotification.get()).get('status'), 'reconciliation_required');
+      assert.equal(deliveryRequests.length, requestsAfterAcceptance);
+    } finally {
+      globalThis.fetch = originalFetch;
+      firestore.runTransaction = originalRunTransaction;
+      if (originalCron === undefined) delete process.env.CRON_SECRET;
+      else process.env.CRON_SECRET = originalCron;
+      if (originalApiKey === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = originalApiKey;
+    }
+
   } finally {
     await deleteApp(app);
   }

@@ -73,7 +73,8 @@ export function handlePlaceAuctionBid(
 
       const title = typeof data.title === 'string' ? data.title : 'Wailtail auction';
       const queue = (suffix: string, to: string, subject: string, text: string, notificationType: string) => {
-        tx.create(firestore.collection('mail').doc(`bid-${bidRef.id}-${suffix}`), {
+        tx.create(firestore.collection('auctionNotificationOutbox').doc(`bid-${bidRef.id}-${suffix}`), {
+          status: 'queued', from: process.env.RESEND_FROM_EMAIL || 'Wailtail <consignments@wailtail.com>',
           to: [to], message: { subject, text }, createdAt: now, notificationType,
           metadata: { auctionId, bidId: bidRef.id }
         });

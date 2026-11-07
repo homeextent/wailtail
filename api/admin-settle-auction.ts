@@ -70,7 +70,8 @@ export async function settleAuction(firestore: Firestore, auctionId: string, clo
         .find(value => typeof value === 'string' && value.trim());
       const title = typeof data.title === 'string' ? data.title : 'Wailtail auction';
       const amount = `$${winner.amount.toLocaleString('en-CA')} CAD`;
-      tx.create(firestore.collection('mail').doc(`auction-winner-${auctionId}`), {
+      tx.create(firestore.collection('auctionNotificationOutbox').doc(`auction-winner-${auctionId}`), {
+        status: 'queued', from: process.env.RESEND_FROM_EMAIL || 'Wailtail <consignments@wailtail.com>',
         to: [recipient], message: { subject: `[Wailtail] Winning bid on ${title}`,
           text: `Your winning bid was ${amount}. Contact the seller at ${contact}${phone ? ` or ${phone}` : ''}.` },
         createdAt: now, notificationType: 'auction_won', metadata: { auctionId }

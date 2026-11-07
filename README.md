@@ -1,11 +1,12 @@
 # Wailtail Collector Car Auction Platform
 
-## Auction Security Gate — Stage 3 review
+## Auction security implementation review
 
-The Stage 3 implementation introduces an ownership-scoped seller draft workspace, private draft media and administrator-requested revisions. Local verification was reported on the security implementation branch. Staging acceptance is pending review of client compatibility with the candidate Firestore and Storage rules. Trusted bidding and later security stages remain open.
+PR #3 on `security/auction-security-gate` introduces trusted seller editing, public field projections, bidding, administrator inventory and gallery operations, comment authorization, bid retraction, scoped bid reset, draft duplication, and transactional settlement. Review and staging acceptance are pending. Production release and Firebase rules publication are separate decisions.
 
-For isolated verification use `npm run test:endpoint`, `npm run test:rules`, and `npm run test:seller-emulator`. The `npm run test:seller-browser` harness exercises My Listings, submission, administrator revisions and reopening the draft. Use the demo emulator environment for these checks.
+Use the demo emulator environment for verification. Run `npm run build`, `npm run lint`, `npm run test:endpoint`, `npm run test:rules`, `npm run test:seller-emulator`, and `npm run test:auction-browser`. CI runs these checks. For interactive inspection, `npm run test:seller-browser` serves synthetic seller, administrator and public routes on port 4178. The normal `npm run dev` uses the checked-in Firebase project configuration.
 
+Unattended start and expiry use `GET /api/reconcile-auction-clock`. Auction notification delivery uses `GET /api/dispatch-auction-notifications`. Each requires a scheduler bearer token matching `CRON_SECRET`. Delivery additionally requires `RESEND_API_KEY`, and `RESEND_FROM_EMAIL` is stored with the message when queued. Trusted uploads require `FIREBASE_STORAGE_BUCKET`. The deployment scheduler must invoke both workers regularly, and actual email delivery still needs an authorized mailbox check. Tests mock the provider and verify stable retry keys, not inbox delivery. Pending messages older than one hour are marked for reconciliation.
 
 Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed for curated classic, collector, and enthusiast cars. It features clean Canadian CAD financials, soft-close anti-sniping protection, real-time bidding telemetry, rich editorial showcase chapters, and a multi-car vehicle catalog architecture.
 

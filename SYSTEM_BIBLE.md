@@ -1,15 +1,31 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
-## Auction Security Gate — Stage 3 implementation checkpoint
+## Auction Security Gate implementation checkpoint
 
-The implementation branch introduces trusted seller draft listing, reads, narrative edits, JPEG upload and private previews, submission for review, and administrator return to draft. Seller access is bound to the verified Firebase UID and the assigned auction. Draft mutations check status and revision. Submission records a review event with the status change; delivery is handled separately. The editor remains read-only for submitted drafts until an authorized administrator returns them to draft.
+The changes on `security/auction-security-gate` are under review in PR #3 targeting `staging`. Production release and Firebase rules publication require a separate decision. The Phase 1 Verified Boutique Dealer Program milestone definitions remain in Section 11.
 
-The isolated verification covered seller discovery through My Listings, draft save and submission, administrator-requested revisions, and upload-registration failure and cleanup. The dashboard revision `7cff7f6` had a reported passing build, lint, 95 endpoint tests and the seller lifecycle emulator test. These results apply to the recorded local revisions.
+### Trusted application paths
 
-**Integration gate:** Candidate Firestore rules make canonical auctions administrator-readable and reserve canonical writes for trusted operations. The existing catalog, bidding and inventory paths still require compatibility review and replacement where they depend on direct canonical access. The `auctionPublic` rule is a boundary for server-created projections; the rule alone does not populate projections or migrate client reads. Candidate Storage rules permit public object reads under `auctionPublic` and two explicit legacy gallery exceptions, with draft media delivered through the trusted backend. Validate applicable positive and negative workflow tests before staging acceptance. Trusted bidding and later Auction Security Gate stages remain open. The Phase 1 dealer milestone sequence is preserved.
+- Seller discovery, draft reads, narrative and media edits, submission, and administrator-requested revisions use verified Firebase identity, assigned seller UID, draft state and revision checks. Submission records its review event in the same transaction. A submitted draft is read-only for the seller.
+- Public catalog and lot detail use `/api/public-auctions`, with explicit field lists for auctions, media, bids and comments. Drafts and pending-review lots are excluded. Reserve amounts, seller contact information, bidder emails and other viewers' author IDs and votes stay private. Public views poll every five seconds and unsubscribe on navigation. Administrator inventory and editor reads retain canonical access.
+- Bid placement, administrator inventory creation, edits, bulk status changes, deletion, media saves and published image uploads use trusted endpoints. Mutations derive caller authority from revocation-aware token verification and the designated administrator allowlist where applicable. Bid placement preserves the two-minute soft close and writes the auction, both bid histories, a bid comment and notification records together.
+- Comment authorship, edits, deletion, votes and pinning use server validation. Retraction uses the verified administrator identity, preserves both bid-history records, and recalculates the next active bid within the transaction. Post-settlement retraction requires separate review.
+- Duplication reads the saved source and media on the server and creates a draft with cleared bidding, watch and settlement state. Bid reset removes only the selected lot's root and nested bids and bid comments, preserving ordinary comments and other auctions. Reset and deletion stop before any writes if the records exceed the bounded transaction. Reset of finalized sales requires separate review.
+- Administrator settlement and `/api/auction-clock` use the server clock and canonical bid records. The public clock request accepts only an auction ID. It can start a scheduled lot when due or settle an expired lot. Settlement and its winner notification are recorded together, with repeat and concurrent requests checked transactionally.
 
-Storage inventory, cutover and rollback rehearsals are separate release preparation. Production rules publication, migration, and demo cleanup require separate authorization.
+### Workers and notifications
 
+`GET /api/reconcile-auction-clock` accepts only the configured `CRON_SECRET` bearer token. It advances up to 25 due lots per invocation using the same clock and settlement logic. This worker requires a scheduler invocation after deployment. The countdown also invokes the public clock endpoint while a lot page is open.
+
+Bid confirmations, outbid alerts and winner notifications are written to private `auctionNotificationOutbox` records. `GET /api/dispatch-auction-notifications` requires `CRON_SECRET` and `RESEND_API_KEY`. It submits up to ten queued records to Resend using persisted recipients, sender and message content with a stable idempotency key. Records are marked `accepted` only after provider acceptance is confirmed. Provider errors and failed acknowledgements can be retried with the same payload. Records older than one hour require reconciliation rather than automatic replay. Provider acceptance does not establish inbox delivery.
+
+At release, configure a recurring caller for both workers and confirm `RESEND_FROM_EMAIL` uses an authorized sender. Set `FIREBASE_STORAGE_BUCKET` for trusted uploads. Scheduler invocation, actual provider credentials and delivery to an approved test mailbox remain operational acceptance items. Existing `mail`, `emails` and `emailLogs` records are outside the new notification worker.
+
+### Verification and boundaries
+
+CI verifies build and TypeScript checks, lint, endpoint regression tests, Firestore rules, integrated Auth/Firestore/Storage emulator workflows, and headless Chrome rendering of the signed-out catalog, lot overview and administrator inventory. The prior worker revision `076b022` passed CI run 42337023934. The subsequent duplication, reset and notification changes have local build, lint and emulator evidence and require checks on the PR head. Notification transport tests mock Resend responses, including provider failure and a lost Firestore acknowledgement. Public image payload and Storage read tests complement the empty-gallery browser fixture.
+
+Remaining legacy workflow review includes watchlists, inquiries, global branding and promotions, member administration, consignment conversion and broad purge tools. These paths must be checked against the candidate rules before full-site release acceptance. Storage migration, legacy PDF token revocation and demo cleanup remain separate production operations. Original M2.0A/M2.0B and dealer milestone history is preserved below.
 
 ## 1. Executive Architecture Overview
 

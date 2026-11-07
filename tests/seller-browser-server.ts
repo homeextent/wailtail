@@ -1,3 +1,5 @@
+import duplicateAuction from '../api/admin-duplicate-auction';
+import resetAuctionBids from '../api/admin-reset-auction-bids';
 import auctionClock from '../api/auction-clock';
 import retractAuctionBid from '../api/admin-retract-auction-bid';
 import settleAuction from '../api/admin-settle-auction';
@@ -118,6 +120,12 @@ server.post('/api/admin-retract-auction-bid', (req, res, next) => {
 });
 server.post('/api/auction-clock', (req, res, next) => {
   Promise.resolve(auctionClock(req, res)).catch(next);
+});
+server.post('/api/admin-duplicate-auction', (req, res, next) => {
+  Promise.resolve(duplicateAuction(req, res)).catch(next);
+});
+server.post('/api/admin-reset-auction-bids', (req, res, next) => {
+  Promise.resolve(resetAuctionBids(req, res)).catch(next);
 });
 server.post('/api/admin-settle-auction', (req, res, next) => {
   Promise.resolve(settleAuction(req, res)).catch(next);

@@ -1927,7 +1927,7 @@ export async function batchUpdateAuctionStatus(
 ): Promise<number> {
   const ids = [...new Set(auctionIds.map(id => id?.trim()).filter(Boolean))];
   if (ids.length === 0) return 0;
-  const result = await requestAdminAuctionUpdate({ auctionIds: ids, updates: { status } });
+  const result = await requestAdminAuctionMutation('/api/admin-update-auction', { auctionIds: ids, updates: { status } });
   for (const listing of result.listings) {
     reconcileUpdatedAuction(listing.auctionId, listing);
   }
@@ -2004,7 +2004,7 @@ export async function reconcileAuctionClosureAndNotifyWinner(
 export async function updateAuctionStatus(auctionId: string, status: Auction['status'] | string): Promise<void> {
   if (!auctionId) return;
   const id = auctionId.trim() || MAIN_AUCTION_ID;
-  const result = await requestAdminAuctionUpdate({ auctionId: id, updates: { status } });
+  const result = await requestAdminAuctionMutation('/api/admin-update-auction', { auctionId: id, updates: { status } });
   if ((result.status === 'sold' || result.status === 'ended') && !result.winningEmailSent) {
     await reconcileAuctionClosureAndNotifyWinner(id);
   }
@@ -2015,63 +2015,11 @@ export async function updateAuctionStatus(auctionId: string, status: Auction['st
  */
 export async function duplicateListing(
   sourceAuctionOrId: Auction | string,
-  sourceMediaConfig?: MediaConfiguration
+  _sourceMediaConfig?: MediaConfiguration
 ): Promise<Auction> {
-  let sourceAuction: Auction;
-  if (typeof sourceAuctionOrId === 'string') {
-    try {
-      const docRef = doc(db, 'auctions', sourceAuctionOrId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        sourceAuction = snap.data() as Auction;
-      } else {
-        sourceAuction = { ...BLANK_AUCTION, id: sourceAuctionOrId };
-      }
-    } catch {
-      sourceAuction = { ...BLANK_AUCTION, id: sourceAuctionOrId };
-    }
-  } else {
-    sourceAuction = sourceAuctionOrId;
-  }
-
-  const cleanTitle = `${sourceAuction.title || 'Vehicle Listing'} (Copy)`;
-  const slug = slugifyTitle(cleanTitle);
-  const newId = `${slug}-${generateShortHash(8)}`;
-
-  const duplicatedAuction: Auction = {
-    ...sourceAuction,
-    id: newId,
-    title: cleanTitle,
-    headline: sourceAuction.headline ? `${sourceAuction.headline} (Copy)` : cleanTitle,
-    status: 'upcoming',
-    currentBid: sourceAuction.startingBid || 1000,
-    bidCount: 0,
-    highBidderId: '',
-    highBidderName: '',
-    highBidderEmail: '',
-    watchCount: 0,
-    startTime: Date.now(),
-    endTime: Date.now() + 7 * 24 * 60 * 60 * 1000,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-
-  try {
-    const docRef = doc(db, 'auctions', newId);
-    await setDoc(docRef, sanitizePayload(duplicatedAuction));
-
-    if (sourceMediaConfig) {
-      const mediaRef = doc(db, 'settings', `media-${newId}`);
-      await setDoc(mediaRef, sanitizePayload({
-        ...sourceMediaConfig,
-        vehicleName: cleanTitle
-      }));
-    }
-  } catch (err) {
-    console.warn('Saved duplicated auction locally:', err);
-  }
-
-  return duplicatedAuction;
+  const auctionId = typeof sourceAuctionOrId === 'string' ? sourceAuctionOrId : sourceAuctionOrId.id;
+  const result = await requestAdminAuctionMutation('/api/admin-duplicate-auction', { auctionId });
+  return result.auction;
 }
 
 /**
@@ -2721,39 +2669,8 @@ export async function deleteComment(commentId: string): Promise<void> {
  * Admin: Clear all existing bids and reset the auction bidding log to starting bid
  */
 export async function clearAllBidsAndReset(auctionId: string, resetStartingBid?: number): Promise<void> {
-  const auctionRef = doc(db, 'auctions', auctionId);
-  const auctionSnap = await getDoc(auctionRef);
-  const starting = resetStartingBid !== undefined ? resetStartingBid : (auctionSnap.exists() ? (auctionSnap.data().startingBid || 15000) : 15000);
-
-  // 1. Delete all bids in bids collection
-  const bidsCol = collection(db, 'bids');
-  const bidsSnap = await getDocs(bidsCol);
-  const batch = writeBatch(db);
-  bidsSnap.docs.forEach((d) => {
-    batch.delete(d.ref);
-  });
-  await batch.commit();
-
-  // 2. Also remove any automated bid comments from comments collection if present
-  const commentsCol = collection(db, 'comments');
-  const commentsSnap = await getDocs(commentsCol);
-  const commentBatch = writeBatch(db);
-  commentsSnap.docs.forEach((d) => {
-    if (d.data().isBid === true) {
-      commentBatch.delete(d.ref);
-    }
-  });
-  await commentBatch.commit();
-
-  // 3. Reset auction doc state
-  await updateDoc(auctionRef, {
-    currentBid: 0,
-    bidCount: 0,
-    highBidderId: '',
-    highBidderName: '',
-    highBidderEmail: '',
-    isReserveMet: false,
-    updatedAt: Date.now()
+  await requestAdminAuctionMutation('/api/admin-reset-auction-bids', {
+    auctionId, ...(resetStartingBid !== undefined ? { startingBid: resetStartingBid } : {})
   });
 }
 
@@ -2772,7 +2689,7 @@ export async function updateAuctionConfig(
   updates: Partial<Auction>
 ): Promise<void> {
   const targetId = auctionId?.trim() || MAIN_AUCTION_ID;
-  const result = await requestAdminAuctionUpdate({ auctionId: targetId, updates: sanitizePayload(updates) });
+  const result = await requestAdminAuctionMutation('/api/admin-update-auction', { auctionId: targetId, updates: sanitizePayload(updates) });
   if (updates.status) reconcileUpdatedAuction(targetId, result);
 }
 
@@ -2784,10 +2701,10 @@ function reconcileUpdatedAuction(auctionId: string, result: { status: string; wi
   }
 }
 
-async function requestAdminAuctionUpdate(body: Record<string, unknown>) {
+async function requestAdminAuctionMutation(endpoint: string, body: Record<string, unknown>) {
   const user = auth.currentUser;
   if (!user) throw new Error('Administrator authentication required.');
-  const response = await fetch('/api/admin-update-auction', {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -2798,7 +2715,7 @@ async function requestAdminAuctionUpdate(body: Record<string, unknown>) {
   const result = await response.json().catch(() => null);
   if (!response.ok || !result) {
     throw new Error(response.status < 500 && typeof result?.error === 'string'
-      ? result.error : 'Unable to save auction settings.');
+      ? result.error : 'Unable to complete the auction request.');
   }
   return result;
 }
@@ -3066,12 +2983,10 @@ export async function purgeAllListings(): Promise<void> {
  * Admin helper: Reset auction to test duration (e.g. 2 minutes left for anti-sniping test)
  */
 export async function setAuctionEndingSoon(auctionId: string, secondsFromNow = 110) {
-  const auctionRef = doc(db, 'auctions', auctionId);
-  await updateDoc(auctionRef, {
+  await updateAuctionConfig(auctionId, {
     startTime: Date.now() - 3600000,
     endTime: Date.now() + secondsFromNow * 1000,
-    status: 'active',
-    updatedAt: Date.now()
+    status: 'active'
   });
 }
 

@@ -227,6 +227,10 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    match /auctionNotificationOutbox/{notificationId} {
+      allow read: if isAdmin();
+    }
+
     match /mail/{mailId} {
       allow read: if isAdmin();
     }
