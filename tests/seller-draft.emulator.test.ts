@@ -11,6 +11,7 @@ import submit from '../api/seller-draft-submit';
 import upload, { handleSellerDraftUpload } from '../api/seller-draft-upload';
 import type { Transaction } from 'firebase-admin/firestore';
 import media from '../api/seller-draft-media';
+import auctionComments from '../api/auction-comments';
 import publicAuctions from '../api/public-auctions';
 import placeBid from '../api/place-auction-bid';
 import createAuction from '../api/admin-create-auction';
@@ -124,6 +125,27 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     assert.equal(view.comments.length, 2);
     assert.ok(view.comments.every((comment: any) => comment.userEmail === undefined));
     assert.equal((await invoke(createAuction, { title: 'Unauthorized' }, other.idToken)).status, 403);
+
+    const posted = await invoke(auctionComments, {
+      action: 'post', auctionId: publicId, text: 'Verified test comment', userId: owner.uid
+    }, other.idToken);
+    assert.equal(posted.status, 201);
+    const { id: commentId } = posted.payload as { id: string };
+    const comment = firestore.collection('comments').doc(commentId);
+    assert.equal((await comment.get()).get('userId'), other.uid);
+    assert.equal((await invoke(auctionComments, { action: 'edit', commentId, text: 'Denied' }, owner.idToken)).status, 403);
+    assert.equal((await invoke(auctionComments, { action: 'edit', commentId, text: 'Edited' }, other.idToken)).status, 200);
+    assert.equal((await invoke(auctionComments, { action: 'vote', commentId }, other.idToken)).status, 200);
+    const viewer = await invoke(publicAuctions, {}, other.idToken, 'GET', { auctionId: publicId });
+    const ownComment = (viewer.payload as any).comments.find((entry: any) => entry.id === commentId);
+    assert.equal(ownComment.userId, other.uid);
+    assert.deepEqual(ownComment.upvotedBy, [other.uid]);
+    const anonymous = await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: publicId });
+    const anonymousComment = (anonymous.payload as any).comments.find((entry: any) => entry.id === commentId);
+    assert.equal(anonymousComment.userId, undefined);
+    assert.equal(anonymousComment.upvotedBy, undefined);
+    assert.equal((await invoke(auctionComments, { action: 'delete', commentId }, other.idToken)).status, 200);
+    assert.equal((await comment.get()).exists, false);
 
     const command = { auctionId, expectedRevision: 0 };
     const patch = { ...command, overviewHeading: 'Synthetic overview', overviewParagraphs: ['Test paragraph'] };
