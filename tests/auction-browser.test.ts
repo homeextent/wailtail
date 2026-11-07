@@ -110,6 +110,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       ? Promise.race([once(child, 'exit').catch(() => {}), delay(3000)]) : Promise.resolve()));
     if (chrome.exitCode === null) chrome.kill('SIGKILL');
     if (server.exitCode === null) server.kill('SIGKILL');
-    await rm(profile, { recursive: true, force: true });
+    // Chrome subprocesses can finish writing profile files just after the parent exits.
+    // Retry transient directory contention without suppressing cleanup failures.
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
