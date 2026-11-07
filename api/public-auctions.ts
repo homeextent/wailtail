@@ -93,13 +93,18 @@ export default async function handler(req: any, res: any) {
     return res.status(422).json({ error: 'invalid-auction-id' });
   }
   try {
-    const { firestore } = getFirebaseAdminServices();
+    const { firestore, auth } = getFirebaseAdminServices();
     const auctions = firestore.collection('auctions');
     if (typeof id === 'string') {
       const snapshot = await auctions.doc(id).get();
       const data = snapshot.data();
       const auction = data && projectPublicAuction(snapshot.id, data);
       if (!auction) return res.status(404).json({ error: 'auction-not-found' });
+      const bearer = typeof req.headers?.authorization === 'string'
+        ? /^Bearer ([^\s]+)$/i.exec(req.headers.authorization) : null;
+      const viewer = bearer ? await auth.verifyIdToken(bearer[1], true).catch(() => null) : null;
+      const viewerUid = viewer?.email_verified === true ? viewer.uid : undefined;
+      if (viewerUid && viewerUid === data?.sellerId) auction.sellerId = viewerUid;
       const mediaId = id === 'wailtail-1978-porsche-911' ? 'main-media-config' : `media-${id}`;
       const [mediaSnapshot, bidSnapshot, commentSnapshot] = await Promise.all([
         firestore.collection('settings').doc(mediaId).get(),
@@ -112,6 +117,9 @@ export default async function handler(req: any, res: any) {
         id: doc.id, auctionId: id
       })).sort((a, b) => Number('amount' in b ? b.amount : 0) - Number('amount' in a ? a.amount : 0));
       const comments = commentSnapshot.docs.map(doc => ({
+        ...(viewerUid && doc.get('userId') === viewerUid ? { userId: viewerUid } : {}),
+        ...(viewerUid && Array.isArray(doc.get('upvotedBy')) && doc.get('upvotedBy').includes(viewerUid)
+          ? { upvotedBy: [viewerUid] } : {}),
         ...select(doc.data(), ['userName', 'userBadge', 'text', 'timestamp', 'upvotes', 'replyToId',
           'isBid', 'bidAmount', 'isEdited', 'editedAt', 'isPinned', 'pinnedAt']),
         id: doc.id, auctionId: id
