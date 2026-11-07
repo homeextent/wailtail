@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation — Local development workflow and housekeeping (2026-11-07)
+
+- Recorded PR #3's independently accepted staging merge at `1bf4d6a` and successful post-merge CI/preview; production release, Firebase rules and Storage migration remain separate.
+- Documented the active `wailtail-staging` workspace, task-branch/PR workflow, primary-repository dependency, emulator preview and ordinary Vite/API configuration boundary.
+- Added verified private-backup and absolute-path worktree move/removal guidance. Recorded the completed retirement of the worker-test and Storage rehearsal worktrees while preserving their history and local artifacts. GitHub branches and PR #2 remain separate.
+
 ### Independent audit follow-up — Stage 3 staging security
 - Replaced the one-hour notification cutoff with persisted exponential retries, a 23-hour creation-based safety window, 24-attempt cap and transactional two-minute worker claims. Provider payloads/idempotency keys remain stable; exhausted records are retained for reconciliation.
 - Reduced catalog/settings polling to 30 seconds while retaining five-second lot updates; hidden tabs suspend requests, refresh on return and clean up on unsubscribe.

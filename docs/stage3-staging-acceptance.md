@@ -1,6 +1,6 @@
 # Stage 3 staging security acceptance
 
-Scope: PR #3, `security/auction-security-gate` into `staging`. Acceptance requires a final implementation review, successful required CI and a successful Vercel preview on the exact proposed commit. This document does not authorize production changes.
+Scope: PR #3, merged into `staging` as `1bf4d6a` on November 7, 2026 after independent acceptance of head `293ffbb`. Exact-head and post-merge CI and Vercel preview passed; staging integration is complete. Future implementation changes require review and verification on their own proposed revision. This document does not authorize production changes.
 
 | Workflow | Staging disposition | Acceptance evidence |
 |---|---|---|

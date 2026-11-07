@@ -2,7 +2,18 @@
 
 ## Auction Security Gate implementation checkpoint
 
-The changes on `security/auction-security-gate` are under review in PR #3 targeting `staging`. Production release and Firebase rules publication require a separate decision. The Phase 1 Verified Boutique Dealer Program milestone definitions remain in Section 11.
+PR #3 was independently accepted at head `293ffbb` and merged into `staging` on November 7, 2026 as `1bf4d6a`. The merge tree matches the reviewed head; post-merge CI and Vercel preview passed. The staging security integration milestone is complete. Production release and Firebase rules publication require a separate decision. The Phase 1 Verified Boutique Dealer Program milestone definitions remain in Section 11.
+
+### Development workflow and worktree lifecycle
+
+- `staging` is the integration branch; `main` is the production branch. Begin a focused task branch from clean, synchronized staging and submit a PR back into staging. Production promotion and Firebase rules publication require separate authorization.
+- Directory names, checked-out branches and detached commits are distinct. Inspect `git status -sb`, `git branch --show-current` and `git worktree list` before edits, switching, moving or cleanup. Never treat a named folder as proof of its branch.
+- The owner's active linked worktree is `wailtail-staging`. Its primary repository is `wailtail-auction`, which retains the shared Git metadata, objects, refs and stash. Keep the primary repository while linked worktrees depend on it; it is not necessarily checked out on `main`.
+- Use `git worktree move` with absolute source and destination paths, after stopping processes and closing that workspace. `git -C` changes the base for relative destinations. Do not move or delete linked worktrees through the file manager.
+- Preserve uncommitted edits and unique commits before cleanup. Inspect ignored filenames as well as normal status. Store credential-bearing backups outside Git with restricted permissions. Verify source archives and any Git bundles before removal. Force removal is reserved for the specific archived worktree after preservation checks; never force-push or discard unrelated changes.
+- Use guarded demo emulators for routine mutation acceptance. The normal Vite server is not isolated from the configured Firebase project and needs its API backend. The cloud project `wailtail-stage3-test` is retained for separately controlled real-cloud Storage verification, not routine local feature work.
+
+The repeatable setup, preview, archive and recovery procedures are in [Local development and worktree housekeeping](docs/local-development.md). Owner-specific locations there are a dated local inventory, not application configuration or universal paths. Retired worktrees do not imply deletion or merging of their GitHub branches. PR #2 and production Storage cutover remain separate from this completed staging milestone.
 
 ### Trusted application paths
 
