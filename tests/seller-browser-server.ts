@@ -114,7 +114,7 @@ server.post('/api/admin-return-auction-to-draft', (req, res, next) => {
   Promise.resolve(returnToDraft(req, res)).catch(next);
 });
 // Serve the real app at its real routes, with Firebase modules replaced only in this harness.
-server.get(['/','/admin','/dashboard/listings/:auctionId/edit'], (_req, res) => {
+server.get(['/','/catalog','/auctions/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (_req, res) => {
   res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>Isolated Wailtail app</title><div id="root"></div><script type="module" src="/tests/full-app-browser.tsx"></script></html>');
 });
 const firebaseModules = ['src/firebase', 'src/services/firebase'].map(path => resolve(path));
@@ -134,6 +134,7 @@ const vite = await createServer({
 });
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
+  console.log('Signed-out catalog: http://127.0.0.1:4178/catalog?actor=public');
   console.log('Public catalog API: http://127.0.0.1:4178/api/public-auctions');
   console.log('Actual seller route: http://127.0.0.1:4178/?fixture=draft');
   console.log('Actual admin portal: http://127.0.0.1:4178/admin?tab=inventory');
