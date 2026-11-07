@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { handleAuthorizeApprovedConsignor } from '../api/authorize-approved-consignor';
+import { handleAuthorizeApprovedConsignor } from '../server/api/authorize-approved-consignor';
 import { evaluateAdminAuthority, isDesignatedAdminEmail } from '../src/config/adminConfig';
 
 interface MockDocData {

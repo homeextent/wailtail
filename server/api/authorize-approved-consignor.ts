@@ -7,8 +7,8 @@
  * and safely links converted auctions without client-side privilege escalation.
  */
 
-import { getFirebaseAdminServices, FirebaseAdminServices } from './_lib/firebaseAdmin';
-import { isDesignatedAdminEmail, normalizeEmail } from '../src/config/adminConfig';
+import { getFirebaseAdminServices, FirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { isDesignatedAdminEmail, normalizeEmail } from '../../src/config/adminConfig.js';
 
 function sendJson(res: any, status: number, data: any) {
   if (res.setHeader) {

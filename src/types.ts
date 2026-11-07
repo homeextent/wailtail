@@ -543,6 +543,7 @@ export interface UserConsignmentItem {
 }
 
 export interface UserActivitySummary {
+  historyLimitReached?: boolean;
   activeBids: UserBidActivity[];
   wonAuctions: UserWonAuction[];
   sellerListings: UserSellerListing[];
