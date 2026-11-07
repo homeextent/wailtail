@@ -840,3 +840,280 @@ test('isolated Storage cutover rehearsal with full batch failure, retry, shifted
     await deleteApp(app);
   }
 });
+
+test('focused emulator check: omit cross-lot Porsche showcase images with zero broken placeholders and safe rollback', async () => {
+  const firestoreHost = emulatorHost('FIRESTORE_EMULATOR_HOST');
+  const storageHost = emulatorHost('FIREBASE_STORAGE_EMULATOR_HOST');
+
+  assert.equal(process.env.GCLOUD_PROJECT, projectId);
+  process.env.STORAGE_EMULATOR_HOST = `http://${storageHost}`;
+  process.env.FIREBASE_STORAGE_BUCKET = bucket;
+
+  const app = initializeApp({ projectId, storageBucket: bucket }, 'focused-showcase-check');
+  const storageBucket = getStorage(app).bucket(bucket);
+  const firestore = getFirestore(app, NAMED_FIRESTORE_DATABASE_ID);
+
+  try {
+    const jpegBytes = Buffer.from('synthetic-held-porsche-hero');
+
+    const heldPorscheSources = [
+      'auctions/lot-test-mtur4abv/hero/1788998248108-y3vax.jpg',
+      'auctions/lot-test-mtur4abv/hero/1788998248258-t8u5f.jpg',
+      'auctions/lot-test-mtur4abv/hero/1788998248196-p8bie.jpg'
+    ];
+
+    // Seed the 3 source objects in Storage emulator
+    for (const p of heldPorscheSources) {
+      await storageBucket.file(p).save(jpegBytes, { resumable: false, contentType: 'image/jpeg' });
+    }
+
+    function toFirebaseUrl(path: string) {
+      return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(path)}?alt=media&token=porsche-token`;
+    }
+
+    // Seed settings/media-1988-porsche-928-c3uyca60 matching live schema
+    const initialShowcaseChapters = [
+      {
+        id: 'chapter-1792949437511-0',
+        title: 'Exterior Highlights',
+        category: 'EXTERIOR',
+        subtitle: 'Original Exterior Subtitle',
+        narrative: 'Detailed exterior overview paragraph.',
+        photoUrl: toFirebaseUrl(heldPorscheSources[0]),
+        photoCaption: '',
+        highlights: ['Factory Guards Red', 'Pop-up headlights'],
+        specCards: [{ id: 's1', key: 'Body Style', value: '2+2 Hatchback Coupe' }]
+      },
+      {
+        id: 'chapter-1792949437511-1',
+        title: 'Powertrain',
+        category: 'POWERTRAIN',
+        subtitle: 'Original Powertrain Subtitle',
+        narrative: 'Detailed powertrain overview paragraph.',
+        photoUrl: toFirebaseUrl(heldPorscheSources[1]),
+        photoCaption: '',
+        highlights: ['5.0L 32-valve V8', '316 horsepower'],
+        specCards: [{ id: 's2', key: 'Engine', value: '5.0L DOHC V8' }]
+      },
+      {
+        id: 'chapter-1792949437511-2',
+        title: 'Cabin & Cockpit',
+        category: 'INTERIOR',
+        subtitle: 'Original Cockpit Subtitle',
+        narrative: 'Detailed cabin overview paragraph.',
+        photoUrl: toFirebaseUrl(heldPorscheSources[2]),
+        photoCaption: '',
+        highlights: ['Black leather seating', 'Instrument cluster'],
+        specCards: [{ id: 's3', key: 'Upholstery', value: 'Black Leather' }]
+      },
+      {
+        id: 'chapter-1792949437511-3',
+        title: 'Chassis & Suspension',
+        category: 'CHASSIS',
+        subtitle: 'Weissach Axle',
+        narrative: 'Detailed chassis overview paragraph.',
+        photoUrl: '', // already empty in live listing
+        photoCaption: '',
+        highlights: ['Weissach rear axle'],
+        specCards: [{ id: 's4', key: 'Suspension', value: 'Independent Weissach' }]
+      }
+    ];
+
+    const initialInlineShowcase = [
+      {
+        id: 'chapter-1792949437511-0',
+        title: 'Exterior Highlights',
+        images: [{ url: toFirebaseUrl(heldPorscheSources[0]), caption: '' }]
+      },
+      {
+        id: 'chapter-1792949437511-1',
+        title: 'Powertrain',
+        images: [{ url: toFirebaseUrl(heldPorscheSources[1]), caption: '' }]
+      },
+      {
+        id: 'chapter-1792949437511-2',
+        title: 'Cabin & Cockpit',
+        images: [{ url: toFirebaseUrl(heldPorscheSources[2]), caption: '' }]
+      },
+      {
+        id: 'chapter-1792949437511-3',
+        title: 'Chassis & Suspension',
+        images: []
+      }
+    ];
+
+    const mediaDocRef = firestore.doc('settings/media-1988-porsche-928-c3uyca60');
+    await mediaDocRef.set({
+      unrelatedField: 'porsche-preserve-unrelated-val',
+      fullGallery: [{ id: 'gal-0', url: 'https://example.test/gal-0' }],
+      heroImages: ['https://example.test/hero-0'],
+      showcaseChapters: initialShowcaseChapters,
+      inlineShowcase: initialInlineShowcase
+    });
+
+    // =========================================================================
+    // EXECUTE CUTOVER REMOVAL OF THE 6 SHOWCASE REFERENCES
+    // =========================================================================
+
+    let clearedCount = 0;
+
+    await firestore.runTransaction(async tx => {
+      const snap = await tx.get(mediaDocRef);
+      const data = snap.data()!;
+
+      // Guard: check that each field still points to its expected source before clearing
+      for (let i = 0; i < 3; i++) {
+        const expectedSourceUrl = toFirebaseUrl(heldPorscheSources[i]);
+        const currentChapterUrl = data.showcaseChapters[i]?.photoUrl;
+        const currentInlineUrl = data.inlineShowcase[i]?.images?.[0]?.url;
+
+        if (currentChapterUrl !== expectedSourceUrl) {
+          throw new Error(`DRIFT: showcaseChapters[${i}].photoUrl drifted (expected ${expectedSourceUrl}, got ${currentChapterUrl})`);
+        }
+        if (currentInlineUrl !== expectedSourceUrl) {
+          throw new Error(`DRIFT: inlineShowcase[${i}].images[0].url drifted (expected ${expectedSourceUrl}, got ${currentInlineUrl})`);
+        }
+      }
+
+      // Apply removal: clear photoUrl to '' and remove corresponding inlineShowcase images
+      const updatedChapters = data.showcaseChapters.map((ch: any, idx: number) => {
+        if (idx < 3) {
+          clearedCount++;
+          return { ...ch, photoUrl: '', photoCaption: '' };
+        }
+        return ch;
+      });
+
+      const updatedInline = data.inlineShowcase.map((sec: any, idx: number) => {
+        if (idx < 3) {
+          clearedCount++;
+          return { ...sec, images: [] };
+        }
+        return sec;
+      });
+
+      tx.update(mediaDocRef, {
+        showcaseChapters: updatedChapters,
+        inlineShowcase: updatedInline
+      });
+    });
+
+    assert.equal(clearedCount, 6, 'Exactly 6 showcase reference removals executed');
+
+    // =========================================================================
+    // VERIFY CLEARED STATE & ZERO BROKEN PLACEHOLDERS IN SHOWCASE RENDER
+    // =========================================================================
+
+    const afterClearSnap = await mediaDocRef.get();
+    const afterClearData = afterClearSnap.data()!;
+
+    // 1. Verify all 6 references are cleared
+    for (let i = 0; i < 3; i++) {
+      assert.equal(afterClearData.showcaseChapters[i].photoUrl, '', `showcaseChapters[${i}].photoUrl must be empty`);
+      assert.deepEqual(afterClearData.inlineShowcase[i].images, [], `inlineShowcase[${i}].images must be empty`);
+    }
+
+    // 2. Verify chapter text, order, and unrelated fields are preserved
+    for (let i = 0; i < 4; i++) {
+      assert.equal(afterClearData.showcaseChapters[i].title, initialShowcaseChapters[i].title);
+      assert.equal(afterClearData.showcaseChapters[i].category, initialShowcaseChapters[i].category);
+      assert.equal(afterClearData.showcaseChapters[i].narrative, initialShowcaseChapters[i].narrative);
+      assert.deepEqual(afterClearData.showcaseChapters[i].highlights, initialShowcaseChapters[i].highlights);
+      assert.deepEqual(afterClearData.showcaseChapters[i].specCards, initialShowcaseChapters[i].specCards);
+    }
+    assert.equal(afterClearData.unrelatedField, 'porsche-preserve-unrelated-val');
+    assert.equal(afterClearData.fullGallery.length, 1);
+    assert.equal(afterClearData.heroImages.length, 1);
+
+    // 3. Verify showcase rendering logic (simulating InlineShowcaseSection / showcaseConverter)
+    const { normalizeSectionToChapter } = await import('../src/utils/showcaseConverter');
+    const renderedChapters = afterClearData.showcaseChapters.map((ch: any, idx: number) =>
+      normalizeSectionToChapter(ch, idx)
+    );
+
+    // Assert that normalized chapters all have empty photoUrl
+    for (let i = 0; i < 4; i++) {
+      assert.equal(renderedChapters[i].photoUrl, '');
+      // In InlineShowcaseSection.tsx line 86:
+      // {ch.photoUrl && ch.photoUrl.trim() !== '' && (<figure>...<img src={ch.photoUrl} />...</figure>)}
+      const wouldRenderFigure = Boolean(renderedChapters[i].photoUrl && renderedChapters[i].photoUrl.trim() !== '');
+      assert.equal(wouldRenderFigure, false, `Chapter ${i} must NOT render an img tag or figure`);
+    }
+
+    // 4. Verify the 3 source objects in Storage remain intact
+    for (const p of heldPorscheSources) {
+      const [exists] = await storageBucket.file(p).exists();
+      assert.equal(exists, true, `Storage source ${p} must remain intact in bucket`);
+      // Assert no object was copied to auctionPublic/
+      const parts = p.split('/');
+      const [publicExists] = await storageBucket.file(`auctionPublic/${parts[1]}/${parts[parts.length - 1]}`).exists();
+      assert.equal(publicExists, false, `Source ${p} must NOT have been copied to public`);
+    }
+
+    // =========================================================================
+    // VERIFY ROLLBACK OF SHOWCASE REMOVAL
+    // =========================================================================
+
+    // Simulate an unrelated edit made after clearing showcase
+    await mediaDocRef.update({
+      unrelatedField: 'modified-after-clearing-showcase',
+      newUnrelatedFlag: 'survives-showcase-rollback'
+    });
+
+    // Execute Rollback: restore the 6 original references
+    await firestore.runTransaction(async tx => {
+      const snap = await tx.get(mediaDocRef);
+      const data = snap.data()!;
+
+      const rolledBackChapters = data.showcaseChapters.map((ch: any, idx: number) => {
+        if (idx < 3 && ch.photoUrl === '') {
+          return { ...ch, photoUrl: toFirebaseUrl(heldPorscheSources[idx]) };
+        }
+        return ch;
+      });
+
+      const rolledBackInline = data.inlineShowcase.map((sec: any, idx: number) => {
+        if (idx < 3 && (!sec.images || sec.images.length === 0)) {
+          return { ...sec, images: [{ url: toFirebaseUrl(heldPorscheSources[idx]), caption: '' }] };
+        }
+        return sec;
+      });
+
+      tx.update(mediaDocRef, {
+        showcaseChapters: rolledBackChapters,
+        inlineShowcase: rolledBackInline
+      });
+    });
+
+    // Verify rolled back state
+    const postRollbackSnap = await mediaDocRef.get();
+    const postRollbackData = postRollbackSnap.data()!;
+
+    for (let i = 0; i < 3; i++) {
+      assert.equal(
+        postRollbackData.showcaseChapters[i].photoUrl,
+        toFirebaseUrl(heldPorscheSources[i]),
+        `showcaseChapters[${i}].photoUrl restored`
+      );
+      assert.equal(
+        postRollbackData.inlineShowcase[i].images[0].url,
+        toFirebaseUrl(heldPorscheSources[i]),
+        `inlineShowcase[${i}].images[0].url restored`
+      );
+    }
+
+    // Assert that unrelated edits survived rollback
+    assert.equal(postRollbackData.unrelatedField, 'modified-after-clearing-showcase');
+    assert.equal(postRollbackData.newUnrelatedFlag, 'survives-showcase-rollback');
+
+    // Confirm Storage objects still intact
+    for (const p of heldPorscheSources) {
+      const [exists] = await storageBucket.file(p).exists();
+      assert.equal(exists, true, `Storage source ${p} still exists after rollback`);
+    }
+
+    console.log('FOCUSED_SHOWCASE_CHECK_COMPLETE');
+  } finally {
+    await deleteApp(app);
+  }
+});
