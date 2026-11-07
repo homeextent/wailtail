@@ -15,6 +15,7 @@ import upload from '../api/seller-draft-upload';
 import media from '../api/seller-draft-media';
 import publicAuctions from '../api/public-auctions';
 import placeBid from '../api/place-auction-bid';
+import createAuction from '../api/admin-create-auction';
 
 const projectId = 'demo-wailtail-stage3';
 const bucket = `${projectId}.appspot.com`;
@@ -86,6 +87,9 @@ server.use((_req, res, next) => {
 server.use(express.json({ limit: '3mb' }));
 server.get('/api/public-auctions', (req, res, next) => {
   Promise.resolve(publicAuctions(req, res)).catch(next);
+});
+server.post('/api/admin-create-auction', (req, res, next) => {
+  Promise.resolve(createAuction(req, res)).catch(next);
 });
 server.post('/api/place-auction-bid', (req, res, next) => {
   Promise.resolve(placeBid(req, res)).catch(next);
