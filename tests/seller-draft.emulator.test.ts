@@ -329,6 +329,16 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         const edited = await firestore.collection('auctions').doc(createdAuction.id).get();
         assert.equal(edited.get('title'), 'Edited inventory draft');
         assert.equal(edited.get('sellerId'), undefined);
+        const bulk = { auctionIds: [createdAuction.id, 'missing-inventory-lot'], updates: { status: 'preview' } };
+        assert.equal((await invoke(updateAuction, bulk, other.idToken)).status, 403);
+        assert.equal((await invoke(updateAuction, bulk, admin.idToken)).status, 404);
+        assert.equal((await edited.ref.get()).get('status'), 'draft');
+        assert.equal((await firestore.collection('auctions').doc('missing-inventory-lot').get()).exists, false);
+        assert.equal((await invoke(updateAuction, {
+          auctionIds: [createdAuction.id, publicId, createdAuction.id], updates: { status: 'preview' }
+        }, admin.idToken)).status, 200);
+        assert.equal((await edited.ref.get()).get('status'), 'preview');
+        assert.equal((await publicRef.get()).get('status'), 'preview');
         const related = firestore.collection('comments').doc(createdAuction.id);
         await related.set({ auctionId: createdAuction.id, text: 'Related comment' });
         const removal = { auctionId: createdAuction.id, cascadeDeleteConsignment: false };
