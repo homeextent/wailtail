@@ -34,6 +34,54 @@ export function projectPublicAuction(id: string, record: Record<string, unknown>
   return result;
 }
 
+
+function select(record: unknown, fields: readonly string[]) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return {};
+  const source = record as Record<string, unknown>;
+  return Object.fromEntries(fields.flatMap(field => {
+    const value = source[field];
+    return typeof value === 'string' || typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value)) ? [[field, value]] : [];
+  }));
+}
+
+function entries(value: unknown, project: (entry: Record<string, unknown>) => unknown) {
+  return Array.isArray(value)
+    ? value.filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry)).map(project)
+    : [];
+}
+
+function strings(value: unknown) {
+  return Array.isArray(value) ? value.filter(entry => typeof entry === 'string') : [];
+}
+
+const imageFields = ['url', 'caption', 'alt', 'aspect'];
+
+export function projectPublicMedia(record: Record<string, unknown>) {
+  return {
+    ...select(record, ['siteLogo', 'siteName', 'siteTagline', 'highlightsBadge', 'distanceUnit',
+      'vehicleName', 'overviewHeading', 'youtubePlaylistUrl', 'videoTitle', 'videoSubtitle']),
+    overviewParagraphs: strings(record.overviewParagraphs),
+    ...(record.overviewImage ? { overviewImage: select(record.overviewImage, imageFields) } : {}),
+    overviewSpecs: entries(record.overviewSpecs, entry => select(entry, ['label', 'value'])),
+    heroImages: strings(record.heroImages),
+    videoChapters: entries(record.videoChapters, entry => select(entry, ['id', 'title', 'url', 'videoUrl', 'youtubeUrl', 'description', 'startTime'])),
+    inlineShowcase: entries(record.inlineShowcase, entry => ({
+      ...select(entry, ['id', 'title', 'tagline']),
+      paragraphs: strings(entry.paragraphs), bulletPoints: strings(entry.bulletPoints),
+      specs: entries(entry.specs, spec => select(spec, ['label', 'value'])),
+      images: entries(entry.images, image => select(image, imageFields))
+    })),
+    showcaseChapters: entries(record.showcaseChapters, entry => ({
+      ...select(entry, ['id', 'category', 'title', 'subtitle', 'narrative', 'photoUrl', 'photoCaption']),
+      highlights: strings(entry.highlights),
+      specCards: entries(entry.specCards, spec => select(spec, ['id', 'key', 'value', 'isCustomKey']))
+    })),
+    fullGallery: entries(record.fullGallery, entry => select(entry,
+      ['id', 'url', 'thumbnailUrl', 'category', 'title', 'caption', 'isPdf', 'fileSize', 'order']))
+  };
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') {
@@ -51,9 +99,24 @@ export default async function handler(req: any, res: any) {
       const snapshot = await auctions.doc(id).get();
       const data = snapshot.data();
       const auction = data && projectPublicAuction(snapshot.id, data);
-      return auction
-        ? res.status(200).json({ auction })
-        : res.status(404).json({ error: 'auction-not-found' });
+      if (!auction) return res.status(404).json({ error: 'auction-not-found' });
+      const mediaId = id === 'wailtail-1978-porsche-911' ? 'main-media-config' : `media-${id}`;
+      const [mediaSnapshot, bidSnapshot, commentSnapshot] = await Promise.all([
+        firestore.collection('settings').doc(mediaId).get(),
+        firestore.collection('bids').where('auctionId', '==', id).get(),
+        firestore.collection('comments').where('auctionId', '==', id).get()
+      ]);
+      const media = mediaSnapshot.data();
+      const bids = bidSnapshot.docs.map(doc => ({
+        ...select(doc.data(), ['amount', 'bidderName', 'bidderHandle', 'timestamp', 'antiSniped', 'status']),
+        id: doc.id, auctionId: id
+      })).sort((a, b) => Number('amount' in b ? b.amount : 0) - Number('amount' in a ? a.amount : 0));
+      const comments = commentSnapshot.docs.map(doc => ({
+        ...select(doc.data(), ['userName', 'userBadge', 'text', 'timestamp', 'upvotes', 'replyToId',
+          'isBid', 'bidAmount', 'isEdited', 'editedAt', 'isPinned', 'pinnedAt']),
+        id: doc.id, auctionId: id
+      })).sort((a, b) => Number('timestamp' in a ? a.timestamp : 0) - Number('timestamp' in b ? b.timestamp : 0));
+      return res.status(200).json({ auction, media: media ? projectPublicMedia(media) : null, bids, comments });
     }
     const snapshot = await auctions.where('status', 'in', PUBLIC_STATUSES).get();
     return res.status(200).json({
