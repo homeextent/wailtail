@@ -1,3 +1,4 @@
+import { handlePlaceAuctionBid } from '../api/place-auction-bid';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkDraftNarrativeWrite, handleSellerDraftNarrative, handleSellerDraftSubmission, parseDraftNarrative } from '../api/seller-draft-narrative';
@@ -163,4 +164,80 @@ test('valid narrative mixed with a protected field causes no writes', async () =
   });
   assert.equal(result.status, 422);
   assert.deepEqual(result.writes, []);
+});
+
+test('trusted bid uses verified identity and writes auction, history, comment and notifications together', async () => {
+  const now = Date.now();
+  const records: Record<string, Record<string, unknown>> = {
+    'auctions/lot': {
+      status: 'active', startTime: now - 60_000, endTime: now + 30_000,
+      currentBid: 1000, minimumIncrement: 250, reserveAmount: 1250,
+      highBidderId: 'previous', highBidderEmail: 'previous@example.test'
+    },
+    'users/verified-bidder': { displayName: 'Verified Bidder' }
+  };
+  const writes: Array<{ path: string; value: Record<string, unknown> }> = [];
+  let id = 0;
+  const collection = (path: string) => ({
+    doc: (key = String(++id)) => ({
+      id: key, path: `${path}/${key}`,
+      collection: (child: string) => collection(`${path}/${key}/${child}`)
+    })
+  });
+  const write = (ref: { path: string }, value: Record<string, unknown>) =>
+    writes.push({ path: ref.path, value });
+  const services = {
+    auth: {
+      verifyIdToken: async (token: string, checkRevoked: boolean) => {
+        assert.equal(token, 'test-token');
+        assert.equal(checkRevoked, true);
+        return { uid: 'verified-bidder', email: 'verified@example.test', email_verified: true };
+      }
+    },
+    firestore: {
+      collection,
+      runTransaction: async (execute: (tx: any) => Promise<unknown>) => execute({
+        getAll: async (...refs: Array<{ path: string }>) =>
+          refs.map(ref => ({ data: () => records[ref.path] })),
+        update: write,
+        create: write
+      })
+    }
+  } as unknown as NonNullable<Parameters<typeof handlePlaceAuctionBid>[2]>;
+
+  async function submit(body: Record<string, unknown>) {
+    let code = 0;
+    let payload: any;
+    const response = {
+      setHeader() {},
+      status(value: number) { code = value; return this; },
+      json(value: unknown) { payload = value; return this; }
+    };
+    await handlePlaceAuctionBid({
+      method: 'POST', headers: { authorization: 'Bearer test-token' }, body
+    }, response, services);
+    return { code, payload };
+  }
+
+  assert.equal((await submit({ auctionId: 'lot', amount: 1250, bidderId: 'spoofed' })).code, 422);
+  assert.equal((await submit({ auctionId: 'lot', amount: 1249 })).code, 409);
+  records['users/verified-bidder'].bannedFromBidding = true;
+  assert.equal((await submit({ auctionId: 'lot', amount: 1250 })).code, 403);
+  delete records['users/verified-bidder'].bannedFromBidding;
+  assert.equal(writes.length, 0);
+
+  const result = await submit({ auctionId: 'lot', amount: 1250 });
+  assert.equal(result.code, 200);
+  assert.equal(result.payload.antiSniped, true);
+  assert.ok(result.payload.newEndTime > now + 30_000);
+  assert.deepEqual(Object.keys(result.payload).sort(), ['antiSniped', 'newEndTime', 'success']);
+  assert.equal(writes.length, 6);
+  assert.equal(writes[0].value.highBidderId, 'verified-bidder');
+  assert.equal(writes[0].value.isReserveMet, true);
+  assert.deepEqual(writes[1].value, writes[2].value);
+  assert.equal(writes[1].value.bidderEmail, 'verified@example.test');
+  assert.equal(writes[3].value.userId, 'verified-bidder');
+  assert.deepEqual(writes.slice(4).map(entry => entry.value.to), [
+    ['verified@example.test'], ['previous@example.test']
+  ]);
 });
