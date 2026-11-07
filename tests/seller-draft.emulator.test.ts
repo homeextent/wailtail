@@ -1,3 +1,4 @@
+import settleAuction from '../api/admin-settle-auction';
 import uploadAuctionImage from '../api/admin-upload-auction-image';
 import saveAuctionMedia from '../api/admin-save-auction-media';
 import deleteAuction from '../api/admin-delete-auction';
@@ -375,6 +376,24 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, other.idToken)).status, 403);
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, admin.idToken)).status, 200);
         assert.equal((await firestore.collection('comments').doc(publicId).get()).get('isPinned'), true);
+        const settlement = { auctionId: publicId };
+        assert.equal((await invoke(settleAuction, settlement, other.idToken)).status, 403);
+        assert.equal((await invoke(settleAuction, settlement, admin.idToken)).status, 409);
+        await publicRef.update({ status: 'ended', reserveAmount: 1000 });
+        await publicRef.collection('bids').doc('retracted').set({ status: 'retracted', amount: 9000 });
+        assert.deepEqual(await invoke(settleAuction, settlement, admin.idToken), {
+          status: 200, payload: { success: true, settled: true }
+        });
+        const settled = await publicRef.get();
+        assert.equal(settled.get('status'), 'sold');
+        assert.equal(settled.get('currentBid'), 1000);
+        const notification = firestore.collection('mail').doc(`auction-winner-${publicId}`);
+        assert.deepEqual((await notification.get()).get('to'), [other.email]);
+        const queuedAt = (await notification.get()).get('createdAt');
+        assert.deepEqual(await invoke(settleAuction, settlement, admin.idToken), {
+          status: 200, payload: { success: true, settled: false }
+        });
+        assert.equal((await notification.get()).get('createdAt'), queuedAt);
         assert.equal((await firestore.collection('settings').doc(`media-${createdAuction.id}`).get()).exists, false);
         assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: createdAuction.id })).status, 404);
       }
