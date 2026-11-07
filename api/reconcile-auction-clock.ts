@@ -21,12 +21,13 @@ export default async function handler(req: any, res: any) {
     const now = Date.now();
     const snapshot = await firestore.collection('auctions')
       .where('status', 'in', ['upcoming', 'active', 'live', 'ending_soon']).get();
-    const due = snapshot.docs.filter(doc => {
+    const eligible = snapshot.docs.filter(doc => {
       const auction = doc.data();
       return Number.isFinite(auction.startTime) && Number.isFinite(auction.endTime) &&
-        (now >= auction.endTime || (auction.status === 'upcoming' && now >= auction.startTime));
+        now >= auction.startTime && (now >= auction.endTime || auction.status === 'upcoming');
     }).sort((a, b) => Number(a.get('endTime')) - Number(b.get('endTime')) || a.id.localeCompare(b.id))
-      .slice(0, 25);
+;
+    const due = eligible.slice(0, 25);
     let processed = 0;
     let pending = 0;
     for (const doc of due) {
@@ -39,11 +40,7 @@ export default async function handler(req: any, res: any) {
       }
     }
     return res.status(pending ? 503 : 200).json({
-      processed, pending, remaining: Math.max(0, snapshot.docs.filter(doc => {
-        const record = doc.data();
-        return Number.isFinite(record.startTime) && Number.isFinite(record.endTime) &&
-          (now >= record.endTime || record.status === 'upcoming' && now >= record.startTime);
-      }).length - due.length)
+      processed, pending, remaining: Math.max(0, eligible.length - due.length)
     });
   } catch {
     return res.status(503).json({ error: 'auction-worker-unavailable' });
