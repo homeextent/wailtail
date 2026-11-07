@@ -13,6 +13,8 @@ import save from '../api/seller-draft-narrative';
 import submit from '../api/seller-draft-submit';
 import upload from '../api/seller-draft-upload';
 import media from '../api/seller-draft-media';
+import publicAuctions from '../api/public-auctions';
+import placeBid from '../api/place-auction-bid';
 
 const projectId = 'demo-wailtail-stage3';
 const bucket = `${projectId}.appspot.com`;
@@ -68,6 +70,13 @@ await firestore.collection('users').doc(adminUid).set({
   role: 'admin', isEmailVerified: true, welcomeEmailSent: true
 });
 
+const publicAuctionId = `public-${run}`;
+await firestore.collection('auctions').doc(publicAuctionId).set({
+  status: 'active', title: 'Synthetic public auction', startTime: Date.now() - 60_000,
+  endTime: Date.now() + 3_600_000, startingBid: 1000, currentBid: 0,
+  minimumIncrement: 250, reserveAmount: 5000, sellerEmail: 'private-fixture@example.test'
+});
+
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
@@ -75,6 +84,12 @@ server.use((_req, res, next) => {
   next();
 });
 server.use(express.json({ limit: '3mb' }));
+server.get('/api/public-auctions', (req, res, next) => {
+  Promise.resolve(publicAuctions(req, res)).catch(next);
+});
+server.post('/api/place-auction-bid', (req, res, next) => {
+  Promise.resolve(placeBid(req, res)).catch(next);
+});
 server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId });
@@ -119,6 +134,7 @@ const vite = await createServer({
 });
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
+  console.log('Public catalog API: http://127.0.0.1:4178/api/public-auctions');
   console.log('Actual seller route: http://127.0.0.1:4178/?fixture=draft');
   console.log('Actual admin portal: http://127.0.0.1:4178/admin?tab=inventory');
   console.log('Component-only fixture: http://127.0.0.1:4178/tests/seller-browser.html');
