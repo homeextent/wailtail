@@ -1,3 +1,4 @@
+import { projectPublicAuction } from '../api/public-auctions';
 import { handlePlaceAuctionBid } from '../api/place-auction-bid';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -241,4 +242,18 @@ test('trusted bid uses verified identity and writes auction, history, comment an
   assert.deepEqual(writes.slice(4).map(entry => entry.value.to), [
     ['verified@example.test'], ['previous@example.test']
   ]);
+});
+
+test('public auction projection excludes drafts and private fields', () => {
+  assert.equal(projectPublicAuction('draft', { status: 'draft' }), null);
+  assert.equal(projectPublicAuction('review', { status: 'pending_review' }), null);
+  assert.deepEqual(projectPublicAuction('public-lot', {
+    id: 'ignored', status: 'active', title: 'Public listing', isReserveMet: false,
+    currentBid: 1000, reserveAmount: 2000, sellerId: 'private', sellerEmail: 'private@example.test',
+    sellerPhone: 'private', highBidderEmail: 'private@example.test',
+    heroImages: ['https://example.test/public.jpg', { token: 'private' }]
+  }), {
+    id: 'public-lot', status: 'active', title: 'Public listing', isReserveMet: false,
+    currentBid: 1000, heroImages: ['https://example.test/public.jpg']
+  });
 });
