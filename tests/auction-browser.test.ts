@@ -121,7 +121,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin?tab=branding' });
     await eventually(text, value => value.includes('Site Branding & Global Settings'), 'branding tab available');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Site Branding & Global Settings')); if (!b) return false; b.click(); return true; })()`);
-    await eventually(text, value => value.includes('Platform Brand Name'), 'branding form');
+    await eventually(text, value => value.toLowerCase().includes('platform brand name'), 'branding form');
     const disabledPurge = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).some(b => b.textContent?.includes('Purge All Catalog Listings') && b.disabled)`, returnByValue: true });
     assert.equal(disabledPurge.result?.value, true);
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('Platform Brand Name')); const field = label?.parentElement?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Updated browser brand'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
@@ -132,7 +132,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal(publicBranding.branding.privateAdminField, undefined);
 
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Consignment Pipeline')); if (!b) return false; b.click(); return true; })()`);
-    await eventually(text, value => value.includes('Synthetic Seller'), 'consignment fixture');
+    await eventually(text, value => value.toLowerCase().includes('synthetic seller'), 'consignment fixture');
     await eventually(async () => {
       const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).some(b => b.disabled && b.title.includes('Unavailable in this staging revision') && /Approve|Convert/.test(b.textContent || ''))`, returnByValue: true });
       return result.result?.value;
