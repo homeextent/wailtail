@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Independent audit follow-up — Stage 3 staging security
+- Replaced the one-hour notification cutoff with persisted exponential retries, a 23-hour creation-based safety window, 24-attempt cap and transactional two-minute worker claims. Provider payloads/idempotency keys remain stable; exhausted records are retained for reconciliation.
+- Reduced catalog/settings polling to 30 seconds while retaining five-second lot updates; hidden tabs suspend requests, refresh on return and clean up on unsubscribe.
+- Clarified oversized reset errors and added no-partial-write, browser deletion-error, retired-service and polling lifecycle coverage. Production rules publication, Storage migration and staging merge approval remain separate.
+
+
 ### Security — Auction Security Gate (implementation review)
 
 - Finished the staging legacy-path compatibility implementation: trusted watchlists and bounded own-account activity, atomic private inquiries with server-derived identity and recipients, public branding projection, trusted platform uploads and administrator-scoped legacy notifications. Branding failures now propagate and global settings no longer mutate the selected auction. New drafts read validated CAD defaults.
