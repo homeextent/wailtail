@@ -3297,8 +3297,8 @@ async function requestAdminAuctionUpdate(body: Record<string, unknown>) {
  */
 export async function saveMediaConfig(config: MediaConfiguration, auctionId?: string): Promise<void> {
   const targetAuctionId = auctionId?.trim() || MAIN_AUCTION_ID;
-  const docId = (targetAuctionId !== MAIN_AUCTION_ID) ? `media-${targetAuctionId}` : MEDIA_CONFIG_DOC_ID;
-  const mediaRef = doc(db, 'settings', docId);
+  const user = auth.currentUser;
+  if (!user) throw new Error('Administrator authentication required.');
 
   // Compress and upload any high-res Base64 images in hero and gallery arrays to Firebase Storage before persisting
   const compressedHero = await Promise.all((config.heroImages || []).map(async img => {
@@ -3314,17 +3314,21 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
     };
   }));
 
-  const cleanConfig = sanitizePayload({
-    ...config,
-    heroImages: compressedHero,
-    fullGallery: compressedGallery,
-    updatedAt: Date.now()
+  const response = await fetch('/api/admin-save-auction-media', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`
+    },
+    body: JSON.stringify({ auctionId: targetAuctionId, config: sanitizePayload({
+      ...config, heroImages: compressedHero, fullGallery: compressedGallery
+    }) })
   });
-
-  await withTimeout(
-    setDoc(mediaRef, cleanConfig, { merge: true }),
-    8000
-  );
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.saved !== true) {
+    throw new Error(response.status < 500 && typeof result?.error === 'string'
+      ? result.error : 'Unable to save listing media.');
+  }
 
   // Synchronize branding properties to localStorage if configured
   if (config.siteLogo !== undefined || config.siteName || config.siteTagline) {
@@ -3340,19 +3344,6 @@ export async function saveMediaConfig(config: MediaConfiguration, auctionId?: st
     }
   }
 
-  if (config.heroImages && Array.isArray(config.heroImages)) {
-    try {
-      const auctionRef = doc(db, 'auctions', targetAuctionId);
-      const leadHero = config.heroImages[0] || '';
-      // Only write leadHeroImage to root auction doc to prevent exceeding Firestore's 1MB document limit
-      await setDoc(auctionRef, sanitizePayload({
-        leadHeroImage: leadHero,
-        updatedAt: Date.now()
-      }), { merge: true });
-    } catch (err) {
-      console.warn('Could not sync lead hero image to root auction doc:', err);
-    }
-  }
 }
 
 /**
