@@ -178,7 +178,8 @@ test('trusted bid uses verified identity and writes auction, history, comment an
   };
   const writes: Array<{ path: string; value: Record<string, unknown> }> = [];
   let id = 0;
-  const collection = (path: string) => ({
+  type MockCollection = { doc: (key?: string) => { id: string; path: string; collection: (child: string) => MockCollection } };
+  const collection = (path: string): MockCollection => ({
     doc: (key = String(++id)) => ({
       id: key, path: `${path}/${key}`,
       collection: (child: string) => collection(`${path}/${key}/${child}`)
