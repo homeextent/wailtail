@@ -1,5 +1,12 @@
 # Wailtail Collector Car Auction Platform
 
+## Auction Security Gate — Stage 3 review
+
+The Stage 3 implementation introduces an ownership-scoped seller draft workspace, private draft media and administrator-requested revisions. Local verification was reported on the security implementation branch. Staging acceptance is pending review of client compatibility with the candidate Firestore and Storage rules. Trusted bidding and later security stages remain open.
+
+For isolated verification use `npm run test:endpoint`, `npm run test:rules`, and `npm run test:seller-emulator`. The `npm run test:seller-browser` harness exercises My Listings, submission, administrator revisions and reopening the draft. Use the demo emulator environment for these checks.
+
+
 Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed for curated classic, collector, and enthusiast cars. It features clean Canadian CAD financials, soft-close anti-sniping protection, real-time bidding telemetry, rich editorial showcase chapters, and a multi-car vehicle catalog architecture.
 
 ---
