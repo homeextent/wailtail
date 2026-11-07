@@ -495,8 +495,34 @@ const AuctionAppContent: React.FC = () => {
           await initializeMediaConfigIfNotExists(targetAuctionId);
         }
 
-        const subscribe = isAdmin && isEditorRoute ? subscribeToAuction : subscribeToPublicAuction;
-        unsubAuction = subscribe(targetAuctionId, (data) => {
+        const applyMedia = (cloudMedia: MediaConfiguration | null) => {
+          if (cloudMedia) {
+            setCurrentMedia(cloudMedia);
+            if (cloudMedia.siteLogo !== undefined || cloudMedia.siteName || cloudMedia.siteTagline) {
+              setGlobalBranding((prev) => {
+                const next = {
+                  siteLogo: cloudMedia.siteLogo !== undefined ? cloudMedia.siteLogo : prev.siteLogo,
+                  siteName: cloudMedia.siteName || prev.siteName,
+                  siteTagline: cloudMedia.siteTagline || prev.siteTagline
+                };
+                try {
+                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
+                } catch {
+                  // ignore
+                }
+                return next;
+              });
+            }
+            try {
+              localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
+            } catch (e) {
+              // ignore
+            }
+          } else {
+            setCurrentMedia(targetAuctionId === MAIN_AUCTION_ID ? DEFAULT_MEDIA_CONFIG : BLANK_MEDIA_CONFIG);
+          }
+        };
+        const applyAuction = (data: Auction | null) => {
           if (data) {
             setAuction(data);
             if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
@@ -524,7 +550,19 @@ const AuctionAppContent: React.FC = () => {
             }
           }
           setLoading(false);
-        });
+        };
+
+        if (isAdmin && isEditorRoute) {
+          unsubAuction = subscribeToAuction(targetAuctionId, applyAuction);
+        } else {
+          unsubAuction = subscribeToPublicAuction(targetAuctionId, (data, detail) => {
+            applyAuction(data);
+            applyMedia(detail?.media ?? null);
+            setBids(detail?.bids ?? []);
+            setComments(detail?.comments ?? []);
+          });
+          return;
+        }
 
         unsubBids = subscribeToBids(targetAuctionId, (bidList) => {
           setBids(bidList);
@@ -534,33 +572,7 @@ const AuctionAppContent: React.FC = () => {
           setComments(commList);
         });
 
-        unsubMedia = subscribeToMediaConfig((cloudMedia) => {
-          if (cloudMedia) {
-            setCurrentMedia(cloudMedia);
-            if (cloudMedia.siteLogo !== undefined || cloudMedia.siteName || cloudMedia.siteTagline) {
-              setGlobalBranding((prev) => {
-                const next = {
-                  siteLogo: cloudMedia.siteLogo !== undefined ? cloudMedia.siteLogo : prev.siteLogo,
-                  siteName: cloudMedia.siteName || prev.siteName,
-                  siteTagline: cloudMedia.siteTagline || prev.siteTagline
-                };
-                try {
-                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
-                } catch {
-                  // ignore
-                }
-                return next;
-              });
-            }
-            try {
-              localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
-            } catch (e) {
-              // ignore
-            }
-          } else {
-            setCurrentMedia(targetAuctionId === MAIN_AUCTION_ID ? DEFAULT_MEDIA_CONFIG : BLANK_MEDIA_CONFIG);
-          }
-        }, targetAuctionId);
+        unsubMedia = subscribeToMediaConfig(applyMedia, targetAuctionId);
       } catch (err) {
         console.error('Error initializing auction:', err);
         setLoading(false);
