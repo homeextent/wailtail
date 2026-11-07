@@ -15,6 +15,7 @@ import upload from '../api/seller-draft-upload';
 import media from '../api/seller-draft-media';
 import publicAuctions from '../api/public-auctions';
 import placeBid from '../api/place-auction-bid';
+import auctionComments from '../api/auction-comments';
 import createAuction from '../api/admin-create-auction';
 
 const projectId = 'demo-wailtail-stage3';
@@ -90,6 +91,9 @@ server.get('/api/public-auctions', (req, res, next) => {
 });
 server.post('/api/admin-create-auction', (req, res, next) => {
   Promise.resolve(createAuction(req, res)).catch(next);
+});
+server.post('/api/auction-comments', (req, res, next) => {
+  Promise.resolve(auctionComments(req, res)).catch(next);
 });
 server.post('/api/place-auction-bid', (req, res, next) => {
   Promise.resolve(placeBid(req, res)).catch(next);
