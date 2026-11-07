@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 function isAuthorized(value: unknown, secret: string) {
   if (typeof value !== 'string') return false;

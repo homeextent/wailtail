@@ -1,4 +1,4 @@
-import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin';
+import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 const MAX_HEADING_LENGTH = 240;
 const MAX_PARAGRAPHS = 40;

@@ -1,4 +1,4 @@
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 export default function handler(req: any, res: any) {
   return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid) => {

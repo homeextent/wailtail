@@ -1,5 +1,5 @@
-import type { FirebaseAdminServices } from './_lib/firebaseAdmin';
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 const SOFT_CLOSE_MS = 120_000;
 

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
-import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const publicStatuses = new Set(['preview', 'upcoming', 'active', 'live', 'ending_soon', 'ended', 'sold', 'reserve_not_met']);

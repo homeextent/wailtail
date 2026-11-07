@@ -1,5 +1,5 @@
-import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 const MAX_DELETE = 400;
 

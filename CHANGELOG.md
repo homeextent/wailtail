@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Security — Auction Security Gate (implementation review)
 
+- Fixed native Node ESM module resolution in the consolidated API after preview runtime logs exposed extensionless import failures. Added a regression test that compiles and loads all 28 handlers with native Node rather than the development TypeScript loader.
+
 - Consolidated 28 API handlers behind one allowlisted Vercel Function to resolve the Hobby plan deployment rejection. Existing API URLs and per-handler authorization remain in place. Handler source moved to `server/api/`; browser integration uses the same router. Added focused routing, method, credential, scheduler and deployment-layout regression coverage.
 
 - Added ownership-scoped seller draft discovery, trusted narrative and media operations, private previews, submission for review and designated-administrator return to draft.

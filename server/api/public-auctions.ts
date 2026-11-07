@@ -1,4 +1,4 @@
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 const PUBLIC_STATUSES = ['preview', 'upcoming', 'active', 'live', 'ending_soon', 'ended', 'sold', 'reserve_not_met'];
 

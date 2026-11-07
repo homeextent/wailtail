@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
-import { settleAuction } from './admin-settle-auction';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { settleAuction } from './admin-settle-auction.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');

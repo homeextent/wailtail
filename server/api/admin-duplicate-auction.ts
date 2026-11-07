@@ -1,6 +1,6 @@
-import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
-import { projectPublicMedia } from './public-auctions';
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
+import { projectPublicMedia } from './public-auctions.js';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 export default function handler(req: any, res: any) {
   return withSellerDraftRequest(req, res, undefined, async ({ firestore }, _uid, email) => {

@@ -1,6 +1,6 @@
 import { getStorage } from 'firebase-admin/storage';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
-import { checkDraftNarrativeWrite, draftMediaId, withSellerDraftRequest } from './seller-draft-narrative';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { checkDraftNarrativeWrite, draftMediaId, withSellerDraftRequest } from './seller-draft-narrative.js';
 
 export default function handler(req: any, res: any) {
   return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid) => {

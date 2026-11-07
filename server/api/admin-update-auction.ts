@@ -1,5 +1,5 @@
-import { isDesignatedAdminEmail } from '../../src/config/adminConfig';
-import { withSellerDraftRequest } from './seller-draft-narrative';
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
+import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
 const textFields = new Set([
   'title', 'subtitle', 'headline', 'siteLogo', 'siteName', 'siteTagline', 'highlightsBadge',

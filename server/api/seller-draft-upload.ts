@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
-import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin';
-import { checkDraftNarrativeWrite, withSellerDraftRequest } from './seller-draft-narrative';
+import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { checkDraftNarrativeWrite, withSellerDraftRequest } from './seller-draft-narrative.js';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 

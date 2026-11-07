@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Firestore, QueryDocumentSnapshot } from 'firebase-admin/firestore';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin';
+import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 async function deliver(firestore: Firestore, item: QueryDocumentSnapshot, apiKey: string) {
   const record = item.data();
