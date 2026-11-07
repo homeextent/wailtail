@@ -749,12 +749,8 @@ const AuctionAppContent: React.FC = () => {
           navigateTo(`/dashboard/listings/${newAuctionId}/edit`);
         }}
         onUpdateAuction={async (updates) => {
+          await updateAuctionConfig(auction.id, updates);
           setAuction((prev) => ({ ...prev, ...updates }));
-          try {
-            await updateAuctionConfig(auction.id, updates);
-          } catch (err) {
-            console.warn('Saved auction updates locally:', err);
-          }
         }}
         onUpdateMediaConfig={handleUpdateMediaConfig}
         onBackToPublic={() => navigateTo('/')}
