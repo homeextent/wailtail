@@ -1,3 +1,4 @@
+import retractAuctionBid from '../api/admin-retract-auction-bid';
 import settleAuction from '../api/admin-settle-auction';
 import uploadAuctionImage from '../api/admin-upload-auction-image';
 import saveAuctionMedia from '../api/admin-save-auction-media';
@@ -376,6 +377,23 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, other.idToken)).status, 403);
         assert.equal((await invoke(auctionComments, { action: 'pin', commentId: publicId, pinned: true }, admin.idToken)).status, 200);
         assert.equal((await firestore.collection('comments').doc(publicId).get()).get('isPinned'), true);
+        await publicRef.update({ status: 'active', endTime: Date.now() + 120000 });
+        assert.equal((await invoke(placeBid, { auctionId: publicId, amount: 1250 }, owner.idToken)).status, 200);
+        const higher = await publicRef.collection('bids').where('amount', '==', 1250).get();
+        assert.equal(higher.size, 1);
+        const retraction = { auctionId: publicId, bidId: higher.docs[0].id, reason: 'Synthetic verification' };
+        assert.equal((await invoke(retractAuctionBid, retraction, other.idToken)).status, 403);
+        assert.equal((await publicRef.get()).get('currentBid'), 1250);
+        assert.equal((await invoke(retractAuctionBid, { ...retraction, auctionId }, admin.idToken)).status, 409);
+        assert.equal((await invoke(retractAuctionBid, retraction, admin.idToken)).status, 200);
+        assert.equal((await publicRef.get()).get('currentBid'), 1000);
+        assert.equal((await publicRef.get()).get('bidCount'), 1);
+        const retracted = await higher.docs[0].ref.get();
+        assert.equal(retracted.get('retractedBy'), admin.uid);
+        assert.equal((await firestore.collection('bids').doc(retraction.bidId).get()).get('status'), 'retracted');
+        assert.equal((await invoke(retractAuctionBid, retraction, admin.idToken)).status, 200);
+        assert.equal((await higher.docs[0].ref.get()).get('retractedAt'), retracted.get('retractedAt'));
+
         const settlement = { auctionId: publicId };
         assert.equal((await invoke(settleAuction, settlement, other.idToken)).status, 403);
         assert.equal((await invoke(settleAuction, settlement, admin.idToken)).status, 409);
