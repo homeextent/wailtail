@@ -1,9 +1,14 @@
+import type { FirebaseAdminServices } from './_lib/firebaseAdmin';
 import { withSellerDraftRequest } from './seller-draft-narrative';
 
 const SOFT_CLOSE_MS = 120_000;
 
-export default function handler(req: any, res: any) {
-  return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid, email) => {
+export function handlePlaceAuctionBid(
+  req: any,
+  res: any,
+  services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>
+) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid, email) => {
     const input = req.body;
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         Object.keys(input).length !== 2 ||
@@ -91,4 +96,8 @@ export default function handler(req: any, res: any) {
       success: result.success, antiSniped: result.antiSniped, newEndTime: result.newEndTime
     });
   });
+}
+
+export default function handler(req: any, res: any) {
+  return handlePlaceAuctionBid(req, res);
 }
