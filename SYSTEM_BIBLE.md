@@ -1,5 +1,16 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+## Auction Security Gate — Stage 3 implementation checkpoint
+
+The implementation branch introduces trusted seller draft listing, reads, narrative edits, JPEG upload and private previews, submission for review, and administrator return to draft. Seller access is bound to the verified Firebase UID and the assigned auction. Draft mutations check status and revision. Submission records a review event with the status change; delivery is handled separately. The editor remains read-only for submitted drafts until an authorized administrator returns them to draft.
+
+The isolated verification covered seller discovery through My Listings, draft save and submission, administrator-requested revisions, and upload-registration failure and cleanup. The dashboard revision `7cff7f6` had a reported passing build, lint, 95 endpoint tests and the seller lifecycle emulator test. These results apply to the recorded local revisions.
+
+**Integration gate:** Candidate Firestore rules make canonical auctions administrator-readable and reserve canonical writes for trusted operations. The existing catalog, bidding and inventory paths still require compatibility review and replacement where they depend on direct canonical access. The `auctionPublic` rule is a boundary for server-created projections; the rule alone does not populate projections or migrate client reads. Candidate Storage rules permit public object reads under `auctionPublic` and two explicit legacy gallery exceptions, with draft media delivered through the trusted backend. Validate applicable positive and negative workflow tests before staging acceptance. Trusted bidding and later Auction Security Gate stages remain open. The Phase 1 dealer milestone sequence is preserved.
+
+Storage inventory, cutover and rollback rehearsals are separate release preparation. Production rules publication, migration, and demo cleanup require separate authorization.
+
+
 ## 1. Executive Architecture Overview
 
 **Wailtail** is an enterprise-grade, multi-car private auction platform modeled after Bring-a-Trailer, engineered specifically for high-value collector automobiles. The platform supports multiple concurrent active and upcoming vehicle listings simultaneously, combining real-time bidding synchronization with editorial-grade vehicle storytelling, per-lot media configuration, multi-category gallery management, and a dedicated multi-listing authoring workspace.
