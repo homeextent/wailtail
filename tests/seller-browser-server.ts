@@ -84,6 +84,14 @@ await firestore.collection('auctions').doc(publicAuctionId).set({
   minimumIncrement: 250, reserveAmount: 5000, sellerEmail: 'private-fixture@example.test'
 });
 
+await firestore.collection('settings').doc(`media-${publicAuctionId}`).set({
+  heroImages: [],
+  overviewHeading: 'Synthetic public overview',
+  overviewParagraphs: ['Synthetic public description'],
+  fullGallery: [], inlineShowcase: [], showcaseChapters: [],
+  youtubePlaylistUrl: ''
+});
+
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
@@ -120,7 +128,7 @@ server.post('/api/place-auction-bid', (req, res, next) => {
 });
 server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId });
+  res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId, publicAuctionId });
 });
 for (const [operation, handler] of Object.entries({ list, read, narrative: save, submit, upload, media })) {
   server.post(`/api/seller-draft-${operation}`, (req, res, next) => {
