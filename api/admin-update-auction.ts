@@ -14,8 +14,12 @@ const statuses = new Set(['draft', 'pending_review', 'preview', 'upcoming', 'act
 export default function handler(req: any, res: any) {
   return withSellerDraftRequest(req, res, undefined, async ({ firestore }, _uid, email) => {
     if (!isDesignatedAdminEmail(email)) return res.status(403).json({ error: 'Administrator access required.' });
-    const { auctionId, updates } = req.body ?? {};
-    if (typeof auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(auctionId) ||
+    const { auctionId, auctionIds, updates } = req.body ?? {};
+    const bulk = auctionIds !== undefined;
+    const ids = bulk && Array.isArray(auctionIds) ? [...new Set<unknown>(auctionIds)] : [auctionId];
+    if ((bulk && (auctionId !== undefined || !Array.isArray(auctionIds))) ||
+        ids.length === 0 || ids.length > 400 ||
+        !ids.every((id): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(id)) ||
         !updates || typeof updates !== 'object' || Array.isArray(updates)) {
       return res.status(422).json({ error: 'Invalid listing update.' });
     }
@@ -29,22 +33,30 @@ export default function handler(req: any, res: any) {
       else if (key === 'heroImages' && Array.isArray(value) && value.length <= 100 && value.every(item => typeof item === 'string' && item.length <= 16384)) patch[key] = value;
       else return res.status(422).json({ error: 'Invalid or protected listing field.' });
     }
+    if (bulk && (Object.keys(patch).length !== 1 || !patch.status)) {
+      return res.status(422).json({ error: 'Bulk updates accept listing status only.' });
+    }
     if (!Object.keys(patch).length) return res.status(422).json({ error: 'No listing fields supplied.' });
 
-    const ref = firestore.collection('auctions').doc(auctionId);
+    const refs = ids.map(id => firestore.collection('auctions').doc(id));
     const result = await firestore.runTransaction(async tx => {
-      const current = (await tx.get(ref)).data();
-      if (!current) return null;
+      const snapshots = await tx.getAll(...refs);
+      if (snapshots.some(snapshot => !snapshot.exists)) return null;
       const now = Date.now();
-      const changed = { ...patch };
-      if (changed.status === 'draft' && typeof current.endTime === 'number' && current.endTime > 0 &&
-          now >= current.endTime && (Number(current.currentBid) > 0 || Number(current.bidCount) > 0)) {
-        changed.status = current.isReserveMet || current.reserveAmount <= 0 || current.currentBid >= current.reserveAmount
-          ? 'sold' : 'ended';
-      }
-      tx.update(ref, { ...changed, updatedAt: now });
-      return { status: changed.status ?? current.status ?? null, winningEmailSent: current.winningEmailSent === true };
+      return snapshots.map(snapshot => {
+        const current = snapshot.data()!;
+        const changed = { ...patch };
+        if (changed.status === 'draft' && typeof current.endTime === 'number' && current.endTime > 0 &&
+            now >= current.endTime && (Number(current.currentBid) > 0 || Number(current.bidCount) > 0)) {
+          changed.status = current.isReserveMet || current.reserveAmount <= 0 || current.currentBid >= current.reserveAmount
+            ? 'sold' : 'ended';
+        }
+        tx.update(snapshot.ref, { ...changed, updatedAt: now });
+        return { auctionId: snapshot.id, status: changed.status ?? current.status ?? null,
+          winningEmailSent: current.winningEmailSent === true };
+      });
     });
-    return result ? res.status(200).json(result) : res.status(404).json({ error: 'Listing not found.' });
+    if (!result) return res.status(404).json({ error: 'Listing not found.' });
+    return res.status(200).json(bulk ? { listings: result } : result[0]);
   });
 }
