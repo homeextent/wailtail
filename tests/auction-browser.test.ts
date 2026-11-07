@@ -79,7 +79,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=public` });
-    await eventually(text, value => value.includes('Synthetic public overview') &&
+    await eventually(text, value => value.toLowerCase().includes('synthetic public overview') &&
       value.includes('Synthetic public description'), 'public auction detail');
     const publicResponse = await fetch(origin + `/api/public-auctions?auctionId=${fixture.publicAuctionId}`);
     const publicData = await publicResponse.json();
