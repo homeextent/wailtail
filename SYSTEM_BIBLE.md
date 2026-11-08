@@ -2337,8 +2337,9 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
 - **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
-- **M2.1**: **IMPLEMENTED — STAGING ACCEPTANCE PENDING**. See [M2.1 acceptance](docs/m2-1-consignment-review.md).
-- **M2.2 through M2.5**: **PLANNED**.
+- **M2.1**: **ACCEPTED ON STAGING** (PR #5, `e7de147`, passing post-merge checks and owner-confirmed local visual/functional acceptance). See [M2.1 acceptance](docs/m2-1-consignment-review.md).
+- **M2.2**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **M2.3 through M2.5**: **PLANNED**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
@@ -2384,8 +2385,8 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M1.1               │ Dealer Verification Security          │ COMPLETE            │
 │ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
 │ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
-│ M2.1               │ Admin Consignment Review              │ REVIEW PENDING      │
-│ M2.2               │ Dealer Application Intake             │ PLANNED             │
+│ M2.1               │ Admin Consignment Review              │ ACCEPTED (STAGING)  │
+│ M2.2               │ Dealer Application Intake             │ LOCAL REVIEW PENDING│
 │ M2.3               │ Manual Dealer Verification & Profiles │ PLANNED             │
 │ M2.4               │ Dealer Vehicle Listing Integration    │ PLANNED             │
 │ M2.5               │ Public Dealer Presentation & Badging  │ PLANNED             │
@@ -2461,7 +2462,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; self-service approved-consignor claims are authorized through the trusted backend endpoint; administrator-initiated role changes remain restricted to designated administrators; application approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
-- **Status**: **IMPLEMENTED — STAGING ACCEPTANCE PENDING**.
+- **Status**: **ACCEPTED ON STAGING**.
 - **Objectives**: Build a dedicated, read-only administrative inspection view within the Admin Consignment Pipeline for reviewing submitted consignment and dealer applications.
 - **Business Rationale**: Empowers curators to thoroughly evaluate submitted vehicle particulars, condition disclosures, and applicant credentials before making approval or rejection decisions.
 - **Key Deliverables**:
@@ -2480,10 +2481,10 @@ Implementation contract:
 - Private state lives in `consignmentReviews/{source}:{applicationId}` with server-authored append-only `events`. Client writes are denied even for administrators. Explicit saves transactionally append an event and advance a revision; stale writes conflict, and repeated command IDs cannot duplicate notes or impersonate another author. Inspection creates no review document and never writes an application.
 - History is paginated at 50 events. Existing `reviewedAt`/`reviewedBy` are displayed as legacy metadata; missing past events are not reconstructed. New history covers M2.1 note/assignment actions, not historical status transitions or the existing separate status controls.
 - Legacy collection fallback and same-ID source separation are preserved. No migration, role expansion, dealer approval/conversion, notification, Storage operation or production rule publication is included.
-- See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md) for checks and limitations. Staging merge remains subject to owner authorization.
+- See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md) for checks and limitations. PR #5 merged as `e7de147`; post-merge checks and owner local acceptance are recorded. Production remains separate.
 
 #### M2.2 — Dealer Application and Intake
-- **Status**: **PLANNED**.
+- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
 - **Objectives**: Introduce structured boutique dealer intake capabilities into the consignment application workflow.
 - **Business Rationale**: Enables prospective boutique dealers to submit verified commercial credentials and formal declarations during initial platform intake.
 - **Key Deliverables**:
@@ -2497,6 +2498,17 @@ Implementation contract:
   - Client-side and server-side validation enforcing all required dealer fields and declarations.
 - **Dependencies**: M2.1 completion.
 - **Exit Criteria**: Dealers can submit complete commercial applications; missing declarations block submission; submitted records persist securely with pending status without exposing administrative metadata.
+
+Implementation contract:
+
+- New private and dealer form submissions use `/api/submit-consignment`. It strictly allowlists fields, normalizes email, validates the current declaration version/terms, and enforces all dealer details plus three true boolean declarations. Contacts remain applicant-provided, not trusted identity links.
+- Explicit checkbox assent controls button availability; required text/select fields use native field-specific validation and server checks. FormData captures visible control values, including autofill, rather than using stale React text state to silently lock submission.
+- The existing `submittedDealershipName` field stores the submitted legal business name; `submittedDbaName` is optional. Licensing jurisdiction uses the 13-region Canadian union. Existing `sellerName`, `sellerEmail` and `sellerPhone` carry primary representative contacts for dealers.
+- The server alone assigns `status: pending`, `submittedAt`, `declarationAcceptedAt` and the recognized declaration version. The same transaction creates canonical and legacy application copies plus a server-only command hash. Repeated unchanged submission IDs deduplicate; different content/collisions conflict, and partial writes do not produce success.
+- Candidate rules deny direct non-admin dealer/application-declaration writes in both collections. Legacy private writes and designated-administrator authority remain compatible; old records are not migrated. Canonical dealer profiles, private M2.1 records, roles and verification fields remain protected.
+- M2.1 shows the submitted business details, three declarations, wording version and acceptance timestamp as unverified application information.
+- Notifications retain the existing best-effort client dispatch after a confirmed new save. An unchanged retry suppresses repeat dispatch; a lost first response may therefore leave a receipt unsent. Durable mailbox delivery/reconciliation is outside this milestone.
+- See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). For all visual implementations, Jeremy must confirm a local visual/functional review before approving the PR merge. Automated browser checks do not substitute for that review.
 
 #### M2.3 — Manual Dealer Verification and Canonical Profile Creation
 - **Status**: **PLANNED**.

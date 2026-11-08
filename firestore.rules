@@ -164,6 +164,20 @@ service cloud.firestore {
       }
     }
 
+    match /consignmentIntakeCommands/{commandId} {
+      allow read, write: if false;
+    }
+
+    function isLegacyPrivateIntake() {
+      return (!('applicantType' in request.resource.data) || request.resource.data.applicantType == 'private') &&
+        !request.resource.data.keys().hasAny([
+          'submittedDealershipName', 'submittedDbaName', 'dealershipName',
+          'submittedDealerLicenseNumber', 'dealerLicenseNumber', 'submittedLicensingJurisdiction',
+          'licensingJurisdiction', 'dealershipOwnershipDeclaration', 'legalSellerOfRecordDeclaration',
+          'noBrokeredInventoryDeclaration', 'declarationVersion', 'declarationAcceptedAt'
+        ]);
+    }
+
     // Intake Forms & Direct Communications
     match /feedback/{feedbackId} {
       allow create: if true;
@@ -172,7 +186,7 @@ service cloud.firestore {
 
     match /consignment_applications/{appId} {
       allow create: if isAdmin() || (
-        request.resource.data.status == 'pending' &&
+        request.resource.data.status == 'pending' && isLegacyPrivateIntake() &&
         !request.resource.data.keys().hasAny([
           'sellerType',
           'dealerId',
@@ -206,7 +220,7 @@ service cloud.firestore {
 
     match /consignments/{consignmentId} {
       allow create: if isAdmin() || (
-        request.resource.data.status == 'pending' &&
+        request.resource.data.status == 'pending' && isLegacyPrivateIntake() &&
         !request.resource.data.keys().hasAny([
           'sellerType',
           'dealerId',

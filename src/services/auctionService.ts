@@ -11,7 +11,6 @@ import {
   orderBy,
   onSnapshot,
   runTransaction,
-  addDoc,
   getDocs,
   deleteDoc,
   writeBatch,
@@ -1078,29 +1077,23 @@ if (typeof window !== 'undefined' && auth) {
  * Submit Seller Consignment Application
  */
 export async function submitConsignmentApplication(
-  app: Omit<ConsignmentApplication, 'id' | 'submittedAt' | 'status'>
+  app: Omit<ConsignmentApplication, 'id' | 'submittedAt' | 'status'>,
+  submissionId: string
 ): Promise<string> {
-  const normalizedSellerEmail = (app.sellerEmail || '').trim().toLowerCase();
-
-  const payload: ConsignmentApplication = {
-    ...app,
-    sellerEmail: normalizedSellerEmail,
-    submittedAt: Date.now(),
-    status: 'pending'
-  };
-
-  const colRef = collection(db, 'consignment_applications');
-  // Primary write - must propagate errors to the caller
-  const docRef = await addDoc(colRef, sanitizePayload(payload));
-  const createdId = docRef.id;
-
-  // Dual-write to legacy 'consignments' collection for backwards compatibility (best-effort)
-  try {
-    const legacyRef = doc(db, 'consignments', createdId);
-    await setDoc(legacyRef, sanitizePayload(payload));
-  } catch (legacyErr) {
-    console.warn('[Consignment] Legacy consignments write failed (non-fatal):', legacyErr);
+  const response = await fetch('/api/submit-consignment', {
+    signal: AbortSignal.timeout(15000),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...app, submissionId })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || typeof result?.applicationId !== 'string') {
+    throw Object.assign(new Error(result?.error || 'Application could not be saved. Please retry.'), { status: response.status });
   }
+  const createdId = result.applicationId;
+  const payload = { ...app, sellerEmail: app.sellerEmail.trim().toLowerCase(), status: 'pending' };
+  // A replay must not issue another notification. Delivery remains best-effort.
+  if (!result.created) return createdId;
 
   // Non-blocking consolidated serverless email notification (intake & seller receipt) with 5000ms timeout
   (async () => {

@@ -6,13 +6,19 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
-## M2.1 administrative consignment review — implementation awaiting staging acceptance
+## M2.2 dealer intake — implementation awaiting local review
+
+The existing vehicle application form now distinguishes private sellers and dealers. Dealer applications require legal business name, optional DBA, licence number, Canadian licensing jurisdiction, representative contacts and three explicit declarations. A server endpoint validates both flows, stamps pending status and declaration acceptance time, and atomically writes canonical and legacy application records. Submitting does not verify a dealer or grant access.
+
+See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). **Visual changes require Jeremy's local visual/functional verification before PR merge approval.** This feature remains on its task branch until approved; no production rules are published by a PR.
+
+## M2.1 administrative consignment review — accepted on staging
 
 The Consignment Pipeline now offers a dedicated **View application** inspection modal. Submitted vehicle/contact/condition information remains read-only and visibly separate from existing canonical dealer verification information. Opening a record does not mark it reviewed or change its status. Missing data and missing historical reviewers are shown explicitly.
 
 Designated administrators can explicitly save private notes and curator assignments. The authenticated `/api/admin-consignment-review` endpoint stores these in separate `consignmentReviews/{source}:{applicationId}` records, with append-only `events`, server-derived authors/timestamps, revision conflicts and idempotent command retries. Applicant-readable documents never receive private notes. History loads in pages of 50; legacy collection records retain their source identity. Existing status controls remain separate, and one-click conversion remains disabled.
 
-See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). This implementation does not authorize staging merge, production deployment or rules publication.
+See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). M2.1 merged through PR #5 as `e7de147`; post-merge CI/preview passed and Jeremy confirmed local visual and functional acceptance. Production deployment and rules publication remain separate.
 
 ## Auction security staging checkpoint
 
@@ -539,8 +545,8 @@ For comprehensive milestone specifications, commercial boundaries, architecture,
 | **M2.0B** | Trusted Server-Side Role Authorization | **VERIFIED ON STAGING** | Firebase Admin SDK ID-token verification with revocation checking; transactional approved-consignor revalidation; protected user/bidder roles and verification state; removal of client-side role elevation; 126 Firestore rules tests and 41 M2.0B endpoint/authority tests. *Not production-approved.* |
 | **Admin Account Deletion Hardening** | Server-Authorized Account Deletion | **VERIFIED ON STAGING** | Revocation-aware designated-administrator authorization; self-deletion and designated-account protection; server-owned Auth and Firestore cleanup with retry handling; 44 regression tests (85 combined endpoint tests). *Not production-deployed; auction ownership/mutation authorization remains a separate production blocker.* |
 
-| **M2.1** | Administrative Consignment Application Review | **IMPLEMENTED — REVIEW PENDING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
-| **M2.2** | Dealer Application and Intake | **PLANNED** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
+| **M2.1** | Administrative Consignment Application Review | **ACCEPTED ON STAGING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
+| **M2.2** | Dealer Application and Intake | **IMPLEMENTED — LOCAL REVIEW PENDING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
 | **M2.3** | Manual Dealer Verification & Profile Creation | **PLANNED** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
 | **M2.4** | Dealer Vehicle Listing Integration | **PLANNED** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
 | **M2.5** | Public Dealer Presentation & Badging | **PLANNED** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |

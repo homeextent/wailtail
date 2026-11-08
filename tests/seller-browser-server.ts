@@ -99,6 +99,8 @@ server.use((_req, res, next) => {
 });
 server.use(express.json({ limit: '3mb' }));
 server.all('/api/:endpoint', (req, res, next) => {
+  // No real mail delivery from any synthetic intake fixture.
+  if (req.params.endpoint === 'send-consignment-email') return res.status(202).json({ success: true, synthetic: true });
   req.query = { ...req.query, __endpoint: req.params.endpoint };
   Promise.resolve(apiRouter(req, res)).catch(next);
 });
@@ -113,6 +115,12 @@ server.get('/acceptance-fixture', async (_req, res, next) => {
     ]);
     res.json({ heading: media.get('overviewHeading') || '', watchCount: lot.get('watchCount') || 0,
       inquiries: inquiries.size, siteName: global.get('siteName'), consignmentStatus: consignment.get('status') });
+  } catch (error) { next(error); }
+});
+server.get('/intake-fixture', async (_req, res, next) => {
+  try {
+    const records = await firestore.collection('consignment_applications').where('sellerEmail', '==', 'intake-browser@example.test').get();
+    res.json(records.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   } catch (error) { next(error); }
 });
 server.get('/fixture', (_req, res) => {
@@ -131,14 +139,18 @@ server.get('/admin-fixture', async (_req, res, next) => {
   }
 });
 // Serve the real app at its real routes, with Firebase modules replaced only in this harness.
-server.get(['/','/catalog','/auctions/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (_req, res) => {
-  res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>Isolated Wailtail app</title><div id="root"></div><script type="module" src="/tests/full-app-browser.tsx"></script></html>');
+server.get(['/intake','/','/catalog','/auctions/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (req, res) => {
+  const entry = req.path === '/intake' ? '/tests/intake-browser.tsx' : '/tests/full-app-browser.tsx';
+  res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><title>Isolated Wailtail app</title><div id="root"></div><script type="module" src="' + entry + '"></script></html>');
 });
 const firebaseModules = ['src/firebase', 'src/services/firebase'].map(path => resolve(path));
 const vite = await createServer({
   configFile: false,
   server: { middlewareMode: true, hmr: false },
   appType: 'mpa',
+  // Resolve both JSX entry points before the first page; mid-run optimization reloads
+  // would interrupt the harness's deliberately in-memory authentication.
+  optimizeDeps: { include: ['react/jsx-runtime', 'react/jsx-dev-runtime'] },
   plugins: [tailwindcss(), {
     name: 'isolated-firebase-fixture',
     enforce: 'pre',
@@ -151,6 +163,7 @@ const vite = await createServer({
 });
 server.use(vite.middlewares);
 server.listen(4178, '127.0.0.1', () => {
+  console.log('Dealer/private intake: http://127.0.0.1:4178/intake');
   console.log('Signed-out catalog: http://127.0.0.1:4178/catalog?actor=public');
   console.log('Public catalog API: http://127.0.0.1:4178/api/public-auctions');
   console.log('Actual seller route: http://127.0.0.1:4178/?fixture=draft');

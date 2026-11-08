@@ -1482,4 +1482,26 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
     }
   });
 
+  test('M2.2 dealer intake and idempotency records cannot bypass trusted submission', async () => {
+    for (const email of [undefined, APPLICANT_EMAIL]) {
+      const db = getNamedDb(email ? testEnv.authenticatedContext('applicant', { email, email_verified: true }) : testEnv.unauthenticatedContext());
+      for (const name of ['consignment_applications', 'consignments']) {
+        const legacy = { status: 'pending', sellerEmail: APPLICANT_EMAIL, year: 2000, make: 'Test', model: 'Vehicle' };
+        await assertSucceeds(setDoc(doc(db, name, `old-private-${email ? 'auth' : 'guest'}`), legacy));
+        await assertSucceeds(setDoc(doc(db, name, `explicit-private-${email ? 'auth' : 'guest'}`), { ...legacy, applicantType: 'private' }));
+        for (const extra of [{ applicantType: 'dealer' }, { applicantType: 'other' },
+          { submittedDealershipName: 'Bypass' }, { submittedDbaName: 'Bypass' }, { submittedDealerLicenseNumber: '123' },
+          { submittedLicensingJurisdiction: 'ON' }, { dealershipOwnershipDeclaration: true }, { legalSellerOfRecordDeclaration: true },
+          { noBrokeredInventoryDeclaration: true }, { declarationVersion: 'forged' }, { declarationAcceptedAt: 1 }]) {
+          await assertFails(setDoc(doc(db, name, 'bypass'), { ...legacy, ...extra }));
+        }
+      }
+      await assertFails(setDoc(doc(db, 'consignmentIntakeCommands/forged'), { hash: 'forged' }));
+      await assertFails(getDoc(doc(db, 'consignmentIntakeCommands/forged')));
+    }
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    await assertFails(setDoc(doc(admin, 'consignmentIntakeCommands/forged'), { hash: 'forged' }));
+    await assertFails(getDoc(doc(admin, 'consignmentIntakeCommands/forged')));
+  });
+
 });

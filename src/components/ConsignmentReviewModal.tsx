@@ -12,14 +12,16 @@ const fields = [
   ['locationCity', 'City'], ['locationProvince', 'Province / state'], ['locationCountry', 'Country'],
   ['location', 'Submitted location'], ['reserveExpectation', 'Reserve expectation (CAD)'],
   ['notes', 'Mechanical / condition disclosures and applicant notes'],
-  ['applicantType', 'Applicant classification'], ['submittedDealershipName', 'Submitted dealership name'],
-  ['dealershipName', 'Dealership name'], ['submittedDealerLicenseNumber', 'Submitted license number'],
+  ['applicantType', 'Applicant classification'], ['submittedDealershipName', 'Submitted legal business name'],
+  ['submittedDbaName', 'Submitted trade name / DBA'], ['dealershipName', 'Dealership name'], ['submittedDealerLicenseNumber', 'Submitted license number'],
   ['dealerLicenseNumber', 'License number'], ['submittedLicensingJurisdiction', 'Submitted jurisdiction'],
   ['licensingJurisdiction', 'Jurisdiction'], ['dealershipOwnershipDeclaration', 'Exclusive ownership declaration'],
-  ['legalSellerOfRecordDeclaration', 'Seller-of-record declaration']
+  ['legalSellerOfRecordDeclaration', 'Seller-of-record declaration'],
+  ['noBrokeredInventoryDeclaration', 'No brokered or pass-through inventory declaration'],
+  ['declarationVersion', 'Declaration wording version'], ['termsAccepted', 'Ownership and terms accepted']
 ];
 const metadata = new Set(['id', 'reviewSource', 'status', 'submittedAt', 'reviewedAt', 'reviewedBy', 'updatedAt',
-  'convertedAuctionId', 'registeredUserId', 'registeredUserRole', 'isRegisteredUser', 'sellerId',
+  'declarationAcceptedAt', 'convertedAuctionId', 'registeredUserId', 'registeredUserRole', 'isRegisteredUser', 'sellerId',
   'sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion',
   'verifiedAt', 'verifierUid', 'verificationStatus', 'verificationMethod', 'verificationExpiresAt', 'verificationRecordVersion']);
 function display(value: unknown): string {
@@ -136,6 +138,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
         <section aria-label="Recorded administration" className="space-y-2 border-t border-slate-700 pt-4">
           <h3 className="font-bold text-lg">Recorded administration</h3>
           <p>Submitted: {timestamp(record.submittedAt)}</p>
+          <p>Declarations accepted: {timestamp(record.declarationAcceptedAt)}</p>
           <p>Existing review timestamp: {timestamp(record.reviewedAt)}</p>
           <p>Existing reviewer: {display(record.reviewedBy)}</p>
           <p className="text-sm text-slate-300">Legacy metadata does not provide a complete review history. No earlier events are reconstructed. Dealer verification is a separate milestone; this review grants no verified status.</p>

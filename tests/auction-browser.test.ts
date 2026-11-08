@@ -15,7 +15,7 @@ async function eventually<T>(read: () => Promise<T>, accept: (value: T) => boole
   while (Date.now() < deadline) {
     try {
       const result = await read();
-      if (accept(result)) return result;
+      if (accept(result)) { console.log('Browser check passed:', label); return result; }
       last = result;
     } catch (error) { last = String(error); }
     await delay(250);
@@ -39,6 +39,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   let browserError: unknown;
   chrome.on('error', error => { browserError = error; });
   let socket: WebSocket | undefined;
+  const browserErrors: unknown[] = [];
+  const pendingRequests = new Map<string, string>();
   try {
     const fixture = await eventually<{ projectId: string; publicAuctionId: string } | null>(async () => {
       const response = await fetch(origin + '/fixture', { signal: AbortSignal.timeout(2000) });
@@ -59,6 +61,20 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
     socket.addEventListener('message', event => {
       const message = JSON.parse(String(event.data));
+      if (message.method === 'Page.javascriptDialogOpening') {
+        browserErrors.push({ unexpectedDialog: message.params.message });
+        socket!.send(JSON.stringify({ id: ++sequence, method: 'Page.handleJavaScriptDialog', params: { accept: false } }));
+        for (const call of pending.values()) call.reject(new Error('Unexpected browser dialog: ' + message.params.message));
+        pending.clear();
+        return;
+      }
+      if (message.method === 'Network.requestWillBeSent') {
+        const url = new URL(message.params.request.url);
+        pendingRequests.set(message.params.requestId, url.origin + url.pathname);
+      }
+      if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message.method)) pendingRequests.delete(message.params.requestId);
+      if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
+      if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args);
       const call = pending.get(message.id);
       if (!call) return;
       pending.delete(message.id);
@@ -67,13 +83,20 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     const command = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
       const id = ++sequence;
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Chrome command timed out: ' + method)); }, 15000);
+      pending.set(id, {
+        resolve: value => { clearTimeout(timer); resolve(value); },
+        reject: error => { clearTimeout(timer); reject(error); }
+      });
       socket!.send(JSON.stringify({ id, method, params }));
     });
     const text = async () => {
       const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
       return String(result.result?.value || '');
     };
+    await command('Page.enable');
+    await command('Runtime.enable');
+    await command('Network.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
@@ -204,8 +227,140 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       return value.result?.value;
     }, Boolean, 'seller narrative after reload');
 
+
+    // M2.2 actual public intake component: declarations, failure retention and both applicant paths.
+    await command('Page.navigate', { url: origin + '/intake' });
+    await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'public intake');
+    // Use real wheel input: programmatic field setters alone cannot detect clipped forms.
+    const scrollMetrics = async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => {
+        const scroller = document.querySelector('[data-testid="intake-scroll-region"]');
+        const rect = scroller.getBoundingClientRect();
+        const notes = scroller.querySelector('textarea').getBoundingClientRect();
+        const year = scroller.querySelector('select[aria-label="Vehicle year"]').getBoundingClientRect();
+        const submit = document.querySelector('button[type="submit"]').getBoundingClientRect();
+        return { top: scroller.scrollTop, height: scroller.clientHeight, full: scroller.scrollHeight,
+          x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+          notesVisible: notes.top >= rect.top && notes.bottom <= rect.bottom,
+          yearVisible: year.top >= rect.top && year.bottom <= rect.bottom,
+          footerVisible: submit.top >= 0 && submit.bottom <= innerHeight,
+          width: scroller.clientWidth, fullWidth: scroller.scrollWidth };
+      })()`, returnByValue: true });
+      return result.result.value;
+    };
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      await command('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1, mobile: false });
+      for (const type of ['private', 'dealer']) {
+        await click(`(() => { document.querySelector('input[name="applicantType"][value="${type}"]').click(); return true; })()`);
+        const before = await scrollMetrics();
+        assert.ok(before.height > 0 && before.full > before.height, `${type}: form must have a bounded scroll viewport`);
+        assert.ok(before.fullWidth <= before.width + 1, `${type}: no horizontal clipping`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: -10000 });
+        await eventually(scrollMetrics, value => value.top === 0, `${type} ${viewport.width}: scroll to top`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: 10000 });
+        const bottom = await eventually(scrollMetrics, value => value.top > 0 && value.notesVisible && value.footerVisible,
+          `${type} ${viewport.width}: wheel reaches vehicle/contact fields and footer`);
+        assert.ok(bottom.top >= bottom.full - bottom.height - 2, 'wheel must reach the bottom of the form');
+        // A user can also wheel back to the required vehicle year, including dealer mode.
+        for (let step = 0; step < 15; step++) {
+          const current = await scrollMetrics(); if (current.yearVisible) break;
+          await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: current.x, y: current.y, deltaX: 0, deltaY: -120 });
+          await delay(60);
+        }
+        assert.equal((await scrollMetrics()).yearVisible, true, `${type} ${viewport.width}: vehicle year must be reachable`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: -10000 });
+        await eventually(scrollMetrics, value => value.top === 0, 'reset form scroll');
+      }
+    }
+    await command('Emulation.clearDeviceMetricsOverride');
+    const fill = async (selector: string, value: string, select = false) => click(`(() => {
+      const field = document.querySelector(${JSON.stringify(selector)}); if (!field) return false;
+      Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype, 'value').set.call(field, ${JSON.stringify(value)});
+      field.dispatchEvent(new Event('${select ? 'change' : 'input'}', {bubbles:true})); return true;
+    })()`);
+    const submitIntake = async () => { await command('Runtime.evaluate', { expression: `document.querySelector('form[aria-label="Vehicle consignment application"]').requestSubmit()` }); };
+    const intakeRecords = async () => (await fetch(origin + '/intake-fixture')).json();
+    await click(`(() => { document.querySelector('input[name="applicantType"][value="dealer"]').click(); return true; })()`);
+    await eventually(text, value => value.includes('Dealership details'), 'dealer fields');
+    await fill('select[aria-label="Vehicle year"]', '1988', true);
+    await fill('select[aria-label="Vehicle make"]', 'OTHER_CUSTOM', true);
+    await fill('input[placeholder="Enter custom make..."]', 'Synthetic');
+    await fill('input[placeholder="Enter custom model..."]', 'Dealer Fixture');
+    await fill('input[aria-label="Legal business name"]', 'Synthetic Dealer Inc.');
+    await fill('input[aria-label="Trade name / DBA (optional)"]', 'Synthetic Collectors');
+    await fill('input[aria-label="Dealer licence number"]', 'TEST-456');
+    await fill('select[aria-label="Licensing province or territory"]', 'ON', true);
+    await fill('input[aria-label="Representative name"]', 'Dealer browser representative');
+    await fill('input[aria-label="Representative email"]', 'intake-browser@example.test');
+    await fill('input[aria-label="Representative phone"]', '905-555-0123');
+    await click(`(() => { const declarations = document.querySelectorAll('fieldset fieldset input[type="checkbox"]'); declarations[0].click(); declarations[1].click(); document.querySelector('input[aria-label="Ownership and terms agreement"]').click(); return true; })()`);
+    const submitEnabled = async () => {
+      const result = await command('Runtime.evaluate', { expression: `!document.querySelector('button[type="submit"]').disabled`, returnByValue: true });
+      return result.result.value;
+    };
+    assert.equal(await submitEnabled(), false, 'missing third declaration must visibly disable submit');
+    await submitIntake();
+    assert.equal((await intakeRecords()).length, 0, 'missing third declaration must prevent persistence');
+    await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[2].click(); return true; })()`);
+    assert.equal(await submitEnabled(), true, 'complete dealer intake must enable submit');
+    for (let index = 0; index < 3; index++) {
+      await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[${index}].click(); return true; })()`);
+      assert.equal(await submitEnabled(), false, `declaration ${index + 1} must be mandatory`);
+      await submitIntake();
+      assert.equal((await intakeRecords()).length, 0, 'unchecked declaration must never persist a dealer application');
+      await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[${index}].click(); return true; })()`);
+    }
+    await fill('input[aria-label="Dealer licence number"]', '');
+    assert.equal(await submitEnabled(), true, 'field validation must remain accessible after declarations are accepted');
+    await submitIntake();
+    assert.equal((await intakeRecords()).length, 0, 'missing licence must still block submission');
+    await fill('input[aria-label="Dealer licence number"]', 'TEST-456');
+    assert.equal(await submitEnabled(), true);
+
+    await command('Runtime.evaluate', { expression: `(() => { const realFetch = window.fetch; window.fetch = async (...args) => { if (String(args[0]).includes('/api/submit-consignment')) { window.fetch = realFetch; return new Response(JSON.stringify({error:'Synthetic persistence failure'}), {status:503, headers:{'Content-Type':'application/json'}}); } return realFetch(...args); }; })()` });
+    await submitIntake();
+    await eventually(text, value => value.includes('Synthetic persistence failure'), 'intake failure retained');
+    const retainedDealer = await command('Runtime.evaluate', { expression: `document.querySelector('input[aria-label="Legal business name"]').value`, returnByValue: true });
+    assert.equal(retainedDealer.result?.value, 'Synthetic Dealer Inc.'); assert.equal((await intakeRecords()).length, 0);
+    await command('Runtime.evaluate', { expression: `(() => {
+      const values = { submittedDealershipName: 'Autofilled Dealer Inc.', sellerName: 'Autofilled Representative', sellerPhone: '905-555-9999', locationCity: 'Autofilled City' };
+      for (const [name, value] of Object.entries(values)) Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(document.querySelector('input[name="' + name + '"]'), value);
+    })()` });
+    assert.equal(await submitEnabled(), true, 'visible autofilled text must not be locked behind stale React state');
+    await submitIntake();
+    await eventually(text, value => value.includes('Consignment Request Received!'), 'dealer submission success');
+    assert.ok((await text()).includes('Synthetic Dealer Fixture'), 'success view preserves custom vehicle identity');
+    const dealerRecords = await eventually(intakeRecords, value => value.length === 1, 'dealer persisted');
+    assert.equal(dealerRecords[0].applicantType, 'dealer'); assert.equal(dealerRecords[0].status, 'pending');
+    assert.equal(dealerRecords[0].noBrokeredInventoryDeclaration, true); assert.equal(dealerRecords[0].declarationAcceptedAt, dealerRecords[0].submittedAt);
+    assert.equal(dealerRecords[0].dealerId, undefined);
+    assert.equal(dealerRecords[0].submittedDealershipName, 'Autofilled Dealer Inc.');
+    assert.equal(dealerRecords[0].sellerName, 'Autofilled Representative');
+    assert.equal(dealerRecords[0].sellerPhone, '905-555-9999');
+    assert.equal(dealerRecords[0].locationCity, 'Autofilled City');
+    await command('Page.navigate', { url: origin + '/intake' });
+    await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'private intake');
+    assert.ok(!(await text()).includes('Dealership details'));
+    await fill('select[aria-label="Vehicle year"]', '2026', true);
+    await fill('select[aria-label="Vehicle make"]', 'Alpina', true);
+    await fill('select[aria-label="Vehicle model"]', 'B5', true);
+    await fill('input[aria-label="Your name"]', 'Private browser owner');
+    await fill('input[aria-label="Email address"]', 'intake-browser@example.test');
+    await click(`(() => { document.querySelector('input[aria-label="Ownership and terms agreement"]').click(); return true; })()`);
+    await submitIntake();
+    await eventually(text, value => value.includes('Consignment Request Received!'), 'private submission success');
+    const both = await eventually(intakeRecords, value => value.length === 2, 'private and dealer persisted');
+    assert.ok(both.some(record => record.applicantType === 'private' && record.status === 'pending' && record.make === 'Alpina' && record.model === 'B5' && record.year === '2026' && !record.submittedDealershipName));
+    await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
+    await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
+    await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(text, value => value.includes('Autofilled Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
+    assert.ok((await text()).includes('No linked canonical dealer verification information.'));
+
   } catch (error) {
     console.error(serverLog);
+    console.error('Browser diagnostics:', JSON.stringify(browserErrors));
+    console.error('Pending request paths:', JSON.stringify([...pendingRequests.values()]));
     throw error;
   } finally {
     socket?.close();
