@@ -8,17 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; acceptance pending)
+### Documentation — M2.3 staging acceptance synchronization (2026-11-08)
 
-- Added bounded administrator account lookup by exact email/UID with eligibility display and explicit selection. Saves retain independent Auth and protected-link checks; no account creation, role promotion or automatic association. Added guided verification method/source choices with Other/custom evidence, field guidance, and local timezone date controls with absolute timestamp storage. Owner local acceptance of this revised UI remains pending.
+- Synchronized README, System Bible, changelog and M2.3 guide with owner local acceptance of `75d3641`, PR #7 merge at `d3c5cc5`, successful post-merge CI/Vercel checks and owner-confirmed clean local staging synchronization. This is documentation only; production and live Firebase rules/index publication remain separate.
+- Corrected the remaining M2.1 changelog heading to match its already-recorded staging acceptance and aligned the catalog-badge cross-reference with the existing M2.5 roadmap. M2.4 remains planned.
 
-- Owner local review confirmed verification saves successfully. Save success/error feedback now scrolls into view and receives focus; representative UID instructions clarify manual administrator account association. Local acceptance remains pending on the revised UI.
+### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; accepted on staging via PR #7)
+
+- Added bounded administrator account lookup by exact email/UID with eligibility display and explicit selection. Saves retain independent Auth and protected-link checks; no account creation, role promotion or automatic association. Added guided verification method/source choices with Other/custom evidence, field guidance, and local timezone date controls with absolute timestamp storage. Jeremy confirmed local acceptance of the revised selector, dropdowns, local-time controls and successful representative selection.
+
+- Owner local review confirmed verification saves successfully. Save success/error feedback now scrolls into view and receives focus; representative UID instructions clarify manual administrator account association. The revised feedback behavior was subsequently locally accepted.
 
 - Added a dedicated admin verification view from dealer application review, separating applicant claims from canonical business information and manual evidence.
 - Added a trusted administrator endpoint for explicit review, verify/reverify, rejection, suspension, profile update and renewal. Canonical profile, exact verified-Auth UID links, duplicate-identity reservations, case revision and immutable before/after audit commit atomically; no role or vehicle approval is granted.
 - Added server-time expiry/suspension eligibility checks for dealer-attributed seller save, submit, upload and removal operations. Private seller behavior and disabled conversion remain unchanged.
 - Denied direct client writes to dealer profiles and audits, added private cases/claims and audit index configuration. No live rules/index deployment, migration or production promotion is included. See `docs/m2-3-dealer-verification.md` for limits and local acceptance.
-- Recorded owner local acceptance and PR #6 staging merge (`74d9089`) for M2.2; M2.3 remains unmerged pending exact-head checks and owner local review.
+- M2.3 reviewed head `75d3641` was locally accepted and explicitly approved by Jeremy, then merged via PR #7 as `d3c5cc5`. Exact-head CI run `42505627075` (attempt 2) and post-merge CI run `42507149793` passed, as did Vercel checks. Jeremy confirmed clean local staging synchronization at the merge. M2.2 remains accepted via PR #6 (`74d9089`).
 
 ### M2.2 — Dealer Application and Intake (2026-11-07; accepted on staging via PR #6)
 
@@ -34,7 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - M2.1 is accepted on staging at `e7de147`: post-merge CI/preview passed, the owner's checkout synchronized, and the owner confirmed local visual/functional acceptance. Future visual changes require owner local verification before PR merge approval.
 - No live Firebase rules, production promotion, dealer verification/profile creation, account promotion or conversion is included. See `docs/m2-2-dealer-intake.md` for verification boundaries.
 
-### M2.1 — Administrative Consignment Application Review (2026-11-07; acceptance pending)
+### M2.1 — Administrative Consignment Application Review (2026-11-07; accepted on staging via PR #5)
 
 - Added a dedicated read-only application detail modal with complete captured fields, explicit missing values, submitted declarations, separate canonical verification information and legacy review metadata.
 - Added private administrator notes, designated-curator assignments and paginated append-only review history through an authenticated server endpoint. Notes and assignments use separate private records, server-derived authors/timestamps, transactional revision checks and idempotent retries; viewing never changes application status.
@@ -91,9 +96,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Next Milestone
 - **M2.1 — Administrative Consignment Application Review**: ACCEPTED ON STAGING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
-### Planned Milestones
+### Milestone Status
 - **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
-- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: IMPLEMENTED — LOCAL REVIEW PENDING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
+- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
 - **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
 - **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
