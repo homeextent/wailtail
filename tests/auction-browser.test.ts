@@ -40,6 +40,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   chrome.on('error', error => { browserError = error; });
   let socket: WebSocket | undefined;
   const browserErrors: unknown[] = [];
+  const pendingRequests = new Map<string, string>();
   try {
     const fixture = await eventually<{ projectId: string; publicAuctionId: string } | null>(async () => {
       const response = await fetch(origin + '/fixture', { signal: AbortSignal.timeout(2000) });
@@ -60,6 +61,11 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
     socket.addEventListener('message', event => {
       const message = JSON.parse(String(event.data));
+      if (message.method === 'Network.requestWillBeSent') {
+        const url = new URL(message.params.request.url);
+        pendingRequests.set(message.params.requestId, url.origin + url.pathname);
+      }
+      if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message.method)) pendingRequests.delete(message.params.requestId);
       if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
       if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args);
       const call = pending.get(message.id);
@@ -78,6 +84,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       return String(result.result?.value || '');
     };
     await command('Runtime.enable');
+    await command('Network.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
@@ -270,6 +277,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   } catch (error) {
     console.error(serverLog);
     console.error('Browser diagnostics:', JSON.stringify(browserErrors));
+    console.error('Pending request paths:', JSON.stringify([...pendingRequests.values()]));
     throw error;
   } finally {
     socket?.close();
