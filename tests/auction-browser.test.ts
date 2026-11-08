@@ -174,6 +174,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.toLowerCase().includes('platform brand name'), 'branding form');
     const disabledPurge = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).some(b => b.textContent?.includes('Purge All Catalog Listings') && b.disabled)`, returnByValue: true });
     assert.equal(disabledPurge.result?.value, true);
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('Platform Brand Name')); return label?.parentElement?.querySelector('input')?.value; })()`, returnByValue: true });
+      return result.result?.value;
+    }, value => value === 'Synthetic Wailtail Brand', 'initial branding subscription loaded');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.includes('Platform Brand Name')); const field = label?.parentElement?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Updated browser brand'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Save Global Settings')); if (!b) return false; b.click(); return true; })()`);
     await eventually(state, value => value.siteName === 'Updated browser brand', 'branding persisted');
