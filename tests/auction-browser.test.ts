@@ -39,6 +39,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   let browserError: unknown;
   chrome.on('error', error => { browserError = error; });
   let socket: WebSocket | undefined;
+  const browserErrors: unknown[] = [];
   try {
     const fixture = await eventually<{ projectId: string; publicAuctionId: string } | null>(async () => {
       const response = await fetch(origin + '/fixture', { signal: AbortSignal.timeout(2000) });
@@ -59,6 +60,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
     socket.addEventListener('message', event => {
       const message = JSON.parse(String(event.data));
+      if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
+      if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args);
       const call = pending.get(message.id);
       if (!call) return;
       pending.delete(message.id);
@@ -74,6 +77,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
       return String(result.result?.value || '');
     };
+    await command('Runtime.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
@@ -265,6 +269,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
 
   } catch (error) {
     console.error(serverLog);
+    console.error('Browser diagnostics:', JSON.stringify(browserErrors));
     throw error;
   } finally {
     socket?.close();

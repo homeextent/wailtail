@@ -148,6 +148,9 @@ const vite = await createServer({
   configFile: false,
   server: { middlewareMode: true, hmr: false },
   appType: 'mpa',
+  // Resolve both JSX entry points before the first page; mid-run optimization reloads
+  // would interrupt the harness's deliberately in-memory authentication.
+  optimizeDeps: { include: ['react/jsx-runtime', 'react/jsx-dev-runtime'] },
   plugins: [tailwindcss(), {
     name: 'isolated-firebase-fixture',
     enforce: 'pre',
