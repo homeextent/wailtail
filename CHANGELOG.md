@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.2 — Dealer Application and Intake (2026-11-07; local review pending)
 
+- Corrected the local-review scrolling defect: a shrinkable scroll container now surrounds the disabled-state fieldset. Added real wheel-input coverage for both applicant modes at desktop and mobile widths; programmatic submission tests alone did not establish field reachability.
+
 - Extended the existing form with applicant classification, private dealer business/licensing details, authorized representative contacts and three explicit ownership/seller-of-record/no-broker declarations.
 - Added trusted guest-capable submission validation, server timestamps/pending status, versioned declaration acceptance, atomic canonical/legacy persistence and duplicate-retry protection. Direct non-admin dealer writes are denied under candidate rules; existing private compatibility and protected administrative metadata remain intact.
 - Added dealer information to M2.1 review and expanded endpoint, bypass, concurrency and browser coverage. Added a guarded `/intake` preview and mocked all mail delivery in the synthetic harness.

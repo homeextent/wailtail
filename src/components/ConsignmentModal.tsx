@@ -416,7 +416,8 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
         ) : (
           <form aria-label="Vehicle consignment application" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Scrollable Form Content */}
-            <fieldset disabled={submitting} className="min-w-0 overflow-y-auto p-4 sm:p-6 space-y-4 flex-1 text-white">
+            <div data-testid="intake-scroll-region" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <fieldset disabled={submitting} className="min-w-0 p-4 sm:p-6 space-y-4 text-white">
               {/* Value Props Row */}
               <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 text-center text-xs text-slate-300">
                 <div>
@@ -896,6 +897,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                 )}
               </div>
             </fieldset>
+            </div>
 
             {/* Modal Sticky/Fixed Footer Action Buttons */}
             <div className="p-4 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950 flex flex-col gap-3.5 flex-shrink-0">

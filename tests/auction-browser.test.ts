@@ -231,6 +231,48 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     // M2.2 actual public intake component: declarations, failure retention and both applicant paths.
     await command('Page.navigate', { url: origin + '/intake' });
     await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'public intake');
+    // Use real wheel input: programmatic field setters alone cannot detect clipped forms.
+    const scrollMetrics = async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => {
+        const scroller = document.querySelector('[data-testid="intake-scroll-region"]');
+        const rect = scroller.getBoundingClientRect();
+        const notes = scroller.querySelector('textarea').getBoundingClientRect();
+        const year = scroller.querySelector('select[aria-label="Vehicle year"]').getBoundingClientRect();
+        const submit = document.querySelector('button[type="submit"]').getBoundingClientRect();
+        return { top: scroller.scrollTop, height: scroller.clientHeight, full: scroller.scrollHeight,
+          x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+          notesVisible: notes.top >= rect.top && notes.bottom <= rect.bottom,
+          yearVisible: year.top >= rect.top && year.bottom <= rect.bottom,
+          footerVisible: submit.top >= 0 && submit.bottom <= innerHeight,
+          width: scroller.clientWidth, fullWidth: scroller.scrollWidth };
+      })()`, returnByValue: true });
+      return result.result.value;
+    };
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      await command('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1, mobile: false });
+      for (const type of ['private', 'dealer']) {
+        await click(`(() => { document.querySelector('input[name="applicantType"][value="${type}"]').click(); return true; })()`);
+        const before = await scrollMetrics();
+        assert.ok(before.height > 0 && before.full > before.height, `${type}: form must have a bounded scroll viewport`);
+        assert.ok(before.fullWidth <= before.width + 1, `${type}: no horizontal clipping`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: -10000 });
+        await eventually(scrollMetrics, value => value.top === 0, `${type} ${viewport.width}: scroll to top`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: 10000 });
+        const bottom = await eventually(scrollMetrics, value => value.top > 0 && value.notesVisible && value.footerVisible,
+          `${type} ${viewport.width}: wheel reaches vehicle/contact fields and footer`);
+        assert.ok(bottom.top >= bottom.full - bottom.height - 2, 'wheel must reach the bottom of the form');
+        // A user can also wheel back to the required vehicle year, including dealer mode.
+        for (let step = 0; step < 15; step++) {
+          const current = await scrollMetrics(); if (current.yearVisible) break;
+          await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: current.x, y: current.y, deltaX: 0, deltaY: -120 });
+          await delay(60);
+        }
+        assert.equal((await scrollMetrics()).yearVisible, true, `${type} ${viewport.width}: vehicle year must be reachable`);
+        await command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: before.x, y: before.y, deltaX: 0, deltaY: -10000 });
+        await eventually(scrollMetrics, value => value.top === 0, 'reset form scroll');
+      }
+    }
+    await command('Emulation.clearDeviceMetricsOverride');
     const fill = async (selector: string, value: string, select = false) => click(`(() => {
       const field = document.querySelector(${JSON.stringify(selector)}); if (!field) return false;
       Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype, 'value').set.call(field, ${JSON.stringify(value)});
