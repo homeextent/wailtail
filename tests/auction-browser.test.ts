@@ -15,7 +15,7 @@ async function eventually<T>(read: () => Promise<T>, accept: (value: T) => boole
   while (Date.now() < deadline) {
     try {
       const result = await read();
-      if (accept(result)) return result;
+      if (accept(result)) { console.log('Browser check passed:', label); return result; }
       last = result;
     } catch (error) { last = String(error); }
     await delay(250);
@@ -61,6 +61,13 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
     socket.addEventListener('message', event => {
       const message = JSON.parse(String(event.data));
+      if (message.method === 'Page.javascriptDialogOpening') {
+        browserErrors.push({ unexpectedDialog: message.params.message });
+        socket!.send(JSON.stringify({ id: ++sequence, method: 'Page.handleJavaScriptDialog', params: { accept: false } }));
+        for (const call of pending.values()) call.reject(new Error('Unexpected browser dialog: ' + message.params.message));
+        pending.clear();
+        return;
+      }
       if (message.method === 'Network.requestWillBeSent') {
         const url = new URL(message.params.request.url);
         pendingRequests.set(message.params.requestId, url.origin + url.pathname);
@@ -76,13 +83,18 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     const command = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
       const id = ++sequence;
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Chrome command timed out: ' + method)); }, 15000);
+      pending.set(id, {
+        resolve: value => { clearTimeout(timer); resolve(value); },
+        reject: error => { clearTimeout(timer); reject(error); }
+      });
       socket!.send(JSON.stringify({ id, method, params }));
     });
     const text = async () => {
       const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
       return String(result.result?.value || '');
     };
+    await command('Page.enable');
     await command('Runtime.enable');
     await command('Network.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
