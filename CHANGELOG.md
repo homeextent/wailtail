@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### M2.2 — Dealer Application and Intake (2026-11-07; local review pending)
+
+- Extended the existing form with applicant classification, private dealer business/licensing details, authorized representative contacts and three explicit ownership/seller-of-record/no-broker declarations.
+- Added trusted guest-capable submission validation, server timestamps/pending status, versioned declaration acceptance, atomic canonical/legacy persistence and duplicate-retry protection. Direct non-admin dealer writes are denied under candidate rules; existing private compatibility and protected administrative metadata remain intact.
+- Added dealer information to M2.1 review and expanded endpoint, bypass, concurrency and browser coverage. Added a guarded `/intake` preview and mocked all mail delivery in the synthetic harness.
+- M2.1 is accepted on staging at `e7de147`: post-merge CI/preview passed, the owner's checkout synchronized, and the owner confirmed local visual/functional acceptance. Future visual changes require owner local verification before PR merge approval.
+- No live Firebase rules, production promotion, dealer verification/profile creation, account promotion or conversion is included. See `docs/m2-2-dealer-intake.md` for verification boundaries.
+
 ### M2.1 — Administrative Consignment Application Review (2026-11-07; acceptance pending)
 
 - Added a dedicated read-only application detail modal with complete captured fields, explicit missing values, submitted declarations, separate canonical verification information and legacy review metadata.
@@ -63,10 +71,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Verified staging CI run**: GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121) completed successfully for commit [`a28f8b0`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07). The run passed the production build/TypeScript checks, ESLint, **41 endpoint tests**, and **126 Firestore security rules tests**. This is CI validation evidence for the staging commit, not production deployment or production security sign-off.
 
 ### Next Milestone
-- **M2.1 — Administrative Consignment Application Review**: IMPLEMENTED — STAGING ACCEPTANCE PENDING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
+- **M2.1 — Administrative Consignment Application Review**: ACCEPTED ON STAGING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
 ### Planned Milestones
-- **M2.2 — Dealer Application and Intake**: PLANNED. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
+- **M2.2 — Dealer Application and Intake**: IMPLEMENTED — LOCAL REVIEW PENDING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
 - **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: PLANNED. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
 - **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
 - **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.

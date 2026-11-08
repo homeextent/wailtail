@@ -481,6 +481,11 @@ export interface ConsignmentApplication {
   registeredUserRole?: string;
   applicantType?: 'private' | 'dealer';
   submittedDealershipName?: string;
+  submittedDbaName?: string;
+  noBrokeredInventoryDeclaration?: boolean;
+  termsAccepted?: boolean;
+  declarationVersion?: string;
+  declarationAcceptedAt?: number;
   dealershipName?: string;
   submittedDealerLicenseNumber?: string;
   dealerLicenseNumber?: string;

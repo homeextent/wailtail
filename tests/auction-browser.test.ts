@@ -204,6 +204,65 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       return value.result?.value;
     }, Boolean, 'seller narrative after reload');
 
+
+    // M2.2 actual public intake component: declarations, failure retention and both applicant paths.
+    await command('Page.navigate', { url: origin + '/intake' });
+    await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'public intake');
+    const fill = async (selector: string, value: string, select = false) => click(`(() => {
+      const field = document.querySelector(${JSON.stringify(selector)}); if (!field) return false;
+      Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype, 'value').set.call(field, ${JSON.stringify(value)});
+      field.dispatchEvent(new Event('${select ? 'change' : 'input'}', {bubbles:true})); return true;
+    })()`);
+    const submitIntake = async () => { await command('Runtime.evaluate', { expression: `document.querySelector('form[aria-label="Vehicle consignment application"]').requestSubmit()` }); };
+    const intakeRecords = async () => (await fetch(origin + '/intake-fixture')).json();
+    await click(`(() => { document.querySelector('input[name="applicantType"][value="dealer"]').click(); return true; })()`);
+    await eventually(text, value => value.includes('Dealership details'), 'dealer fields');
+    await fill('select[aria-label="Vehicle year"]', '1988', true);
+    await fill('select[aria-label="Vehicle make"]', 'OTHER_CUSTOM', true);
+    await fill('input[placeholder="Enter custom make..."]', 'Synthetic');
+    await fill('input[placeholder="Enter custom model..."]', 'Dealer Fixture');
+    await fill('input[aria-label="Legal business name"]', 'Synthetic Dealer Inc.');
+    await fill('input[aria-label="Trade name / DBA (optional)"]', 'Synthetic Collectors');
+    await fill('input[aria-label="Dealer licence number"]', 'TEST-456');
+    await fill('select[aria-label="Licensing province or territory"]', 'ON', true);
+    await fill('input[aria-label="Representative name"]', 'Dealer browser representative');
+    await fill('input[aria-label="Representative email"]', 'intake-browser@example.test');
+    await fill('input[aria-label="Representative phone"]', '905-555-0123');
+    await click(`(() => { const declarations = document.querySelectorAll('fieldset fieldset input[type="checkbox"]'); declarations[0].click(); declarations[1].click(); document.querySelector('input[aria-label="Ownership and terms agreement"]').click(); return true; })()`);
+    await submitIntake();
+    assert.equal((await intakeRecords()).length, 0, 'missing third declaration must prevent persistence');
+    await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[2].click(); return true; })()`);
+    await command('Runtime.evaluate', { expression: `(() => { const realFetch = window.fetch; window.fetch = async (...args) => { if (String(args[0]).includes('/api/submit-consignment')) { window.fetch = realFetch; return new Response(JSON.stringify({error:'Synthetic persistence failure'}), {status:503, headers:{'Content-Type':'application/json'}}); } return realFetch(...args); }; })()` });
+    await submitIntake();
+    await eventually(text, value => value.includes('Synthetic persistence failure'), 'intake failure retained');
+    const retainedDealer = await command('Runtime.evaluate', { expression: `document.querySelector('input[aria-label="Legal business name"]').value`, returnByValue: true });
+    assert.equal(retainedDealer.result?.value, 'Synthetic Dealer Inc.'); assert.equal((await intakeRecords()).length, 0);
+    await submitIntake();
+    await eventually(text, value => value.includes('Consignment Request Received!'), 'dealer submission success');
+    const dealerRecords = await eventually(intakeRecords, value => value.length === 1, 'dealer persisted');
+    assert.equal(dealerRecords[0].applicantType, 'dealer'); assert.equal(dealerRecords[0].status, 'pending');
+    assert.equal(dealerRecords[0].noBrokeredInventoryDeclaration, true); assert.equal(dealerRecords[0].declarationAcceptedAt, dealerRecords[0].submittedAt);
+    assert.equal(dealerRecords[0].dealerId, undefined);
+    await command('Page.navigate', { url: origin + '/intake' });
+    await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'private intake');
+    assert.ok(!(await text()).includes('Dealership details'));
+    await fill('select[aria-label="Vehicle year"]', '1988', true);
+    await fill('select[aria-label="Vehicle make"]', 'OTHER_CUSTOM', true);
+    await fill('input[placeholder="Enter custom make..."]', 'Synthetic');
+    await fill('input[placeholder="Enter custom model..."]', 'Private Fixture');
+    await fill('input[aria-label="Your name"]', 'Private browser owner');
+    await fill('input[aria-label="Email address"]', 'intake-browser@example.test');
+    await click(`(() => { document.querySelector('input[aria-label="Ownership and terms agreement"]').click(); return true; })()`);
+    await submitIntake();
+    await eventually(text, value => value.includes('Consignment Request Received!'), 'private submission success');
+    const both = await eventually(intakeRecords, value => value.length === 2, 'private and dealer persisted');
+    assert.ok(both.some(record => record.applicantType === 'private' && record.status === 'pending' && !record.submittedDealershipName));
+    await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
+    await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
+    await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(text, value => value.includes('Synthetic Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
+    assert.ok((await text()).includes('No linked canonical dealer verification information.'));
+
   } catch (error) {
     console.error(serverLog);
     throw error;

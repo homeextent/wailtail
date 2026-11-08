@@ -1,6 +1,6 @@
 # M2.1 administrative consignment review
 
-Implementation proposed from staging `9c64b68`; staging acceptance and owner merge authorization remain pending. Production deployment, Firebase rules publication and Storage work are separate.
+Accepted on staging through PR #5, merged as `e7de147` from reviewed head `b01de29`. Post-merge CI/preview passed, and Jeremy confirmed local visual/functional acceptance after synchronizing his checkout. Production deployment, Firebase rules publication and Storage work are separate.
 
 ## Behavior and data boundaries
 
@@ -26,7 +26,7 @@ Performed in ChatGPT's isolated workspace using synthetic demo emulators:
 - Endpoint suite: 114 tests passed, including authority, revoked/unverified credentials, strict input validation, forged metadata rejection, read-only inspection, canonical verification projection, atomic save construction, conflict/failure behavior and idempotency. Native Node loading covers all 31 routed handlers.
 - Integrated emulator suite passed: existing seller/auction lifecycle plus M2.1 real Firestore transactions. M2.1 covers concurrent note conflicts and retry preservation, assignment validation, same-ID source isolation, unchanged applications and a 54-event pagination fixture. Authentication is injected in that focused transaction test; the browser harness uses real emulator Auth.
 - Firestore privacy-rule coverage checks guest/applicant/unrelated/unverified denial, both designated administrators' reads, applicant application-read continuity and denial of direct private-record writes/deletions.
-- Browser acceptance was extended for inspection, unchanged pending status, failed-save text retention, note/assignment persistence across full navigation and continued seller editing/disabled conversion. Local Chromium debugger startup was unavailable, so local browser acceptance is **not claimed**. Exact-commit GitHub CI must pass before staging acceptance.
+- Browser acceptance was extended for inspection, unchanged pending status, failed-save text retention, note/assignment persistence across full navigation and continued seller editing/disabled conversion. Local Chromium debugger startup was unavailable, so local browser acceptance is **not claimed**. Browser acceptance passed in GitHub CI at head `b01de29` (run 42434456093) and after merge `e7de147` (run 42437633482).
 
 Required CI runs build, lint, endpoint, rules, emulator and browser suites. Consult the PR's checks on its actual head for the final CI result; this document does not claim future checks have passed.
 

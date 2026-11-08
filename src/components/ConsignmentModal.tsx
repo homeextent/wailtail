@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { CANADIAN_LICENSING_JURISDICTIONS, DEALER_DECLARATIONS, INTAKE_DECLARATION_VERSION } from '../config/consignmentIntake';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   Car, 
@@ -94,6 +95,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   const [sellerPhone, setSellerPhone] = useState('');
   const [notes, setNotes] = useState('');
 
+  const [applicantType, setApplicantType] = useState<'private' | 'dealer'>('private');
+  const [dealer, setDealer] = useState({ submittedDealershipName: '', submittedDbaName: '', submittedDealerLicenseNumber: '', submittedLicensingJurisdiction: '' });
+  const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
+  const submission = useRef<{ key: string; id: string } | null>(null);
   const [hasAgreedToTerms, setHasAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -227,6 +232,12 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       return;
     }
 
+    if (applicantType === 'dealer' && (!dealer.submittedDealershipName.trim() || !dealer.submittedDealerLicenseNumber.trim() ||
+        !CANADIAN_LICENSING_JURISDICTIONS.some(([code]) => code === dealer.submittedLicensingJurisdiction) ||
+        sellerPhone.replace(/\D/g, '').length < 7 || DEALER_DECLARATIONS.some(([key]) => declarations[key] !== true))) {
+      setErrorMsg('Complete the dealer business details, representative phone and all three declarations.');
+      return;
+    }
     setSubmitting(true);
     setErrorMsg(null);
 
@@ -240,7 +251,11 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       : transmission;
 
     try {
-      await submitConsignmentApplication({
+      const payload = {
+        applicantType,
+        termsAccepted: true,
+        declarationVersion: INTAKE_DECLARATION_VERSION,
+        ...(applicantType === 'dealer' ? { ...dealer, submittedLicensingJurisdiction: dealer.submittedLicensingJurisdiction as ConsignmentApplication['submittedLicensingJurisdiction'], ...Object.fromEntries(DEALER_DECLARATIONS.map(([key]) => [key, declarations[key] === true])) } : {}),
         year: year.trim(),
         make: effectiveMake,
         model: effectiveModel,
@@ -257,11 +272,15 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
         sellerEmail: sellerEmail.trim(),
         sellerPhone: sellerPhone.trim(),
         notes: notes.trim()
-      });
+      };
+      const key = JSON.stringify(payload);
+      if (submission.current?.key !== key) submission.current = { key, id: crypto.randomUUID() };
+      await submitConsignmentApplication(payload, submission.current.id);
 
       setSubmitted(true);
       trackConsignmentSubmitted(year.trim(), effectiveMake, effectiveModel);
     } catch (err: any) {
+      if (err.status === 409) submission.current = null;
       console.error('Error submitting consignment application:', err);
       setErrorMsg(err.message || 'Failed to submit consignment. Please check your connection and try again.');
     } finally {
@@ -271,6 +290,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
   const handleReset = () => {
     setSubmitted(false);
+    setApplicantType('private');
+    setDealer({ submittedDealershipName: '', submittedDbaName: '', submittedDealerLicenseNumber: '', submittedLicensingJurisdiction: '' });
+    setDeclarations({});
+    submission.current = null;
     setYear('');
     setSelectedMakeDropdown('');
     setCustomMake('');
@@ -325,6 +348,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
           <button
             type="button"
+            disabled={submitting}
             onClick={handleReset}
             className="min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
             aria-label="Close modal"
@@ -380,6 +404,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               <div className="pt-4 flex items-center justify-center">
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={handleReset}
                   className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white transition-colors cursor-pointer"
                 >
@@ -389,9 +414,9 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <form aria-label="Vehicle consignment application" onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Scrollable Form Content */}
-            <div className="overflow-y-auto p-4 sm:p-6 space-y-4 flex-1 text-white">
+            <fieldset disabled={submitting} className="min-w-0 overflow-y-auto p-4 sm:p-6 space-y-4 flex-1 text-white">
               {/* Value Props Row */}
               <div className="grid grid-cols-3 gap-2 p-2.5 sm:p-3 rounded-xl bg-slate-800/60 border border-slate-700/80 text-center text-xs text-slate-300">
                 <div>
@@ -409,12 +434,38 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               </div>
 
               {errorMsg && (
-                <div className="p-3 rounded-lg bg-red-950/70 border border-red-800 text-red-200 text-xs font-medium flex items-center gap-2">
+                <div role="alert" className="p-3 rounded-lg bg-red-950/70 border border-red-800 text-red-200 text-xs font-medium flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
+              <fieldset disabled={submitting} className="space-y-3 p-4 rounded-xl border border-slate-700 bg-slate-800/40">
+                <legend className="text-sm font-bold px-1">Who is submitting this vehicle?</legend>
+                <div className="flex flex-wrap gap-4">{(['private', 'dealer'] as const).map(type => <label key={type} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="applicantType" value={type} checked={applicantType === type}
+                    onChange={() => { setApplicantType(type); setDeclarations({}); setErrorMsg(null); }} />
+                  {type === 'private' ? 'Private seller' : 'Dealer'}
+                </label>)}</div>
+                {applicantType === 'dealer' && <p className="text-xs text-slate-300">Apply on behalf of a Canadian dealership that owns this vehicle. All business details and declarations are subject to manual review. Submission does not grant verified dealer status.</p>}
+              </fieldset>
+              {applicantType === 'dealer' && <fieldset disabled={submitting} className="space-y-4 p-4 rounded-xl border border-emerald-800/60 bg-emerald-950/20">
+                <legend className="text-sm font-bold px-1">Dealership details</legend>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {([['submittedDealershipName', 'Legal business name', 200], ['submittedDbaName', 'Trade name / DBA (optional)', 200], ['submittedDealerLicenseNumber', 'Dealer licence number', 100]] as const).map(([key, label, max]) => <label key={key} className="text-xs font-semibold text-slate-300">{label}
+                    <input type="text" aria-label={label} value={dealer[key]} maxLength={max} required={key !== 'submittedDbaName'} onChange={event => setDealer({ ...dealer, [key]: event.target.value })} className="block mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm" />
+                  </label>)}
+                  <label className="text-xs font-semibold text-slate-300">Licensing province or territory
+                    <select aria-label="Licensing province or territory" value={dealer.submittedLicensingJurisdiction} required onChange={event => setDealer({ ...dealer, submittedLicensingJurisdiction: event.target.value })} className="block mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm">
+                      <option value="">Select jurisdiction…</option>{CANADIAN_LICENSING_JURISDICTIONS.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <p className="text-xs text-slate-400">Licence details are collected privately for administrative review.</p>
+                <fieldset className="space-y-3"><legend className="font-semibold text-sm mb-2">Required dealer declarations</legend>
+                  {DEALER_DECLARATIONS.map(([key, wording]) => <label key={key} className="flex gap-2 text-xs text-slate-300 cursor-pointer"><input className="mt-0.5" type="checkbox" aria-label={wording} required checked={declarations[key] === true} onChange={event => setDeclarations({ ...declarations, [key]: event.target.checked })} /><span>{wording}</span></label>)}
+                </fieldset>
+              </fieldset>}
               {/* Section 1: Vehicle Information & 3-Tier Taxonomy */}
               <div className="space-y-3">
                 <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -429,6 +480,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       Year <span className="text-red-500">*</span>
                     </label>
                     <select
+                      aria-label="Vehicle year"
                       value={year}
                       onChange={(e) => setYear(e.target.value)}
                       className="w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/90 text-white text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none cursor-pointer"
@@ -446,6 +498,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       Make <span className="text-red-500">*</span>
                     </label>
                     <select
+                      aria-label="Vehicle make"
                       value={selectedMakeDropdown}
                       onChange={(e) => handleMakeSelect(e.target.value)}
                       className="w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/90 text-white text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none cursor-pointer"
@@ -494,6 +547,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     ) : (
                       <div>
                         <select
+                          aria-label="Vehicle model"
                           value={selectedModelDropdown}
                           onChange={(e) => handleModelSelect(e.target.value)}
                           className="w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800/90 text-white text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none cursor-pointer"
@@ -702,17 +756,18 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               <div className="space-y-3 pt-3 border-t border-slate-800">
                 <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-slate-300" />
-                  <span>2. Seller Contact Information</span>
+                  <span>{applicantType === 'dealer' ? '2. Primary Authorized Representative' : '2. Seller Contact Information'}</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Your Name <span className="text-red-500">*</span>
+                      {applicantType === 'dealer' ? 'Representative Name' : 'Your Name'} <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
                       placeholder="e.g. Alex Morgan"
+                      aria-label={applicantType === 'dealer' ? 'Representative name' : 'Your name'}
                       value={sellerName}
                       onChange={(e) => setSellerName(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none"
@@ -727,6 +782,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     <input
                       type="email"
                       placeholder="e.g. alex@example.com"
+                      aria-label={applicantType === 'dealer' ? 'Representative email' : 'Email address'}
                       value={sellerEmail}
                       onChange={(e) => setSellerEmail(e.target.value)}
                       onBlur={handleEmailBlur}
@@ -737,7 +793,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       <div className="mt-2 p-2.5 rounded-lg bg-emerald-950/70 border border-emerald-700 text-emerald-200 text-[11px] font-medium flex items-start gap-2 animate-in fade-in">
                         <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                         <span className="leading-snug">
-                          ✓ Registered member account detected ({detectedAccount.role || 'BIDDER'}). Submitting will automatically link this consignment request to your member profile and grant SELLER listing access upon approval.
+                          ✓ Registered member account detected ({detectedAccount.role || 'BIDDER'}). Submitting will use your contact email. Any seller access requires a separate approved onboarding process.
                         </span>
                       </div>
                     )}
@@ -745,11 +801,13 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Phone Number
+                      {applicantType === 'dealer' ? 'Representative Phone (required)' : 'Phone Number'}
                     </label>
                     <input
                       type="tel"
                       placeholder="e.g. (604) 555-0192"
+                      required={applicantType === 'dealer'}
+                      aria-label={applicantType === 'dealer' ? 'Representative phone' : 'Phone number'}
                       value={sellerPhone}
                       onChange={(e) => {
                         const cleanPhone = e.target.value.replace(/[^0-9+\-() ]/g, '');
@@ -795,10 +853,10 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     <div>
                       <h4 className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
                         <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Are sales subject to OMVIC dealer arbitration?</span>
+                        <span>How are applications reviewed?</span>
                       </h4>
                       <p className="text-[11px] sm:text-xs text-slate-300 pl-5 leading-relaxed">
-                        No. Wailtail operates exclusively as a peer-to-peer enthusiast marketplace connecting private buyers and sellers directly. Unlike dealer auctions, transactions are private retail sales without intermediary wholesale arbitration boards.
+                        Our curators review each vehicle individually. Dealer business verification is a separate manual process and does not automatically approve a vehicle for auction.
                       </p>
                     </div>
 
@@ -837,13 +895,15 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                   </div>
                 )}
               </div>
-            </div>
+            </fieldset>
 
             {/* Modal Sticky/Fixed Footer Action Buttons */}
             <div className="p-4 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950 flex flex-col gap-3.5 flex-shrink-0">
               <label className="flex items-start gap-2.5 cursor-pointer text-xs text-zinc-300">
                 <input
                   type="checkbox"
+                  aria-label="Ownership and terms agreement"
+                  disabled={submitting}
                   checked={hasAgreedToTerms}
                   onChange={(e) => setHasAgreedToTerms(e.target.checked)}
                   className="mt-0.5 rounded border-zinc-700 bg-zinc-900 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
@@ -856,6 +916,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={handleReset}
                   className="min-h-[44px] px-4 py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >

@@ -28,7 +28,8 @@ test('compiled API handlers load in native Node ESM and retain method guards', a
       }
     }
     await directory('server/api');
-    await Promise.all(['api/router.ts', 'src/config/adminConfig.ts', 'src/types.ts'].map(compile));
+    await directory('src/config');
+    await Promise.all(['api/router.ts', 'src/types.ts'].map(compile));
     const names = (await readdir('server/api')).filter(name => name.endsWith('.ts')).map(name => name.slice(0, -3));
     const script = `
       import assert from 'node:assert/strict';
@@ -42,7 +43,7 @@ test('compiled API handlers load in native Node ESM and retain method guards', a
     `;
     await writeFile(join(root, 'check.mjs'), script);
     const result = execFileSync(process.execPath, ['check.mjs'], { cwd: root, encoding: 'utf8', timeout: 30000 });
-    assert.match(result, /Native runtime passed for 31 handlers/);
+    assert.match(result, /Native runtime passed for 32 handlers/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
