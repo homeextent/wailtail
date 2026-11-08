@@ -1,9 +1,10 @@
+import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { getStorage } from 'firebase-admin/storage';
-import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
+import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 import { checkDraftNarrativeWrite, draftMediaId, withSellerDraftRequest } from './seller-draft-narrative.js';
 
-export default function handler(req: any, res: any) {
-  return withSellerDraftRequest(req, res, undefined, async ({ firestore }, uid) => {
+export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAdminServices) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
     const input = req.body;
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         typeof input.auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(input.auctionId) ||
@@ -30,6 +31,7 @@ export default function handler(req: any, res: any) {
       if (action === 'remove') {
         const access = checkDraftNarrativeWrite(record, uid, expectedRevision);
         if (access !== 200) return access;
+        if (!await dealerListingEligible(transaction, firestore, record, uid)) return 403;
       }
       const metadata = (await transaction.get(asset)).data();
       if (!metadata || metadata.removedAt || metadata.objectPath !== objectPath) return 404;
@@ -51,10 +53,14 @@ export default function handler(req: any, res: any) {
 
     const bucket = process.env.FIREBASE_STORAGE_BUCKET?.trim();
     if (!bucket) return res.status(503).json({ error: 'draft-storage-unconfigured' });
-    const file = getStorage(getFirebaseAdminServices().app).bucket(bucket).file(objectPath);
+    const file = getStorage((services ?? getFirebaseAdminServices()).app).bucket(bucket).file(objectPath);
     const [bytes] = await file.download();
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(200).send(bytes);
   });
+}
+
+export default function handler(req: any, res: any) {
+  return handleSellerDraftMedia(req, res);
 }

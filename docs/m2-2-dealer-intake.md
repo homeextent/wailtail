@@ -1,6 +1,6 @@
 # M2.2 dealer application intake
 
-Implementation based on staging `e7de147`. Local visual/functional review and PR merge approval are pending. Production and live Firebase rule publication remain separate.
+Implemented from staging `e7de147`, locally accepted by Jeremy and merged through PR #6 at `74d9089`. Post-merge CI passed and Jeremy confirmed a clean synchronized staging checkout. Production and live Firebase rule publication remain separate.
 
 ## Included behavior
 

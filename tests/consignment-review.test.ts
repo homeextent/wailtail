@@ -35,6 +35,7 @@ function harness(options: { token?: any; authFailure?: boolean; missing?: boolea
       runTransaction: async (run: any) => {
         const staged: any[] = [];
         const result = await run({ get: async (target: any) => ({ data: () =>
+          target.path.startsWith('dealerVerificationCases/') ? undefined :
           target.path.startsWith('dealer_profiles/') ? { legalBusinessName: 'Canonical business', verificationStatus: 'suspended', secretExtra: 'omit' } :
           target.path.includes('/events/') ? options.event :
           target.path.startsWith('consignmentReviews/') ? { revision: options.revision ?? 0, assigneeEmail: '' } : options.missing ? undefined : application }),

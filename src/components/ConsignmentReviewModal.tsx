@@ -1,3 +1,4 @@
+import { DealerVerificationPanel } from './DealerVerificationPanel';
 import React, { useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ConsignmentApplication } from '../types';
@@ -36,6 +37,7 @@ function timestamp(value: unknown) {
 export function ConsignmentReviewModal({ application, user, onClose }: {
   application: ConsignmentApplication; user: User; onClose: () => void;
 }) {
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const [detail, setDetail] = useState<ConsignmentReviewDetail | null>(null);
   const [note, setNote] = useState('');
   const [assignee, setAssignee] = useState('');
@@ -63,7 +65,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
     return () => { document.body.style.overflow = overflow; previous?.focus(); };
   }, []);
   const close = () => {
-    if (busy || ((note.trim() || (detail && assignee !== (detail.review.assigneeEmail || ''))) &&
+    if (verificationOpen || busy || ((note.trim() || (detail && assignee !== (detail.review.assigneeEmail || ''))) &&
       !window.confirm('Discard unsaved review changes?'))) return;
     onClose();
   };
@@ -110,18 +112,20 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
       onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); close(); }
         if (event.key === 'Tab') {
-          const nodes = Array.from(dialog.current?.querySelectorAll('button:not(:disabled), textarea:not(:disabled), select:not(:disabled)') || []) as HTMLElement[];
+          const nodes = Array.from(dialog.current?.querySelectorAll('button:not(:disabled), textarea:not(:disabled), select:not(:disabled), input:not(:disabled)') || []) as HTMLElement[];
           const first = nodes[0], last = nodes[nodes.length - 1];
           if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}>
       <div className="flex justify-between gap-4"><h2 id="consignment-review-title" className="text-xl font-bold">Application review</h2>
-        <button type="button" disabled={busy} onClick={close} aria-label="Close application review">Close</button></div>
+        <button type="button" disabled={busy || verificationOpen} onClick={close} aria-label="Close application review">Close</button></div>
+      {verificationOpen ? <DealerVerificationPanel user={user} applicationId={application.id} source={source} onBack={() => setVerificationOpen(false)} /> : <>
       {error && <p role="alert" className="text-red-300">{error}</p>}
       <button type="button" onClick={reload} disabled={busy || loading} className="underline">Reload review</button>
       {loading && <p role="status">Loading application…</p>}
       {record && <>
+        {record.applicantType === 'dealer' && <button type="button" className="bg-emerald-800 px-4 py-3 rounded" onClick={() => setVerificationOpen(true)}>Manage dealer verification</button>}
         <p>Status: <strong data-testid="review-status">{record.status || 'pending'}</strong>. Viewing and saving internal notes do not change this status.</p>
         <section aria-label="Applicant-submitted information" className="space-y-3">
           <h3 className="font-bold text-lg">Applicant-submitted information</h3>
@@ -141,7 +145,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
           <p>Declarations accepted: {timestamp(record.declarationAcceptedAt)}</p>
           <p>Existing review timestamp: {timestamp(record.reviewedAt)}</p>
           <p>Existing reviewer: {display(record.reviewedBy)}</p>
-          <p className="text-sm text-slate-300">Legacy metadata does not provide a complete review history. No earlier events are reconstructed. Dealer verification is a separate milestone; this review grants no verified status.</p>
+          <p className="text-sm text-slate-300">Legacy metadata does not provide a complete review history. No earlier events are reconstructed. Dealer verification is a separate workflow; this review grants no verified status.</p>
           <details><summary>Existing administrative metadata</summary><dl>{Object.entries(record).filter(([key]) => metadata.has(key) && !['reviewSource', 'submittedAt', 'reviewedAt', 'reviewedBy', 'status'].includes(key)).map(([key, value]) =>
             <div key={key}><dt>{key}</dt><dd className="whitespace-pre-wrap break-words">{display(value)}</dd></div>)}</dl></details>
         </section>
@@ -165,6 +169,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
           </li>)}</ol>
           {detail.hasMore && <button type="button" disabled={busy} onClick={older}>Load older review events</button>}
         </section>
+      </>}
       </>}
     </div>
   </div>;

@@ -6,11 +6,19 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
-## M2.2 dealer intake — implementation awaiting local review
+## M2.3 dealer verification — implementation awaiting local review
+
+Dealer applications now open a dedicated manual verification view. Designated administrators record evidence, link one existing email-verified representative UID, create a private canonical business profile and explicitly verify, reject, suspend, update or renew it. Profile/link changes and immutable before/after audit records commit atomically. Dealer-attributed seller mutations enforce current verification and expiry. Vehicle approval, conversion and public dealer attribution remain separate.
+
+An administrator can look up one exact representative email/UID and explicitly select the eligible account. Guided method/source choices retain required evidence details; date controls use a named local timezone while storing absolute timestamps.
+
+See [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Exact-head CI and Jeremy's local visual/functional acceptance are required before merge approval. No live rules/index deployment is included.
+
+## M2.2 dealer intake — accepted on staging
 
 The existing vehicle application form now distinguishes private sellers and dealers. Dealer applications require legal business name, optional DBA, licence number, Canadian licensing jurisdiction, representative contacts and three explicit declarations. A server endpoint validates both flows, stamps pending status and declaration acceptance time, and atomically writes canonical and legacy application records. Submitting does not verify a dealer or grant access.
 
-See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). **Visual changes require Jeremy's local visual/functional verification before PR merge approval.** This feature remains on its task branch until approved; no production rules are published by a PR.
+See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). **Visual changes require Jeremy's local visual/functional verification before PR merge approval.** M2.2 was locally accepted and merged through PR #6 at `74d9089`; Jeremy confirmed his clean staging checkout synchronized to that merge. No production rules are published by a PR.
 
 ## M2.1 administrative consignment review — accepted on staging
 
@@ -546,8 +554,8 @@ For comprehensive milestone specifications, commercial boundaries, architecture,
 | **Admin Account Deletion Hardening** | Server-Authorized Account Deletion | **VERIFIED ON STAGING** | Revocation-aware designated-administrator authorization; self-deletion and designated-account protection; server-owned Auth and Firestore cleanup with retry handling; 44 regression tests (85 combined endpoint tests). *Not production-deployed; auction ownership/mutation authorization remains a separate production blocker.* |
 
 | **M2.1** | Administrative Consignment Application Review | **ACCEPTED ON STAGING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
-| **M2.2** | Dealer Application and Intake | **IMPLEMENTED — LOCAL REVIEW PENDING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
-| **M2.3** | Manual Dealer Verification & Profile Creation | **PLANNED** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
+| **M2.2** | Dealer Application and Intake | **ACCEPTED ON STAGING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
+| **M2.3** | Manual Dealer Verification & Profile Creation | **IMPLEMENTED — LOCAL REVIEW PENDING** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
 | **M2.4** | Dealer Vehicle Listing Integration | **PLANNED** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
 | **M2.5** | Public Dealer Presentation & Badging | **PLANNED** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
 | **M2.6** | Optional Private Application Photo Uploads | **PLANNED (GATED)** | Multi-photo upload in consignment intake; private Cloud Storage bucket; curation transfer to listing gallery. *Separately gated; non-blocker for core program.* |

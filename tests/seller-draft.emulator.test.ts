@@ -263,9 +263,19 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         if (key === 'runTransaction') {
           return (operation: (transaction: Transaction) => Promise<number>) =>
             target.runTransaction(async transaction => {
-              const result = await operation(transaction);
-              stagedRegistration = result === 200;
-              throw new Error('Synthetic registration transaction abort');
+              const recording = new Proxy(transaction, {
+                get(tx, name) {
+                  if (name === 'create') return (ref: any, data: any) => {
+                    if (ref.path.includes('/draftAssets/')) stagedRegistration = true;
+                    return tx.create(ref, data);
+                  };
+                  const value = Reflect.get(tx, name, tx);
+                  return typeof value === 'function' ? value.bind(tx) : value;
+                }
+              });
+              const result = await operation(recording);
+              if (stagedRegistration) throw new Error('Synthetic registration transaction abort');
+              return result;
             });
         }
         const value = Reflect.get(target, key, target);
