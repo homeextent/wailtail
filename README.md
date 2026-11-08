@@ -6,6 +6,14 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
+## M2.1 administrative consignment review — implementation awaiting staging acceptance
+
+The Consignment Pipeline now offers a dedicated **View application** inspection modal. Submitted vehicle/contact/condition information remains read-only and visibly separate from existing canonical dealer verification information. Opening a record does not mark it reviewed or change its status. Missing data and missing historical reviewers are shown explicitly.
+
+Designated administrators can explicitly save private notes and curator assignments. The authenticated `/api/admin-consignment-review` endpoint stores these in separate `consignmentReviews/{source}:{applicationId}` records, with append-only `events`, server-derived authors/timestamps, revision conflicts and idempotent command retries. Applicant-readable documents never receive private notes. History loads in pages of 50; legacy collection records retain their source identity. Existing status controls remain separate, and one-click conversion remains disabled.
+
+See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). This implementation does not authorize staging merge, production deployment or rules publication.
+
 ## Auction security staging checkpoint
 
 The staging compatibility audit was integrated through PR #3. Watchlists, member activity and private inquiries use authenticated server operations. Public branding exposes three approved display fields; platform image uploads use the trusted administrator uploader. Designated administrators retain member moderation and global/promotion configuration under candidate rules. Broad catalog purge, legacy bidder purge, one-click consignment conversion and client promotion counters are explicitly disabled. Create drafts and delete selected listings through Vehicle Inventory instead. See [Stage 3 staging acceptance](docs/stage3-staging-acceptance.md) for the release boundary and coverage.
@@ -531,7 +539,7 @@ For comprehensive milestone specifications, commercial boundaries, architecture,
 | **M2.0B** | Trusted Server-Side Role Authorization | **VERIFIED ON STAGING** | Firebase Admin SDK ID-token verification with revocation checking; transactional approved-consignor revalidation; protected user/bidder roles and verification state; removal of client-side role elevation; 126 Firestore rules tests and 41 M2.0B endpoint/authority tests. *Not production-approved.* |
 | **Admin Account Deletion Hardening** | Server-Authorized Account Deletion | **VERIFIED ON STAGING** | Revocation-aware designated-administrator authorization; self-deletion and designated-account protection; server-owned Auth and Firestore cleanup with retry handling; 44 regression tests (85 combined endpoint tests). *Not production-deployed; auction ownership/mutation authorization remains a separate production blocker.* |
 
-| **M2.1** | Administrative Consignment Application Review | **PLANNED** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
+| **M2.1** | Administrative Consignment Application Review | **IMPLEMENTED — REVIEW PENDING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
 | **M2.2** | Dealer Application and Intake | **PLANNED** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
 | **M2.3** | Manual Dealer Verification & Profile Creation | **PLANNED** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
 | **M2.4** | Dealer Vehicle Listing Integration | **PLANNED** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |

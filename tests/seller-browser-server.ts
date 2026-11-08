@@ -88,7 +88,7 @@ await firestore.collection('settings').doc('global').set({ siteName: 'Synthetic 
 
 await firestore.collection('consignment_applications').doc(`submission-${run}`).set({
   sellerEmail: email, sellerName: 'Synthetic Seller', status: 'pending', year: 2000,
-  make: 'Synthetic', model: 'Submission', submittedAt: Date.now()
+  make: 'Synthetic', model: 'Submission', transmission: '5-Speed Manual', notes: 'Applicant condition disclosure', submittedAt: Date.now()
 });
 
 const server = express();
@@ -104,14 +104,15 @@ server.all('/api/:endpoint', (req, res, next) => {
 });
 server.get('/acceptance-fixture', async (_req, res, next) => {
   try {
-    const [media, lot, inquiries, global] = await Promise.all([
+    const [media, lot, inquiries, global, consignment] = await Promise.all([
       firestore.collection('settings').doc(`media-${auctionId}`).get(),
       firestore.collection('auctions').doc(publicAuctionId).get(),
       firestore.collection('inquiries').where('auctionId', '==', publicAuctionId).get(),
-      firestore.collection('settings').doc('global').get()
+      firestore.collection('settings').doc('global').get(),
+      firestore.collection('consignment_applications').doc(`submission-${run}`).get()
     ]);
     res.json({ heading: media.get('overviewHeading') || '', watchCount: lot.get('watchCount') || 0,
-      inquiries: inquiries.size, siteName: global.get('siteName') });
+      inquiries: inquiries.size, siteName: global.get('siteName'), consignmentStatus: consignment.get('status') });
   } catch (error) { next(error); }
 });
 server.get('/fixture', (_req, res) => {

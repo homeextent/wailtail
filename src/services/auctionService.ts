@@ -2696,16 +2696,18 @@ export async function fetchPaginatedConsignments({
         const legacyQ = query(legacyCol, orderBy('submittedAt', 'desc'));
         const legacySnap = await getDocs(legacyQ);
         list = legacySnap.docs.map(d => ({
+          ...d.data(),
           id: d.id,
-          ...d.data()
+          reviewSource: 'consignments'
         })) as ConsignmentApplication[];
       } catch (e) {
         list = [];
       }
     } else {
       list = snapshot.docs.map(d => ({
+        ...d.data(),
         id: d.id,
-        ...d.data()
+        reviewSource: 'consignment_applications'
       })) as ConsignmentApplication[];
     }
 

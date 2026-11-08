@@ -165,6 +165,32 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       return result.result?.value;
     }, Boolean, 'disabled consignment conversion');
 
+    // M2.1 inspection is read-only; internal notes/assignment persist across full navigation.
+    const clickReviewButton = async (label: string) => click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === ${JSON.stringify(label)}); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await clickReviewButton('View application');
+    await eventually(text, value => value.includes('Applicant condition disclosure') && value.includes('5-Speed Manual') && value.includes('No internal review events recorded.'), 'application inspection');
+    assert.equal((await state()).consignmentStatus, 'pending');
+    await click(`(() => { const field = document.querySelector('textarea[aria-label="Internal note"]'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, 'Private browser review note'); field.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    // A failed save keeps the draft note visible and does not create a success event.
+    await command('Runtime.evaluate', { expression: `(() => { const realFetch = window.fetch; window.fetch = async (...args) => { if (String(args[0]).includes('/api/admin-consignment-review') && JSON.parse(args[1]?.body || '{}').action === 'add_note') { window.fetch = realFetch; return new Response('{}', {status:503}); } return realFetch(...args); }; })()` });
+    await clickReviewButton('Save internal note');
+    await eventually(text, value => value.includes('Could not complete the review request.'), 'review save failure');
+    const retainedNote = await command('Runtime.evaluate', { expression: `document.querySelector('textarea[aria-label="Internal note"]').value`, returnByValue: true });
+    assert.equal(retainedNote.result?.value, 'Private browser review note');
+    assert.equal((await state()).consignmentStatus, 'pending');
+    await clickReviewButton('Save internal note');
+    await eventually(text, value => value.includes('Private browser review note') && value.includes('jeremygoodmurphy@gmail.com · #1'), 'internal note persisted');
+    await click(`(() => { const field = document.querySelector('select[aria-label="Assigned curator"]'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(field, 'jeremy@theinnovativegroup.ca'); field.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await clickReviewButton('Save assignment');
+    await eventually(text, value => value.includes('Curator assignment: jeremy@theinnovativegroup.ca'), 'assignment persisted');
+    await clickReviewButton('Close');
+    await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
+    await eventually(text, value => value.includes('View application'), 'pipeline after reload');
+    await clickReviewButton('View application');
+    await eventually(text, value => value.includes('Private browser review note') && value.includes('Curator assignment: jeremy@theinnovativegroup.ca'), 'review survives reload');
+    assert.equal((await state()).consignmentStatus, 'pending');
+    await clickReviewButton('Close');
+
     // Seller narrative edits go through the same router and survive reload.
     await command('Page.navigate', { url: origin + '/catalog?fixture=draft' });
     await eventually(text, value => value.includes('Overview heading'), 'seller editor');

@@ -153,6 +153,17 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    // M2.1: server-authored private review metadata and append-only history.
+    // Applicants may read their application, but never these separate records.
+    match /consignmentReviews/{reviewId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /events/{eventId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
     // Intake Forms & Direct Communications
     match /feedback/{feedbackId} {
       allow create: if true;

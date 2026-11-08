@@ -2337,7 +2337,8 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
 - **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
-- **M2.1 through M2.5**: **PLANNED**.
+- **M2.1**: **IMPLEMENTED — STAGING ACCEPTANCE PENDING**. See [M2.1 acceptance](docs/m2-1-consignment-review.md).
+- **M2.2 through M2.5**: **PLANNED**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
@@ -2383,7 +2384,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M1.1               │ Dealer Verification Security          │ COMPLETE            │
 │ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
 │ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
-│ M2.1               │ Admin Consignment Review              │ PLANNED             │
+│ M2.1               │ Admin Consignment Review              │ REVIEW PENDING      │
 │ M2.2               │ Dealer Application Intake             │ PLANNED             │
 │ M2.3               │ Manual Dealer Verification & Profiles │ PLANNED             │
 │ M2.4               │ Dealer Vehicle Listing Integration    │ PLANNED             │
@@ -2460,7 +2461,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; self-service approved-consignor claims are authorized through the trusted backend endpoint; administrator-initiated role changes remain restricted to designated administrators; application approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
-- **Status**: **PLANNED**.
+- **Status**: **IMPLEMENTED — STAGING ACCEPTANCE PENDING**.
 - **Objectives**: Build a dedicated, read-only administrative inspection view within the Admin Consignment Pipeline for reviewing submitted consignment and dealer applications.
 - **Business Rationale**: Empowers curators to thoroughly evaluate submitted vehicle particulars, condition disclosures, and applicant credentials before making approval or rejection decisions.
 - **Key Deliverables**:
@@ -2472,6 +2473,14 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
   - Safeguards ensuring opening or inspecting applications never triggers implicit status transitions.
 - **Dependencies**: M2.0B completion.
 - **Exit Criteria**: Curators can inspect complete application records; administrative notes persist securely; viewing records never mutates document status; private seller curation workflows remain intact.
+
+Implementation contract:
+- `ConsignmentReviewModal.tsx` is opened from `AdminPortalPage.tsx`; submitted fields remain read-only. Additional captured fields are surfaced without inventing missing disclosures. Existing linked canonical dealer profile information is presented separately and is never written by this feature.
+- `/api/admin-consignment-review` uses revoked-token checking, verified email and the existing designated-administrator allowlist. It accepts only read, append-note and assignment commands, with validated source/ID and allowlisted assignees.
+- Private state lives in `consignmentReviews/{source}:{applicationId}` with server-authored append-only `events`. Client writes are denied even for administrators. Explicit saves transactionally append an event and advance a revision; stale writes conflict, and repeated command IDs cannot duplicate notes or impersonate another author. Inspection creates no review document and never writes an application.
+- History is paginated at 50 events. Existing `reviewedAt`/`reviewedBy` are displayed as legacy metadata; missing past events are not reconstructed. New history covers M2.1 note/assignment actions, not historical status transitions or the existing separate status controls.
+- Legacy collection fallback and same-ID source separation are preserved. No migration, role expansion, dealer approval/conversion, notification, Storage operation or production rule publication is included.
+- See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md) for checks and limitations. Staging merge remains subject to owner authorization.
 
 #### M2.2 — Dealer Application and Intake
 - **Status**: **PLANNED**.
