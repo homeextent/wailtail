@@ -455,6 +455,7 @@ export interface ConsignmentEmailPayload {
 }
 
 export interface ConsignmentApplication {
+  reviewSource?: 'consignment_applications' | 'consignments';
   id?: string;
   year: string | number;
   make: string;

@@ -1,3 +1,4 @@
+import { ConsignmentReviewModal } from './ConsignmentReviewModal';
 import { requestAuctionReturnToDraft } from '../services/auctionReview';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
@@ -130,6 +131,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
 
   // Active Management Tab: 'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'
+  const [reviewApplication, setReviewApplication] = useState<ConsignmentApplication | null>(null);
   const [activeTab, setActiveTab] = useState<'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'>('bidders');
 
   // Multi-Select Engine Selection States
@@ -2282,6 +2284,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
                       {/* Contextual Action Buttons */}
                       <div className="flex flex-wrap items-center gap-2.5 md:flex-col md:items-end shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-800">
+                        <button type="button" onClick={() => setReviewApplication(app)} className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600">View application</button>
                         {isApproved ? (
                           <div className="flex items-center gap-2">
                             {convertedAuctionId ? (
@@ -4208,6 +4211,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         </div>
       )}
 
+      {reviewApplication && authUser && <ConsignmentReviewModal application={reviewApplication} user={authUser} onClose={() => setReviewApplication(null)} />}
       {/* MODAL: APPROVE & CONVERT CONSIGNMENT CONFIRMATION */}
       {confirmApproveApp && (
         <div

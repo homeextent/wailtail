@@ -1449,4 +1449,37 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
     }
   });
 
+  test('M2.1 internal review and history are private and cannot be forged by any client', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = getNamedDb(context);
+      await setDoc(doc(db, 'consignmentReviews/application'), { revision: 1, assigneeEmail: ADMIN_EMAIL });
+      await setDoc(doc(db, 'consignmentReviews/application/events/event'), { value: 'PRIVATE', revision: 1 });
+      await setDoc(doc(db, 'consignment_applications/applicant-record'), { sellerEmail: APPLICANT_EMAIL, status: 'pending' });
+    });
+    const actors = [
+      testEnv.unauthenticatedContext(),
+      testEnv.authenticatedContext('applicant', { email: APPLICANT_EMAIL, email_verified: true }),
+      testEnv.authenticatedContext('other', { email: OTHER_USER_EMAIL, email_verified: true, role: 'admin' }),
+      testEnv.authenticatedContext('unverified', { email: ADMIN_EMAIL, email_verified: false })
+    ];
+    for (const actor of actors) {
+      const db = getNamedDb(actor);
+      for (const path of ['consignmentReviews/application', 'consignmentReviews/application/events/event']) {
+        await assertFails(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { value: 'forged' }));
+      }
+    }
+    const applicant = getNamedDb(testEnv.authenticatedContext('owner', { email: APPLICANT_EMAIL, email_verified: true }));
+    await assertSucceeds(getDoc(doc(applicant, 'consignment_applications/applicant-record')));
+    for (const email of [ADMIN_EMAIL, 'jeremy@theinnovativegroup.ca']) {
+      const db = getNamedDb(testEnv.authenticatedContext(email, { email, email_verified: true }));
+      for (const path of ['consignmentReviews/application', 'consignmentReviews/application/events/event']) {
+        await assertSucceeds(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { value: 'forged' }));
+        await assertFails(updateDoc(doc(db, path), { value: 'changed' }));
+        await assertFails(deleteDoc(doc(db, path)));
+      }
+    }
+  });
+
 });

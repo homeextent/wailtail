@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### M2.1 — Administrative Consignment Application Review (2026-11-07; acceptance pending)
+
+- Added a dedicated read-only application detail modal with complete captured fields, explicit missing values, submitted declarations, separate canonical verification information and legacy review metadata.
+- Added private administrator notes, designated-curator assignments and paginated append-only review history through an authenticated server endpoint. Notes and assignments use separate private records, server-derived authors/timestamps, transactional revision checks and idempotent retries; viewing never changes application status.
+- Preserved legacy source identity and existing curation controls, including disabled one-click conversion. Added focused authorization, failure, privacy, concurrency, pagination and browser reload coverage. See `docs/m2-1-consignment-review.md` for actual verification and exclusions.
+- Reconciled stale PR status statements: PR #3 was accepted and merged; PR #2 was closed without merging and its historical rehearsal evidence/branch remain preserved. Production Storage remains separate.
+
 ### Documentation — Local development workflow and housekeeping (2026-11-07)
 
 - Recorded PR #3's independently accepted staging merge at `1bf4d6a` and successful post-merge CI/preview; production release, Firebase rules and Storage migration remain separate.
@@ -35,7 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Added audited bid retraction, draft duplication from saved source data and a selected-auction bid reset that preserves unrelated auctions and ordinary comments. Removed client fallback that reported successful duplication after a failed save.
 - Moved start, expiry and settlement decisions to server time. Added a bearer-protected worker for unattended transitions and a private notification outbox with Resend dispatch, stable idempotency keys and reconciliation for expired retry windows. Scheduler activation and real email delivery remain deployment acceptance items.
 - CI run 42382737880 passed at `36d539d`, covering build, lint, 97 endpoint tests, 133 rules tests, integrated auction workflows and headless Chrome. Routing consolidation requires fresh head-revision CI and a successful Vercel preview. Notification tests use mocked provider responses and simulate both provider failure and failure after provider acceptance.
-- PR #3 remains under review for staging. The staging legacy compatibility audit is documented in `docs/stage3-staging-acceptance.md`; deliberately disabled actions are excluded from staging acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
+- PR #3 was subsequently accepted and merged into staging as `1bf4d6a`. The staging legacy compatibility audit is documented in `docs/stage3-staging-acceptance.md`; deliberately disabled actions are excluded from staging acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
 
 ### Security — Server-Authorized Administrator Account Deletion (Staging)
 
@@ -56,7 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Verified staging CI run**: GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121) completed successfully for commit [`a28f8b0`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07). The run passed the production build/TypeScript checks, ESLint, **41 endpoint tests**, and **126 Firestore security rules tests**. This is CI validation evidence for the staging commit, not production deployment or production security sign-off.
 
 ### Next Milestone
-- **M2.1 — Administrative Consignment Application Review**: PLANNED. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
+- **M2.1 — Administrative Consignment Application Review**: IMPLEMENTED — STAGING ACCEPTANCE PENDING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
 ### Planned Milestones
 - **M2.2 — Dealer Application and Intake**: PLANNED. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
