@@ -31,6 +31,12 @@ export function DealerVerificationPanel({ user, applicationId, source, onBack }:
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const commands = useRef(new Map<string, string>());
+  const feedback = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!error && !message) return;
+    feedback.current?.focus({ preventScroll: true });
+    feedback.current?.scrollIntoView({ block: 'center', behavior: 'instant' });
+  }, [error, message]);
   const needsProfile = ['verified', 'updated', 'renewed'].includes(action);
   async function request(input: Record<string, unknown>) {
     const response = await fetch('/api/admin-dealer-verification', { method: 'POST',
@@ -97,8 +103,10 @@ export function DealerVerificationPanel({ user, applicationId, source, onBack }:
       <button disabled={busy} type="button" className="underline" onClick={() => {
         if (!dirty || window.confirm('Discard unsaved verification entries?')) onBack();
       }}>Back to application</button><button type="button" disabled={busy} className="underline" onClick={reload}>Reload verification</button></div>
-    {error && <p role="alert" className="text-red-300">{error}</p>}
-    {message && <p role="status" className="text-emerald-300">{message}</p>}
+    {(error || message) && <div ref={feedback} tabIndex={-1} aria-label="Verification result" className="rounded border border-slate-600 p-4 focus:outline focus:outline-2 focus:outline-slate-400">
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {message && <p role="status" className="text-emerald-300">{message}</p>}
+    </div>}
     {busy && <p role="status">Loading or saving verification…</p>}
     {detail && <>
       <section className="rounded border border-slate-600 p-4 space-y-2">
@@ -110,7 +118,7 @@ export function DealerVerificationPanel({ user, applicationId, source, onBack }:
       </section>
       <p>Verification status: <strong data-testid="dealer-verification-status">{detail.profile?.verificationStatus || detail.review.verificationStatus}</strong>
         {detail.profile && <> · Expires: {dateLabel(detail.profile.verificationExpiresAt)}{detail.profile.verificationExpiresAt <= Date.now() && <strong className="text-amber-300"> (expired: dealer listing changes blocked)</strong>}</>}</p>
-      <p className="text-sm text-slate-300">Use an existing email-verified account UID. Guests remain pending until an eligible account exists. Verification does not approve this vehicle, create a lot, or promote an account role.</p>
+      <p className="text-sm text-slate-300">An administrator must confirm the representative's authority and enter the UID of their existing email-verified account. Enter only the UID, not an email address or account JSON. Account lookup and automatic selection are not available in this form. Guests remain pending until an eligible account exists. Verification does not approve this vehicle, create a lot, or promote an account role.</p>
       <form onSubmit={submit} onChange={() => setDirty(true)} className="space-y-4">
         <fieldset disabled={busy} className="space-y-4">
           <label className="block">Action<select aria-label="Verification action" value={action} onChange={e => setAction(e.target.value)} className="block w-full bg-slate-800 p-3">

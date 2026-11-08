@@ -371,8 +371,13 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal((await verificationState()).review, undefined);
     await fill('textarea[aria-label="Verification findings"]', 'Awaiting independent licence confirmation');
     const saveVerification = async () => {
+      await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action')?.scrollIntoView({block:'end'})` });
       await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action'); if (!b || b.disabled) return false; b.click(); return true; })()`);
       await eventually(text, value => value.includes('Verification action saved.'), 'verification action persisted');
+      await eventually(async () => {
+        const result = await command('Runtime.evaluate', { expression: `(() => { const el = document.querySelector('[aria-label="Verification result"]'); const bounds = el?.getBoundingClientRect(); return !!bounds && bounds.top >= 0 && bounds.bottom <= innerHeight && document.activeElement === el; })()`, returnByValue: true });
+        return result.result?.value;
+      }, Boolean, 'save result visible and focused after scrolling from button');
     };
     await saveVerification();
     assert.equal((await verificationState()).profile, null);
@@ -388,6 +393,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await fill('input[aria-label="Manual check time UTC"]', new Date(Date.now() - 60000).toISOString().slice(0,16));
     await fill('input[aria-label="Verification expiry UTC"]', new Date(Date.now() + 86400000).toISOString().slice(0,16));
     await fill('textarea[aria-label="Verification findings"]', 'Manually confirmed synthetic business, licence and representative authority. No public contact consent.');
+    await fill('input[aria-label="Primary representative Firebase UID"]', 'missing-synthetic-representative');
+    await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action')?.scrollIntoView({block:'end'})` });
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('eligible-verified-representative-required'), 'invalid representative error shown');
+    const errorFeedback = await command('Runtime.evaluate', { expression: `(() => { const el = document.querySelector('[aria-label="Verification result"]'); const bounds = el?.getBoundingClientRect(); return !!bounds && bounds.top >= 0 && bounds.bottom <= innerHeight && document.activeElement === el; })()`, returnByValue: true });
+    assert.equal(errorFeedback.result?.value, true, 'error feedback scrolls into view and receives focus');
+    assert.equal((await verificationState()).events, 1, 'invalid representative creates no decision');
+    await fill('input[aria-label="Primary representative Firebase UID"]', fixture.dealerRepresentativeUid);
     await saveVerification();
     const verified = await eventually(verificationState, value => value.profile?.verificationStatus === 'verified', 'canonical dealer and links committed');
     assert.equal(verified.events, 2); assert.equal(verified.user.dealerId, verified.profile.id); assert.equal(verified.bidder.dealerId, verified.profile.id);

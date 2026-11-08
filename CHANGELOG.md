@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; acceptance pending)
 
+- Owner local review confirmed verification saves successfully. Save success/error feedback now scrolls into view and receives focus; representative UID instructions clarify manual administrator account association. Local acceptance remains pending on the revised UI.
+
 - Added a dedicated admin verification view from dealer application review, separating applicant claims from canonical business information and manual evidence.
 - Added a trusted administrator endpoint for explicit review, verify/reverify, rejection, suspension, profile update and renewal. Canonical profile, exact verified-Auth UID links, duplicate-identity reservations, case revision and immutable before/after audit commit atomically; no role or vehicle approval is granted.
 - Added server-time expiry/suspension eligibility checks for dealer-attributed seller save, submit, upload and removal operations. Private seller behavior and disabled conversion remain unchanged.
