@@ -1,7 +1,7 @@
 import apiRouter from '../api/router';
 import { getFirebaseAdminServices } from '../server/api/_lib/firebaseAdmin';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import express from 'express';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
@@ -91,6 +91,9 @@ await firestore.collection('consignment_applications').doc(`submission-${run}`).
   make: 'Synthetic', model: 'Submission', transmission: '5-Speed Manual', notes: 'Applicant condition disclosure', submittedAt: Date.now()
 });
 
+const dealerRepresentative = await auth.createUser({ email: `dealer-rep-${run}@example.test`, emailVerified: true });
+await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, email: dealerRepresentative.email, role: 'bidder' });
+
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
@@ -123,9 +126,21 @@ server.get('/intake-fixture', async (_req, res, next) => {
     res.json(records.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   } catch (error) { next(error); }
 });
+server.get('/dealer-verification-fixture/:id', async (req, res, next) => {
+  try {
+    const caseId = createHash('sha256').update(`consignment_applications:${req.params.id}`).digest('hex');
+    const review = (await firestore.collection('dealerVerificationCases').doc(caseId).get()).data();
+    const profile = review?.dealerId ? (await firestore.collection('dealer_profiles').doc(review.dealerId).get()).data() : null;
+    const user = (await firestore.collection('users').doc(dealerRepresentative.uid).get()).data();
+    const bidder = (await firestore.collection('bidders').doc(dealerRepresentative.uid).get()).data();
+    const application = (await firestore.collection('consignment_applications').doc(req.params.id).get()).data();
+    const events = await firestore.collection('dealer_verification_audits').where('caseId', '==', caseId).get();
+    res.json({ review, profile, user, bidder, application, events: events.size });
+  } catch (error) { next(error); }
+});
 server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId, publicAuctionId });
+  res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId, publicAuctionId, dealerRepresentativeUid: dealerRepresentative.uid });
 });
 server.get('/admin-fixture', async (_req, res, next) => {
   try {

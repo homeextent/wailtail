@@ -48,22 +48,29 @@ export interface DealerProfile {
   verifierUid?: string;
   verificationMethod?: string;
   verificationExpiresAt?: number;
+  verificationCaseId?: string;
+  primaryRepresentativeEmail?: string;
+  sourceReferenceDescription?: string;
+  checkedAt?: number;
+  contactVisibilityConsent?: { phone: boolean; website: boolean; recordedAt: number; recordedBy: string };
   createdAt: number;
   updatedAt: number;
 }
 
 export interface DealerVerificationAudit {
   id?: string;
-  dealerId: string;
-  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated';
-  status: 'pending' | 'verified' | 'rejected' | 'suspended';
-  verifierUid: string;
-  verificationMethod: string;
-  sourceReferenceDescription?: string;
-  sourceReference?: string;
-  notes?: string;
+  caseId: string;
+  applicationId: string;
+  source: 'consignment_applications' | 'consignments';
+  dealerId: string | null;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated' | 'renewed';
+  reason: string;
+  administratorUid: string;
+  administratorEmail: string;
   timestamp: number;
-  createdAt?: number;
+  revision: number;
+  before: { review: Record<string, unknown>; profile: DealerProfile | null };
+  after: { review: Record<string, unknown>; profile: DealerProfile | null };
 }
 
 export interface Auction {

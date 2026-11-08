@@ -8,7 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.2 — Dealer Application and Intake (2026-11-07; local review pending)
+### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; acceptance pending)
+
+- Added a dedicated admin verification view from dealer application review, separating applicant claims from canonical business information and manual evidence.
+- Added a trusted administrator endpoint for explicit review, verify/reverify, rejection, suspension, profile update and renewal. Canonical profile, exact verified-Auth UID links, duplicate-identity reservations, case revision and immutable before/after audit commit atomically; no role or vehicle approval is granted.
+- Added server-time expiry/suspension eligibility checks for dealer-attributed seller save, submit, upload and removal operations. Private seller behavior and disabled conversion remain unchanged.
+- Denied direct client writes to dealer profiles and audits, added private cases/claims and audit index configuration. No live rules/index deployment, migration or production promotion is included. See `docs/m2-3-dealer-verification.md` for limits and local acceptance.
+- Recorded owner local acceptance and PR #6 staging merge (`74d9089`) for M2.2; M2.3 remains unmerged pending exact-head checks and owner local review.
+
+### M2.2 — Dealer Application and Intake (2026-11-07; accepted on staging via PR #6)
 
 - Corrected the over-restrictive text-state readiness gate reported during local review: explicit consent/declaration checkboxes gate the button; native field validation and trusted server validation enforce required details. Submission reads actual visible FormData values, including autofilled contacts/business/location, and retains them on failure. Added a browser regression using native value setters without React input events and checking persisted values.
 
@@ -80,8 +88,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **M2.1 — Administrative Consignment Application Review**: ACCEPTED ON STAGING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
 ### Planned Milestones
-- **M2.2 — Dealer Application and Intake**: IMPLEMENTED — LOCAL REVIEW PENDING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
-- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: PLANNED. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
+- **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
+- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: IMPLEMENTED — LOCAL REVIEW PENDING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
 - **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
 - **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.

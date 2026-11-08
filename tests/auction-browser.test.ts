@@ -42,7 +42,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
   const browserErrors: unknown[] = [];
   const pendingRequests = new Map<string, string>();
   try {
-    const fixture = await eventually<{ projectId: string; publicAuctionId: string } | null>(async () => {
+    const fixture = await eventually<{ projectId: string; publicAuctionId: string; dealerRepresentativeUid: string } | null>(async () => {
       const response = await fetch(origin + '/fixture', { signal: AbortSignal.timeout(2000) });
       return response.ok ? await response.json() : null;
     }, Boolean, 'isolated app');
@@ -356,6 +356,50 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
     await eventually(text, value => value.includes('Autofilled Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
     assert.ok((await text()).includes('No linked canonical dealer verification information.'));
+    // M2.3 actual admin panel -> native API -> emulator Auth and atomic Firestore records.
+    const verificationState = async () => (await fetch(origin + '/dealer-verification-fixture/' + dealerRecords[0].id)).json();
+    const manageVerification = async () => {
+      await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage dealer verification'); if (!b) return false; b.click(); return true; })()`);
+      await eventually(text, value => value.includes('Applicant declarations (unverified)') && value.includes('No verification actions recorded.'), 'verification opens without writes');
+    };
+    await manageVerification();
+    assert.equal((await verificationState()).review, undefined);
+    await fill('textarea[aria-label="Verification findings"]', 'Awaiting independent licence confirmation');
+    const saveVerification = async () => {
+      await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+      await eventually(text, value => value.includes('Verification action saved.'), 'verification action persisted');
+    };
+    await saveVerification();
+    assert.equal((await verificationState()).profile, null);
+    await fill('select[aria-label="Verification action"]', 'verified', true);
+    for (const [label, value] of [
+      ['Verified legal business name', 'Canonical Browser Dealer Inc.'], ['Verified dealer licence number', 'BROWSER-789'],
+      ['Primary representative Firebase UID', fixture.dealerRepresentativeUid], ['Business street address', '1 Synthetic Street'],
+      ['Business postal code', 'L2R1A1'], ['Business city', 'St. Catharines'], ['Business phone', '905-555-0100'],
+      ['Verification method', 'Manual synthetic regulator check']
+    ]) await fill(`input[aria-label="${label}"]`, value);
+    for (const label of ['Licensing province / territory', 'Business province / territory']) await fill(`select[aria-label="${label}"]`, 'ON', true);
+    await fill('textarea[aria-label="Source / reference description"]', 'Synthetic registry and representative authorization reference');
+    await fill('input[aria-label="Manual check time UTC"]', new Date(Date.now() - 60000).toISOString().slice(0,16));
+    await fill('input[aria-label="Verification expiry UTC"]', new Date(Date.now() + 86400000).toISOString().slice(0,16));
+    await fill('textarea[aria-label="Verification findings"]', 'Manually confirmed synthetic business, licence and representative authority. No public contact consent.');
+    await saveVerification();
+    const verified = await eventually(verificationState, value => value.profile?.verificationStatus === 'verified', 'canonical dealer and links committed');
+    assert.equal(verified.events, 2); assert.equal(verified.user.dealerId, verified.profile.id); assert.equal(verified.bidder.dealerId, verified.profile.id);
+    assert.equal(verified.user.role, 'bidder'); assert.equal(verified.application.status, 'pending'); assert.equal(verified.application.dealerId, undefined);
+    assert.equal(verified.profile.displayPhonePublicly, false); assert.equal(verified.profile.displayWebsitePublicly, false);
+    assert.equal(verified.profile.city, 'St. Catharines'); assert.equal(verified.application.locationCity, 'Autofilled City');
+    await fill('select[aria-label="Verification action"]', 'suspended', true);
+    await fill('textarea[aria-label="Verification findings"]', 'Synthetic administrative suspension');
+    await saveVerification();
+    await eventually(verificationState, value => value.profile?.verificationStatus === 'suspended' && value.events === 3, 'suspension audited');
+    await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
+    await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline after verification reload');
+    await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const b = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Canonical Browser Dealer Inc.') && value.includes('suspended'), 'canonical verification visible in application review after reload');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage dealer verification'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Synthetic administrative suspension') && value.includes('Immutable private verification history'), 'verification history survives reload');
+
 
   } catch (error) {
     console.error(serverLog);

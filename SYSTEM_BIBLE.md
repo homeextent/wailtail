@@ -640,7 +640,7 @@ Access is governed by production Firestore security rules: public create (`allow
 ### 2.13 `dealer_profiles` Collection Schema (Private Canonical Records)
 
 Path: `/dealer_profiles/{dealerId}`
-Maintains authoritative, canonical business profile data for verified boutique automotive dealerships. Documents in this collection are strictly private to administrators (`allow read, create, update: if isAdmin();`) with deletions forbidden (`allow delete: if false;`):
+Maintains authoritative, canonical business profile data for verified boutique automotive dealerships. Documents in this collection are strictly private to administrators for reading (`allow read: if isAdmin();`). All client writes are denied; the trusted M2.3 endpoint creates/updates profiles atomically with audit records:
 
 ```typescript
 export type CanadianProvinceOrTerritory =
@@ -678,6 +678,11 @@ export interface DealerProfile {
   verifierUid?: string;
   verificationMethod?: string;
   verificationExpiresAt?: number;
+  verificationCaseId?: string;
+  primaryRepresentativeEmail?: string;
+  sourceReferenceDescription?: string;
+  checkedAt?: number;
+  contactVisibilityConsent?: { phone: boolean; website: boolean; recordedAt: number; recordedBy: string };
   createdAt: number;
   updatedAt: number;
 }
@@ -708,21 +713,23 @@ export interface DealerListingSnapshot {
 ### 2.14 `dealer_verification_audits` Collection Schema (Append-Only Audit Trail)
 
 Path: `/dealer_verification_audits/{auditId}`
-Preserves an immutable, chronological administrative audit ledger of dealer verification actions, method descriptions, and status changes. Accessible strictly to administrators for read and append creation (`allow read, create: if isAdmin();`), with updates and deletions permanently disabled (`allow update, delete: if false;`):
+Preserves an immutable, chronological administrative audit ledger of dealer verification actions, method descriptions, and status changes. Readable strictly by administrators (`allow read: if isAdmin();`); all client writes are denied. The trusted M2.3 endpoint uses transaction.create for immutable audit events:
 
 ```typescript
 export interface DealerVerificationAudit {
   id?: string;
-  dealerId: string;
-  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated';
-  status: 'pending' | 'verified' | 'rejected' | 'suspended';
-  verifierUid: string;
-  verificationMethod: string;
-  sourceReferenceDescription?: string;
-  sourceReference?: string;
-  notes?: string;
+  caseId: string;
+  applicationId: string;
+  source: 'consignment_applications' | 'consignments';
+  dealerId: string | null;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated' | 'renewed';
+  reason: string;
+  administratorUid: string;
+  administratorEmail: string;
   timestamp: number;
-  createdAt?: number;
+  revision: number;
+  before: { review: Record<string, unknown>; profile: DealerProfile | null };
+  after: { review: Record<string, unknown>; profile: DealerProfile | null };
 }
 ```
 
@@ -1642,13 +1649,15 @@ service cloud.firestore {
 
     // Dealer Profiles (Private Canonical Records)
     match /dealer_profiles/{dealerId} {
-      allow read, create, update: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false;
       allow delete: if false;
     }
 
     // Dealer Verification Audits (Append-only Administrative History)
     match /dealer_verification_audits/{auditId} {
-      allow read, create: if isAdmin();
+      allow read: if isAdmin();
+      allow create: if false;
       allow update, delete: if false;
     }
 
@@ -2115,7 +2124,7 @@ The Verified Boutique Dealer initiative establishes the data models, identity re
 
 High-value automotive auctions present unique regulatory, tax, and licensing challenges when inventory is consigned or sold by licensed dealers rather than private individuals. In Canada, licensed motor vehicle dealers operate under provincial regulatory frameworks (such as OMVIC in Ontario, VSA in British Columbia, or AMVIC in Alberta) and are subject to mandatory retail disclosure obligations, documentation fee transparency, and distinct sales tax collection mandates.
 
-The M1 and M1.1 milestones deliver the foundational identity schemas and security hardening necessary to support verified boutique dealers safely. Full dealer application intake workflows, administrative verification tooling, and public dealer showroom profiles are designated for upcoming milestones (M2+) and are not yet complete.
+M1 and M1.1 established the foundational dealer identity schemas. M2.2 intake is now accepted on staging; M2.3 manual verification implementation awaits local acceptance. Listing attribution remains M2.4, and public dealer showroom profiles are excluded from Phase 1.
 
 ### 9.2 Dealer Identity Architecture
 
@@ -2125,13 +2134,13 @@ The dealer identity model separates business entity records, individual user aut
    - The authoritative record for a dealership entity is stored in `/dealer_profiles/{dealerId}`.
    - Captures legal business name, trade name / DBA name, provincial dealer license number, licensing jurisdiction (`CanadianProvinceOrTerritory`), primary representative user UID, physical operating address, verified phone number, website, and public visibility toggles (`displayPhonePublicly`, `displayWebsitePublicly`).
    - Maintains trusted verification status metadata (`verificationStatus`, `verifiedAt`, `verifierUid`, `verificationMethod`, `verificationExpiresAt`).
-   - Accessible strictly to platform administrators (`allow read, create, update: if isAdmin();`) with deletions forbidden (`allow delete: if false;`).
+   - Readable strictly by platform administrators; profile mutations go through the trusted M2.3 endpoint and all client writes are denied.
 
 2. **User Profile Linkage (`UserProfile.dealerId`)**:
    - Individual registered users (`users/{userId}` and `bidders/{userId}`) link to a dealership entity via an optional `dealerId` foreign key.
    - **Access Boundaries**: Associating a `dealerId` with a user account establishes organizational identity but does not inherently grant authoring, editing, or administrative permissions over another user's lots or dealer inventory.
    - **Phase 1 Representation Model**: Under the Phase 1 specification, each verified dealership is represented by a single primary authorized representative (`primaryRepresentativeUid`). Multi-user dealership staff hierarchies and role delegations are deferred to future roadmap phases.
-   - **Public-Read Exposure & Security Consideration**: Under current Firestore rules, root documents in `users/{userId}` and `bidders/{userId}` permit public reads (`allow read: if true;`). Consequently, `dealerId` is exposed to public reads wherever it exists in those documents, as Firestore rules do not support field-level read filtering within publicly readable documents. This is an existing security/privacy consideration slated for M2 architectural review.
+   - **Current Source Privacy Boundary**: Source Firestore rules restrict user/bidder root reads to the exact owner or designated administrators. Dealer profiles/cases/audits are administrator-readable only; identity reservations are server-only. Source privacy protections do not establish live rule publication.
 
 3. **Auction Listing Snapshot (`dealerSnapshot`)**:
    - When an auction is consigned by or assigned to a verified boutique dealer, the lot document in `/auctions/{auctionId}` captures:
@@ -2191,7 +2200,7 @@ Production Cloud Firestore security rules (`firestore.rules`) enforce strict aut
      - Non-admin users cannot create or update auctions containing protected dealer fields (`sellerType`, `dealerId`, `dealerSnapshot`, `dealerDocFee`, `taxHandling`, `taxDisclaimerVersion`). Administrators retain permissions to modify auction fields under current rules; therefore, the snapshot is administrator-controlled rather than technically immutable against administrative changes.
    - **User Profiles (`users/{userId}` & `bidders/{bidderId}`)**:
      - Non-admin users cannot set `dealerId` during account creation and cannot alter or clear `dealerId` during profile updates. Only administrators can assign or modify dealer associations.
-     - **Public-Read Exposure**: Current security rules grant public read access (`allow read: if true;`) to `users/{userId}` and `bidders/{bidderId}`. Because Firestore rules do not provide field-level read filtering within publicly readable documents, `dealerId` is exposed to public reads wherever it is populated in those documents.
+     - **Current Source Privacy Boundary**: Exact account owners and designated administrators may read user/bidder records; public reads are denied. This supersedes the earlier M1 public-read exposure and does not claim live rule publication.
    - **Dealer Profiles & Audits (`dealer_profiles` & `dealer_verification_audits`)**:
      - Non-admin users have zero read, write, update, or delete access to either collection.
 
@@ -2210,7 +2219,7 @@ Production Cloud Firestore security rules (`firestore.rules`) enforce strict aut
      - No exhaustive full-codebase Firestore security audit across unrelated collections was performed.
      - Positive administrator-write authorization tests for protected fields were not performed in this probe run.
      - End-to-end dealer consignment intake, verification approval, and listing conversion workflows were not executed.
-     - M2 functionality (dealer intake UI, admin verification screens, dealer catalog badges) is upcoming work and not implemented.
+     - Historical M1 probe scope only. Current M2.2 intake is accepted on staging; M2.3 verification implementation awaits local acceptance; dealer catalog badges remain M2.4 work.
      - This release represents foundational M1/M1.1 milestone completion, not full Phase 1 platform delivery.
 
 ### 9.5 Production Deployment & Release Status
@@ -2332,14 +2341,15 @@ The M2.0A security model hardens consignment application intake and access contr
 ### 11.1 Executive Summary & Current Program Status
 The Wailtail Verified Boutique Dealer Program establishes an institutional-grade, legally compliant operational framework enabling verified boutique automotive dealerships in Canada to consign and auction collector vehicles alongside private sellers.
 
-**Authoritative Program Status (as of November 5, 2026)**:
+**Authoritative Program Status (as of November 8, 2026)**:
 - **M1.0 — Dealer Foundation and Data Architecture**: **COMPLETE**.
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
 - **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
 - **M2.1**: **ACCEPTED ON STAGING** (PR #5, `e7de147`, passing post-merge checks and owner-confirmed local visual/functional acceptance). See [M2.1 acceptance](docs/m2-1-consignment-review.md).
-- **M2.2**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
-- **M2.3 through M2.5**: **PLANNED**.
+- **M2.2**: **ACCEPTED ON STAGING** (PR #6, `74d9089`, passing post-merge checks and Jeremy-confirmed local acceptance/synchronization).
+- **M2.3**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**. See [M2.3 acceptance](docs/m2-3-dealer-verification.md).
+- **M2.4 through M2.5**: **PLANNED**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
@@ -2386,8 +2396,8 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
 │ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
 │ M2.1               │ Admin Consignment Review              │ ACCEPTED (STAGING)  │
-│ M2.2               │ Dealer Application Intake             │ LOCAL REVIEW PENDING│
-│ M2.3               │ Manual Dealer Verification & Profiles │ PLANNED             │
+│ M2.2               │ Dealer Application Intake             │ ACCEPTED ON STAGING │
+│ M2.3               │ Manual Dealer Verification & Profiles │ LOCAL REVIEW PENDING│
 │ M2.4               │ Dealer Vehicle Listing Integration    │ PLANNED             │
 │ M2.5               │ Public Dealer Presentation & Badging  │ PLANNED             │
 │ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
@@ -2484,7 +2494,7 @@ Implementation contract:
 - See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md) for checks and limitations. PR #5 merged as `e7de147`; post-merge checks and owner local acceptance are recorded. Production remains separate.
 
 #### M2.2 — Dealer Application and Intake
-- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Status**: **ACCEPTED ON STAGING** (PR #6, `74d9089`; owner local visual/functional acceptance confirmed).
 - **Objectives**: Introduce structured boutique dealer intake capabilities into the consignment application workflow.
 - **Business Rationale**: Enables prospective boutique dealers to submit verified commercial credentials and formal declarations during initial platform intake.
 - **Key Deliverables**:
@@ -2511,7 +2521,8 @@ Implementation contract:
 - See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). For all visual implementations, Jeremy must confirm a local visual/functional review before approving the PR merge. Automated browser checks do not substitute for that review.
 
 #### M2.3 — Manual Dealer Verification and Canonical Profile Creation
-- **Status**: **PLANNED**.
+- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Implementation boundary (2026-11-08)**: [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Dedicated view is reached through Consignment Pipeline → View application → Manage dealer verification. Strict admin endpoint atomically writes canonical profile, exact verified-Auth UID associations, identity claims, private case revision and append-only before/after audit. Rejected/pending guests need no canonical profile. Licence/representative reassignment and legacy profile adoption are excluded. Explicit future expiry, manual evidence and contact consent are recorded; dealer seller mutations use a shared server eligibility guard. No vehicle approval, role promotion, conversion or public snapshot is included. Source rules/index changes require a separately approved live rollout; no deployment is claimed. Jeremy must locally review visual/functional behavior before approving the PR merge.
 - **Objectives**: Build administrative verification tooling to review dealer credentials, verify provincial regulatory licenses, generate canonical dealer profiles, and log audit trails.
 - **Business Rationale**: Enforces strict human verification of dealer credentials before granting boutique dealer status, ensuring regulatory compliance.
 - **Key Deliverables**:

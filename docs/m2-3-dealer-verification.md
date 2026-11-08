@@ -1,0 +1,44 @@
+# M2.3 manual dealer verification and canonical profiles
+
+Based on accepted staging `74d9089` (M2.2, PR #6). M2.3 implementation remains subject to exact-head CI, Jeremy's local visual/functional review and explicit PR merge approval. No production deployment, live rules/index publication or data migration is authorized by this change.
+
+## Bounded workflow
+
+Consignment Pipeline → View application → Manage dealer verification opens a dedicated admin view for an explicit dealer application. Opening either view makes no writes. Applicant declarations remain visibly distinct from administrator-confirmed business information. Vehicle location is never copied into the business address. The verification case is private and separate from the applicant-readable application and curator notes.
+
+Actions are explicit: record a review, verify/reverify, reject, suspend, update a verified profile, or renew a verified profile. A guest may receive a pending review or rejection without creating a canonical profile. Verification requires an exact existing Firebase Auth UID with emailVerified true, an email, and a non-disabled account; designated administrator identities cannot become dealer representatives. There is no email-only association, account creation, invitation or seller-role promotion. Administrators must independently confirm business credentials and representative authority and record their findings.
+
+Verification/profile changes require legal business name, optional DBA, licence and Canadian jurisdiction, business address, phone, optional HTTPS website, one primary representative UID, manual check method/source/time, findings and an explicit future expiry. Times in the UI are UTC. No verification period is assumed. Phone/website visibility defaults off; administrators may record explicit consent, with actor/time/flags and findings captured privately. Nothing publishes these contacts in M2.3.
+
+The trusted endpoint verifies designated administrator identity with revocation checking. It uses strict request allowlists, optimistic case revisions, command IDs for lost-response retry, and Firestore transactions. Canonical profile, protected users/bidders dealerId links, licence/UID identity reservations, case revision and immutable before/after audit commit together. Existing roles and unrelated account fields are preserved. Rejection and suspension retain the links/history and change eligibility instead of deleting records. Resuming a suspended/rejected profile requires explicit re-verification; renew/update cannot reactivate it.
+
+Licence identity and primary representative reassignment are outside this bounded milestone. Conflicting links, duplicate normalized licence/jurisdiction identities and duplicate representatives fail closed. Pre-existing profiles without a managed verification case require reconciliation rather than automatic adoption. Legacy profile duplicate checks cap jurisdiction inventory at 200 and fail closed beyond that; no migration or cleanup is performed. Canonical/legacy application copies have separate provenance; verifying the same dealership again through another case is rejected rather than creating another profile.
+
+## Persistence and security
+
+- `dealerVerificationCases/{sha256(source:applicationId)}`: private current case revision/status and optional dealerId.
+- `dealer_profiles/{dealerId}`: private canonical business, representative, review evidence, consent and expiry.
+- `dealerIdentityClaims/{licence_hash|uid_hash}`: server-only uniqueness reservations retained after rejection/suspension.
+- `dealer_verification_audits/{sha256(caseId:commandId)}`: append-only decision/reason/actor/time/revision and full relevant before/after. Read history is paginated, newest 20 at a time, capped to the read case revision.
+
+Client writes to profiles, cases, identity claims and audits are denied, including designated administrator browser writes. Only designated admins may read profiles/cases/audits; claims have no client access. Server credentials inherently bypass Firestore rules; audit immutability here is enforced by the trusted endpoint's create-only operations and client rules, not a claim that cloud administrators cannot modify data.
+
+`firestore.indexes.json` declares the private audit caseId/revision index and is bound to the existing named database in firebase.json. Any separately approved live rollout must include that index and the source Firestore rules before enabling operational use; Vercel does not deploy these. Emulator tests do not verify deployed indexes. The existing deploy:rules command publishes rules only. No live Firebase resources are touched by acceptance tests.
+
+## Dealer listing eligibility
+
+The shared server guard checks canonical verified status, strictly future expiry using server time, exact representative UID, and both protected account links. It applies transactionally to dealer-attributed seller narrative saves, submission, upload registration and media removal. Upload also checks before writing Storage; a concurrent suspension before metadata registration prevents attachment. As with the existing upload design, a cross-service interruption can leave a private unattached object for reconciliation. Private seller operations are unchanged. Draft reading/media preview and administrator moderation remain available for inspection. Existing token verification still applies.
+
+No scheduler is needed for expiry denial. No automatic application/vehicle approval, lot creation/conversion/publication, public snapshot, dealer badge/directory, multi-seat access, email, registry integration, payment/tax feature or production Storage work is included. Disabled conversion stays disabled. M2.4 will consume the guard when adding protected dealer attribution and listing creation.
+
+Auth and Firestore cannot share a transaction: representative eligibility is checked against authoritative Auth immediately before the Firestore operation. Dealer listing requests also require a currently valid verified token. This does not claim atomic coordination with a simultaneous external Auth account change.
+
+## Verification and owner-local acceptance
+
+Focused endpoint tests cover strict parsing, forged/unverified administrator identity, ineligible representative records and the shared eligibility boundary. The demo-emulator suite exercises real Auth account lookup, real Firestore transaction conflict/retry, failed-commit rollback, duplicate/conflicting links, state transitions, expiry/suspension rejection through actual seller save/submit handlers, immutable client-write rules, role preservation and unchanged application/lot curation. Authentication is injected in focused transaction tests; the browser test uses emulator sign-in, native API routing and actual UI components. Browser acceptance also retains private seller, seller media, M2.1 and M2.2 regressions.
+
+Required checks: build, lint, endpoint/native API runtime tests, Firestore rules tests, seller workflow emulators and auction browser acceptance. Record actual results on the PR's exact head. Local Chromium startup is unavailable in ChatGPT's terminal; browser execution is delegated to the existing GitHub CI environment, not claimed as owner acceptance.
+
+After the task branch is available, use a clean owner checkout on `feature/m2-3-dealer-verification` and `npm ci`, then run `npm run test:seller-browser`. This guarded harness uses only `demo-wailtail-stage3` and loopback Auth/Firestore/Storage. Open its printed local URL, go to `/intake`, submit a synthetic dealer application, and open `/admin?tab=consignments`. Synthetic representative UID is available from `/fixture` as `dealerRepresentativeUid`; this is harness-only data, not a production endpoint.
+
+Jeremy's review: verify scrolling at desktop/mobile widths; inspect submitted claims versus canonical fields; save pending findings; verify using the synthetic UID, business address, manual evidence and future UTC expiry; confirm both public-contact flags default off; reload to verify persistence/history; suspend and reverify; confirm the application remains pending and no lot/account-role promotion occurs. Do not use real customer or business data in synthetic fixtures. Local visual/functional acceptance must precede PR merge approval. Production remains separate.

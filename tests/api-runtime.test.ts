@@ -43,7 +43,7 @@ test('compiled API handlers load in native Node ESM and retain method guards', a
     `;
     await writeFile(join(root, 'check.mjs'), script);
     const result = execFileSync(process.execPath, ['check.mjs'], { cwd: root, encoding: 'utf8', timeout: 30000 });
-    assert.match(result, /Native runtime passed for 32 handlers/);
+    assert.match(result, /Native runtime passed for 33 handlers/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

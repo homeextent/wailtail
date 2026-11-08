@@ -1,3 +1,4 @@
+import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 const MAX_HEADING_LENGTH = 240;
@@ -140,6 +141,7 @@ async function handleSellerDraftCommand(
       const record = auction.data();
       const decision = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
       if (decision !== 200) return decision;
+      if (!await dealerListingEligible(transaction, firestore, record!, uid)) return 403;
 
       const updatedAt = Date.now();
       if (submit) {
@@ -208,6 +210,7 @@ async function handleSellerDraftCommand(
       return 200;
     });
 
+    if (status === 403) return res.status(403).json({ error: 'dealer-verification-required' });
     if (status === 404) return res.status(404).json({ error: 'draft-not-found' });
     if (status === 409) return res.status(409).json({ error: 'draft-state-or-revision-conflict' });
     if (status === 422) return res.status(422).json({ error: 'incomplete-draft' });

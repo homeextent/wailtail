@@ -1,3 +1,4 @@
+import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
@@ -31,7 +32,12 @@ export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseA
     if (!input) return res.status(422).json({ error: 'invalid-draft-image' });
 
     const auction = firestore.collection('auctions').doc(input.auctionId);
-    const decision = checkDraftNarrativeWrite((await auction.get()).data(), uid, input.expectedRevision);
+    const decision = await firestore.runTransaction(async transaction => {
+      const record = (await transaction.get(auction)).data();
+      const access = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
+      if (access !== 200) return access;
+      return await dealerListingEligible(transaction, firestore, record!, uid) ? 200 : 403;
+    });
     if (decision !== 200) return res.status(decision).json({ error: 'draft-unavailable' });
 
     const activeAssets = auction.collection('draftAssets').where('removedAt', '==', null).limit(100);
@@ -54,8 +60,10 @@ export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseA
     // Storage and Firestore cannot share a transaction. An interrupted or
     // rejected write can leave a private unattached object for reconciliation.
     const status = await firestore.runTransaction(async transaction => {
-      const current = checkDraftNarrativeWrite((await transaction.get(auction)).data(), uid, input.expectedRevision);
+      const record = (await transaction.get(auction)).data();
+      const current = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
       if (current !== 200) return current;
+      if (!await dealerListingEligible(transaction, firestore, record!, uid)) return 403;
 
       if ((await transaction.get(activeAssets)).size >= 100) return 409;
 

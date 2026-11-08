@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { isDesignatedAdminEmail, normalizeEmail } from '../../src/config/adminConfig.js';
 import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
@@ -38,7 +39,9 @@ export function handleConsignmentReview(req: any, res: any, services?: Pick<Fire
       if (!application) return { status: 404 };
       const review = (await transaction.get(reviewRef)).data() ?? { revision: 0, assigneeEmail: '' };
       if (input.action === 'read') {
-        const dealerId = application.dealerId;
+        const verificationCase = (await transaction.get(firestore.collection('dealerVerificationCases').doc(
+          createHash('sha256').update(`${input.source}:${input.applicationId}`).digest('hex')))).data();
+        const dealerId = verificationCase?.dealerId ?? application.dealerId;
         const profile = typeof dealerId === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(dealerId)
           ? (await transaction.get(firestore.collection('dealer_profiles').doc(dealerId))).data() : undefined;
         const verifiedInformation = profile ? Object.fromEntries([
