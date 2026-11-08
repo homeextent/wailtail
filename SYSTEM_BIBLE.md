@@ -2125,7 +2125,7 @@ The Verified Boutique Dealer initiative establishes the data models, identity re
 
 High-value automotive auctions present unique regulatory, tax, and licensing challenges when inventory is consigned or sold by licensed dealers rather than private individuals. In Canada, licensed motor vehicle dealers operate under provincial regulatory frameworks (such as OMVIC in Ontario, VSA in British Columbia, or AMVIC in Alberta) and are subject to mandatory retail disclosure obligations, documentation fee transparency, and distinct sales tax collection mandates.
 
-M1 and M1.1 established the foundational dealer identity schemas. M2.2 intake is now accepted on staging; M2.3 manual verification implementation awaits local acceptance. Listing attribution remains M2.4, and public dealer showroom profiles are excluded from Phase 1.
+M1 and M1.1 established the foundational dealer identity schemas. M2.2 intake is now accepted on staging; M2.3 manual verification is accepted on staging via PR #7 (`d3c5cc5`). Listing attribution remains M2.4, and public dealer showroom profiles are excluded from Phase 1.
 
 ### 9.2 Dealer Identity Architecture
 
@@ -2220,7 +2220,7 @@ Production Cloud Firestore security rules (`firestore.rules`) enforce strict aut
      - No exhaustive full-codebase Firestore security audit across unrelated collections was performed.
      - Positive administrator-write authorization tests for protected fields were not performed in this probe run.
      - End-to-end dealer consignment intake, verification approval, and listing conversion workflows were not executed.
-     - Historical M1 probe scope only. Current M2.2 intake is accepted on staging; M2.3 verification implementation awaits local acceptance; dealer catalog badges remain M2.4 work.
+     - Historical M1 probe scope only. Current M2.2 intake is accepted on staging; M2.3 verification is accepted on staging via PR #7 (`d3c5cc5`); dealer catalog badges remain M2.5 work.
      - This release represents foundational M1/M1.1 milestone completion, not full Phase 1 platform delivery.
 
 ### 9.5 Production Deployment & Release Status
@@ -2349,7 +2349,7 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
 - **M2.1**: **ACCEPTED ON STAGING** (PR #5, `e7de147`, passing post-merge checks and owner-confirmed local visual/functional acceptance). See [M2.1 acceptance](docs/m2-1-consignment-review.md).
 - **M2.2**: **ACCEPTED ON STAGING** (PR #6, `74d9089`, passing post-merge checks and Jeremy-confirmed local acceptance/synchronization).
-- **M2.3**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**. See [M2.3 acceptance](docs/m2-3-dealer-verification.md).
+- **M2.3**: **ACCEPTED ON STAGING** (PR #7, `d3c5cc5`; Jeremy locally accepted reviewed head `75d3641`, approved the merge and confirmed clean local staging synchronization; exact-head/post-merge CI and Vercel checks passed). See [M2.3 acceptance](docs/m2-3-dealer-verification.md).
 - **M2.4 through M2.5**: **PLANNED**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
@@ -2398,7 +2398,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
 │ M2.1               │ Admin Consignment Review              │ ACCEPTED (STAGING)  │
 │ M2.2               │ Dealer Application Intake             │ ACCEPTED ON STAGING │
-│ M2.3               │ Manual Dealer Verification & Profiles │ LOCAL REVIEW PENDING│
+│ M2.3               │ Manual Dealer Verification & Profiles │ ACCEPTED ON STAGING │
 │ M2.4               │ Dealer Vehicle Listing Integration    │ PLANNED             │
 │ M2.5               │ Public Dealer Presentation & Badging  │ PLANNED             │
 │ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
@@ -2522,9 +2522,10 @@ Implementation contract:
 - See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). For all visual implementations, Jeremy must confirm a local visual/functional review before approving the PR merge. Automated browser checks do not substitute for that review.
 
 #### M2.3 — Manual Dealer Verification and Canonical Profile Creation
-- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Status**: **ACCEPTED ON STAGING** (PR #7, reviewed head `75d3641`, merge `d3c5cc5`, November 8, 2026).
+- **Acceptance evidence**: Jeremy confirmed the revised interface and representative selection locally before explicitly approving the merge. Exact-head CI run `42505627075` (attempt 2), post-merge CI run `42507149793` and Vercel checks passed; the owner confirmed clean local staging synchronization at `d3c5cc5`. See the M2.3 guide for linked evidence. No production promotion or live Firebase rules/index publication is claimed.
 - **Local review follow-up**: Exact email/UID account lookup is designated-admin-only, returns minimal eligibility data, requires explicit selection and makes no linking writes. Save rechecks authoritative Auth and transactional conflicts. Method/source dropdowns guide human review; Other retains custom methods and source descriptions always remain required. Local timezone-labelled date controls convert to absolute timestamps; no fixed verification duration is assumed.
-- **Implementation boundary (2026-11-08)**: [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Dedicated view is reached through Consignment Pipeline → View application → Manage dealer verification. Strict admin endpoint atomically writes canonical profile, exact verified-Auth UID associations, identity claims, private case revision and append-only before/after audit. Rejected/pending guests need no canonical profile. Licence/representative reassignment and legacy profile adoption are excluded. Explicit future expiry, manual evidence and contact consent are recorded; dealer seller mutations use a shared server eligibility guard. No vehicle approval, role promotion, conversion or public snapshot is included. Source rules/index changes require a separately approved live rollout; no deployment is claimed. Jeremy must locally review visual/functional behavior before approving the PR merge.
+- **Implementation boundary (2026-11-08)**: [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Dedicated view is reached through Consignment Pipeline → View application → Manage dealer verification. Strict admin endpoint atomically writes canonical profile, exact verified-Auth UID associations, identity claims, private case revision and append-only before/after audit. Rejected/pending guests need no canonical profile. Licence/representative reassignment and legacy profile adoption are excluded. Explicit future expiry, manual evidence and contact consent are recorded; dealer seller mutations use a shared server eligibility guard. No vehicle approval, role promotion, conversion or public snapshot is included. Source rules/index changes require a separately approved live rollout; no deployment is claimed. Future visual changes require Jeremy’s local visual/functional review before their PR merge approval.
 - **Objectives**: Build administrative verification tooling to review dealer credentials, verify provincial regulatory licenses, generate canonical dealer profiles, and log audit trails.
 - **Business Rationale**: Enforces strict human verification of dealer credentials before granting boutique dealer status, ensuring regulatory compliance.
 - **Key Deliverables**:
