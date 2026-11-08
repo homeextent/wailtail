@@ -10,7 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.2 — Dealer Application and Intake (2026-11-07; local review pending)
 
-- Made the existing mandatory dealer declarations visible in submission readiness: the submit button now stays disabled until required dealer/representative details and all three declarations are complete. Added required markers, explanatory text and browser checks for each unchecked declaration and a missing licence. Existing HTML, handler and server enforcement remain in place.
+- Corrected the over-restrictive text-state readiness gate reported during local review: explicit consent/declaration checkboxes gate the button; native field validation and trusted server validation enforce required details. Submission reads actual visible FormData values, including autofilled contacts/business/location, and retains them on failure. Added a browser regression using native value setters without React input events and checking persisted values.
+
+- Made the existing mandatory dealer declarations visible in submission readiness: the submit button stays disabled until the ownership/terms agreement and all three declarations are confirmed. Required details are validated on submission. Added required markers, explanatory text and browser checks for each unchecked declaration and a missing licence. Existing HTML and server enforcement remain in place.
 
 - Corrected the local-review scrolling defect: a shrinkable scroll container now surrounds the disabled-state fieldset. Added real wheel-input coverage for both applicant modes at desktop and mobile widths; programmatic submission tests alone did not establish field reachability.
 

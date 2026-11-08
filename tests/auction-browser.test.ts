@@ -311,7 +311,9 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[${index}].click(); return true; })()`);
     }
     await fill('input[aria-label="Dealer licence number"]', '');
-    assert.equal(await submitEnabled(), false, 'missing dealer licence must disable submit');
+    assert.equal(await submitEnabled(), true, 'field validation must remain accessible after declarations are accepted');
+    await submitIntake();
+    assert.equal((await intakeRecords()).length, 0, 'missing licence must still block submission');
     await fill('input[aria-label="Dealer licence number"]', 'TEST-456');
     assert.equal(await submitEnabled(), true);
 
@@ -320,12 +322,22 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Synthetic persistence failure'), 'intake failure retained');
     const retainedDealer = await command('Runtime.evaluate', { expression: `document.querySelector('input[aria-label="Legal business name"]').value`, returnByValue: true });
     assert.equal(retainedDealer.result?.value, 'Synthetic Dealer Inc.'); assert.equal((await intakeRecords()).length, 0);
+    await command('Runtime.evaluate', { expression: `(() => {
+      const values = { submittedDealershipName: 'Autofilled Dealer Inc.', sellerName: 'Autofilled Representative', sellerPhone: '905-555-9999', locationCity: 'Autofilled City' };
+      for (const [name, value] of Object.entries(values)) Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(document.querySelector('input[name="' + name + '"]'), value);
+    })()` });
+    assert.equal(await submitEnabled(), true, 'visible autofilled text must not be locked behind stale React state');
     await submitIntake();
     await eventually(text, value => value.includes('Consignment Request Received!'), 'dealer submission success');
+    assert.ok((await text()).includes('Synthetic Dealer Fixture'), 'success view preserves custom vehicle identity');
     const dealerRecords = await eventually(intakeRecords, value => value.length === 1, 'dealer persisted');
     assert.equal(dealerRecords[0].applicantType, 'dealer'); assert.equal(dealerRecords[0].status, 'pending');
     assert.equal(dealerRecords[0].noBrokeredInventoryDeclaration, true); assert.equal(dealerRecords[0].declarationAcceptedAt, dealerRecords[0].submittedAt);
     assert.equal(dealerRecords[0].dealerId, undefined);
+    assert.equal(dealerRecords[0].submittedDealershipName, 'Autofilled Dealer Inc.');
+    assert.equal(dealerRecords[0].sellerName, 'Autofilled Representative');
+    assert.equal(dealerRecords[0].sellerPhone, '905-555-9999');
+    assert.equal(dealerRecords[0].locationCity, 'Autofilled City');
     await command('Page.navigate', { url: origin + '/intake' });
     await eventually(text, value => value.includes('Who is submitting this vehicle?'), 'private intake');
     assert.ok(!(await text()).includes('Dealership details'));
@@ -343,7 +355,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
-    await eventually(text, value => value.includes('Synthetic Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
+    await eventually(text, value => value.includes('Autofilled Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
     assert.ok((await text()).includes('No linked canonical dealer verification information.'));
 
   } catch (error) {

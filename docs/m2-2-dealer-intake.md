@@ -6,7 +6,7 @@ Implementation based on staging `e7de147`. Local visual/functional review and PR
 
 The existing `ConsignmentModal` defaults to Private seller. Dealer selection reveals legal business name, optional trade name/DBA, dealer licence number and one of 13 Canadian licensing jurisdictions. Existing contact fields become the primary authorized representative's name, email and required phone. Switching classifications clears declaration selections; private payloads omit dealer fields.
 
-The submit button remains disabled until required dealer business/representative details and all three declarations are complete. Required markers and a footer explanation make this visible. HTML validation, the submit handler and the trusted endpoint independently enforce the requirement.
+The submit button is gated by the explicit ownership/terms checkbox and all three dealer declarations. Required text/select fields are validated on submission, with native field-specific validation identifying missing/invalid controls; they do not silently disable the button through React state. Submission reads visible named controls through FormData, including browser-autofilled values that may not emit change events, and retains those values on a failed request. The trusted endpoint independently enforces all required details and declarations.
 
 Dealers must explicitly affirm all three declarations, initially unchecked:
 
