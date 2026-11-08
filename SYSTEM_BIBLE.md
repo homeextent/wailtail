@@ -681,6 +681,7 @@ export interface DealerProfile {
   verificationCaseId?: string;
   primaryRepresentativeEmail?: string;
   sourceReferenceDescription?: string;
+  sourceReferenceType?: string;
   checkedAt?: number;
   contactVisibilityConsent?: { phone: boolean; website: boolean; recordedAt: number; recordedBy: string };
   createdAt: number;
@@ -2522,6 +2523,7 @@ Implementation contract:
 
 #### M2.3 — Manual Dealer Verification and Canonical Profile Creation
 - **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Local review follow-up**: Exact email/UID account lookup is designated-admin-only, returns minimal eligibility data, requires explicit selection and makes no linking writes. Save rechecks authoritative Auth and transactional conflicts. Method/source dropdowns guide human review; Other retains custom methods and source descriptions always remain required. Local timezone-labelled date controls convert to absolute timestamps; no fixed verification duration is assumed.
 - **Implementation boundary (2026-11-08)**: [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Dedicated view is reached through Consignment Pipeline → View application → Manage dealer verification. Strict admin endpoint atomically writes canonical profile, exact verified-Auth UID associations, identity claims, private case revision and append-only before/after audit. Rejected/pending guests need no canonical profile. Licence/representative reassignment and legacy profile adoption are excluded. Explicit future expiry, manual evidence and contact consent are recorded; dealer seller mutations use a shared server eligibility guard. No vehicle approval, role promotion, conversion or public snapshot is included. Source rules/index changes require a separately approved live rollout; no deployment is claimed. Jeremy must locally review visual/functional behavior before approving the PR merge.
 - **Objectives**: Build administrative verification tooling to review dealer credentials, verify provincial regulatory licenses, generate canonical dealer profiles, and log audit trails.
 - **Business Rationale**: Enforces strict human verification of dealer credentials before granting boutique dealer status, ensuring regulatory compliance.

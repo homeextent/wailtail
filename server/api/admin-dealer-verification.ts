@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDesignatedAdminEmail, normalizeEmail } from '../../src/config/adminConfig.js';
 import { CANADIAN_LICENSING_JURISDICTIONS } from '../../src/config/consignmentIntake.js';
+import { DEALER_VERIFICATION_SOURCES } from '../../src/config/dealerVerification.js';
 import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
 
@@ -12,17 +13,23 @@ const profileFields = ['legalBusinessName', 'dbaName', 'dealerLicenseNumber', 'l
 export function parseDealerVerification(body: any) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).some(key => !['applicationId', 'source', 'action', 'expectedRevision', 'commandId',
-        'reason', 'verificationMethod', 'sourceReferenceDescription', 'checkedAt', 'profile', 'beforeRevision'].includes(key)) ||
+        'reason', 'verificationMethod', 'sourceReferenceDescription', 'sourceReferenceType', 'checkedAt', 'profile', 'beforeRevision', 'accountQuery', 'accountLookupType'].includes(key)) ||
       typeof body.applicationId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(body.applicationId) ||
       !['consignment_applications', 'consignments'].includes(body.source)) return null;
+  if (body.action === 'lookup_account') return Object.keys(body).every(key =>
+    ['applicationId', 'source', 'action', 'accountQuery', 'accountLookupType'].includes(key)) &&
+    typeof body.accountQuery === 'string' && body.accountQuery === body.accountQuery.trim() &&
+    (body.accountLookupType === 'uid' ? /^[a-zA-Z0-9_-]{1,128}$/.test(body.accountQuery) :
+      body.accountLookupType === 'email' && body.accountQuery.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.accountQuery)) ? body : null;
   if (body.action === 'read') return Object.keys(body).every(key => ['applicationId', 'source', 'action', 'beforeRevision'].includes(key)) &&
     (body.beforeRevision === undefined || (Number.isSafeInteger(body.beforeRevision) && body.beforeRevision > 0)) ? body : null;
   if (!actions.includes(body.action) || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0 ||
       body.expectedRevision >= Number.MAX_SAFE_INTEGER || typeof body.commandId !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(body.commandId) || 'beforeRevision' in body ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(body.commandId) || ['beforeRevision', 'accountQuery', 'accountLookupType'].some(key => key in body) ||
       typeof body.reason !== 'string' || !body.reason.trim() || body.reason.length > 4000) return null;
   const needsProfile = ['verified', 'updated', 'renewed'].includes(body.action);
   if (needsProfile) {
+    if (body.sourceReferenceType !== undefined && !DEALER_VERIFICATION_SOURCES.includes(body.sourceReferenceType)) return null;
     const p = body.profile;
     if (!p || typeof p !== 'object' || Array.isArray(p) || Object.keys(p).some(key => !profileFields.includes(key)) ||
         profileFields.some(key => !(key in p)) ||
@@ -38,7 +45,7 @@ export function parseDealerVerification(body: any) {
     if (typeof body.verificationMethod !== 'string' || !body.verificationMethod.trim() || body.verificationMethod.length > 1000 ||
         typeof body.sourceReferenceDescription !== 'string' || !body.sourceReferenceDescription.trim() || body.sourceReferenceDescription.length > 2000 ||
         !Number.isSafeInteger(body.checkedAt) || body.checkedAt <= 0) return null;
-  } else if (['profile', 'verificationMethod', 'sourceReferenceDescription', 'checkedAt'].some(key => key in body)) return null;
+  } else if (['profile', 'verificationMethod', 'sourceReferenceDescription', 'sourceReferenceType', 'checkedAt'].some(key => key in body)) return null;
   return body;
 }
 
@@ -47,6 +54,22 @@ export function handleDealerVerification(req: any, res: any, services?: Pick<Fir
     if (!isDesignatedAdminEmail(email)) return res.status(403).json({ error: 'administrator-required' });
     const input = parseDealerVerification(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-dealer-verification' });
+    if (input.action === 'lookup_account') {
+      const application = (await firestore.collection(input.source).doc(input.applicationId).get()).data();
+      if (application?.applicantType !== 'dealer') return res.status(404).json({ error: 'dealer-application-not-found' });
+      try {
+        const account = input.accountLookupType === 'email' ? await auth.getUserByEmail(input.accountQuery) : await auth.getUser(input.accountQuery);
+        const eligible = !!account.email && account.emailVerified && !account.disabled && !isDesignatedAdminEmail(account.email);
+        // Minimal admin-only projection; no tokens, claims, provider data or account enumeration.
+        return res.status(200).json({ account: { uid: account.uid, email: account.email || '',
+          displayName: account.displayName || '', emailVerified: account.emailVerified, disabled: account.disabled,
+          eligible, eligibilityMessage: eligible ? 'Account eligible; confirm representative authority before selection.' :
+            'Account must have a verified email, be enabled, and not be a designated administrator.' } });
+      } catch (error: any) {
+        if (error?.code === 'auth/user-not-found') return res.status(404).json({ error: 'representative-account-not-found' });
+        throw error;
+      }
+    }
     const caseId = hash(`${input.source}:${input.applicationId}`);
     const caseRef = firestore.collection('dealerVerificationCases').doc(caseId);
     const auditCollection = firestore.collection('dealer_verification_audits');
@@ -114,6 +137,7 @@ export function handleDealerVerification(req: any, res: any, services?: Pick<Fir
         next = { ...Object.fromEntries(Object.entries(candidate).map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value])), primaryRepresentativeEmail: representativeEmail, id: dealerId, verificationCaseId: caseId, verificationStatus: 'verified',
           verifiedAt: now, verifierUid: uid, verificationMethod: input.verificationMethod.trim(),
           sourceReferenceDescription: input.sourceReferenceDescription.trim(), checkedAt: input.checkedAt,
+          ...(input.sourceReferenceType !== undefined ? { sourceReferenceType: input.sourceReferenceType } : {}),
           contactVisibilityConsent: { phone: candidate.displayPhonePublicly, website: candidate.displayWebsitePublicly, recordedAt: now, recordedBy: uid },
           createdAt: previous?.createdAt ?? now, updatedAt: now };
         transaction.set(licenceRef, { dealerId }); transaction.set(repRef, { dealerId });

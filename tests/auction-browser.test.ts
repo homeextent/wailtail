@@ -381,28 +381,49 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     };
     await saveVerification();
     assert.equal((await verificationState()).profile, null);
+    await command('Emulation.setTimezoneOverride', { timezoneId: 'America/Toronto' });
     await fill('select[aria-label="Verification action"]', 'verified', true);
-    for (const [label, value] of [
-      ['Verified legal business name', 'Canonical Browser Dealer Inc.'], ['Verified dealer licence number', 'BROWSER-789'],
-      ['Primary representative Firebase UID', fixture.dealerRepresentativeUid], ['Business street address', '1 Synthetic Street'],
-      ['Business postal code', 'L2R1A1'], ['Business city', 'St. Catharines'], ['Business phone', '905-555-0100'],
-      ['Verification method', 'Manual synthetic regulator check']
-    ]) await fill(`input[aria-label="${label}"]`, value);
-    for (const label of ['Licensing province / territory', 'Business province / territory']) await fill(`select[aria-label="${label}"]`, 'ON', true);
-    await fill('textarea[aria-label="Source / reference description"]', 'Synthetic registry and representative authorization reference');
-    await fill('input[aria-label="Manual check time UTC"]', new Date(Date.now() - 60000).toISOString().slice(0,16));
-    await fill('input[aria-label="Verification expiry UTC"]', new Date(Date.now() + 86400000).toISOString().slice(0,16));
-    await fill('textarea[aria-label="Verification findings"]', 'Manually confirmed synthetic business, licence and representative authority. No public contact consent.');
-    await fill('input[aria-label="Primary representative Firebase UID"]', 'missing-synthetic-representative');
-    await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action')?.scrollIntoView({block:'end'})` });
-    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save verification action'); if (!b || b.disabled) return false; b.click(); return true; })()`);
-    await eventually(text, value => value.includes('eligible-verified-representative-required'), 'invalid representative error shown');
+    await fill('select[aria-label="Account lookup type"]', 'uid', true);
+    await fill('input[aria-label="Account lookup value"]', 'missing-synthetic-representative');
+    const findAccount = () => click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Find representative account'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await findAccount();
+    await eventually(text, value => value.includes('No account matches that exact email or UID'), 'missing account lookup error shown');
     const errorFeedback = await command('Runtime.evaluate', { expression: `(() => { const el = document.querySelector('[aria-label="Verification result"]'); const bounds = el?.getBoundingClientRect(); return !!bounds && bounds.top >= 0 && bounds.bottom <= innerHeight && document.activeElement === el; })()`, returnByValue: true });
     assert.equal(errorFeedback.result?.value, true, 'error feedback scrolls into view and receives focus');
-    assert.equal((await verificationState()).events, 1, 'invalid representative creates no decision');
-    await fill('input[aria-label="Primary representative Firebase UID"]', fixture.dealerRepresentativeUid);
+    await fill('input[aria-label="Account lookup value"]', fixture.dealerRepresentativeUid);
+    await findAccount();
+    await eventually(text, value => value.includes('Account eligible; confirm representative authority'), 'exact representative lookup');
+    const beforeSelection = await command('Runtime.evaluate', { expression: `document.querySelector('input[name="primaryRepresentativeUid"]').value`, returnByValue: true });
+    assert.equal(beforeSelection.result?.value, '', 'lookup must not select automatically');
+    const emailResult = await command('Runtime.evaluate', { expression: `document.querySelector('[data-testid="representative-account-email"]').textContent`, returnByValue: true });
+    await fill('select[aria-label="Account lookup type"]', 'email', true);
+    await fill('input[aria-label="Account lookup value"]', emailResult.result.value);
+    await findAccount();
+    await eventually(text, value => value.includes('Account eligible; confirm representative authority'), 'exact email lookup');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Confirm and select this representative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    const selection = await command('Runtime.evaluate', { expression: `document.querySelector('input[name="primaryRepresentativeUid"]').value`, returnByValue: true });
+    assert.equal(selection.result?.value, fixture.dealerRepresentativeUid);
+    assert.equal((await verificationState()).events, 1, 'lookup and selection create no decision');
+    for (const [label, value] of [
+      ['Verified legal business name', 'Canonical Browser Dealer Inc.'], ['Verified dealer licence number', 'BROWSER-789'],
+      ['Business street address', '1 Synthetic Street'],
+      ['Business postal code', 'L2R1A1'], ['Business city', 'St. Catharines'], ['Business phone', '905-555-0100']
+    ]) await fill(`input[aria-label="${label}"]`, value);
+    for (const label of ['Licensing province / territory', 'Business province / territory']) await fill(`select[aria-label="${label}"]`, 'ON', true);
+    await fill('select[aria-label="Verification method"]', 'Other', true);
+    await fill('input[aria-label="Other verification method"]', 'Manual synthetic regulator check');
+    await fill('select[aria-label="Verification source type"]', 'Other', true);
+    await fill('textarea[aria-label="Source / reference description"]', 'Synthetic registry and representative authorization reference');
+    const browserDates = await command('Runtime.evaluate', { expression: `[-60000,86400000].map(offset => { const d = new Date(Date.now()+offset); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16); })`, returnByValue: true });
+    await fill('input[aria-label="Manual check time local"]', browserDates.result.value[0]);
+    await fill('input[aria-label="Verification expiry local"]', browserDates.result.value[1]);
+    const expectedDates = await command('Runtime.evaluate', { expression: `['checkedAt','expiry'].map(name => new Date(document.querySelector('input[name="'+name+'"]').value).getTime())`, returnByValue: true });
+    await fill('textarea[aria-label="Verification findings"]', 'Manually confirmed synthetic business, licence and representative authority. No public contact consent.');
     await saveVerification();
     const verified = await eventually(verificationState, value => value.profile?.verificationStatus === 'verified', 'canonical dealer and links committed');
+    assert.equal(verified.profile.checkedAt, expectedDates.result.value[0]);
+    assert.equal(verified.profile.verificationExpiresAt, expectedDates.result.value[1]);
+    assert.equal(verified.profile.verificationMethod, 'Manual synthetic regulator check'); assert.equal(verified.profile.sourceReferenceType, 'Other');
     assert.equal(verified.events, 2); assert.equal(verified.user.dealerId, verified.profile.id); assert.equal(verified.bidder.dealerId, verified.profile.id);
     assert.equal(verified.user.role, 'bidder'); assert.equal(verified.application.status, 'pending'); assert.equal(verified.application.dealerId, undefined);
     assert.equal(verified.profile.displayPhonePublicly, false); assert.equal(verified.profile.displayWebsitePublicly, false);
@@ -417,6 +438,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Canonical Browser Dealer Inc.') && value.includes('suspended'), 'canonical verification visible in application review after reload');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage dealer verification'); if (!b) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Synthetic administrative suspension') && value.includes('Immutable private verification history'), 'verification history survives reload');
+    await fill('select[aria-label="Verification action"]', 'verified', true);
+    const restored = await command('Runtime.evaluate', { expression: `({method:document.querySelector('input[aria-label="Other verification method"]').value, checkedAt:document.querySelector('input[name="checkedAt"]').value, expiry:document.querySelector('input[name="expiry"]').value})`, returnByValue: true });
+    assert.equal(restored.result.value.method, 'Manual synthetic regulator check');
+    assert.equal(restored.result.value.checkedAt, browserDates.result.value[0]); assert.equal(restored.result.value.expiry, browserDates.result.value[1]);
 
 
   } catch (error) {

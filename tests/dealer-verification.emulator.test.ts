@@ -28,7 +28,7 @@ test('M2.3 real transactions: identity conflicts, immutable decisions, atomic li
     province: 'ON', phone: '9055550100', website: '', displayPhonePublicly: false, displayWebsitePublicly: false, verificationExpiresAt: Date.now() + 86400000 };
   const command = { ...base, action: 'verified', expectedRevision: 0, commandId: randomUUID(), profile, reason: 'Manual synthetic test evidence',
     verificationMethod: 'Manual synthetic registry check', sourceReferenceDescription: 'Synthetic record', checkedAt: Date.now() - 60000 };
-  const services = { firestore, auth: { verifyIdToken: async () => ({ uid: 'admin', email: 'jeremygoodmurphy@gmail.com', email_verified: true }), getUser: (id: string) => auth.getUser(id) } } as any;
+  const services = { firestore, auth: { verifyIdToken: async () => ({ uid: 'admin', email: 'jeremygoodmurphy@gmail.com', email_verified: true }), getUser: (id: string) => auth.getUser(id), getUserByEmail: (email: string) => auth.getUserByEmail(email) } } as any;
   const invoke = async (body: any, svc = services) => {
     const res = { code: 200, data: undefined as any, setHeader() {}, status(n: number) { this.code = n; return this; }, json(data: any) { this.data = data; return this; } };
     await handleDealerVerification({ method: 'POST', headers: { authorization: 'Bearer synthetic' }, body }, res, svc); return res;
@@ -42,6 +42,13 @@ test('M2.3 real transactions: identity conflicts, immutable decisions, atomic li
     await auth.createUser({ uid, email: `rep-${randomUUID()}@example.test`, emailVerified: true });
     await auth.createUser({ uid: unverifiedUid, email: `unverified-${randomUUID()}@example.test`, emailVerified: false });
     await application.set(original);
+    const lookup = { ...base, action: 'lookup_account', accountLookupType: 'uid', accountQuery: uid };
+    const found = await invoke(lookup); assert.equal(found.data.account.uid, uid); assert.equal(found.data.account.eligible, true);
+    assert.equal((await invoke({ ...lookup, accountLookupType: 'email', accountQuery: found.data.account.email })).data.account.uid, uid);
+    assert.equal((await firestore.collection('users').doc(uid).get()).exists, false, 'lookup creates no links');
+    await auth.updateUser(uid, { emailVerified: false });
+    assert.equal((await invoke(command)).code, 422, 'save rechecks Auth after an eligible lookup');
+    await auth.updateUser(uid, { emailVerified: true });
     assert.equal((await read()).data.profile, null);
     assert.equal((await firestore.collection('dealerVerificationCases').doc(caseId).get()).exists, false);
     assert.equal((await invoke({ ...command, profile: { ...profile, primaryRepresentativeUid: unverifiedUid } })).code, 422);

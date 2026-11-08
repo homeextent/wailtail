@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import { handleDealerVerification, parseDealerVerification } from '../server/api/admin-dealer-verification';
 import { dealerListingEligible } from '../server/api/_lib/dealerEligibility';
 
@@ -54,4 +55,39 @@ test('M2.3 shared dealer eligibility denies expired, suspended, missing and mism
     assert.equal(await dealerListingEligible(transaction, firestore, listing, 'rep', now), expected);
   }
   assert.equal(await dealerListingEligible({ get: () => assert.fail('private seller must not query dealer data') } as any, firestore, { sellerId: 'private' }, 'private', now), true);
+});
+
+test('M2.3 exact account lookup is admin-only, read-only, minimally projected and never auto-links', async () => {
+  const base = { applicationId: 'application', source: 'consignment_applications', action: 'lookup_account', accountLookupType: 'email', accountQuery: 'rep@example.test' };
+  for (const bad of [{ ...base, profile: dealerProfile }, { ...base, accountQuery: 'rep*' }, { ...base, accountLookupType: 'name' }, { ...base, accountQuery: ' rep@example.test' }, { ...verificationCommand, accountQuery: 'rep@example.test' }]) assert.equal(parseDealerVerification(bad), null);
+  let lookups = 0;
+  const record = { uid: 'rep', email: 'rep@example.test', displayName: 'Synthetic representative', emailVerified: true, disabled: false, customClaims: { secret: true }, tokensValidAfterTime: 'private' };
+  const services = { auth: { verifyIdToken: async () => admin, getUserByEmail: async (value: string) => { assert.equal(value, record.email); lookups++; return record; }, getUser: async (value: string) => { assert.equal(value, 'rep'); lookups++; return record; } },
+    firestore: { collection: () => ({ doc: () => ({ get: async () => ({ data: () => ({ applicantType: 'dealer' }) }) }) }), runTransaction: () => assert.fail('lookup must not mutate') } };
+  const found = await invokeDealer(base, services); assert.equal(found.code, 200); assert.equal(found.data.account.uid, 'rep'); assert.equal(found.data.account.eligible, true);
+  assert.equal(found.data.account.customClaims, undefined); assert.equal(found.data.account.tokensValidAfterTime, undefined);
+  assert.equal((await invokeDealer({ ...base, accountLookupType: 'uid', accountQuery: 'rep' }, services)).code, 200);
+  assert.equal(lookups, 2);
+  for (const changed of [{ emailVerified: false }, { disabled: true }, { email: admin.email }]) {
+    const result = await invokeDealer(base, { ...services, auth: { ...services.auth, getUserByEmail: async () => ({ ...record, ...changed }) } });
+    assert.equal(result.data.account.eligible, false);
+  }
+  assert.equal((await invokeDealer(base, { ...services, auth: { ...services.auth, getUserByEmail: async () => { throw Object.assign(Error(), { code: 'auth/user-not-found' }); } } })).code, 404);
+  const forbidden = await invokeDealer(base, { ...services, auth: { ...services.auth, verifyIdToken: async () => ({ ...admin, email: 'other@example.test', role: 'admin' }), getUserByEmail: () => assert.fail('unauthorized account lookup') } });
+  assert.equal(forbidden.code, 403);
+});
+
+test('M2.3 local date controls preserve absolute timestamps across winter/summer and reject invalid local times', () => {
+  const script = `import assert from 'node:assert/strict';
+    import {dealerLocalDateInput, parseDealerLocalDate} from './src/config/dealerVerification.ts';
+    assert.equal(dealerLocalDateInput(Date.parse('2026-11-08T17:00:00Z')), '2026-11-08T12:00');
+    assert.equal(parseDealerLocalDate('2026-11-08T12:00'), Date.parse('2026-11-08T17:00:00Z'));
+    assert.equal(parseDealerLocalDate('2026-07-08T12:00'), Date.parse('2026-07-08T16:00:00Z'));
+    assert.ok(Number.isNaN(parseDealerLocalDate('2026-03-08T02:30')));
+    assert.ok(Number.isNaN(parseDealerLocalDate('2026-02-30T12:00')));
+    assert.ok(Number.isNaN(parseDealerLocalDate('invalid')));
+    assert.equal(parseDealerLocalDate('2026-11-01T01:30'), Date.parse('2026-11-01T05:30:00Z'));
+    assert.equal(parseDealerLocalDate('2026-11-01T01:30', Date.parse('2026-11-01T06:30:25Z')), Date.parse('2026-11-01T06:30:25Z'));
+    console.log('local date boundaries passed');`;
+  assert.match(execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { env: { ...process.env, TZ: 'America/Toronto' }, encoding: 'utf8' }), /local date boundaries passed/);
 });

@@ -51,6 +51,7 @@ export interface DealerProfile {
   verificationCaseId?: string;
   primaryRepresentativeEmail?: string;
   sourceReferenceDescription?: string;
+  sourceReferenceType?: string;
   checkedAt?: number;
   contactVisibilityConsent?: { phone: boolean; website: boolean; recordedAt: number; recordedBy: string };
   createdAt: number;

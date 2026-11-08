@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; acceptance pending)
 
+- Added bounded administrator account lookup by exact email/UID with eligibility display and explicit selection. Saves retain independent Auth and protected-link checks; no account creation, role promotion or automatic association. Added guided verification method/source choices with Other/custom evidence, field guidance, and local timezone date controls with absolute timestamp storage. Owner local acceptance of this revised UI remains pending.
+
 - Owner local review confirmed verification saves successfully. Save success/error feedback now scrolls into view and receives focus; representative UID instructions clarify manual administrator account association. Local acceptance remains pending on the revised UI.
 
 - Added a dedicated admin verification view from dealer application review, separating applicant claims from canonical business information and manual evidence.
