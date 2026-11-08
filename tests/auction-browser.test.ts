@@ -275,7 +275,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Emulation.clearDeviceMetricsOverride');
     const fill = async (selector: string, value: string, select = false) => click(`(() => {
       const field = document.querySelector(${JSON.stringify(selector)}); if (!field) return false;
-      Object.getOwnPropertyDescriptor(${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype, 'value').set.call(field, ${JSON.stringify(value)});
+      const prototype = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : ${select ? 'HTMLSelectElement' : 'HTMLInputElement'}.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(field, ${JSON.stringify(value)});
       field.dispatchEvent(new Event('${select ? 'change' : 'input'}', {bubbles:true})); return true;
     })()`);
     const submitIntake = async () => { await command('Runtime.evaluate', { expression: `document.querySelector('form[aria-label="Vehicle consignment application"]').requestSubmit()` }); };
