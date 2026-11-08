@@ -6,6 +6,8 @@ Implementation based on staging `e7de147`. Local visual/functional review and PR
 
 The existing `ConsignmentModal` defaults to Private seller. Dealer selection reveals legal business name, optional trade name/DBA, dealer licence number and one of 13 Canadian licensing jurisdictions. Existing contact fields become the primary authorized representative's name, email and required phone. Switching classifications clears declaration selections; private payloads omit dealer fields.
 
+The submit button remains disabled until required dealer business/representative details and all three declarations are complete. Required markers and a footer explanation make this visible. HTML validation, the submit handler and the trusted endpoint independently enforce the requirement.
+
 Dealers must explicitly affirm all three declarations, initially unchecked:
 
 1. The dealership is the registered legal owner of this vehicle and holds clean title.

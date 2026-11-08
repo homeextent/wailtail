@@ -157,6 +157,14 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     }
   }, [user]);
 
+  const dealerIntakeComplete = Boolean(
+    dealer.submittedDealershipName.trim() && dealer.submittedDealerLicenseNumber.trim() &&
+    CANADIAN_LICENSING_JURISDICTIONS.some(([code]) => code === dealer.submittedLicensingJurisdiction) &&
+    sellerName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail.trim()) &&
+    sellerPhone.replace(/\D/g, '').length >= 7 && sellerPhone.replace(/\D/g, '').length <= 20 &&
+    DEALER_DECLARATIONS.every(([key]) => declarations[key] === true)
+  );
+
   // Derived effective values
   const effectiveMake = selectedMakeDropdown === TAXONOMY_OTHER_CUSTOM ? customMake.trim() : selectedMakeDropdown.trim();
   const effectiveModel = selectedModelDropdown === TAXONOMY_OTHER_CUSTOM ? customModel.trim() : selectedModelDropdown.trim();
@@ -232,9 +240,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       return;
     }
 
-    if (applicantType === 'dealer' && (!dealer.submittedDealershipName.trim() || !dealer.submittedDealerLicenseNumber.trim() ||
-        !CANADIAN_LICENSING_JURISDICTIONS.some(([code]) => code === dealer.submittedLicensingJurisdiction) ||
-        sellerPhone.replace(/\D/g, '').length < 7 || DEALER_DECLARATIONS.some(([key]) => declarations[key] !== true))) {
+    if (applicantType === 'dealer' && !dealerIntakeComplete) {
       setErrorMsg('Complete the dealer business details, representative phone and all three declarations.');
       return;
     }
@@ -453,17 +459,18 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               {applicantType === 'dealer' && <fieldset disabled={submitting} className="space-y-4 p-4 rounded-xl border border-emerald-800/60 bg-emerald-950/20">
                 <legend className="text-sm font-bold px-1">Dealership details</legend>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {([['submittedDealershipName', 'Legal business name', 200], ['submittedDbaName', 'Trade name / DBA (optional)', 200], ['submittedDealerLicenseNumber', 'Dealer licence number', 100]] as const).map(([key, label, max]) => <label key={key} className="text-xs font-semibold text-slate-300">{label}
+                  {([['submittedDealershipName', 'Legal business name', 200], ['submittedDbaName', 'Trade name / DBA (optional)', 200], ['submittedDealerLicenseNumber', 'Dealer licence number', 100]] as const).map(([key, label, max]) => <label key={key} className="text-xs font-semibold text-slate-300">{label}{key !== 'submittedDbaName' && <span className="text-red-500"> *</span>}
                     <input type="text" aria-label={label} value={dealer[key]} maxLength={max} required={key !== 'submittedDbaName'} onChange={event => setDealer({ ...dealer, [key]: event.target.value })} className="block mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm" />
                   </label>)}
-                  <label className="text-xs font-semibold text-slate-300">Licensing province or territory
+                  <label className="text-xs font-semibold text-slate-300">Licensing province or territory <span className="text-red-500">*</span>
                     <select aria-label="Licensing province or territory" value={dealer.submittedLicensingJurisdiction} required onChange={event => setDealer({ ...dealer, submittedLicensingJurisdiction: event.target.value })} className="block mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm">
                       <option value="">Select jurisdiction…</option>{CANADIAN_LICENSING_JURISDICTIONS.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
                     </select>
                   </label>
                 </div>
                 <p className="text-xs text-slate-400">Licence details are collected privately for administrative review.</p>
-                <fieldset className="space-y-3"><legend className="font-semibold text-sm mb-2">Required dealer declarations</legend>
+                <fieldset className="space-y-3"><legend className="font-semibold text-sm mb-2">Required dealer declarations <span className="text-red-500">*</span></legend>
+                  <p className="text-xs text-slate-300">All three declarations must be checked before you can submit a dealer application.</p>
                   {DEALER_DECLARATIONS.map(([key, wording]) => <label key={key} className="flex gap-2 text-xs text-slate-300 cursor-pointer"><input className="mt-0.5" type="checkbox" aria-label={wording} required checked={declarations[key] === true} onChange={event => setDeclarations({ ...declarations, [key]: event.target.checked })} /><span>{wording}</span></label>)}
                 </fieldset>
               </fieldset>}
@@ -915,6 +922,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                 </span>
               </label>
 
+              {applicantType === 'dealer' && !dealerIntakeComplete && <p role="status" className="text-xs text-amber-300">Complete the required dealership and representative details, and check all three dealer declarations to enable submission.</p>}
               <div className="flex items-center justify-between gap-3">
                 <button
                   type="button"
@@ -927,7 +935,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={submitting || !hasAgreedToTerms}
+                  disabled={submitting || !hasAgreedToTerms || (applicantType === 'dealer' && !dealerIntakeComplete)}
                   className="min-h-[44px] px-5 sm:px-6 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />

@@ -294,9 +294,27 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await fill('input[aria-label="Representative email"]', 'intake-browser@example.test');
     await fill('input[aria-label="Representative phone"]', '905-555-0123');
     await click(`(() => { const declarations = document.querySelectorAll('fieldset fieldset input[type="checkbox"]'); declarations[0].click(); declarations[1].click(); document.querySelector('input[aria-label="Ownership and terms agreement"]').click(); return true; })()`);
+    const submitEnabled = async () => {
+      const result = await command('Runtime.evaluate', { expression: `!document.querySelector('button[type="submit"]').disabled`, returnByValue: true });
+      return result.result.value;
+    };
+    assert.equal(await submitEnabled(), false, 'missing third declaration must visibly disable submit');
     await submitIntake();
     assert.equal((await intakeRecords()).length, 0, 'missing third declaration must prevent persistence');
     await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[2].click(); return true; })()`);
+    assert.equal(await submitEnabled(), true, 'complete dealer intake must enable submit');
+    for (let index = 0; index < 3; index++) {
+      await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[${index}].click(); return true; })()`);
+      assert.equal(await submitEnabled(), false, `declaration ${index + 1} must be mandatory`);
+      await submitIntake();
+      assert.equal((await intakeRecords()).length, 0, 'unchecked declaration must never persist a dealer application');
+      await click(`(() => { document.querySelectorAll('fieldset fieldset input[type="checkbox"]')[${index}].click(); return true; })()`);
+    }
+    await fill('input[aria-label="Dealer licence number"]', '');
+    assert.equal(await submitEnabled(), false, 'missing dealer licence must disable submit');
+    await fill('input[aria-label="Dealer licence number"]', 'TEST-456');
+    assert.equal(await submitEnabled(), true);
+
     await command('Runtime.evaluate', { expression: `(() => { const realFetch = window.fetch; window.fetch = async (...args) => { if (String(args[0]).includes('/api/submit-consignment')) { window.fetch = realFetch; return new Response(JSON.stringify({error:'Synthetic persistence failure'}), {status:503, headers:{'Content-Type':'application/json'}}); } return realFetch(...args); }; })()` });
     await submitIntake();
     await eventually(text, value => value.includes('Synthetic persistence failure'), 'intake failure retained');
