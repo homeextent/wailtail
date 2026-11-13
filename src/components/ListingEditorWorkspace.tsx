@@ -274,15 +274,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   useEffect(() => {
     const rawId = auction?.id?.trim();
     const isInvalidId = !rawId || rawId === 'new' || rawId === 'undefined';
-    const isNonExistentInCatalog = Boolean(
-      allAuctions &&
-      allAuctions.length > 0 &&
-      rawId &&
-      rawId !== MAIN_AUCTION_ID &&
-      !allAuctions.some((lot) => lot.id === rawId)
-    );
-
-    if (isInvalidId || isNonExistentInCatalog) {
+    // App resolves document existence through the direct administrator subscription.
+    if (isInvalidId) {
       const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
       try {
         sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');

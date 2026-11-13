@@ -469,7 +469,7 @@ const AuctionAppContent: React.FC = () => {
 
   // Seller editors load their assigned draft through their own trusted endpoints.
   useEffect(() => {
-    if (isEditorRoute && !isAdmin) return;
+    if (isEditorRoute && (authLoading || !isAdmin)) return;
 
     let disposed = false;
     let unsubAuction = () => {};
@@ -508,6 +508,7 @@ const AuctionAppContent: React.FC = () => {
           }
         };
         const applyAuction = (data: Auction | null) => {
+          if (disposed) return;
           if (data) {
             setAuction(data);
 
@@ -559,7 +560,7 @@ const AuctionAppContent: React.FC = () => {
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute, isAdmin, allAuctions.length]);
+  }, [activeAuctionId, isEditorRoute, isAdmin, authLoading, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
@@ -706,6 +707,7 @@ const AuctionAppContent: React.FC = () => {
           handleOpenAccountHub('seller');
         }} />;
     }
+    if (auction.id !== editorMatch?.[1]) return <p role="status">Loading listing workspace…</p>;
     return (
       <ListingEditorWorkspace
         auction={auction}
