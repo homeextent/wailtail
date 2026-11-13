@@ -386,7 +386,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <span>My Watchlist</span>
                         </button>
 
-                        {(isSeller || isAdmin) && (
+                        {(isSeller || isAdmin || Boolean(userProfile?.dealerId)) && (
                           <button
                             onClick={() => {
                               setIsUserMenuOpen(false);
@@ -557,7 +557,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>My Watchlist</span>
                   </button>
 
-                  {(isSeller || isAdmin) && (
+                  {(isSeller || isAdmin || Boolean(userProfile?.dealerId)) && (
                     <button
                       type="button"
                       onClick={() => {

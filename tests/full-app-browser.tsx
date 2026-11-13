@@ -8,7 +8,7 @@ async function start() {
     return;
   }
   const admin = query.get('actor') === 'admin' || location.pathname === '/admin';
-  const response = await fetch(admin ? '/admin-fixture' : '/fixture', { redirect: 'error' });
+  const response = await fetch(admin ? '/admin-fixture' : query.get('actor') === 'dealer' ? '/dealer-fixture' : '/fixture', { redirect: 'error' });
   if (!response.ok) throw new Error('Synthetic fixture unavailable.');
   const fixture = await response.json();
   if (fixture.projectId !== 'demo-wailtail-stage3' || fixture.authHost !== '127.0.0.1:9099') {

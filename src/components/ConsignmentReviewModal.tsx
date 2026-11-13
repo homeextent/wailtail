@@ -1,4 +1,5 @@
 import { DealerVerificationPanel } from './DealerVerificationPanel';
+import { DealerConversionPanel } from './DealerListingControls';
 import React, { useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { ConsignmentApplication } from '../types';
@@ -149,6 +150,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
           <details><summary>Existing administrative metadata</summary><dl>{Object.entries(record).filter(([key]) => metadata.has(key) && !['reviewSource', 'submittedAt', 'reviewedAt', 'reviewedBy', 'status'].includes(key)).map(([key, value]) =>
             <div key={key}><dt>{key}</dt><dd className="whitespace-pre-wrap break-words">{display(value)}</dd></div>)}</dl></details>
         </section>
+        {record.applicantType === 'dealer' && source === 'consignment_applications' && <DealerConversionPanel user={user} applicationId={application.id} />}
         <section aria-label="Private curator review" className="border-t border-slate-700 pt-4 space-y-3">
           <h3 className="font-bold text-lg">Private curator review</h3>
           <p className="text-sm text-slate-300">Visible only to designated administrators. Notes are retained in the review history.</p>

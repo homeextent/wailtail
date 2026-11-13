@@ -129,6 +129,9 @@ export interface Auction {
   dealerDocFee?: 0;
   taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration' | 'requires_confirmation';
   taxDisclaimerVersion?: string;
+  dealerListingRevision?: number;
+  sourceApplicationId?: string;
+  sourceApplicationCollection?: 'consignment_applications';
   createdAt: number;
   updatedAt: number;
 }

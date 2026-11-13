@@ -223,7 +223,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
         badgeClass: 'bg-red-950/80 text-red-300 border-red-800/80'
       };
     }
-    if (isSeller || summary.sellerListings.length > 0) {
+    if (isSeller) {
       return {
         label: 'SELLER',
         badgeClass: 'bg-amber-950/80 text-amber-300 border-amber-800/80'

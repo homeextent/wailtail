@@ -1,5 +1,7 @@
 import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
+import { dealerPublicationEligible } from './_lib/dealerListing.js';
+import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 const textFields = new Set([
   'title', 'subtitle', 'headline', 'siteLogo', 'siteName', 'siteTagline', 'highlightsBadge',
@@ -11,8 +13,8 @@ const numbers = new Set(['reserveAmount', 'minimumIncrement', 'startingBid', 'st
 const statuses = new Set(['draft', 'pending_review', 'preview', 'upcoming', 'active', 'live',
   'ending_soon', 'ended', 'sold', 'reserve_not_met']);
 
-export default function handler(req: any, res: any) {
-  return withSellerDraftRequest(req, res, undefined, async ({ firestore }, _uid, email) => {
+export function handleAdminUpdateAuction(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, _uid, email) => {
     if (!isDesignatedAdminEmail(email)) return res.status(403).json({ error: 'Administrator access required.' });
     const { auctionId, auctionIds, updates } = req.body ?? {};
     const bulk = auctionIds !== undefined;
@@ -42,6 +44,17 @@ export default function handler(req: any, res: any) {
     const result = await firestore.runTransaction(async tx => {
       const snapshots = await tx.getAll(...refs);
       if (snapshots.some(snapshot => !snapshot.exists)) return null;
+      // Read all dealer eligibility records before scheduling any transaction writes.
+      for (const snapshot of snapshots) {
+        const current = snapshot.data()!;
+        if (current.sellerType === 'dealer' || current.dealerId) {
+          if ((patch.currency !== undefined && patch.currency !== 'CAD') ||
+              (patch.sellerName !== undefined && patch.sellerName !== current.sellerName)) return false;
+          if (['draft', 'pending_review'].includes(current.status) && typeof patch.status === 'string' &&
+              ['preview', 'upcoming', 'active', 'live', 'ending_soon', 'ended', 'sold', 'reserve_not_met'].includes(patch.status) &&
+              !await dealerPublicationEligible(tx, firestore, current)) return false;
+        }
+      }
       const now = Date.now();
       return snapshots.map(snapshot => {
         const current = snapshot.data()!;
@@ -56,7 +69,9 @@ export default function handler(req: any, res: any) {
           winningEmailSent: current.winningEmailSent === true };
       });
     });
+    if (result === false) return res.status(409).json({ error: 'Dealer publication requires current verification and confirmed tax handling; dealer identity and CAD currency are protected.' });
     if (!result) return res.status(404).json({ error: 'Listing not found.' });
     return res.status(200).json(bulk ? { listings: result } : result[0]);
   });
 }
+export default handleAdminUpdateAuction;

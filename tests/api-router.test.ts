@@ -39,7 +39,7 @@ test('router rejects unknown, nested, prototype and ambiguous endpoint names', a
 
 test('every deployed handler remains reachable and retains its method guard', async () => {
   const names = readdirSync(new URL('../server/api/', import.meta.url)).filter(name => name.endsWith('.ts'));
-  assert.equal(names.length, 33);
+  assert.equal(names.length, 34);
   for (const name of names) {
     const res = response();
     await router({ method: 'DELETE', query: { __endpoint: name.slice(0, -3) }, headers: {} }, res);

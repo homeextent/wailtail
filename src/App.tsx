@@ -707,7 +707,7 @@ const AuctionAppContent: React.FC = () => {
     if (authLoading) return <p role="status">Loading listing workspace…</p>;
     if (!isAdmin) {
       const auctionId = editorMatch?.[1];
-      if (!user || !isSeller || !auctionId) return <p>Listing workspace unavailable.</p>;
+      if (!user || !auctionId) return <p>Listing workspace unavailable.</p>;
       return <SellerDraftWorkspace key={`${user.uid}:${auctionId}`} auctionId={auctionId} user={user}
         onBack={() => {
           navigateTo('/');

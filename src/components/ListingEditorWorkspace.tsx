@@ -23,6 +23,7 @@ import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { useAuth } from '../context/AuthContext';
+import { DealerAttributionPanel } from './DealerListingControls';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
 import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
@@ -1284,7 +1285,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.engine) setEngine(parsed.engine);
       if (parsed.exteriorColor) setExteriorColor(parsed.exteriorColor);
       if (parsed.interior) setInterior(parsed.interior);
-      if (parsed.sellerName) setSellerName(parsed.sellerName);
+      if (parsed.sellerName && auction.sellerType !== 'dealer') setSellerName(parsed.sellerName);
       if (parsed.sellerEmail) setSellerEmail(parsed.sellerEmail);
       if (parsed.sellerPhone) {
         setSellerPhone(parsed.sellerPhone.replace(/[^0-9+\-() ]/g, ''));
@@ -1527,7 +1528,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         if (parts[2]) setLocationCountry(parts[2]);
       }
 
-      if (synthesizedDraft.sellerName) setSellerName(synthesizedDraft.sellerName);
+      if (synthesizedDraft.sellerName && auction.sellerType !== 'dealer') setSellerName(synthesizedDraft.sellerName);
 
       if (!isBadgeOverridden && synthesizedDraft.highlightsBadge) {
         setHighlightsBadge(synthesizedDraft.highlightsBadge);
@@ -2289,6 +2290,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </button>
         </div>
       </header>
+      {isAdmin && user && auction.sellerType === 'dealer' && <DealerAttributionPanel key={auction.id} auction={auction} user={user} />}
 
       {/* HIGH-VISIBILITY BANNER: PENDING CURATION REVIEW */}
       {isReadOnlyForSeller && (
@@ -2796,6 +2798,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <input
                         type="text"
                         value={sellerName}
+                        readOnly={auction.sellerType === 'dealer'}
                         onChange={(e) => setSellerName(e.target.value)}
                         placeholder="Private Consignor"
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"

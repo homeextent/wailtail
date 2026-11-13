@@ -442,6 +442,34 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const restored = await command('Runtime.evaluate', { expression: `({method:document.querySelector('input[aria-label="Other verification method"]').value, checkedAt:document.querySelector('input[name="checkedAt"]').value, expiry:document.querySelector('input[name="expiry"]').value})`, returnByValue: true });
     assert.equal(restored.result.value.method, 'Manual synthetic regulator check');
     assert.equal(restored.result.value.checkedAt, browserDates.result.value[0]); assert.equal(restored.result.value.expiry, browserDates.result.value[1]);
+    // M2.4: explicitly reverify, curate the vehicle, and create the assigned dealer draft.
+    await fill('textarea[aria-label="Verification findings"]', 'Synthetic re-verification for vehicle conversion');
+    await saveVerification();
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Back to application'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Dealer eligible: Yes'), 'conversion eligibility from current canonical verification');
+    await fill('textarea[aria-label="Dealer vehicle approval reason"]', 'Synthetic vehicle separately reviewed and accepted for draft creation');
+    await click(`(() => { const box = document.querySelector('input[aria-label="Confirm dealer vehicle approval"]'); if (!box) return false; box.click(); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Approve vehicle and create dealer draft'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Dealer draft created.'), 'explicit dealer vehicle conversion saved');
+    const converted = await eventually(verificationState, value => value.listing?.status === 'draft', 'assigned dealer draft persisted');
+    assert.equal(converted.listing.sellerId, fixture.dealerRepresentativeUid); assert.equal(converted.user.role, 'bidder');
+    assert.equal(converted.application.status, 'approved'); assert.equal(converted.listing.dealerDocFee, 0);
+    assert.equal(converted.listing.taxHandling, 'requires_confirmation'); assert.equal(converted.listingAudits, 1);
+    const convertedId = converted.application.convertedAuctionId;
+    await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
+    await eventually(text, value => value.includes('Protected dealer attribution') && value.includes('Canonical Browser Dealer Inc.'), 'admin editor protects dealer attribution');
+    await fill('select[aria-label="Dealer tax handling"]', 'dealer_collects', true);
+    await fill('textarea[aria-label="Dealer tax change reason"]', 'Synthetic tax arrangement confirmed by curator');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save dealer tax indicator'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
+    await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
+    await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
+    await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Narrative saved.'), 'assigned representative saves without role promotion');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Submit for review'); if (!b || b.disabled) return false; b.click(); return true; })()`);
+    await eventually(verificationState, value => value.listing?.status === 'pending_review' && value.user.role === 'bidder' && value.listingAudits === 2, 'dealer submission keeps roles and audit records intact');
+    await eventually(text, value => value.includes('read-only while it is under review'), 'submitted dealer draft locks representative fields');
 
 
   } catch (error) {
