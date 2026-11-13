@@ -4,9 +4,12 @@ import { DEALER_TAX_DISCLAIMER_VERSION } from '../../../src/config/dealerListing
 const text = (value: unknown, max = 240) => typeof value === 'string' && value.trim() && value.length <= max ? value.trim() : undefined;
 export function publicDealerSummary(listing: Record<string, any>, profile?: Record<string, any> | null, now = Date.now()): PublicDealerSummary | undefined {
   const s = listing.dealerSnapshot;
-  if (listing.sellerType !== 'dealer' || typeof listing.dealerId !== 'string' || !s || s.dealerId !== listing.dealerId ||
+  if (listing.sourceApplicationCollection !== 'consignment_applications' ||
+      typeof listing.sourceApplicationId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(listing.sourceApplicationId) ||
+      !Number.isSafeInteger(listing.dealerListingRevision) || listing.dealerListingRevision < 0 ||
+      listing.sellerType !== 'dealer' || typeof listing.dealerId !== 'string' || !s || s.dealerId !== listing.dealerId ||
       !text(s.dealershipName) || !text(s.displayName) || !text(s.city) || !text(s.province) ||
-      !Number.isSafeInteger(s.verifiedAt) || !text(s.verificationRecordVersion)) return undefined;
+      !Number.isSafeInteger(s.verifiedAt) || s.verifiedAt <= 0 || typeof s.verificationRecordVersion !== 'string' || !/^[1-9][0-9]*$/.test(s.verificationRecordVersion)) return undefined;
   const verified = profile?.verificationStatus === 'verified' && Number.isSafeInteger(profile.verificationExpiresAt) &&
     profile.verificationExpiresAt > now && profile.primaryRepresentativeUid === listing.sellerId;
   const result: PublicDealerSummary = { name: text(s.displayName)!, city: text(s.city)!, province: text(s.province)!, verified: !!verified };

@@ -5,7 +5,7 @@ import { projectPublicAuction } from '../server/api/public-auctions';
 import { dealerPromoText } from '../src/utils/dealerPresentation';
 const now = 2000;
 const profile = { verificationStatus: 'verified', verificationExpiresAt: 3000, primaryRepresentativeUid: 'rep', phone: '+1 905 555 0100', website: 'https://example.test', displayPhonePublicly: true, displayWebsitePublicly: true, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET' };
-const listing = { status: 'active', sellerType: 'dealer', dealerId: 'dealer', sellerId: 'rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1', sourceApplicationId: 'SECRET', dealerSnapshot: { dealerId: 'dealer', dealershipName: 'Synthetic legal', displayName: 'Synthetic dealer', city: 'Toronto', province: 'ON', verifiedAt: 1000, verificationRecordVersion: '3', phone: profile.phone, website: profile.website, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET', representativeUid: 'SECRET' } };
+const listing = { status: 'active', sellerType: 'dealer', dealerId: 'dealer', sellerId: 'rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1', sourceApplicationId: 'SECRET', sourceApplicationCollection: 'consignment_applications', dealerListingRevision: 0, dealerSnapshot: { dealerId: 'dealer', dealershipName: 'Synthetic legal', displayName: 'Synthetic dealer', city: 'Toronto', province: 'ON', verifiedAt: 1000, verificationRecordVersion: '3', phone: profile.phone, website: profile.website, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET', representativeUid: 'SECRET' } };
 test('public dealer projection is a dedicated allowlist and never exposes private provenance', () => {
   const result = publicDealerSummary(listing, profile, now)!;
   assert.deepEqual(Object.keys(result).sort(), ['name','city','province','verified','documentationFee','taxHandling','phone','website'].sort());
@@ -37,6 +37,7 @@ test('consent revocation and changed contacts cannot publish a different value o
 });
 test('private and malformed dealer lots never gain dealer claims; tax display uses known version', () => {
   assert.equal(publicDealerSummary({ ...listing, sellerType: 'private' }, profile, now), undefined);
+  assert.equal(publicDealerSummary({ ...listing, sourceApplicationCollection: undefined }, profile, now), undefined, 'legacy snapshots have no inferred creation-time consent');
   assert.equal(publicDealerSummary({ ...listing, dealerSnapshot: {} }, profile, now), undefined);
   assert.equal(publicDealerSummary({ ...listing, taxDisclaimerVersion: 'unknown' }, profile, now)?.taxHandling, undefined);
   const text = dealerPromoText(publicDealerSummary(listing, profile, now), 'Vehicle', 'https://example.test/lot');
