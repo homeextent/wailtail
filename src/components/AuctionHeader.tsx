@@ -1,3 +1,4 @@
+import { PublicDealerDisclosure } from './PublicDealerDisclosure';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
@@ -283,7 +284,7 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600">
-              Seller: <strong className="text-zinc-900 font-semibold">{auction.sellerName || '—'}</strong>
+              Seller: <strong className="text-zinc-900 font-semibold">{auction.publicDealer?.name || auction.sellerName || '—'}</strong>
             </span>
           </div>
         </div>
@@ -299,6 +300,8 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             </p>
           )}
         </div>
+
+        <PublicDealerDisclosure dealer={auction.publicDealer} />
 
         {/* Essential Vehicle Key Facts Grid / Pills */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-6 text-xs">

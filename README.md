@@ -6,11 +6,15 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
-## M2.4 dealer listing integration — implementation awaiting local review
+## M2.5 public dealer presentation — local review pending
+
+Public catalog/lot responses now provide a minimal dealer summary with current-verification badges, historical business/city/province attribution, CAD $0 dealer documentation fee and informational tax disclosures. Business contacts require snapshot inclusion plus current consent for the same value. Missing/expired/suspended profiles suppress current verification and contacts without interrupting historical auctions. Dealer social copy/graphics use public-safe data and verification limitations. See [M2.5 scope and local review](docs/m2-5-public-dealers.md). No production or live Firebase changes are included; local visual acceptance precedes merge approval.
+
+## M2.4 dealer listing integration — accepted on staging
 
 Canonical dealer applications now have an explicit admin vehicle-approval/draft action, independent of business verification. The trusted server assigns the representative UID, immutable internal dealer snapshot, CAD $0 documentation fee and versioned informational tax indicator. Creation, application approval and audit commit atomically with retry/concurrency protection. Assigned representatives use the restricted narrative/media workspace without a global seller-role promotion. Forward public visibility requires current verification and confirmed tax handling; public dealer presentation remains M2.5.
 
-See [M2.4 scope, tests and local acceptance](docs/m2-4-dealer-listings.md). Legacy/private one-click conversion remains disabled; dealer duplication and snapshot reassignment are unavailable. No production promotion or live Firebase publication is included. Exact-head CI and Jeremy's local visual/functional review precede merge approval.
+See [M2.4 scope, tests and local acceptance](docs/m2-4-dealer-listings.md). Legacy/private one-click conversion remains disabled; dealer duplication and snapshot reassignment are unavailable. No production promotion or live Firebase publication is included. Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local synchronization to its staging merge `4a55362`. Post-merge CI and Vercel preview passed; production and live Firebase publication remain separate.
 
 ## M2.3 dealer verification — accepted on staging
 
@@ -562,8 +566,8 @@ For comprehensive milestone specifications, commercial boundaries, architecture,
 | **M2.1** | Administrative Consignment Application Review | **ACCEPTED ON STAGING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
 | **M2.2** | Dealer Application and Intake | **ACCEPTED ON STAGING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
 | **M2.3** | Manual Dealer Verification & Profile Creation | **ACCEPTED ON STAGING** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
-| **M2.4** | Dealer Vehicle Listing Integration | **IMPLEMENTED — LOCAL REVIEW PENDING** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
-| **M2.5** | Public Dealer Presentation & Badging | **PLANNED** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
+| **M2.4** | Dealer Vehicle Listing Integration | **ACCEPTED ON STAGING** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
+| **M2.5** | Public Dealer Presentation & Badging | **IMPLEMENTED — LOCAL REVIEW PENDING** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
 | **M2.6** | Optional Private Application Photo Uploads | **PLANNED (GATED)** | Multi-photo upload in consignment intake; private Cloud Storage bucket; curation transfer to listing gallery. *Separately gated; non-blocker for core program.* |
 
 ### Phase 1 Governance & Commercial Boundaries

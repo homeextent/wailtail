@@ -1,3 +1,5 @@
+import { startVisiblePolling } from '../services/visiblePolling';
+import { dealerPromoTemplates, dealerCampaignState } from '../utils/dealerPresentation';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, 
@@ -16,7 +18,7 @@ import {
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
-import { Auction, MediaConfiguration } from '../types';
+import { Auction, MediaConfiguration, PublicDealerSummary } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { subscribeToMediaConfig } from '../services/auctionService';
 
@@ -48,6 +50,28 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const [isRenderingCanvas, setIsRenderingCanvas] = useState(false);
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [mediaConfig, setMediaConfig] = useState<MediaConfiguration | null>(null);
+
+  const [publicDealer, setPublicDealer] = useState<PublicDealerSummary | undefined>();
+  const [publicLot, setPublicLot] = useState<Auction | undefined>();
+  const dealerCampaign = auction?.sellerType === 'dealer' || !!auction?.publicDealer || !!publicDealer;
+  const loadPublicLot = useCallback(async (signal?: AbortSignal) => {
+    if (!auction?.id) return undefined;
+    try {
+      const response = await fetch(`/api/public-auctions?auctionId=${encodeURIComponent(auction.id)}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
+      return response.ok ? (await response.json()).auction as Auction | undefined : undefined;
+    } catch { return undefined; }
+  }, [auction?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    setPublicDealer(undefined);
+    setPublicLot(undefined);
+    if (!isOpen) return;
+    const stop = startVisiblePolling(async signal => {
+      const value = await loadPublicLot(signal);
+      if (!cancelled && !signal.aborted) { setPublicLot(value); setPublicDealer(value?.publicDealer); }
+    }, 15000);
+    return () => { cancelled = true; stop(); };
+  }, [isOpen, loadPublicLot]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderVersionRef = useRef(0);
@@ -283,9 +307,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   // Compositor render trigger
   const renderCanvasGraphic = useCallback(async () => {
     const canvas = canvasRef.current;
-    if (!canvas || !auction) return;
+    if (!canvas || !auction) return false;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return false;
 
     setIsRenderingCanvas(true);
     setCanvasError(null);
@@ -295,18 +319,20 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
     try {
       // 1. Preload Base Template & Dual Vehicle Photos BEFORE modifying or drawing to canvas
-      const [bgImg, img1, img2] = await Promise.all([
+      const [bgImg, img1, img2, currentLot] = await Promise.all([
         loadImageAsync('/social-promo-template-4x3.jpg').catch(() => null),
         imageSlot1 ? loadImageAsync(imageSlot1).catch(() => null) : Promise.resolve(null),
         imageSlot2 ? loadImageAsync(imageSlot2).catch(() => null) : Promise.resolve(null),
+        loadPublicLot(),
       ]);
+      const currentDealer = currentLot?.publicDealer;
       // If a newer render was triggered while images loaded, abort immediately
-      if (currentVersion !== renderVersionRef.current) return;
+      if (currentVersion !== renderVersionRef.current) return false;
 
       // Ensure web fonts are completely ready before measuring/drawing typography
       if (document.fonts?.ready) {
         await document.fonts.ready;
-        if (currentVersion !== renderVersionRef.current) return;
+        if (currentVersion !== renderVersionRef.current) return false;
       }
 
       // 2. Base Dimensions (1200 x 900)
@@ -430,6 +456,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       } else if (stage === 'ending_soon') {
         stageText = 'ENDING SOON';
       }
+
+      if (dealerCampaign) stageText = dealerCampaignState(currentLot || {}, stage).hook;
 
       ctx.save();
       ctx.textAlign = 'left';
@@ -562,37 +590,46 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
       const finalTitleY = line2Y + (titleLines.length - 1) * titleLineHeight;
 
-      // Line 3 (Subtitle / Tagline): Crisp light gray (#e2e8f0), max 2 lines with auto-wrap
-      const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
-      if (displayTagline) {
-        const line3Y = finalTitleY + 28;
-        ctx.save();
-        ctx.textAlign = 'left';
-        ctx.font = 'italic 500 15px "Inter", sans-serif';
-        ctx.fillStyle = '#e2e8f0';
-        drawWrappedText(ctx, displayTagline, brandX, line3Y, 440, 21, 2);
-        ctx.restore();
+      // Separate bounded rows: promotion first, dealer attribution second, qualification last.
+      const displayTagline = tagline.trim() || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
+      let rowY = finalTitleY + 26;
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'italic 600 17px "Inter", sans-serif';
+      rowY = drawWrappedText(ctx, displayTagline, brandX, rowY, 440, 20, 2);
+      if (currentDealer) {
+        ctx.font = '500 14px "Inter", sans-serif';
+        const attribution = `${currentDealer.verified ? 'Verified Boutique Dealer' : 'Dealer inventory'}: ${currentDealer.name} · ${currentDealer.city}, ${currentDealer.province}`;
+        rowY = drawWrappedText(ctx, attribution, brandX, rowY + 7, 440, 18, 2);
+        ctx.font = '500 11px "Inter", sans-serif';
+        drawWrappedText(ctx, 'WAILTAIL review; no regulatory endorsement or vehicle-condition guarantee.', brandX, rowY + 7, 440, 14, 2);
       }
+      ctx.restore();
 
+      return true;
     } catch (err: any) {
       console.error('Error drawing social promo canvas:', err);
       setCanvasError('Failed to generate high-resolution canvas graphic.');
+      return false;
     } finally {
       if (currentVersion === renderVersionRef.current) {
         setIsRenderingCanvas(false);
       }
     }
-  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText]);
+  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, loadPublicLot, dealerCampaign]);
 
   // Re-render canvas when tabs, stage, tagline, or selected photos change
   useEffect(() => {
     if (isOpen && activeTab === 'graphics' && auction) {
       renderCanvasGraphic();
     }
-  }, [isOpen, activeTab, renderCanvasGraphic, auction]);
+  }, [isOpen, activeTab, renderCanvasGraphic, auction, publicDealer]);
 
   // Handle Download Graphic (PNG)
-  const handleDownloadGraphic = () => {
+  const handleDownloadGraphic = async () => {
+    const rendered = await renderCanvasGraphic();
+    if (!rendered) { setExportToast({ message: 'Graphic changed while preparing export. Please retry.', type: 'error' }); return; }
     const canvas = canvasRef.current;
     if (!canvas || !auction) return;
     try {
@@ -615,6 +652,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const copyTemplates = useMemo(() => {
     if (!auction) return { enthusiast_forum: '', marketplace_pitch: '', x_thread: '' };
 
+    if (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) {
+      return dealerPromoTemplates(publicDealer, publicLot || { title: auction.title, status: 'draft' }, stage, canonicalTrackingUrl);
+    }
     const year = auction.year || '';
     const make = auction.make || '';
     const model = auction.model || '';
@@ -763,11 +803,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     const x_thread = [tweet1, ``, tweet2, ``, tweet3].join('\n');
 
     return { enthusiast_forum, marketplace_pitch, x_thread };
-  }, [auction, stage, tagline, canonicalTrackingUrl]);
+  }, [auction, stage, tagline, canonicalTrackingUrl, publicDealer, publicLot]);
 
   // Handle Copy Text to Clipboard
   const handleCopyText = async () => {
-    const textToCopy = copyTemplates[selectedTemplate];
+    const freshLot = auction && (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) ? await loadPublicLot() : undefined;
+    const textToCopy = auction && (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer)
+      ? dealerPromoTemplates(freshLot?.publicDealer, freshLot || { title: auction.title, status: 'draft' }, stage, canonicalTrackingUrl)[selectedTemplate] : copyTemplates[selectedTemplate];
     if (!textToCopy) return;
 
     try {
@@ -866,6 +908,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
             </button>
           </div>
 
+          {(auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) && <p className="text-xs text-slate-300 max-w-xs">Dealer copy and graphics follow current lot status. Ending Soon requires closing within 24 hours; unavailable lots use neutral preview wording.</p>}
+
           {/* Lifecycle Stage Controls */}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
@@ -918,12 +962,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
               <div className="space-y-3.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
                 {/* Custom Tagline Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <label htmlFor="social-graphic-tagline" className="text-xs font-bold text-slate-300 flex items-center justify-between">
                     <span>Custom Graphic Tagline</span>
                     <span className="text-[10px] text-slate-500 font-mono">Max 75 chars</span>
                   </label>
                   <input
                     type="text"
+                    id="social-graphic-tagline"
                     value={tagline}
                     onChange={(e) => setTagline(e.target.value)}
                     placeholder="e.g., Canadian Spec, 6-Speed Manual, 1-Owner"
@@ -1201,7 +1246,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">Forums/Groups</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Rennlist, Bimmerpost, Facebook Groups. Specs breakdown, maintenance history & admin courtesy notice.
+                    {dealerCampaign ? 'Vehicle-led introduction, available specifications, dealer provenance and an invitation to explore the lot.' : 'Rennlist, Bimmerpost, Facebook Groups. Specs breakdown, maintenance history & admin courtesy notice.'}
                   </p>
                 </button>
 
@@ -1219,7 +1264,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">FB/IG</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    High-energy punchy overview with current bid, 0% buyer premium highlight & auction link.
+                    {dealerCampaign ? 'Short auction hook, key facts, grounded bid information and a direct call to action.' : 'High-energy punchy overview with current bid, 0% buyer premium highlight & auction link.'}
                   </p>
                 </button>
 
@@ -1237,7 +1282,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">3 Posts</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Sequential 3-tweet sequence breaking down provenance, mechanical specs, and live bidding link.
+                    {dealerCampaign ? 'Three concise posts covering the vehicle, dealer facts and disclosures, then the auction link.' : 'Sequential 3-tweet sequence breaking down provenance, mechanical specs, and live bidding link.'}
                   </p>
                 </button>
               </div>
@@ -1346,7 +1391,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1">
                       <span className="font-bold text-amber-400">1. Lead with Provenance</span>
                       <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Enthusiast groups love personal ownership history, maintenance logs, and reasons why you chose the car originally.
+                        {dealerCampaign ? 'Lead with the vehicle and documented specifications. Use ownership or service-history claims only when supported by the listing.' : 'Enthusiast groups love personal ownership history, maintenance logs, and reasons why you chose the car originally.'}
                       </p>
                     </div>
 

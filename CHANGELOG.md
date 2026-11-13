@@ -8,12 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.4 — Dealer vehicle listing integration (2026-11-08; local review pending)
+### M2.5 — Public dealer presentation (local review pending)
+
+- Restored the custom graphic tagline on dealer exports as its own bounded row, separate from dealer attribution and verification qualification. Canvas and copy share current-status campaign rules; real canvas drawing checks cover tagline presence, row ordering/photo clearance and live-status overrides.
+
+- Corrected dealer marketing copy to provide distinct enthusiast, marketplace and three-post thread formats with vehicle-led hooks, grounded facts/bids, stage-aware calls to action and concise verification qualifications. Refresh public lot data before copying; expired/closed/unavailable lots cannot generate false live/ending-soon claims.
+
+- Corrected the synthetic preview viewport and mobile acceptance checks. Dealer disclosures now keep the vehicle title first and show a compact fee/tax summary with expandable contacts and verification details, instead of consuming the mobile arrival screen.
+
+- Added minimal public dealer summaries, catalog/lot badges and dealership location, CAD $0 documentation fee, informational tax text, conditional contacts and verification limitations. Current canonical verification is checked on public responses; expiry/suspension/profile failures suppress verification claims and contacts while preserving historical lot behavior.
+- Added consent withdrawal/value-matching guards and safe phone/HTTPS links. Public responses exclude private snapshots, licensing/address/evidence/representative/provenance fields.
+- Added dealer social copy/graphic attribution using fresh public-safe summaries, with no automatic posting. Extended privacy/lifecycle/presentation tests and documented local acceptance in `docs/m2-5-public-dealers.md`. No rules changes, live Firebase publication or production promotion.
+- Synchronized M2.4 acceptance: Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local staging at `4a55362`; post-merge CI and Vercel preview passed.
+
+
+### M2.4 — Dealer vehicle listing integration (2026-11-08; accepted on staging via PR #9)
 
 - Added explicit canonical dealer vehicle approval/draft creation through a trusted designated-admin endpoint. Current verification, protected UID links, authoritative representative Auth, case revision, inspected-application fingerprint, deterministic listing IDs and actor-bound retries protect atomic listing/media/application/audit creation.
 - Added private creation-time dealer snapshots, protected attribution/provenance, CAD $0 documentation fees and versioned informational tax indicators. Dedicated draft tax changes are audited; forward publication checks current verification and confirmed tax handling. Public dealer presentation remains M2.5.
 - Added admin application/editor controls and assigned-UID representative workspace access without global role promotion. Generic protected-field edits, dealer duplication and email-based dealer consignor authorization are denied; legacy/private one-click conversion remains disabled.
-- Extended isolated acceptance for conversion/rollback/conflicts, ownership, snapshot privacy/immutability, media, submission, tax/lifecycle publication and private regressions. See `docs/m2-4-dealer-listings.md`. Exact-head CI and owner local review remain required; no live rules/index publication, migration or production promotion is included.
+- Extended isolated acceptance for conversion/rollback/conflicts, ownership, snapshot privacy/immutability, media, submission, tax/lifecycle publication and private regressions. See `docs/m2-4-dealer-listings.md`. Exact-head/post-merge CI and owner local review passed; PR #9 merged at `4a55362`. No live rules/index publication, migration or production promotion is included.
 
 ### Documentation — M2.3 staging acceptance synchronization (2026-11-08)
 
@@ -106,8 +120,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Milestone Status
 - **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
 - **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
-- **M2.4 — Dealer Vehicle Listing Integration**: IMPLEMENTED — LOCAL REVIEW PENDING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
-- **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
+- **M2.4 — Dealer Vehicle Listing Integration**: ACCEPTED ON STAGING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
+- **M2.5 — Public Dealer Presentation and Auction Integration**: IMPLEMENTED — LOCAL REVIEW PENDING. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
 
 ---

@@ -99,6 +99,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Network.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
+    assert.ok(catalog.includes('Verified Boutique Dealer'));
+    assert.ok(catalog.includes('Synthetic Public Dealer'));
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=public` });
@@ -106,6 +108,27 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       value.includes('Synthetic public description'), 'public auction detail');
     const publicResponse = await fetch(origin + `/api/public-auctions?auctionId=${fixture.publicAuctionId}`);
     const publicData = await publicResponse.json();
+    await eventually(text, value => value.includes('Verified Boutique Dealer') && value.includes('Dealer documentation fee: CAD $0') && value.includes('Dealer collects applicable tax at settlement.'), 'public dealer disclosures');
+    assert.equal(publicData.auction.publicDealer.verified, true);
+    assert.equal(publicData.auction.publicDealer.phone, '+1 905 555 0100');
+    assert.ok(!JSON.stringify(publicData).includes('PRIVATE-DEALER-ADDRESS'));
+    assert.ok(!JSON.stringify(publicData).includes('PRIVATE-LICENCE'));
+    const dealerLinks = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('section[aria-label="Dealer information"] a')).map(a => a.getAttribute('href'))`, returnByValue: true });
+    assert.deepEqual(dealerLinks.result.value, ['tel:+19055550100', 'https://example.test/']);
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await eventually(async () => (await command('Runtime.evaluate', { expression: `({ width: window.innerWidth, overflow: Array.from(document.body.querySelectorAll('*')).filter(e => e.getBoundingClientRect().right > 391 && e.getBoundingClientRect().width > 0).slice(0, 12).map(e => ({ tag: e.tagName, className: String(e.className).slice(0, 160), right: Math.round(e.getBoundingClientRect().right) })) })`, returnByValue: true })).result.value,
+      value => value.width === 390, 'actual mobile layout viewport is 390 CSS pixels');
+    const dealerMobile = await command('Runtime.evaluate', { expression: `(() => { const panel = document.querySelector('section[aria-label="Dealer information"]'); const details = panel.querySelector('details'); return { width: window.innerWidth, mobile: matchMedia('(max-width: 639px)').matches, fits: panel.scrollWidth <= panel.clientWidth, height: panel.getBoundingClientRect().height, collapsed: !details.open, contactHidden: !panel.querySelector('a').checkVisibility() }; })()`, returnByValue: true });
+    assert.equal(dealerMobile.result.value.mobile, true);
+    assert.equal(dealerMobile.result.value.fits, true, 'dealer disclosures fit mobile panel');
+    assert.equal(dealerMobile.result.value.collapsed, true);
+    assert.equal(dealerMobile.result.value.contactHidden, true);
+    assert.ok(dealerMobile.result.value.height <= 270, 'collapsed dealer panel leaves room for vehicle and bidding');
+    await command('Runtime.evaluate', { expression: `document.querySelector('section[aria-label="Dealer information"] summary').click()` });
+    const expanded = await command('Runtime.evaluate', { expression: `(() => { const p = document.querySelector('section[aria-label="Dealer information"]'); return { open: p.querySelector('details').open, contactVisible: p.querySelector('a').checkVisibility(), notice: p.innerText.includes('not provincial regulatory endorsement'), fits: p.scrollWidth <= p.clientWidth }; })()`, returnByValue: true });
+    assert.deepEqual(expanded.result.value, { open: true, contactVisible: true, notice: true, fits: true });
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
     assert.equal(publicData.auction.reserveAmount, undefined);
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
@@ -157,6 +180,37 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       assert.equal(result.result?.value, true, expression);
     };
     const state = async () => (await fetch(origin + '/acceptance-fixture')).json();
+    await command('Page.navigate', { url: origin + `/dashboard/listings/${fixture.publicAuctionId}/edit?actor=admin` });
+    await eventually(text, value => value.includes('Social Kit'), 'public dealer admin editor');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Social Kit')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Seller Social Marketing Kit'), 'dealer social kit opens');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Enthusiast Copy Generator')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value,
+      value => value.includes('Verified Boutique Dealer on WAILTAIL') && value.includes('Synthetic Public Dealer') && value.includes('not provincial regulatory endorsement'), 'dealer-specific social copy');
+    const readPromo = async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value;
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Live Now'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('LIVE NOW') && value.includes('join the bidding'), 'dealer live campaign selected explicitly');
+    const forumCopy = await readPromo();
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Marketplace Pitch')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value !== forumCopy && value.includes('LIVE NOW') && value.includes('join the bidding'), 'marketplace dealer promotion differs');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('X / Twitter Thread')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('1/3') && value.includes('2/3') && value.includes('3/3'), 'dealer thread has three posts');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Ending Soon'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('ENDING SOON') && value.includes('bid before close'), 'dealer ending-soon campaign promotes actual open auction');
+    await command('Runtime.evaluate', { expression: `(() => { const original = CanvasRenderingContext2D.prototype.fillText; window.__dealerCanvasRows = []; CanvasRenderingContext2D.prototype.fillText = function(text, x, y, ...rest) { if (x === 60 && y === 205) window.__dealerCanvasRows = []; if (x === 60 && y >= 205 && y < 460) window.__dealerCanvasRows.push({ text: String(text), y }); return original.call(this, text, x, y, ...rest); }; })()` });
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Upcoming'); if (!b) return false; b.click(); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Canvas Graphic Generator')); if (!b) return false; b.click(); return true; })()`);
+    await click(`(() => { const input = document.getElementById('social-graphic-tagline'); if (!input) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Collector auction preview'); input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const canvasRows = await eventually(async () => (await command('Runtime.evaluate', { expression: 'window.__dealerCanvasRows', returnByValue: true })).result.value,
+      rows => rows.some(r => r.text.includes('Collector auction preview')) && rows.some(r => r.text.includes('Synthetic Public Dealer')) && rows.some(r => r.text.includes('WAILTAIL review')), 'canvas draws custom tagline and separate dealer rows');
+    assert.ok(canvasRows.some(r => r.text === 'LIVE NOW'), 'canvas overrides requested Upcoming for a live lot just as copy does');
+    const taglineY = canvasRows.find(r => r.text.includes('Collector auction preview')).y;
+    const dealerY = canvasRows.find(r => r.text.includes('Synthetic Public Dealer')).y;
+    const noticeY = canvasRows.find(r => r.text.includes('WAILTAIL review')).y;
+    assert.ok(taglineY < dealerY && dealerY < noticeY && Math.max(...canvasRows.map(r => r.y)) + 14 < 460, 'separate text rows remain above the detail photo');
+    await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
+    await eventually(text, value => value.includes('Synthetic public description'), 'public lot after social preview');
+
     await click(`(() => { const b = document.querySelector('button[title="Add to Watchlist"]'); if (!b) return false; b.click(); return true; })()`);
     await eventually(state, value => value.watchCount === 1, 'watchlist persisted');
     await eventually(text, value => value.includes('★ Watching'), 'watching state');

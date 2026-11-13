@@ -74,7 +74,19 @@ export interface DealerVerificationAudit {
   after: { review: Record<string, unknown>; profile: DealerProfile | null };
 }
 
+export interface PublicDealerSummary {
+  name: string;
+  city: string;
+  province: string;
+  verified: boolean;
+  documentationFee?: 0;
+  taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration';
+  phone?: string;
+  website?: string;
+}
+
 export interface Auction {
+  publicDealer?: PublicDealerSummary;
   id: string;
   title: string;
   subtitle: string;

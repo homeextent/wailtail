@@ -1,3 +1,4 @@
+import { publicDealerSummary, readPublicDealerProfiles } from './_lib/publicDealer.js';
 import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
 const PUBLIC_STATUSES = ['preview', 'upcoming', 'active', 'live', 'ending_soon', 'ended', 'sold', 'reserve_not_met'];
@@ -14,7 +15,7 @@ const NUMBER_FIELDS = [
   'bidCount', 'createdAt', 'updatedAt'
 ] as const;
 
-export function projectPublicAuction(id: string, record: Record<string, unknown>) {
+export function projectPublicAuction(id: string, record: Record<string, unknown>, dealerProfile?: Record<string, any> | null) {
   const status = record.status;
   if (typeof status !== 'string' || !PUBLIC_STATUSES.includes(status)) return null;
 
@@ -31,6 +32,8 @@ export function projectPublicAuction(id: string, record: Record<string, unknown>
   if (Array.isArray(record.heroImages)) {
     result.heroImages = record.heroImages.filter((entry): entry is string => typeof entry === 'string');
   }
+  const dealer = publicDealerSummary(record, dealerProfile);
+  if (dealer) result.publicDealer = dealer;
   return result;
 }
 
@@ -98,7 +101,8 @@ export default async function handler(req: any, res: any) {
     if (typeof id === 'string') {
       const snapshot = await auctions.doc(id).get();
       const data = snapshot.data();
-      const auction = data && projectPublicAuction(snapshot.id, data);
+      const profiles = data ? await readPublicDealerProfiles(firestore, [data]) : new Map();
+      const auction = data && projectPublicAuction(snapshot.id, data, profiles.get(data.dealerId));
       if (!auction) return res.status(404).json({ error: 'auction-not-found' });
       const bearer = typeof req.headers?.authorization === 'string'
         ? /^Bearer ([^\s]+)$/i.exec(req.headers.authorization) : null;
@@ -127,8 +131,9 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ auction, media: media ? projectPublicMedia(media) : null, bids, comments });
     }
     const snapshot = await auctions.where('status', 'in', PUBLIC_STATUSES).get();
+    const profiles = await readPublicDealerProfiles(firestore, snapshot.docs.map(doc => doc.data()));
     return res.status(200).json({
-      auctions: snapshot.docs.map(doc => projectPublicAuction(doc.id, doc.data())).filter(Boolean)
+      auctions: snapshot.docs.map(doc => projectPublicAuction(doc.id, doc.data(), profiles.get(doc.get('dealerId')))).filter(Boolean)
     });
   } catch {
     return res.status(503).json({ error: 'catalog-unavailable' });

@@ -1,3 +1,4 @@
+import { readPublicDealerProfiles } from '../server/api/_lib/publicDealer';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { test } from 'node:test';
@@ -108,6 +109,15 @@ test('M2.4 atomic conversion, role-free ownership, immutable snapshots, publicat
     assert.equal((await invoke({ ...tax, expectedRevision: 1, commandId: randomUUID() })).code, 409);
     assert.equal((await adminUpdate({ status: 'preview' })).code, 200);
     const after = (await listing.get()).data()!; assert.deepEqual(after.dealerSnapshot, created.dealerSnapshot, 'profile changes do not rewrite snapshot');
+    const profiles = await readPublicDealerProfiles(firestore, [after]);
+    const disclosed = projectPublicAuction(auctionId, after, profiles.get(dealerId))!;
+    assert.equal((disclosed.publicDealer as any).verified, true);
+    assert.equal((disclosed.publicDealer as any).city, created.dealerSnapshot.city, 'identity remains from snapshot');
+    await firestore.collection('dealer_profiles').doc(dealerId).update({ verificationStatus: 'suspended' });
+    const suspendedProfiles = await readPublicDealerProfiles(firestore, [after]);
+    const suspendedPublic = projectPublicAuction(auctionId, after, suspendedProfiles.get(dealerId))!;
+    assert.equal((suspendedPublic.publicDealer as any).verified, false);
+    assert.equal(suspendedPublic.status, 'preview', 'public auction is not removed by suspension');
     const publicLot = projectPublicAuction(auctionId, after)!; assert.equal(publicLot.dealerSnapshot, undefined); assert.equal(publicLot.sourceApplicationId, undefined);
     assert.equal((await firestore.collection('dealerListingAudits').where('auctionId','==',auctionId).get()).size, 2);
     const legacyId = randomUUID(); await firestore.collection('consignments').doc(legacyId).set(original);

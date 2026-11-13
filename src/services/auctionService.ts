@@ -391,7 +391,8 @@ export function subscribeToAuction(
   const auctionRef = doc(db, 'auctions', targetId);
   return onSnapshot(auctionRef, (snap) => {
     if (snap.exists()) {
-      const data = snap.data() as Auction;
+      // The document path is authoritative, including legacy lots without an embedded ID.
+      const data = { ...snap.data(), id: snap.id } as Auction;
       if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
         try {
           const cached = getStoredGlobalBranding();
