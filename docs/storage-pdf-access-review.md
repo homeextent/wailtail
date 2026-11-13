@@ -1,13 +1,13 @@
 # PDF access review register — November 13, 2026
 
-Status: provisional classification from owner-supplied object metadata and reference scan. No PDF bytes or page contents have been inspected. All three are classified PDF_PRIVATE_REVIEW_REQUIRED as a planning hold, not a finding that their contents are confidential and not a deployed access restriction. Current live Storage rules remain open; existing tokenized access has not been tested or revoked.
+Status: provisional classification from owner-supplied object metadata and reference scan. Jeremy identified the Porsche and RAM PDFs as vehicle reports through the content-review question. Exact report titles, issuer, personal-data/redaction status and public-disclosure approval are not yet established. No PDF bytes or page contents have been inspected. All three are classified PDF_PRIVATE_REVIEW_REQUIRED as a planning hold, not a finding that their contents are confidential and not a deployed access restriction. Current live Storage rules remain open; existing tokenized access has not been tested or revoked.
 
 ## Individual records
 
 | ID | Source path | Observed consumer | Provisional disposition |
 |---|---|---|---|
-| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url` | Preserve; content review required; no automatic public copy |
-| PDF-2 | `auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg` | RAM settings `fullGallery[23].url` | Preserve; content review required; no automatic public copy |
+| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url`; owner identifies a vehicle report | Preserve; privacy/redaction review required; no automatic public copy |
+| PDF-2 | `auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg` | RAM settings `fullGallery[23].url`; owner identifies a vehicle report | Preserve; privacy/redaction review required; no automatic public copy |
 | PDF-3 | `auctions/lot-test-mtur4abv/gallery/1788998403422-049qn.jpg` | No reference found in the bounded scan | Preserve/hold; apparent duplicate of PDF-1; no deletion or public copy |
 
 | ID | Source generation | Metageneration | Bytes | CRC32C | MD5 |
