@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Private PDF review and owner RAM exception (2026-11-13)
+
+- Recorded private visual/text/metadata review of the checksum-matching Porsche history summary and RAM parts invoice without committing PDFs or personal values. Porsche remains a public candidate pending external-album review; the apparent duplicate remains held.
+- Recorded the RAM listing owner's explicit approval for the pinned invoice to remain public for now and his intended later corrected replacement. Manifest content approval is scoped separately from live execution; no destinations, production changes or general consent policy are implied.
+- Added future-work acceptance criteria for privacy guidance beside gallery/document uploads and administrator document review. No upload UI, automated scanning, redaction, messages or private-document workflow was implemented.
+
 ### Production preflight — Object metadata and provisional PDF classification (2026-11-13)
 
 - Enriched all 226 cutover inventory rows with observed source generations/metagenerations, size, MIME type, checksums, token-presence and object-ACL results. Object paths and all five owner preservation flags are unchanged; destinations remain blank and all publication approvals remain false.
