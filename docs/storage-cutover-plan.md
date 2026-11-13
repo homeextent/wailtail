@@ -6,9 +6,15 @@ Status: planning inventory only, NOT executable and NOT production-authorized. S
 
 Jeremy supplied the published Storage rules (unconditional read/write), Firestore rules (older direct-client access), bucket description (US-CENTRAL1, public access prevention inherited, uniform access disabled), an empty composite-index console view, and a read-only media-reference scan. Production application remains main `fef05a5`; staging protections are not live. Current Vercel environment metadata lacks CRON_SECRET, FIREBASE_STORAGE_BUCKET and AUCTION_REVIEW_RECIPIENT. These observations are dated evidence, not proof of an unchanged live state at execution.
 
-[Inventory CSV](storage-cutover-inventory-2026-11-13.csv) contains 226 unique listed JPEG-named objects: 163 referenced and 63 held without a reference in the scanned documents; zero referenced paths were absent from that bucket listing. The scan covered three auction documents, eight settings documents, empty root media/mediaConfig collections, and auction media subcollections. It did not inspect every collection, external consumer, archived version or hardcoded application fallback. A reference is not proof of public eligibility. Extensions are not verified MIME types or image integrity checks.
+[Inventory CSV](storage-cutover-inventory-2026-11-13.csv) contains 226 unique listed JPEG-named objects: 163 referenced and 63 held without a reference in the scanned documents; zero referenced paths were absent from that bucket listing. The scan covered three auction documents, eight settings documents, empty root media/mediaConfig collections, and auction media subcollections. It did not inspect every collection, external consumer, archived version or hardcoded application fallback. A reference is not proof of public eligibility. A later metadata check reports 216 image/jpeg, 3 application/pdf and 7 image/svg+xml objects despite every filename ending in .jpg. MIME metadata is evidence of type, not a byte-level content or image-integrity inspection.
 
 No credentials, download tokens, complete document contents or private contact fields are included. Reference locations are diagnostic Firestore REST field paths, not Firestore update masks.
+
+## Metadata and PDF access classification
+
+The completed metadata scan found 226 objects totaling 26,841,315 bytes, with all required source checksums/generations present. All have download-token metadata; no token values were retained. Bucket IAM reported no direct public-principal bindings, and all object ACLs reported NO_PUBLIC_ENTRY. Inherited IAM, old versions, soft-deleted objects, actual token URL access and file contents remain unverified. Live Firebase Storage rules are still open.
+
+Three objects are application/pdf and seven are image/svg+xml. See the [PDF access review register](storage-pdf-access-review.md) for the three individually preserved PDFs, apparent duplicate and two staging legacy-rule exceptions. PDF_PRIVATE_REVIEW_REQUIRED is an interim no-public-copy hold, not final content classification or a deployed privacy fix. SVG content and image public eligibility also require review. The shared logo is an SVG; do not assume every .jpg path can be decoded as a JPEG.
 
 ## Preservation contract
 
@@ -36,7 +42,7 @@ The three hero objects are referenced by the Porsche's inlineShowcase and showca
 5. Inspect actual index state and create a per-field mapping from old reference to proposed URL/storage path with document update-time preconditions. Snapshot affected documents privately for recovery. CSV locations must be translated from REST wrappers and array indices into validated whole-field/array updates.
 6. Check candidate application readers and media types before selecting destinations. Public image destinations must fit the candidate `auctionPublic/{auctionId}/{assetId}` rule and include a real listing/common association; no rule broadening or automatic publication of all legacy assets.
 
-Missing generations/checksums and destination paths are intentionally blank in the CSV. Blank values must stop execution, never imply latest-generation copying or a wildcard target.
+The owner-supplied metadata scan now populates all 226 source generations, metagenerations, sizes, MIME types, CRC32C and MD5 values in the CSV; no object names were added or removed relative to the earlier inventory. These are dated observations and must be revalidated at execution. All destination paths remain blank and publication_approved remains false. Blank destinations or changed metadata must stop execution, never imply latest-generation copying or a wildcard target.
 
 ## Proposed execution phases — each requires explicit live-operation approval
 
