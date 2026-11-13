@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Read-only file validation and guarded preparation
+
+- Added a manifest-pinned, GET-only owner-side preparer for live metadata/file/reference validation and private native-precondition copy/reference proposals. It has no apply mode, rejects drift/collisions, validates JPEG/PDF/SVG bytes, flags EXIF/GPS and retains all originals.
+- Added private output handling, recovery templates, synthetic regression tests and CI coverage. Uploaded Porsche/RAM PDFs were verified locally; all-public-file live validation remains pending owner execution. No production write or rollout is performed.
+
 ### Production preflight — Public/private decisions and proposed asset destinations (2026-11-13)
 
 - Recorded owner approval of the 163 referenced public assets and retention of the Porsche album link. Mapped 135 Porsche, 24 RAM and four shared consumers to unique MIME-correct proposed paths/URLs, preserving all five protected test-path images; retained 63 unmatched originals without public migration.

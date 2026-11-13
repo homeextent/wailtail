@@ -76,3 +76,8 @@ Jeremy confirmed the RAM listing is his own and permits the reviewed invoice to 
 
 
 Owner public-set decision: approve 163 referenced assets (135 Porsche consumers, 24 RAM consumers, four shared branding/promotion assets), keep the Porsche album link and preserve all 63 unmatched sources without public migration. All five test-path images have explicit consumer-based public mappings. The trusted image-upload handler's PDF replacement gap is recorded in the [mapping review](storage-cutover-destination-mappings.md); it is not fixed by this plan.
+
+
+## Read-only validation tooling
+
+The [owner-side preparer](storage-cutover-operations.md) validates metadata, approved file bytes and current Firestore references and writes private guarded operation proposals without executing writes. It pins the approved manifest hash and has no apply mode. Synthetic tests and locally reviewed PDFs are distinct from the required owner-authenticated full file run. Production cutover remains separately authorized.

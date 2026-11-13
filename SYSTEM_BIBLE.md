@@ -15,6 +15,10 @@ PR #3 was independently accepted at head `293ffbb` and merged into `staging` on 
 
 The repeatable setup, preview, archive and recovery procedures are in [Local development and worktree housekeeping](docs/local-development.md). Owner-specific locations there are a dated local inventory, not application configuration or universal paths. Retired worktrees do not imply deletion or merging of their GitHub branches. PR #2 and production Storage cutover remain separate from this completed staging milestone.
 
+### Storage cutover validation preparation
+
+The approved inventory can be checked with the [GET-only owner-side preparer](docs/storage-cutover-operations.md). Manifest hash, source versions/checksums, destination absence, file decoding/static SVG checks and current reference locations/revisions gate private operation proposals. It has no apply mode; source copies, Firestore commits, token/rules changes and production promotion require separate approval. CI uses synthetic fixtures, not live credentials; actual validation of all approved public files requires the owner-side report.
+
 ### Trusted application paths
 
 - Seller discovery, draft reads, narrative and media edits, submission, and administrator-requested revisions use verified Firebase identity, assigned seller UID, draft state and revision checks. Submission records its review event in the same transaction. A submitted draft is read-only for the seller.
