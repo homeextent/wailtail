@@ -1,6 +1,6 @@
 # Production Storage cutover preparation — November 13, 2026
 
-Status: planning inventory only, NOT executable and NOT production-authorized. Source baseline: staging `5fe4008`. Project: `studio-apps-483721`; bucket: `studio-apps-483721.firebasestorage.app`; Firestore database: `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
+Status: bounded public/private decisions and proposed destinations recorded, NOT executable and NOT production-authorized. Source baseline: staging `5fe4008`. Project: `studio-apps-483721`; bucket: `studio-apps-483721.firebasestorage.app`; Firestore database: `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
 
 ## Evidence and limits
 
@@ -14,7 +14,7 @@ No credentials, download tokens, complete document contents or private contact f
 
 The completed metadata scan found 226 objects totaling 26,841,315 bytes, with all required source checksums/generations present. All have download-token metadata; no token values were retained. Bucket IAM reported no direct public-principal bindings, and all object ACLs reported NO_PUBLIC_ENTRY. Inherited IAM, old versions, soft-deleted objects, actual token URL access and file contents remain unverified. Live Firebase Storage rules are still open.
 
-Three objects are application/pdf and seven are image/svg+xml. See the [PDF access review register](storage-pdf-access-review.md) for the three individually preserved PDFs, apparent duplicate and two staging legacy-rule exceptions. The uploaded Porsche/RAM contents have since been reviewed. The RAM owner explicitly accepts the existing invoice's public display for now and plans to replace it; Porsche external-album review remains pending and the apparent duplicate remains held. These decisions are planning classifications, not deployed access changes. SVG content and image public eligibility also require review. The shared logo is an SVG; do not assume every .jpg path can be decoded as a JPEG.
+Three objects are application/pdf and seven are image/svg+xml. See the [PDF access review register](storage-pdf-access-review.md) for the three individually preserved PDFs, apparent duplicate and two staging legacy-rule exceptions. The uploaded Porsche/RAM contents have since been reviewed. The RAM owner explicitly accepts the existing invoice's public display for now and plans to replace it; Jeremy has approved retaining the Porsche album link and the 163 referenced public assets; the apparent duplicate remains held. These decisions are planning classifications, not deployed access changes. Image/SVG byte validation remains an execution prerequisite, despite owner approval of the referenced public set. The shared logo is an SVG; do not assume every .jpg path can be decoded as a JPEG.
 
 ## Preservation contract
 
@@ -22,7 +22,7 @@ Every row is retained. The CSV's dispositions describe inventory handling, not a
 - PRESERVE_REFERENCED: 163 source objects with observed references. Preserve the originals and dependencies until any separately approved replacement is verified.
 - HOLD_UNCLASSIFIED: 63 objects with no observed reference in this bounded scan. Retain unchanged. No orphan/deletion inference.
 - owner_preserve=true: five explicitly protected objects under lot-test-mtur4abv. Never include these in cleanup merely because the folder is test-named.
-- publication_approved=true only for the pinned RAM invoice, with approval_scope=PINNED_CONTENT_ONLY_NOT_LIVE_EXECUTION, following its owner's explicit content exception. The remaining 225 rows are not approved for publication. No copy destination has been approved.
+- publication_approved=true for the 163 referenced sources, with approval_scope=REFERENCED_SET_AND_PROPOSED_DESTINATION_NOT_LIVE_EXECUTION. The 63 unmatched rows remain unapproved with no public destination. Every proposed copy still requires source/content/reference validation and separate live-operation approval.
 
 The five owner-protected paths are:
 1. `auctions/lot-test-mtur4abv/hero/1788998248108-y3vax.jpg`
@@ -42,7 +42,7 @@ The three hero objects are referenced by the Porsche's inlineShowcase and showca
 5. Inspect actual index state and create a per-field mapping from old reference to proposed URL/storage path with document update-time preconditions. Snapshot affected documents privately for recovery. CSV locations must be translated from REST wrappers and array indices into validated whole-field/array updates.
 6. Check candidate application readers and media types before selecting destinations. Public image destinations must fit the candidate `auctionPublic/{auctionId}/{assetId}` rule and include a real listing/common association; no rule broadening or automatic publication of all legacy assets.
 
-The owner-supplied metadata scan now populates all 226 source generations, metagenerations, sizes, MIME types, CRC32C and MD5 values in the CSV; no object names were added or removed relative to the earlier inventory. These are dated observations and must be revalidated at execution. All destination paths remain blank. Only the pinned RAM invoice has owner content approval; its scope explicitly excludes live execution. Blank destinations or changed metadata must stop execution, never imply latest-generation copying or a wildcard target.
+The owner-supplied metadata scan now populates all 226 source generations, metagenerations, sizes, MIME types, CRC32C and MD5 values in the CSV; no object names were added or removed relative to the earlier inventory. These are dated observations and must be revalidated at execution. The 163 referenced sources now have unique proposed destinations and token-free proposed URLs; the 63 held sources have none. See [mapping contract and execution prerequisites](storage-cutover-destination-mappings.md). These identities do not establish existing objects or working URLs. Blank destinations for an attempted copy or changed metadata must stop execution; never infer latest-generation copying or a wildcard target.
 
 ## Proposed execution phases — each requires explicit live-operation approval
 
@@ -73,3 +73,6 @@ See [Phase 1 production-readiness review](phase1-production-readiness.md). This 
 ## Owner RAM exception and future upload guidance
 
 Jeremy confirmed the RAM listing is his own and permits the reviewed invoice to remain public temporarily; he plans to remove it and upload a corrected version after this work. Its content approval does not authorize live operations in this planning revision or transfer to changed bytes. Do not reproduce personal details in repository records. The [PDF register](storage-pdf-access-review.md) records review findings, approval scope and a future-work item for seller upload privacy guidance plus administrator content review. That guidance is not implemented yet and does not alter the core M2.6 scope. Original objects and all five protected images remain preserved.
+
+
+Owner public-set decision: approve 163 referenced assets (135 Porsche consumers, 24 RAM consumers, four shared branding/promotion assets), keep the Porsche album link and preserve all 63 unmatched sources without public migration. All five test-path images have explicit consumer-based public mappings. The trusted image-upload handler's PDF replacement gap is recorded in the [mapping review](storage-cutover-destination-mappings.md); it is not fixed by this plan.

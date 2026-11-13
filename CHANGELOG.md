@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Public/private decisions and proposed asset destinations (2026-11-13)
+
+- Recorded owner approval of the 163 referenced public assets and retention of the Porsche album link. Mapped 135 Porsche, 24 RAM and four shared consumers to unique MIME-correct proposed paths/URLs, preserving all five protected test-path images; retained 63 unmatched originals without public migration.
+- Specified create-only destination/source version guards, token-safe metadata, PDF flags, reference revision validation and original retention. No copies, URL writes, rule changes, token revocation or production promotion performed.
+- Recorded the demonstrated trusted PDF replacement/upload compatibility gap for a separately scoped implementation decision; no upload behavior was changed.
+
 ### Production preflight — Private PDF review and owner RAM exception (2026-11-13)
 
 - Recorded private visual/text/metadata review of the checksum-matching Porsche history summary and RAM parts invoice without committing PDFs or personal values. Porsche remains a public candidate pending external-album review; the apparent duplicate remains held.
