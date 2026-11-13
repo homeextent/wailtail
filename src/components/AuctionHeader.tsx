@@ -1,3 +1,4 @@
+import { PublicDealerDisclosure } from './PublicDealerDisclosure';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
@@ -283,11 +284,12 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600">
-              Seller: <strong className="text-zinc-900 font-semibold">{auction.sellerName || '—'}</strong>
+              Seller: <strong className="text-zinc-900 font-semibold">{auction.publicDealer?.name || auction.sellerName || '—'}</strong>
             </span>
           </div>
         </div>
 
+        <PublicDealerDisclosure dealer={auction.publicDealer} />
         {/* Main Vehicle Title */}
         <div className="mb-4">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-900 tracking-tight font-serif">

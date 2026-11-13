@@ -69,8 +69,12 @@ await firestore.collection('users').doc(adminUid).set({
   role: 'admin', isEmailVerified: true, welcomeEmailSent: true
 });
 
+const publicDealerId = `public-dealer-${run}`;
+await firestore.collection('dealer_profiles').doc(publicDealerId).set({ verificationStatus: 'verified', verificationExpiresAt: Date.now() + 86400000, primaryRepresentativeUid: 'public-rep', displayPhonePublicly: true, displayWebsitePublicly: true, phone: '+1 905 555 0100', website: 'https://example.test', streetAddress: 'PRIVATE-DEALER-ADDRESS', dealerLicenseNumber: 'PRIVATE-LICENCE' });
 const publicAuctionId = `public-${run}`;
 await firestore.collection('auctions').doc(publicAuctionId).set({
+  sellerType: 'dealer', dealerId: publicDealerId, sellerId: 'public-rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1',
+  dealerSnapshot: { dealerId: publicDealerId, dealershipName: 'Synthetic Public Dealer Inc.', displayName: 'Synthetic Public Dealer', city: 'Toronto', province: 'ON', verifiedAt: Date.now(), verificationRecordVersion: '1', phone: '+1 905 555 0100', website: 'https://example.test', streetAddress: 'PRIVATE-DEALER-ADDRESS', dealerLicenseNumber: 'PRIVATE-LICENCE' },
   status: 'active', title: 'Synthetic public auction', startTime: Date.now() - 60_000,
   endTime: Date.now() + 3_600_000, startingBid: 1000, currentBid: 0,
   minimumIncrement: 250, reserveAmount: 5000, sellerEmail: 'private-fixture@example.test'

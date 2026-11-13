@@ -2350,8 +2350,8 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M2.1**: **ACCEPTED ON STAGING** (PR #5, `e7de147`, passing post-merge checks and owner-confirmed local visual/functional acceptance). See [M2.1 acceptance](docs/m2-1-consignment-review.md).
 - **M2.2**: **ACCEPTED ON STAGING** (PR #6, `74d9089`, passing post-merge checks and Jeremy-confirmed local acceptance/synchronization).
 - **M2.3**: **ACCEPTED ON STAGING** (PR #7, `d3c5cc5`; Jeremy locally accepted reviewed head `75d3641`, approved the merge and confirmed clean local staging synchronization; exact-head/post-merge CI and Vercel checks passed). See [M2.3 acceptance](docs/m2-3-dealer-verification.md).
-- **M2.4**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**. See [M2.4 scope and acceptance](docs/m2-4-dealer-listings.md).
-- **M2.5**: **PLANNED**.
+- **M2.4**: **ACCEPTED ON STAGING** (PR #9, `4a55362`; owner locally accepted `d0ce29f`, approved merge and confirmed clean synchronization; post-merge CI/Vercel passed). See [M2.4 scope and acceptance](docs/m2-4-dealer-listings.md).
+- **M2.5**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
@@ -2400,8 +2400,8 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M2.1               │ Admin Consignment Review              │ ACCEPTED (STAGING)  │
 │ M2.2               │ Dealer Application Intake             │ ACCEPTED ON STAGING │
 │ M2.3               │ Manual Dealer Verification & Profiles │ ACCEPTED ON STAGING │
-│ M2.4               │ Dealer Vehicle Listing Integration    │ LOCAL REVIEW PENDING│
-│ M2.5               │ Public Dealer Presentation & Badging  │ PLANNED             │
+│ M2.4               │ Dealer Vehicle Listing Integration    │ ACCEPTED ON STAGING │
+│ M2.5               │ Public Dealer Presentation & Badging  │ LOCAL REVIEW PENDING│
 │ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
 └────────────────────┴───────────────────────────────────────┴─────────────────────┘
 ```
@@ -2541,7 +2541,7 @@ Implementation contract:
 - **Exit Criteria**: Only administrators can create or update dealer profiles; all verification actions generate immutable audit records; suspension instantly halts dealer listing capabilities; zero automatic lot curation approvals.
 
 #### M2.4 — Dealer Vehicle Listing Integration
-- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Status**: **ACCEPTED ON STAGING** (PR #9, `4a55362`; owner local acceptance and synchronization confirmed).
 - **Bounded implementation (2026-11-08)**: [M2.4 scope and acceptance](docs/m2-4-dealer-listings.md). Canonical dealer applications only; explicit admin vehicle curation creates one protected draft/media record with atomic approval, command/audit records, current verification/representative/link checks, case revision and inspected-application fingerprint. Legacy/private conversion remains disabled. Creation-time snapshots omit private licence/address/evidence; public projection remains unchanged until M2.5. Dealer doc fee is server-locked at CAD $0; a dedicated audited draft-only tax control defaults to requires confirmation and gates forward publication. Snapshot reassignment/refresh and dealer duplication are excluded. Existing seller authoring routes authorize assigned UIDs without automatic global role promotion; email-based consignor authorization cannot promote dealer applicants or rebind dealer lots. Financial settlement and historical visibility are not automatically changed on later expiry/suspension. Source rules, production and local owner acceptance remain separately gated.
 - **Objectives**: Integrate verified dealer attribution and point-in-time dealer snapshots into vehicle draft and listing authoring workflows.
 - **Business Rationale**: Connects approved dealer inventory to the dealer's verified business identity while ensuring immutable historical lot records and fee compliance.
@@ -2556,7 +2556,8 @@ Implementation contract:
 - **Exit Criteria**: Dealer vehicle drafts correctly link to verified dealer identities; dealer snapshot is protected from non-admin modification; $0 doc fee is locked; dealer representative can edit narrative and media for assigned lots.
 
 #### M2.5 — Public Dealer Presentation and Auction Integration
-- **Status**: **PLANNED**.
+- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Bounded implementation**: [M2.5 scope and acceptance](docs/m2-5-public-dealers.md). Dedicated public-safe projection; current canonical verification/expiry and representative match gate badges and contact disclosures. Snapshot name/city/province remain historical attribution. Contacts additionally require current consent for the identical snapshot value; no automatic snapshot refresh. Failure suppresses claims/contacts while leaving historical lots and settlement intact. Catalog cards, lot disclosures and dealer social templates share the public summary; no raw profile/snapshot publication. Verification is manual WAILTAIL review and recorded declarations, not regulatory endorsement or condition/ownership guarantee. No live Firebase publication or production promotion is included.
 - **Objectives**: Deliver polished, transparent public dealer presentation elements across the catalog grid, auction lot headers, and promotional marketing kits.
 - **Business Rationale**: Enhances buyer trust and marketplace transparency by clearly distinguishing verified boutique dealer inventory from private party lots.
 - **Key Deliverables**:

@@ -1,3 +1,4 @@
+import { PublicDealerDisclosure } from './PublicDealerDisclosure';
 import React, { useState } from 'react';
 import { 
   Car, 
@@ -185,6 +186,7 @@ export const CatalogCard: React.FC<CatalogCardProps> = ({
 
       {/* Card Body */}
       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+        <PublicDealerDisclosure dealer={lot.publicDealer} compact />
         <div>
           <div className="flex items-start justify-between gap-2">
             <h3 className="font-bold text-base text-zinc-950 group-hover:text-red-700 transition-colors line-clamp-1">

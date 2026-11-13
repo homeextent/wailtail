@@ -1,3 +1,5 @@
+import { startVisiblePolling } from '../services/visiblePolling';
+import { dealerPromoText } from '../utils/dealerPresentation';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, 
@@ -16,7 +18,7 @@ import {
   RefreshCw,
   AlertCircle
 } from 'lucide-react';
-import { Auction, MediaConfiguration } from '../types';
+import { Auction, MediaConfiguration, PublicDealerSummary } from '../types';
 import { formatCurrency } from '../utils/formatters';
 import { subscribeToMediaConfig } from '../services/auctionService';
 
@@ -48,6 +50,25 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const [isRenderingCanvas, setIsRenderingCanvas] = useState(false);
   const [canvasError, setCanvasError] = useState<string | null>(null);
   const [mediaConfig, setMediaConfig] = useState<MediaConfiguration | null>(null);
+
+  const [publicDealer, setPublicDealer] = useState<PublicDealerSummary | undefined>();
+  const loadDealer = useCallback(async (signal?: AbortSignal) => {
+    if (!auction?.id) return undefined;
+    try {
+      const response = await fetch(`/api/public-auctions?auctionId=${encodeURIComponent(auction.id)}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
+      return response.ok ? (await response.json()).auction?.publicDealer as PublicDealerSummary | undefined : undefined;
+    } catch { return undefined; }
+  }, [auction?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    setPublicDealer(undefined);
+    if (!isOpen) return;
+    const stop = startVisiblePolling(async signal => {
+      const value = await loadDealer(signal);
+      if (!cancelled && !signal.aborted) setPublicDealer(value);
+    }, 15000);
+    return () => { cancelled = true; stop(); };
+  }, [isOpen, loadDealer]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderVersionRef = useRef(0);
@@ -295,10 +316,11 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
     try {
       // 1. Preload Base Template & Dual Vehicle Photos BEFORE modifying or drawing to canvas
-      const [bgImg, img1, img2] = await Promise.all([
+      const [bgImg, img1, img2, currentDealer] = await Promise.all([
         loadImageAsync('/social-promo-template-4x3.jpg').catch(() => null),
         imageSlot1 ? loadImageAsync(imageSlot1).catch(() => null) : Promise.resolve(null),
         imageSlot2 ? loadImageAsync(imageSlot2).catch(() => null) : Promise.resolve(null),
+        loadDealer(),
       ]);
       // If a newer render was triggered while images loaded, abort immediately
       if (currentVersion !== renderVersionRef.current) return;
@@ -563,14 +585,18 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       const finalTitleY = line2Y + (titleLines.length - 1) * titleLineHeight;
 
       // Line 3 (Subtitle / Tagline): Crisp light gray (#e2e8f0), max 2 lines with auto-wrap
-      const displayTagline = (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
+      const displayTagline = currentDealer ? `${currentDealer.verified ? 'Verified Boutique Dealer' : 'Dealer inventory'}: ${currentDealer.name} · ${currentDealer.city}, ${currentDealer.province}` : (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
       if (displayTagline) {
         const line3Y = finalTitleY + 28;
         ctx.save();
         ctx.textAlign = 'left';
         ctx.font = 'italic 500 15px "Inter", sans-serif';
         ctx.fillStyle = '#e2e8f0';
-        drawWrappedText(ctx, displayTagline, brandX, line3Y, 440, 21, 2);
+        const afterTagline = drawWrappedText(ctx, displayTagline, brandX, line3Y, 440, 21, 2);
+        if (currentDealer) {
+          ctx.font = '500 11px Inter, sans-serif';
+          drawWrappedText(ctx, 'WAILTAIL review; no regulatory endorsement or vehicle-condition guarantee.', brandX, afterTagline + 16, 440, 15, 2);
+        }
         ctx.restore();
       }
 
@@ -582,17 +608,18 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         setIsRenderingCanvas(false);
       }
     }
-  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText]);
+  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, loadDealer]);
 
   // Re-render canvas when tabs, stage, tagline, or selected photos change
   useEffect(() => {
     if (isOpen && activeTab === 'graphics' && auction) {
       renderCanvasGraphic();
     }
-  }, [isOpen, activeTab, renderCanvasGraphic, auction]);
+  }, [isOpen, activeTab, renderCanvasGraphic, auction, publicDealer]);
 
   // Handle Download Graphic (PNG)
-  const handleDownloadGraphic = () => {
+  const handleDownloadGraphic = async () => {
+    await renderCanvasGraphic();
     const canvas = canvasRef.current;
     if (!canvas || !auction) return;
     try {
@@ -615,6 +642,10 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const copyTemplates = useMemo(() => {
     if (!auction) return { enthusiast_forum: '', marketplace_pitch: '', x_thread: '' };
 
+    if (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) {
+      const copy = dealerPromoText(publicDealer, auction.title || `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}`.trim(), canonicalTrackingUrl);
+      return { enthusiast_forum: copy, marketplace_pitch: copy, x_thread: copy };
+    }
     const year = auction.year || '';
     const make = auction.make || '';
     const model = auction.model || '';
@@ -763,11 +794,12 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     const x_thread = [tweet1, ``, tweet2, ``, tweet3].join('\n');
 
     return { enthusiast_forum, marketplace_pitch, x_thread };
-  }, [auction, stage, tagline, canonicalTrackingUrl]);
+  }, [auction, stage, tagline, canonicalTrackingUrl, publicDealer]);
 
   // Handle Copy Text to Clipboard
   const handleCopyText = async () => {
-    const textToCopy = copyTemplates[selectedTemplate];
+    const textToCopy = auction && (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer)
+      ? dealerPromoText(await loadDealer(), auction.title || 'Dealer vehicle', canonicalTrackingUrl) : copyTemplates[selectedTemplate];
     if (!textToCopy) return;
 
     try {

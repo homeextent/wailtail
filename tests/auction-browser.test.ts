@@ -99,6 +99,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Network.enable');
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
+    assert.ok(catalog.includes('Verified Boutique Dealer'));
+    assert.ok(catalog.includes('Synthetic Public Dealer'));
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=public` });
@@ -106,6 +108,18 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       value.includes('Synthetic public description'), 'public auction detail');
     const publicResponse = await fetch(origin + `/api/public-auctions?auctionId=${fixture.publicAuctionId}`);
     const publicData = await publicResponse.json();
+    await eventually(text, value => value.includes('Verified Boutique Dealer') && value.includes('Dealer documentation fee: CAD $0') && value.includes('Dealer collects applicable tax at settlement.'), 'public dealer disclosures');
+    assert.equal(publicData.auction.publicDealer.verified, true);
+    assert.equal(publicData.auction.publicDealer.phone, '+1 905 555 0100');
+    assert.ok(!JSON.stringify(publicData).includes('PRIVATE-DEALER-ADDRESS'));
+    assert.ok(!JSON.stringify(publicData).includes('PRIVATE-LICENCE'));
+    const dealerLinks = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('section[aria-label="Dealer information"] a')).map(a => a.getAttribute('href'))`, returnByValue: true });
+    assert.deepEqual(dealerLinks.result.value, ['tel:+19055550100', 'https://example.test/']);
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const dealerFits = await command('Runtime.evaluate', { expression: `(() => { const panel = document.querySelector('section[aria-label="Dealer information"]'); return !!panel && panel.scrollWidth <= panel.clientWidth; })()`, returnByValue: true });
+    assert.equal(dealerFits.result.value, true, 'dealer disclosures fit mobile panel');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
     assert.equal(publicData.auction.reserveAmount, undefined);
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
@@ -157,6 +171,16 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       assert.equal(result.result?.value, true, expression);
     };
     const state = async () => (await fetch(origin + '/acceptance-fixture')).json();
+    await command('Page.navigate', { url: origin + `/dashboard/listings/${fixture.publicAuctionId}/edit?actor=admin` });
+    await eventually(text, value => value.includes('Social Kit'), 'public dealer admin editor');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Social Kit')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(text, value => value.includes('Seller Social Marketing Kit'), 'dealer social kit opens');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Enthusiast Copy Generator')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value,
+      value => value.includes('Verified Boutique Dealer on WAILTAIL') && value.includes('Synthetic Public Dealer') && value.includes('not provincial regulatory endorsement'), 'dealer-specific social copy');
+    await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
+    await eventually(text, value => value.includes('Synthetic public description'), 'public lot after social preview');
+
     await click(`(() => { const b = document.querySelector('button[title="Add to Watchlist"]'); if (!b) return false; b.click(); return true; })()`);
     await eventually(state, value => value.watchCount === 1, 'watchlist persisted');
     await eventually(text, value => value.includes('★ Watching'), 'watching state');

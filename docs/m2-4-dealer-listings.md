@@ -1,6 +1,6 @@
 # M2.4 dealer vehicle listing integration
 
-Implementation based on accepted staging `f240700`. Exact-head CI and Jeremy's local visual/functional acceptance are required before explicit merge approval. No production promotion, live rules publication or migration is included.
+Accepted on staging via PR #9 at `4a55362`. Jeremy locally accepted `d0ce29f` (conversion, protected attribution/tax controls, narrative/image upload and submitted read-only behavior), approved merge and confirmed clean local synchronization. Exact-head/post-merge CI and Vercel preview passed. Implementation was based on accepted staging `f240700`. No production promotion, live rules publication or migration is included.
 
 ## Bounded application-to-listing flow
 
