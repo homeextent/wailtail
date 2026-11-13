@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.5 — Public dealer presentation (local review pending)
 
+- Corrected dealer marketing copy to provide distinct enthusiast, marketplace and three-post thread formats with vehicle-led hooks, grounded facts/bids, stage-aware calls to action and concise verification qualifications. Refresh public lot data before copying; expired/closed/unavailable lots cannot generate false live/ending-soon claims.
+
 - Corrected the synthetic preview viewport and mobile acceptance checks. Dealer disclosures now keep the vehicle title first and show a compact fee/tax summary with expandable contacts and verification details, instead of consuming the mobile arrival screen.
 
 - Added minimal public dealer summaries, catalog/lot badges and dealership location, CAD $0 documentation fee, informational tax text, conditional contacts and verification limitations. Current canonical verification is checked on public responses; expiry/suspension/profile failures suppress verification claims and contacts while preserving historical lot behavior.

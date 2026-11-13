@@ -1,5 +1,5 @@
 import { startVisiblePolling } from '../services/visiblePolling';
-import { dealerPromoText } from '../utils/dealerPresentation';
+import { dealerPromoTemplates } from '../utils/dealerPresentation';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, 
@@ -52,23 +52,27 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   const [mediaConfig, setMediaConfig] = useState<MediaConfiguration | null>(null);
 
   const [publicDealer, setPublicDealer] = useState<PublicDealerSummary | undefined>();
-  const loadDealer = useCallback(async (signal?: AbortSignal) => {
+  const [publicLot, setPublicLot] = useState<Auction | undefined>();
+  const dealerCampaign = auction?.sellerType === 'dealer' || !!auction?.publicDealer || !!publicDealer;
+  const loadPublicLot = useCallback(async (signal?: AbortSignal) => {
     if (!auction?.id) return undefined;
     try {
       const response = await fetch(`/api/public-auctions?auctionId=${encodeURIComponent(auction.id)}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) });
-      return response.ok ? (await response.json()).auction?.publicDealer as PublicDealerSummary | undefined : undefined;
+      return response.ok ? (await response.json()).auction as Auction | undefined : undefined;
     } catch { return undefined; }
   }, [auction?.id]);
+  const loadDealer = useCallback(async (signal?: AbortSignal) => (await loadPublicLot(signal))?.publicDealer, [loadPublicLot]);
   useEffect(() => {
     let cancelled = false;
     setPublicDealer(undefined);
+    setPublicLot(undefined);
     if (!isOpen) return;
     const stop = startVisiblePolling(async signal => {
-      const value = await loadDealer(signal);
-      if (!cancelled && !signal.aborted) setPublicDealer(value);
+      const value = await loadPublicLot(signal);
+      if (!cancelled && !signal.aborted) { setPublicLot(value); setPublicDealer(value?.publicDealer); }
     }, 15000);
     return () => { cancelled = true; stop(); };
-  }, [isOpen, loadDealer]);
+  }, [isOpen, loadPublicLot]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderVersionRef = useRef(0);
@@ -646,8 +650,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     if (!auction) return { enthusiast_forum: '', marketplace_pitch: '', x_thread: '' };
 
     if (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) {
-      const copy = dealerPromoText(publicDealer, auction.title || `${auction.year || ''} ${auction.make || ''} ${auction.model || ''}`.trim(), canonicalTrackingUrl);
-      return { enthusiast_forum: copy, marketplace_pitch: copy, x_thread: copy };
+      return dealerPromoTemplates(publicDealer, publicLot || { title: auction.title, status: 'draft' }, stage, canonicalTrackingUrl);
     }
     const year = auction.year || '';
     const make = auction.make || '';
@@ -797,12 +800,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
     const x_thread = [tweet1, ``, tweet2, ``, tweet3].join('\n');
 
     return { enthusiast_forum, marketplace_pitch, x_thread };
-  }, [auction, stage, tagline, canonicalTrackingUrl, publicDealer]);
+  }, [auction, stage, tagline, canonicalTrackingUrl, publicDealer, publicLot]);
 
   // Handle Copy Text to Clipboard
   const handleCopyText = async () => {
+    const freshLot = auction && (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) ? await loadPublicLot() : undefined;
     const textToCopy = auction && (auction.sellerType === 'dealer' || auction.publicDealer || publicDealer)
-      ? dealerPromoText(await loadDealer(), auction.title || 'Dealer vehicle', canonicalTrackingUrl) : copyTemplates[selectedTemplate];
+      ? dealerPromoTemplates(freshLot?.publicDealer, freshLot || { title: auction.title, status: 'draft' }, stage, canonicalTrackingUrl)[selectedTemplate] : copyTemplates[selectedTemplate];
     if (!textToCopy) return;
 
     try {
@@ -900,6 +904,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
               <span>Enthusiast Copy Generator</span>
             </button>
           </div>
+
+          {(auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) && <p className="text-xs text-slate-300 max-w-xs">Dealer copy follows current lot status. Ending Soon requires closing within 24 hours; unavailable lots use neutral preview wording.</p>}
 
           {/* Lifecycle Stage Controls */}
           <div className="flex items-center gap-2">
@@ -1236,7 +1242,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">Forums/Groups</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Rennlist, Bimmerpost, Facebook Groups. Specs breakdown, maintenance history & admin courtesy notice.
+                    {dealerCampaign ? 'Vehicle-led introduction, available specifications, dealer provenance and an invitation to explore the lot.' : 'Rennlist, Bimmerpost, Facebook Groups. Specs breakdown, maintenance history & admin courtesy notice.'}
                   </p>
                 </button>
 
@@ -1254,7 +1260,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">FB/IG</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    High-energy punchy overview with current bid, 0% buyer premium highlight & auction link.
+                    {dealerCampaign ? 'Short auction hook, key facts, grounded bid information and a direct call to action.' : 'High-energy punchy overview with current bid, 0% buyer premium highlight & auction link.'}
                   </p>
                 </button>
 
@@ -1272,7 +1278,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">3 Posts</span>
                   </div>
                   <p className="text-[11px] text-slate-400 leading-tight">
-                    Sequential 3-tweet sequence breaking down provenance, mechanical specs, and live bidding link.
+                    {dealerCampaign ? 'Three concise posts covering the vehicle, dealer facts and disclosures, then the auction link.' : 'Sequential 3-tweet sequence breaking down provenance, mechanical specs, and live bidding link.'}
                   </p>
                 </button>
               </div>
@@ -1381,7 +1387,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
                     <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1">
                       <span className="font-bold text-amber-400">1. Lead with Provenance</span>
                       <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Enthusiast groups love personal ownership history, maintenance logs, and reasons why you chose the car originally.
+                        {dealerCampaign ? 'Lead with the vehicle and documented specifications. Use ownership or service-history claims only when supported by the listing.' : 'Enthusiast groups love personal ownership history, maintenance logs, and reasons why you chose the car originally.'}
                       </p>
                     </div>
 

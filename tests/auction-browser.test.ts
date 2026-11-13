@@ -187,6 +187,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Enthusiast Copy Generator')); if (!b) return false; b.click(); return true; })()`);
     await eventually(async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value,
       value => value.includes('Verified Boutique Dealer on WAILTAIL') && value.includes('Synthetic Public Dealer') && value.includes('not provincial regulatory endorsement'), 'dealer-specific social copy');
+    const readPromo = async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value;
+    const forumCopy = await readPromo();
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Marketplace Pitch')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value !== forumCopy && value.includes('LIVE NOW') && value.includes('join the bidding'), 'marketplace dealer promotion differs');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('X / Twitter Thread')); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('1/3') && value.includes('2/3') && value.includes('3/3'), 'dealer thread has three posts');
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Ending Soon'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('ENDING SOON') && value.includes('bid before close'), 'dealer ending-soon campaign promotes actual open auction');
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
     await eventually(text, value => value.includes('Synthetic public description'), 'public lot after social preview');
 

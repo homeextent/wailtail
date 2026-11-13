@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { publicDealerSummary, readPublicDealerProfiles } from '../server/api/_lib/publicDealer';
 import { projectPublicAuction } from '../server/api/public-auctions';
-import { dealerPromoText } from '../src/utils/dealerPresentation';
+import { dealerPromoTemplates } from '../src/utils/dealerPresentation';
 const now = 2000;
 const profile = { verificationStatus: 'verified', verificationExpiresAt: 3000, primaryRepresentativeUid: 'rep', phone: '+1 905 555 0100', website: 'https://example.test', displayPhonePublicly: true, displayWebsitePublicly: true, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET' };
 const listing = { status: 'active', sellerType: 'dealer', dealerId: 'dealer', sellerId: 'rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1', sourceApplicationId: 'SECRET', sourceApplicationCollection: 'consignment_applications', dealerListingRevision: 0, dealerSnapshot: { dealerId: 'dealer', dealershipName: 'Synthetic legal', displayName: 'Synthetic dealer', city: 'Toronto', province: 'ON', verifiedAt: 1000, verificationRecordVersion: '3', phone: profile.phone, website: profile.website, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET', representativeUid: 'SECRET' } };
@@ -20,7 +20,7 @@ test('verification and contacts fail closed on expiry, suspension, missing profi
     const result = publicDealerSummary(listing, p, now)!;
     assert.equal(result.name, 'Synthetic dealer'); assert.equal(result.verified, false);
     assert.equal(result.phone, undefined); assert.equal(result.website, undefined);
-    assert.ok(!dealerPromoText(result, 'Vehicle', 'https://example.test/lot').includes('Verified Boutique Dealer'));
+    assert.ok(!dealerPromoTemplates(result, { title: 'Vehicle' }, 'upcoming', 'https://example.test/lot').enthusiast_forum.includes('Verified Boutique Dealer'));
   }
 });
 test('consent revocation and changed contacts cannot publish a different value or refresh historical snapshots', () => {
@@ -40,7 +40,7 @@ test('private and malformed dealer lots never gain dealer claims; tax display us
   assert.equal(publicDealerSummary({ ...listing, sourceApplicationCollection: undefined }, profile, now), undefined, 'legacy snapshots have no inferred creation-time consent');
   assert.equal(publicDealerSummary({ ...listing, dealerSnapshot: {} }, profile, now), undefined);
   assert.equal(publicDealerSummary({ ...listing, taxDisclaimerVersion: 'unknown' }, profile, now)?.taxHandling, undefined);
-  const text = dealerPromoText(publicDealerSummary(listing, profile, now), 'Vehicle', 'https://example.test/lot');
+  const text = dealerPromoTemplates(publicDealerSummary(listing, profile, now), { title: 'Vehicle' }, 'upcoming', 'https://example.test/lot').enthusiast_forum;
   assert.ok(text.includes('Verified Boutique Dealer')); assert.ok(text.includes('not provincial regulatory endorsement'));
 });
 test('profile reads deduplicate dealer IDs and fail closed without dropping public lots', async () => {
@@ -48,4 +48,23 @@ test('profile reads deduplicate dealer IDs and fail closed without dropping publ
   const db = { collection: () => ({ doc: (id: string) => id }), getAll: async (...ids: string[]) => { reads += ids.length; return ids.map(id => ({ id, exists: true, data: () => profile })); } };
   assert.equal((await readPublicDealerProfiles(db, [listing, listing])).size, 1); assert.equal(reads, 1);
   assert.equal((await readPublicDealerProfiles({ ...db, getAll: async () => { throw Error('unavailable'); } }, [listing])).size, 0);
+});
+
+test('dealer promotional formats differ and use grounded stage, vehicle and bid information', () => {
+  const dealer = publicDealerSummary(listing, profile, now)!;
+  const lot = { title: '1988 Porsche 928 S4', status: 'active' as const, startTime: now - 1, endTime: now + 3600000, currentBid: 22000, mileage: '134652', engine: '5.0L V8', drivetrain: 'Automatic' };
+  const live = dealerPromoTemplates(dealer, lot, 'live', 'https://example.test/lot', now);
+  assert.equal(new Set(Object.values(live)).size, 3);
+  for (const copy of Object.values(live)) { assert.ok(copy.includes('LIVE NOW')); assert.ok(copy.includes('1988 Porsche')); assert.ok(copy.includes('22,000')); assert.ok(!copy.includes('full service history')); }
+  assert.ok(live.x_thread.includes('1/3')); assert.ok(live.x_thread.includes('2/3')); assert.ok(live.x_thread.includes('3/3'));
+  const ending = dealerPromoTemplates(dealer, lot, 'ending_soon', 'https://example.test/lot', now);
+  assert.ok(ending.marketplace_pitch.includes('ENDING SOON')); assert.ok(ending.marketplace_pitch.includes('Closes:'));
+  const future = dealerPromoTemplates(dealer, { ...lot, status: 'upcoming', startTime: now + 10000 }, 'upcoming', 'https://example.test/lot', now);
+  assert.ok(future.enthusiast_forum.includes('COMING TO AUCTION')); assert.ok(!future.enthusiast_forum.includes('Current bid'));
+  const premature = dealerPromoTemplates(dealer, { ...lot, endTime: now + 172800000 }, 'ending_soon', 'https://example.test/lot', now);
+  assert.ok(!premature.enthusiast_forum.includes('ENDING SOON'));
+  const closed = dealerPromoTemplates(dealer, { ...lot, endTime: now - 1 }, 'live', 'https://example.test/lot', now);
+  assert.ok(closed.marketplace_pitch.includes('AUCTION CLOSED')); assert.ok(!closed.marketplace_pitch.includes('join the bidding'));
+  const sparse = dealerPromoTemplates(undefined, { title: 'Sparse fixture', status: 'draft' }, 'ending_soon', 'https://example.test/lot', now);
+  assert.ok(!JSON.stringify(sparse).includes('Verified Boutique Dealer')); assert.ok(!JSON.stringify(sparse).includes('undefined')); assert.ok(!JSON.stringify(sparse).includes('ENDING SOON'));
 });
