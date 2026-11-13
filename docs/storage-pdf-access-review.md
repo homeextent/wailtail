@@ -6,7 +6,7 @@ Status: private content review completed for the uploaded Porsche and RAM PDFs. 
 
 | ID | Source path | Consumer | Current decision |
 |---|---|---|---|
-| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url` | Vehicle history summary; public candidate, external album review/removal remains pending |
+| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url` | PUBLIC_DOCUMENT_OWNER_APPROVED_KEEP_ALBUM: preserve the reviewed history summary and its album link |
 | PDF-2 | `auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg` | RAM settings `fullGallery[23].url` | PUBLIC_DOCUMENT_OWNER_EXCEPTION: owner explicitly permits the existing invoice to remain public for now and plans to replace it with a corrected version |
 | PDF-3 | `auctions/lot-test-mtur4abv/gallery/1788998403422-049qn.jpg` | No reference found in bounded scan | Preserve/hold apparent duplicate; no deletion or public approval |
 
@@ -20,7 +20,7 @@ All three are application/pdf despite .jpg names. PDF-3 matches PDF-1's observed
 
 ## Private review findings — no personal values recorded
 
-Porsche: the supplied file is a 14-page vehicle-history/maintenance summary, not the full receipt history suggested by its table of contents. No owner residential address, phone, email or signature was found in the reviewed pages. It contains vehicle identification, a business address and an external Google Photos album link. The linked album was not inspected; review or remove that link before final public approval. No embedded files, form fields or non-link annotations were found.
+Porsche: the supplied file is a 14-page vehicle-history/maintenance summary, not the full receipt history suggested by its table of contents. No owner residential address, phone, email or signature was found in the reviewed pages. It contains vehicle identification, a business address and an external Google Photos album link. The shared album was subsequently opened without signing in; Jeremy explicitly selected retaining its link and confirmed the intended public scope. Not every photo or future album change was independently inspected. No embedded files, form fields or non-link annotations were found.
 
 RAM: the supplied file is a four-page parts-order invoice. Purchaser name and residential shipping address appear on page 1; the order identifier occurs in the document and title metadata. No personal values are reproduced here or in the manifest. The invoice evidences parts purchased, not installation. No embedded files, form fields or non-link annotations were found. A future sanitized public copy should remove purchaser identifying details, order identifiers and identifying metadata while preserving relevant parts/date/prices.
 
@@ -28,9 +28,7 @@ Owner decision: Jeremy states the RAM listing is his own and explicitly accepts 
 
 ## Approval semantics and rollout boundary
 
-The manifest sets publication_approved=true only for PDF-2, with approval_scope=PINNED_CONTENT_ONLY_NOT_LIVE_EXECUTION. This approves the reviewed content version for the cutover plan; it does not authorize this documentation change to perform a copy, destination creation, reference update, token change, rule publication or production promotion. All destinations remain blank. A changed generation/content or corrected replacement requires a new review and mapping; do not transfer this exception automatically.
-
-PDF-1 remains a candidate pending external album review/removal. PDF-3 remains held. All other images/SVGs retain their previous eligibility review state.
+Jeremy has now approved the 163 currently referenced assets as the intended public set, including PDF-1 with its album link and the existing PDF-2 owner exception. Each has a proposed public destination with approval_scope=REFERENCED_SET_AND_PROPOSED_DESTINATION_NOT_LIVE_EXECUTION. PDF-3 and the other 62 unmatched objects remain held with no public destination. See [destination mapping decisions](storage-cutover-destination-mappings.md). Source-content approval and proposed identities do not authorize copies, reference updates, token changes, rules publication or production promotion. Changed bytes/references require revalidation; approval does not transfer automatically to a later corrected PDF.
 
 PDF-1 and PDF-2 are the exact legacy read exceptions in staging storage.rules. Any live rules/copy/reference rollout remains coordinated and separately approved. The RAM owner's content exception does not establish privacy or denial of old token links. All three have token metadata; direct bucket IAM showed no public bindings and object ACLs had no public entry, but inherited IAM and actual token access remain unverified.
 
