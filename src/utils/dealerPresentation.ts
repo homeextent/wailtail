@@ -4,9 +4,7 @@ export function dealerTaxText(dealer: PublicDealerSummary) {
   return dealer.taxHandling === 'dealer_collects' ? 'Dealer collects applicable tax at settlement.' : dealer.taxHandling === 'buyer_pays_at_registration' ? 'Buyer pays applicable tax at registration.' : 'Tax arrangement requires confirmation with the seller before purchase.';
 }
 export type DealerCampaignStage = 'upcoming' | 'live' | 'ending_soon';
-export function dealerPromoTemplates(dealer: PublicDealerSummary | undefined, auction: Partial<Auction>, requestedStage: DealerCampaignStage, url: string, now = Date.now()) {
-  const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-  const title = clean(auction.title) || [auction.year, auction.make, auction.model].filter(Boolean).join(' ') || 'Dealer vehicle';
+export function dealerCampaignState(auction: Partial<Auction>, requestedStage: DealerCampaignStage, now = Date.now()) {
   const end = Number(auction.endTime), start = Number(auction.startTime);
   const closed = ['ended', 'sold', 'reserve_not_met'].includes(auction.status || '') || (Number.isFinite(end) && end > 0 && end <= now);
   const live = !closed && ['active', 'live', 'ending_soon'].includes(auction.status || '') && (!Number.isFinite(start) || start <= now) && Number.isFinite(end) && end > now;
@@ -14,6 +12,12 @@ export function dealerPromoTemplates(dealer: PublicDealerSummary | undefined, au
   const ending = live && requestedStage === 'ending_soon' && end - now <= 86400000;
   const hook = closed ? 'AUCTION CLOSED' : ending ? 'ENDING SOON' : live ? 'LIVE NOW' : upcoming ? 'COMING TO AUCTION' : 'VEHICLE PREVIEW';
   const cta = closed ? 'View the auction result and vehicle details.' : ending ? 'Explore the listing and place your bid before closing.' : live ? 'See the vehicle, ask questions and join the bidding.' : upcoming ? 'Explore the vehicle and register ahead of bidding.' : 'Explore the vehicle listing and confirm auction availability.';
+  return { end, start, closed, live, upcoming, ending, hook, cta };
+}
+export function dealerPromoTemplates(dealer: PublicDealerSummary | undefined, auction: Partial<Auction>, requestedStage: DealerCampaignStage, url: string, now = Date.now()) {
+  const clean = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+  const title = clean(auction.title) || [auction.year, auction.make, auction.model].filter(Boolean).join(' ') || 'Dealer vehicle';
+  const { end, start, closed, live, upcoming, ending, hook, cta } = dealerCampaignState(auction, requestedStage, now);
   const identity = dealer ? `${dealer.name} · ${dealer.city}, ${dealer.province}` : 'Dealer inventory';
   const provenance = dealer?.verified ? 'Verified Boutique Dealer on WAILTAIL' : 'Dealer-listed vehicle';
   const facts = [clean(auction.mileage) && `Odometer: ${clean(auction.mileage)}${/\b(km|mi|miles)\b/i.test(clean(auction.mileage)) ? '' : ` ${auction.distanceUnit || 'KM'}`}`, clean(auction.engine) && `Engine: ${clean(auction.engine)}`, clean(auction.drivetrain) && `Transmission: ${clean(auction.drivetrain)}`, clean(auction.exteriorColor) && `Exterior: ${clean(auction.exteriorColor)}`, clean(auction.location) && `Vehicle location: ${clean(auction.location)}`].filter(Boolean) as string[];

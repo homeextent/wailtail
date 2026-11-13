@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.5 — Public dealer presentation (local review pending)
 
+- Restored the custom graphic tagline on dealer exports as its own bounded row, separate from dealer attribution and verification qualification. Canvas and copy share current-status campaign rules; real canvas drawing checks cover tagline presence, row ordering/photo clearance and live-status overrides.
+
 - Corrected dealer marketing copy to provide distinct enthusiast, marketplace and three-post thread formats with vehicle-led hooks, grounded facts/bids, stage-aware calls to action and concise verification qualifications. Refresh public lot data before copying; expired/closed/unavailable lots cannot generate false live/ending-soon claims.
 
 - Corrected the synthetic preview viewport and mobile acceptance checks. Dealer disclosures now keep the vehicle title first and show a compact fee/tax summary with expandable contacts and verification details, instead of consuming the mobile arrival screen.

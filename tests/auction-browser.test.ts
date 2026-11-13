@@ -197,6 +197,17 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(readPromo, value => value.includes('1/3') && value.includes('2/3') && value.includes('3/3'), 'dealer thread has three posts');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Ending Soon'); if (!b) return false; b.click(); return true; })()`);
     await eventually(readPromo, value => value.includes('ENDING SOON') && value.includes('bid before close'), 'dealer ending-soon campaign promotes actual open auction');
+    await command('Runtime.evaluate', { expression: `(() => { const original = CanvasRenderingContext2D.prototype.fillText; window.__dealerCanvasRows = []; CanvasRenderingContext2D.prototype.fillText = function(text, x, y, ...rest) { if (x === 60 && y === 205) window.__dealerCanvasRows = []; if (x === 60 && y >= 205 && y < 460) window.__dealerCanvasRows.push({ text: String(text), y }); return original.call(this, text, x, y, ...rest); }; })()` });
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Upcoming'); if (!b) return false; b.click(); return true; })()`);
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Canvas Graphic Generator')); if (!b) return false; b.click(); return true; })()`);
+    await click(`(() => { const input = document.getElementById('social-graphic-tagline'); if (!input) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Collector auction preview'); input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const canvasRows = await eventually(async () => (await command('Runtime.evaluate', { expression: 'window.__dealerCanvasRows', returnByValue: true })).result.value,
+      rows => rows.some(r => r.text.includes('Collector auction preview')) && rows.some(r => r.text.includes('Synthetic Public Dealer')) && rows.some(r => r.text.includes('WAILTAIL review')), 'canvas draws custom tagline and separate dealer rows');
+    assert.ok(canvasRows.some(r => r.text === 'LIVE NOW'), 'canvas overrides requested Upcoming for a live lot just as copy does');
+    const taglineY = canvasRows.find(r => r.text.includes('Collector auction preview')).y;
+    const dealerY = canvasRows.find(r => r.text.includes('Synthetic Public Dealer')).y;
+    const noticeY = canvasRows.find(r => r.text.includes('WAILTAIL review')).y;
+    assert.ok(taglineY < dealerY && dealerY < noticeY && Math.max(...canvasRows.map(r => r.y)) + 14 < 460, 'separate text rows remain above the detail photo');
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
     await eventually(text, value => value.includes('Synthetic public description'), 'public lot after social preview');
 

@@ -1,5 +1,5 @@
 import { startVisiblePolling } from '../services/visiblePolling';
-import { dealerPromoTemplates } from '../utils/dealerPresentation';
+import { dealerPromoTemplates, dealerCampaignState } from '../utils/dealerPresentation';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, 
@@ -61,7 +61,6 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       return response.ok ? (await response.json()).auction as Auction | undefined : undefined;
     } catch { return undefined; }
   }, [auction?.id]);
-  const loadDealer = useCallback(async (signal?: AbortSignal) => (await loadPublicLot(signal))?.publicDealer, [loadPublicLot]);
   useEffect(() => {
     let cancelled = false;
     setPublicDealer(undefined);
@@ -320,12 +319,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
     try {
       // 1. Preload Base Template & Dual Vehicle Photos BEFORE modifying or drawing to canvas
-      const [bgImg, img1, img2, currentDealer] = await Promise.all([
+      const [bgImg, img1, img2, currentLot] = await Promise.all([
         loadImageAsync('/social-promo-template-4x3.jpg').catch(() => null),
         imageSlot1 ? loadImageAsync(imageSlot1).catch(() => null) : Promise.resolve(null),
         imageSlot2 ? loadImageAsync(imageSlot2).catch(() => null) : Promise.resolve(null),
-        loadDealer(),
+        loadPublicLot(),
       ]);
+      const currentDealer = currentLot?.publicDealer;
       // If a newer render was triggered while images loaded, abort immediately
       if (currentVersion !== renderVersionRef.current) return false;
 
@@ -456,6 +456,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
       } else if (stage === 'ending_soon') {
         stageText = 'ENDING SOON';
       }
+
+      if (dealerCampaign) stageText = dealerCampaignState(currentLot || {}, stage).hook;
 
       ctx.save();
       ctx.textAlign = 'left';
@@ -588,21 +590,22 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
       const finalTitleY = line2Y + (titleLines.length - 1) * titleLineHeight;
 
-      // Line 3 (Subtitle / Tagline): Crisp light gray (#e2e8f0), max 2 lines with auto-wrap
-      const displayTagline = currentDealer ? `${currentDealer.verified ? 'Verified Boutique Dealer' : 'Dealer inventory'}: ${currentDealer.name} · ${currentDealer.city}, ${currentDealer.province}` : (tagline && tagline.trim()) || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
-      if (displayTagline) {
-        const line3Y = finalTitleY + 28;
-        ctx.save();
-        ctx.textAlign = 'left';
-        ctx.font = 'italic 500 15px "Inter", sans-serif';
-        ctx.fillStyle = '#e2e8f0';
-        const afterTagline = drawWrappedText(ctx, displayTagline, brandX, line3Y, 440, 21, 2);
-        if (currentDealer) {
-          ctx.font = '500 11px Inter, sans-serif';
-          drawWrappedText(ctx, 'WAILTAIL review; no regulatory endorsement or vehicle-condition guarantee.', brandX, afterTagline + 16, 440, 15, 2);
-        }
-        ctx.restore();
+      // Separate bounded rows: promotion first, dealer attribution second, qualification last.
+      const displayTagline = tagline.trim() || auction.subtitle?.trim() || `${auction.engine ? auction.engine + ' • ' : ''}${auction.mileage ? auction.mileage + ' ' + (auction.distanceUnit || 'km') + ' • ' : ''}Zero Buyer Fees`;
+      let rowY = finalTitleY + 26;
+      ctx.save();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'italic 600 17px "Inter", sans-serif';
+      rowY = drawWrappedText(ctx, displayTagline, brandX, rowY, 440, 20, 2);
+      if (currentDealer) {
+        ctx.font = '500 14px "Inter", sans-serif';
+        const attribution = `${currentDealer.verified ? 'Verified Boutique Dealer' : 'Dealer inventory'}: ${currentDealer.name} · ${currentDealer.city}, ${currentDealer.province}`;
+        rowY = drawWrappedText(ctx, attribution, brandX, rowY + 7, 440, 18, 2);
+        ctx.font = '500 11px "Inter", sans-serif';
+        drawWrappedText(ctx, 'WAILTAIL review; no regulatory endorsement or vehicle-condition guarantee.', brandX, rowY + 7, 440, 14, 2);
       }
+      ctx.restore();
 
       return true;
     } catch (err: any) {
@@ -614,7 +617,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         setIsRenderingCanvas(false);
       }
     }
-  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, loadDealer]);
+  }, [auction, stage, tagline, imageSlot1, imageSlot2, loadImageAsync, drawCoverImage, drawWrappedText, loadPublicLot, dealerCampaign]);
 
   // Re-render canvas when tabs, stage, tagline, or selected photos change
   useEffect(() => {
@@ -905,7 +908,7 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
             </button>
           </div>
 
-          {(auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) && <p className="text-xs text-slate-300 max-w-xs">Dealer copy follows current lot status. Ending Soon requires closing within 24 hours; unavailable lots use neutral preview wording.</p>}
+          {(auction.sellerType === 'dealer' || auction.publicDealer || publicDealer) && <p className="text-xs text-slate-300 max-w-xs">Dealer copy and graphics follow current lot status. Ending Soon requires closing within 24 hours; unavailable lots use neutral preview wording.</p>}
 
           {/* Lifecycle Stage Controls */}
           <div className="flex items-center gap-2">
@@ -959,12 +962,13 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
               <div className="space-y-3.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
                 {/* Custom Tagline Input */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <label htmlFor="social-graphic-tagline" className="text-xs font-bold text-slate-300 flex items-center justify-between">
                     <span>Custom Graphic Tagline</span>
                     <span className="text-[10px] text-slate-500 font-mono">Max 75 chars</span>
                   </label>
                   <input
                     type="text"
+                    id="social-graphic-tagline"
                     value={tagline}
                     onChange={(e) => setTagline(e.target.value)}
                     placeholder="e.g., Canadian Spec, 6-Speed Manual, 1-Owner"

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { publicDealerSummary, readPublicDealerProfiles } from '../server/api/_lib/publicDealer';
 import { projectPublicAuction } from '../server/api/public-auctions';
-import { dealerPromoTemplates } from '../src/utils/dealerPresentation';
+import { dealerPromoTemplates, dealerCampaignState } from '../src/utils/dealerPresentation';
 const now = 2000;
 const profile = { verificationStatus: 'verified', verificationExpiresAt: 3000, primaryRepresentativeUid: 'rep', phone: '+1 905 555 0100', website: 'https://example.test', displayPhonePublicly: true, displayWebsitePublicly: true, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET' };
 const listing = { status: 'active', sellerType: 'dealer', dealerId: 'dealer', sellerId: 'rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1', sourceApplicationId: 'SECRET', sourceApplicationCollection: 'consignment_applications', dealerListingRevision: 0, dealerSnapshot: { dealerId: 'dealer', dealershipName: 'Synthetic legal', displayName: 'Synthetic dealer', city: 'Toronto', province: 'ON', verifiedAt: 1000, verificationRecordVersion: '3', phone: profile.phone, website: profile.website, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET', representativeUid: 'SECRET' } };
@@ -67,4 +67,14 @@ test('dealer promotional formats differ and use grounded stage, vehicle and bid 
   assert.ok(closed.marketplace_pitch.includes('AUCTION CLOSED')); assert.ok(!closed.marketplace_pitch.includes('join the bidding'));
   const sparse = dealerPromoTemplates(undefined, { title: 'Sparse fixture', status: 'draft' }, 'ending_soon', 'https://example.test/lot', now);
   assert.ok(!JSON.stringify(sparse).includes('Verified Boutique Dealer')); assert.ok(!JSON.stringify(sparse).includes('undefined')); assert.ok(!JSON.stringify(sparse).includes('ENDING SOON'));
+});
+
+test('dealer canvas and copy share truthful campaign headlines', () => {
+  const now = 100000;
+  const live = { status: 'active' as const, startTime: now - 1, endTime: now + 3600000 };
+  assert.equal(dealerCampaignState(live, 'upcoming', now).hook, 'LIVE NOW');
+  assert.equal(dealerCampaignState(live, 'ending_soon', now).hook, 'ENDING SOON');
+  assert.equal(dealerCampaignState({ ...live, endTime: now - 1 }, 'live', now).hook, 'AUCTION CLOSED');
+  assert.equal(dealerCampaignState({}, 'ending_soon', now).hook, 'VEHICLE PREVIEW');
+  assert.equal(dealerCampaignState({ status: 'upcoming', startTime: now + 1000 }, 'live', now).hook, 'COMING TO AUCTION');
 });
