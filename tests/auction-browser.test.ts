@@ -116,8 +116,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const dealerLinks = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('section[aria-label="Dealer information"] a')).map(a => a.getAttribute('href'))`, returnByValue: true });
     assert.deepEqual(dealerLinks.result.value, ['tel:+19055550100', 'https://example.test/']);
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    await eventually(async () => (await command('Runtime.evaluate', { expression: 'window.innerWidth', returnByValue: true })).result.value,
-      value => value === 390, 'actual mobile layout viewport is 390 CSS pixels');
+    await eventually(async () => (await command('Runtime.evaluate', { expression: `({ width: window.innerWidth, overflow: Array.from(document.body.querySelectorAll('*')).filter(e => e.getBoundingClientRect().right > 391 && e.getBoundingClientRect().width > 0).slice(0, 12).map(e => ({ tag: e.tagName, className: String(e.className).slice(0, 160), right: Math.round(e.getBoundingClientRect().right) })) })`, returnByValue: true })).result.value,
+      value => value.width === 390, 'actual mobile layout viewport is 390 CSS pixels');
     const dealerMobile = await command('Runtime.evaluate', { expression: `(() => { const panel = document.querySelector('section[aria-label="Dealer information"]'); const details = panel.querySelector('details'); return { width: window.innerWidth, mobile: matchMedia('(max-width: 639px)').matches, fits: panel.scrollWidth <= panel.clientWidth, height: panel.getBoundingClientRect().height, collapsed: !details.open, contactHidden: panel.querySelector('a').getClientRects().length === 0 }; })()`, returnByValue: true });
     assert.equal(dealerMobile.result.value.mobile, true);
     assert.equal(dealerMobile.result.value.fits, true, 'dealer disclosures fit mobile panel');
