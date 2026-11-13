@@ -304,9 +304,9 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
   // Compositor render trigger
   const renderCanvasGraphic = useCallback(async () => {
     const canvas = canvasRef.current;
-    if (!canvas || !auction) return;
+    if (!canvas || !auction) return false;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return false;
 
     setIsRenderingCanvas(true);
     setCanvasError(null);
@@ -323,12 +323,12 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         loadDealer(),
       ]);
       // If a newer render was triggered while images loaded, abort immediately
-      if (currentVersion !== renderVersionRef.current) return;
+      if (currentVersion !== renderVersionRef.current) return false;
 
       // Ensure web fonts are completely ready before measuring/drawing typography
       if (document.fonts?.ready) {
         await document.fonts.ready;
-        if (currentVersion !== renderVersionRef.current) return;
+        if (currentVersion !== renderVersionRef.current) return false;
       }
 
       // 2. Base Dimensions (1200 x 900)
@@ -600,9 +600,11 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
         ctx.restore();
       }
 
+      return true;
     } catch (err: any) {
       console.error('Error drawing social promo canvas:', err);
       setCanvasError('Failed to generate high-resolution canvas graphic.');
+      return false;
     } finally {
       if (currentVersion === renderVersionRef.current) {
         setIsRenderingCanvas(false);
@@ -619,7 +621,8 @@ export const SocialPromoKitModal: React.FC<SocialPromoKitModalProps> = ({
 
   // Handle Download Graphic (PNG)
   const handleDownloadGraphic = async () => {
-    await renderCanvasGraphic();
+    const rendered = await renderCanvasGraphic();
+    if (!rendered) { setExportToast({ message: 'Graphic changed while preparing export. Please retry.', type: 'error' }); return; }
     const canvas = canvasRef.current;
     if (!canvas || !auction) return;
     try {
