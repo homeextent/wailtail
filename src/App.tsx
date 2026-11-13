@@ -425,10 +425,10 @@ const AuctionAppContent: React.FC = () => {
 
     if (!isProtectedListingRoute || isAdminRoute) return;
 
-    const isAuthorized = Boolean(user && isSeller);
+    const isAuthorized = Boolean(user);
 
     if (!isAuthorized) {
-      setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
+      setRouteToast('Sign in to access your assigned listing workspace.');
       navigateTo('/');
       return;
     }
@@ -448,17 +448,9 @@ const AuctionAppContent: React.FC = () => {
       return;
     }
 
-    // Check if lot exists in catalog once allAuctions is loaded
-    if (isAdmin && allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
-      const exists = allAuctions.some(a => a.id === rawId);
-      if (!exists) {
-        const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
-        sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
-        setRouteToast('Listing lot not found');
-        navigateTo(fallbackUrl);
-        return;
-      }
-    }
+    // The direct listing subscription resolves administrator existence; a public
+    // catalog retained during authentication cannot establish that a draft is missing.
+
   }, [currentPath, user, isAdmin, authLoading, allAuctions]);
 
   useEffect(() => {
