@@ -188,6 +188,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value,
       value => value.includes('Verified Boutique Dealer on WAILTAIL') && value.includes('Synthetic Public Dealer') && value.includes('not provincial regulatory endorsement'), 'dealer-specific social copy');
     const readPromo = async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('textarea')).map(t => t.value).join('\\n')`, returnByValue: true })).result.value;
+    await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Live Now'); if (!b) return false; b.click(); return true; })()`);
+    await eventually(readPromo, value => value.includes('LIVE NOW') && value.includes('join the bidding'), 'dealer live campaign selected explicitly');
     const forumCopy = await readPromo();
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('Marketplace Pitch')); if (!b) return false; b.click(); return true; })()`);
     await eventually(readPromo, value => value !== forumCopy && value.includes('LIVE NOW') && value.includes('join the bidding'), 'marketplace dealer promotion differs');
