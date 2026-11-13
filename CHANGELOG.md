@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### M2.4 — Dealer vehicle listing integration (2026-11-08; local review pending)
+
+- Added explicit canonical dealer vehicle approval/draft creation through a trusted designated-admin endpoint. Current verification, protected UID links, authoritative representative Auth, case revision, inspected-application fingerprint, deterministic listing IDs and actor-bound retries protect atomic listing/media/application/audit creation.
+- Added private creation-time dealer snapshots, protected attribution/provenance, CAD $0 documentation fees and versioned informational tax indicators. Dedicated draft tax changes are audited; forward publication checks current verification and confirmed tax handling. Public dealer presentation remains M2.5.
+- Added admin application/editor controls and assigned-UID representative workspace access without global role promotion. Generic protected-field edits, dealer duplication and email-based dealer consignor authorization are denied; legacy/private one-click conversion remains disabled.
+- Extended isolated acceptance for conversion/rollback/conflicts, ownership, snapshot privacy/immutability, media, submission, tax/lifecycle publication and private regressions. See `docs/m2-4-dealer-listings.md`. Exact-head CI and owner local review remain required; no live rules/index publication, migration or production promotion is included.
+
 ### Documentation — M2.3 staging acceptance synchronization (2026-11-08)
 
 - Synchronized README, System Bible, changelog and M2.3 guide with owner local acceptance of `75d3641`, PR #7 merge at `d3c5cc5`, successful post-merge CI/Vercel checks and owner-confirmed clean local staging synchronization. This is documentation only; production and live Firebase rules/index publication remain separate.
@@ -99,7 +106,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Milestone Status
 - **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
 - **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
-- **M2.4 — Dealer Vehicle Listing Integration**: PLANNED. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
+- **M2.4 — Dealer Vehicle Listing Integration**: IMPLEMENTED — LOCAL REVIEW PENDING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
 - **M2.5 — Public Dealer Presentation and Auction Integration**: PLANNED. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
 

@@ -1507,7 +1507,7 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
   test('M2.3 profiles, cases, claims and immutable audit history require trusted server mutations', async () => {
     await testEnv.withSecurityRulesDisabled(async ctx => {
       const db = getNamedDb(ctx);
-      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits']) {
+      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits', 'dealerListingCommands', 'dealerListingAudits']) {
         await setDoc(doc(db, collection, 'm23-record'), { dealerId: 'dealer', verificationStatus: 'verified', revision: 1 });
       }
     });
@@ -1515,15 +1515,16 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
       testEnv.authenticatedContext('rep', { email: 'rep@example.test', email_verified: true }),
       testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true })]) {
       const db = getNamedDb(actor);
-      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits']) {
+      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits', 'dealerListingCommands', 'dealerListingAudits']) {
         await assertFails(setDoc(doc(db, collection, 'new'), { verificationStatus: 'verified' }));
         await assertFails(updateDoc(doc(db, collection, 'm23-record'), { verificationStatus: 'verified', reason: 'rewrite' }));
         await assertFails(deleteDoc(doc(db, collection, 'm23-record')));
       }
     }
     const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
-    for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealer_verification_audits']) await assertSucceeds(getDoc(doc(admin, collection, 'm23-record')));
+    for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealer_verification_audits', 'dealerListingAudits']) await assertSucceeds(getDoc(doc(admin, collection, 'm23-record')));
     await assertFails(getDoc(doc(admin, 'dealerIdentityClaims', 'm23-record')));
+    await assertFails(getDoc(doc(admin, 'dealerListingCommands', 'm23-record')));
   });
 
 });

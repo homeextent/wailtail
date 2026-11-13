@@ -91,8 +91,8 @@ await firestore.collection('consignment_applications').doc(`submission-${run}`).
   make: 'Synthetic', model: 'Submission', transmission: '5-Speed Manual', notes: 'Applicant condition disclosure', submittedAt: Date.now()
 });
 
-const dealerRepresentative = await auth.createUser({ email: `dealer-rep-${run}@example.test`, emailVerified: true });
-await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, email: dealerRepresentative.email, role: 'bidder' });
+const dealerRepresentative = await auth.createUser({ email: `dealer-rep-${run}@example.test`, password, emailVerified: true });
+await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, email: dealerRepresentative.email, role: 'bidder', welcomeEmailSent: true, isEmailVerified: true });
 
 const server = express();
 server.use((_req, res, next) => {
@@ -135,12 +135,18 @@ server.get('/dealer-verification-fixture/:id', async (req, res, next) => {
     const bidder = (await firestore.collection('bidders').doc(dealerRepresentative.uid).get()).data();
     const application = (await firestore.collection('consignment_applications').doc(req.params.id).get()).data();
     const events = await firestore.collection('dealer_verification_audits').where('caseId', '==', caseId).get();
-    res.json({ review, profile, user, bidder, application, events: events.size });
+    const listing = application?.convertedAuctionId ? (await firestore.collection('auctions').doc(application.convertedAuctionId).get()).data() : null;
+    const listingAudits = application?.convertedAuctionId ? (await firestore.collection('dealerListingAudits').where('auctionId', '==', application.convertedAuctionId).get()).size : 0;
+    res.json({ review, profile, user, bidder, application, listing, listingAudits, events: events.size });
   } catch (error) { next(error); }
 });
 server.get('/fixture', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email, password, auctionId, publicAuctionId, dealerRepresentativeUid: dealerRepresentative.uid });
+});
+server.get('/dealer-fixture', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ projectId, authHost: bindings.FIREBASE_AUTH_EMULATOR_HOST, email: dealerRepresentative.email, password });
 });
 server.get('/admin-fixture', async (_req, res, next) => {
   try {

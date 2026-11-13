@@ -296,7 +296,13 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
 
       const media = (await transaction.get(mediaRef)).data();
       const assets = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
+      const canEdit = await dealerListingEligible(transaction, firestore, record, uid);
       return {
+        canEdit,
+        ...(record.sellerType === 'dealer' ? { dealer: {
+          businessName: record.dealerSnapshot?.displayName || record.dealerSnapshot?.dealershipName || '',
+          city: record.dealerSnapshot?.city || '', province: record.dealerSnapshot?.province || '', documentationFee: 0
+        } } : {}),
         showcaseChapters: sellerShowcaseChapters(media?.showcaseChapters),
         videoTitle: typeof media?.videoTitle === 'string' ? media.videoTitle : '',
         videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',

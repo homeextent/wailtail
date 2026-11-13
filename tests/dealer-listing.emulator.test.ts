@@ -1,0 +1,120 @@
+import assert from 'node:assert/strict';
+import { createHash, randomUUID } from 'node:crypto';
+import { test } from 'node:test';
+import { initializeApp, deleteApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import { NAMED_FIRESTORE_DATABASE_ID } from '../server/api/_lib/firebaseAdmin';
+import { handleDealerListing } from '../server/api/admin-dealer-listing';
+import { handleAdminUpdateAuction } from '../server/api/admin-update-auction';
+import { handleAdminDuplicateAuction } from '../server/api/admin-duplicate-auction';
+import { handleSellerDraftUpload } from '../server/api/seller-draft-upload';
+import { handleSellerDraftMedia } from '../server/api/seller-draft-media';
+import { handleSellerDraftRead, handleSellerDraftNarrative, handleSellerDraftSubmission } from '../server/api/seller-draft-narrative';
+import { handleAuthorizeApprovedConsignor } from '../server/api/authorize-approved-consignor';
+import { projectPublicAuction } from '../server/api/public-auctions';
+import { callListing } from './dealer-listing-helpers';
+import { INTAKE_DECLARATION_VERSION } from '../src/config/consignmentIntake';
+
+test('M2.4 atomic conversion, role-free ownership, immutable snapshots, publication eligibility and failure isolation', async () => {
+  assert.equal(process.env.GCLOUD_PROJECT, 'demo-wailtail-stage3');
+  for (const key of ['FIREBASE_AUTH_EMULATOR_HOST', 'FIRESTORE_EMULATOR_HOST', 'FIREBASE_STORAGE_EMULATOR_HOST']) assert.match(process.env[key] || '', /^127\.0\.0\.1:\d+$/);
+  for (const key of ['GOOGLE_APPLICATION_CREDENTIALS', 'FIREBASE_SERVICE_ACCOUNT_KEY', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL']) assert.ok(!process.env[key]);
+  const bucket = 'demo-wailtail-stage3.appspot.com';
+  assert.ok(!process.env.FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET === bucket);
+  assert.ok(!process.env.STORAGE_EMULATOR_HOST || process.env.STORAGE_EMULATOR_HOST === `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}`);
+  process.env.FIREBASE_STORAGE_BUCKET = bucket;
+  process.env.STORAGE_EMULATOR_HOST = `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}`;
+  const app = initializeApp({ projectId: 'demo-wailtail-stage3', storageBucket: bucket }, `m24-${randomUUID()}`);
+  const firestore = getFirestore(app, NAMED_FIRESTORE_DATABASE_ID), auth = getAuth(app);
+  const uid = `rep-${randomUUID()}`, id = randomUUID(), dealerId = `dealer-${randomUUID()}`;
+  const caseId = createHash('sha256').update(`consignment_applications:${id}`).digest('hex');
+  const auctionId = `dealer-intake-${createHash('sha256').update(id).digest('hex').slice(0,40)}`;
+  const application = firestore.collection('consignment_applications').doc(id), listing = firestore.collection('auctions').doc(auctionId);
+  const original = { applicantType: 'dealer', status: 'pending', sellerEmail: `claim-${randomUUID()}@example.test`, sellerName: 'Untrusted claimant',
+    year: '1988', make: 'Porsche', model: '928', notes: 'Private application notes', reserveExpectation: '$22,000',
+    dealershipOwnershipDeclaration: true, legalSellerOfRecordDeclaration: true, noBrokeredInventoryDeclaration: true,
+    termsAccepted: true, declarationVersion: INTAKE_DECLARATION_VERSION };
+  const profile = { legalBusinessName: 'Canonical synthetic dealer', dbaName: 'Synthetic showroom', city: 'Toronto', province: 'ON',
+    primaryRepresentativeUid: uid, verificationCaseId: caseId, verificationStatus: 'verified', verifiedAt: Date.now() - 1000,
+    verificationExpiresAt: Date.now() + 86400000, streetAddress: 'Private address', dealerLicenseNumber: 'Private licence',
+    phone: '9055550100', website: 'https://example.test', displayPhonePublicly: false, displayWebsitePublicly: false };
+  const services = { firestore, auth: { verifyIdToken: async () => ({ uid: 'admin', email: 'jeremygoodmurphy@gmail.com', email_verified: true }), getUser: (s: string) => auth.getUser(s) } } as any;
+  const convert: any = { action: 'convert', applicationId: id, expectedRevision: 1, commandId: randomUUID(), reason: 'Synthetic curation approval', taxHandling: 'requires_confirmation' };
+  const invoke = (body: any, svc = services) => callListing(handleDealerListing, body, svc);
+  const adminUpdate = (updates: any) => callListing(handleAdminUpdateAuction, { auctionId, updates }, services);
+  const sellerServices = { firestore, auth: { verifyIdToken: async () => ({ uid, email: 'rep@example.test', email_verified: true }) } } as any;
+  try {
+    await auth.createUser({ uid, email: `rep-${randomUUID()}@example.test`, emailVerified: true });
+    await application.set(original);
+    await firestore.collection('consignments').doc(id).set(original);
+    await firestore.collection('dealerVerificationCases').doc(caseId).set({ dealerId, revision: 1 });
+    await firestore.collection('dealer_profiles').doc(dealerId).set(profile);
+    for (const collection of ['users','bidders']) await firestore.collection(collection).doc(uid).set({ uid, dealerId, role: 'bidder', untouched: 'preserve' });
+    const context = await invoke({ action: 'read', applicationId: id });
+    assert.equal(context.data.eligible, true); convert.applicationFingerprint = context.data.applicationFingerprint;
+    await application.update({ notes: 'Changed after curator inspection' });
+    assert.equal((await invoke(convert)).code, 409, 'stale curation context cannot approve changed application');
+    await application.set(original);
+    assert.equal((await application.get()).get('status'), 'pending'); assert.equal((await listing.get()).exists, false);
+    const fail = { ...services, firestore: { collection: firestore.collection.bind(firestore), runTransaction: (callback: any) => firestore.runTransaction(async tx => { await callback(tx); throw Error('synthetic commit failure'); }) } };
+    assert.equal((await invoke(convert, fail)).code, 503);
+    assert.equal((await listing.get()).exists, false); assert.equal((await application.get()).get('status'), 'pending');
+    assert.equal((await firestore.collection('settings').doc(`media-${auctionId}`).get()).exists, false);
+    assert.equal((await firestore.collection('dealerListingAudits').where('auctionId','==',auctionId).get()).size, 0);
+    assert.equal((await invoke({ ...convert, expectedRevision: 0 })).code, 409);
+    const commands = [convert, { ...convert, commandId: randomUUID() }];
+    const concurrent = await Promise.all(commands.map(c => invoke(c)));
+    assert.deepEqual(concurrent.map(r => r.code).sort(), [201,409]);
+    const winner = commands[concurrent.findIndex(r => r.code === 201)];
+    assert.equal((await invoke(winner)).code, 200); assert.equal((await invoke({ ...winner, reason: 'changed retry' })).code, 409);
+    const created = (await listing.get()).data()!;
+    assert.equal(created.sellerId, uid); assert.equal(created.status, 'draft'); assert.equal(created.dealerDocFee, 0); assert.equal(created.currency, 'CAD');
+    assert.equal(created.reserveAmount, 0, 'free text reserve expectation is not a trusted financial value');
+    assert.equal(created.sellerName, 'Synthetic showroom'); assert.equal(created.dealerSnapshot.dealerLicenseNumber, undefined);
+    assert.equal(created.dealerSnapshot.streetAddress, undefined); assert.equal(created.dealerSnapshot.phone, undefined);
+    assert.equal(created.notes, undefined); assert.equal(created.sellerEmail, undefined);
+    assert.equal((await firestore.collection('users').doc(uid).get()).get('role'), 'bidder');
+    assert.equal((await firestore.collection('bidders').doc(uid).get()).get('untouched'), 'preserve');
+    assert.equal((await application.get()).get('convertedAuctionId'), auctionId);
+    assert.equal((await firestore.collection('consignments').doc(id).get()).get('status'), 'pending', 'legacy mirror unchanged');
+    assert.equal(projectPublicAuction(auctionId, created), null);
+    const read = await callListing(handleSellerDraftRead, { auctionId }, sellerServices);
+    assert.equal(read.code, 200); assert.equal(read.data.dealer.businessName, 'Synthetic showroom'); assert.equal(read.data.canEdit, true);
+    const foreign = { ...sellerServices, auth: { verifyIdToken: async () => ({ uid: 'foreign', email: 'other@example.test', email_verified: true }) } };
+    assert.equal((await callListing(handleSellerDraftRead, { auctionId }, foreign)).code, 404);
+    assert.equal((await callListing(handleSellerDraftNarrative, { auctionId, expectedRevision: 0, overviewHeading: 'Dealer narrative', overviewParagraphs: ['Synthetic seller text'] }, sellerServices)).code, 200);
+    assert.equal((await callListing(handleSellerDraftNarrative, { auctionId, expectedRevision: 1, overviewHeading: 'bad', overviewParagraphs: [], dealerDocFee: 20 }, sellerServices)).code, 422);
+    // Marker-only JPEG tests transport/authorization and Storage persistence, not decoding.
+    const image = Buffer.from([255,216,255,0,255,217]).toString('base64');
+    const upload = await callListing(handleSellerDraftUpload, { auctionId, expectedRevision: 1, jpegBase64: image }, { ...sellerServices, app });
+    assert.equal(upload.code, 201); assert.equal(upload.data.revision, 2);
+    assert.equal((await callListing(handleSellerDraftMedia, { auctionId, assetId: upload.data.assetId, action: 'remove', expectedRevision: 2 }, { ...sellerServices, app })).code, 200);
+    assert.equal((await adminUpdate({ dealerSnapshot: {} })).code, 422);
+    assert.equal((await adminUpdate({ currency: 'USD' })).code, 409);
+    assert.equal((await adminUpdate({ status: 'preview' })).code, 409, 'unconfirmed tax blocks publication');
+    assert.equal((await adminUpdate({ status: 'sold' })).code, 409, 'terminal public statuses cannot bypass initial publication checks');
+    assert.equal((await callListing(handleAdminDuplicateAuction, { auctionId }, services)).code, 409);
+    const tax = { action: 'update_tax', auctionId, expectedRevision: 0, commandId: randomUUID(), taxHandling: 'dealer_collects', reason: 'Confirmed synthetic tax arrangement' };
+    assert.equal((await invoke(tax)).code, 200); assert.equal((await invoke(tax)).data.replayed, true);
+    await firestore.collection('dealer_profiles').doc(dealerId).update({ city: 'Ottawa', verificationStatus: 'suspended' });
+    assert.equal((await adminUpdate({ status: 'preview' })).code, 409);
+    assert.equal((await callListing(handleSellerDraftSubmission, { auctionId, expectedRevision: 3 }, sellerServices)).code, 403);
+    await firestore.collection('dealer_profiles').doc(dealerId).update({ verificationStatus: 'verified', verificationExpiresAt: Date.now() - 1 });
+    assert.equal((await adminUpdate({ status: 'preview' })).code, 409);
+    await firestore.collection('dealer_profiles').doc(dealerId).update({ verificationExpiresAt: Date.now() + 86400000 });
+    assert.equal((await callListing(handleSellerDraftSubmission, { auctionId, expectedRevision: 3 }, sellerServices)).code, 200);
+    assert.equal((await listing.get()).get('status'), 'pending_review');
+    assert.equal((await invoke({ ...tax, expectedRevision: 1, commandId: randomUUID() })).code, 409);
+    assert.equal((await adminUpdate({ status: 'preview' })).code, 200);
+    const after = (await listing.get()).data()!; assert.deepEqual(after.dealerSnapshot, created.dealerSnapshot, 'profile changes do not rewrite snapshot');
+    const publicLot = projectPublicAuction(auctionId, after)!; assert.equal(publicLot.dealerSnapshot, undefined); assert.equal(publicLot.sourceApplicationId, undefined);
+    assert.equal((await firestore.collection('dealerListingAudits').where('auctionId','==',auctionId).get()).size, 2);
+    const legacyId = randomUUID(); await firestore.collection('consignments').doc(legacyId).set(original);
+    assert.equal((await invoke({ action: 'read', applicationId: legacyId })).code, 404);
+    const emailServices = { firestore, auth: { verifyIdToken: async () => ({ uid: 'email-claimant', email: original.sellerEmail, email_verified: true }) } };
+    const emailResult = await callListing((req: any,res: any) => handleAuthorizeApprovedConsignor(req,res,{ adminServices: emailServices as any }), {}, emailServices);
+    assert.equal(emailResult.data.authorized, false); assert.equal((await firestore.collection('users').doc('email-claimant').get()).exists, false);
+    assert.equal((await listing.get()).get('sellerId'), uid);
+  } finally { await deleteApp(app); }
+});

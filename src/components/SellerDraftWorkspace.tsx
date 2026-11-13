@@ -24,6 +24,8 @@ interface SellerVideoChapter {
 }
 
 interface Draft {
+  canEdit?: boolean;
+  dealer?: { businessName: string; city: string; province: string; documentationFee: number };
   videoChapters: SellerVideoChapter[];
   showcaseChapters: ShowcaseChapter[];
   videoTitle: string;
@@ -140,7 +142,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   const videoChaptersChanged = !!draft && JSON.stringify(videoChapters) !== JSON.stringify(draft.videoChapters);
   const dirty = draft !== null &&
     (heading !== draft.overviewHeading || paragraphs !== draft.overviewParagraphs.join('\n\n') || Object.keys(videoPatch).length > 0 || showcaseEdits.length > 0 || galleryChanged || videoChaptersChanged);
-  const editable = draft?.status === 'draft';
+  const editable = draft?.status === 'draft' && draft?.canEdit !== false;
 
   async function apply(operation: 'narrative' | 'submit') {
     if (!draft || !editable || busy || (operation === 'submit' && dirty)) return;
@@ -217,7 +219,8 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
       {!draft && !error && <p>Loading listing…</p>}
       {draft && <>
         <h1 className="text-2xl font-bold">{draft.title}</h1>
-        {!editable && <p>This listing is read-only while it is under review.</p>}
+        {draft.dealer && <section aria-label="Assigned dealer listing"><h2>Assigned dealer listing</h2><p>{draft.dealer.businessName} · {draft.dealer.city}, {draft.dealer.province} · Documentation fee: CAD $0</p><p>Dealer attribution, vehicle identity and financial fields are managed by administrators.</p></section>}
+        {!editable && <p>{draft.canEdit === false ? 'This dealer listing is read-only because current verification or account links are unavailable. Contact an administrator.' : 'This listing is read-only while it is under review.'}</p>}
         <fieldset disabled={!editable || busy} className="space-y-4">
           <label className="block">Overview heading
             <input className="block w-full rounded border p-2" maxLength={240}

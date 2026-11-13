@@ -152,7 +152,7 @@ export async function handleAuthorizeApprovedConsignor(
     }
 
     // Tertiary: If historical records had un-normalized casing, check approved applications matching normalized email
-    const hasApprovedDirectMatch = matchedAppDocs.some((d) => d.data()?.status === 'approved');
+    const hasApprovedDirectMatch = matchedAppDocs.some((d) => d.data()?.status === 'approved' && d.data()?.applicantType !== 'dealer' && !d.data()?.dealerId);
     if (!hasApprovedDirectMatch) {
       try {
         const approvedSnap = await appsRef.where('status', '==', 'approved').get();
@@ -170,7 +170,7 @@ export async function handleAuthorizeApprovedConsignor(
     }
 
     // Quaternary: Best-effort check on legacy consignments collection
-    if (!matchedAppDocs.some((d) => d.data()?.status === 'approved')) {
+    if (!matchedAppDocs.some((d) => d.data()?.status === 'approved' && d.data()?.applicantType !== 'dealer' && !d.data()?.dealerId)) {
       const legacyRef = firestore.collection('consignments');
       const legNormSnap = await legacyRef.where('sellerEmail', '==', verifiedEmail).get();
       legNormSnap.forEach((docSnap) => {
@@ -192,7 +192,7 @@ export async function handleAuthorizeApprovedConsignor(
     const seenAppIds = new Set<string>();
     matchedAppDocs.forEach((docSnap) => {
       const data = docSnap.data();
-      if (data && data.status === 'approved' && !seenAppIds.has(docSnap.id)) {
+      if (data && data.applicantType !== 'dealer' && !data.dealerId && data.status === 'approved' && !seenAppIds.has(docSnap.id)) {
         seenAppIds.add(docSnap.id);
         candidateAppRefs.push(docSnap.ref);
       }
@@ -248,6 +248,7 @@ export async function handleAuthorizeApprovedConsignor(
           const appData = appSnap.data();
           if (
             appData &&
+            appData.applicantType !== 'dealer' && !appData.dealerId &&
             appData.status === 'approved' &&
             normalizeEmail(appData.sellerEmail) === verifiedEmail
           ) {
@@ -345,6 +346,10 @@ export async function handleAuthorizeApprovedConsignor(
         }
 
         const auctionData = item.snap.data() || {};
+        if (auctionData.sellerType === 'dealer' || auctionData.dealerId) {
+          conflicts.push({ auctionId: item.id, existingSellerId: auctionData.sellerId || '' });
+          continue;
+        }
         const existingSellerId = (auctionData.sellerId || '').trim();
 
         if (!existingSellerId || existingSellerId === verifiedUid) {

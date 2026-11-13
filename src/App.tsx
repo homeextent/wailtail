@@ -425,10 +425,10 @@ const AuctionAppContent: React.FC = () => {
 
     if (!isProtectedListingRoute || isAdminRoute) return;
 
-    const isAuthorized = Boolean(user && isSeller);
+    const isAuthorized = Boolean(user);
 
     if (!isAuthorized) {
-      setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
+      setRouteToast('Sign in to access your assigned listing workspace.');
       navigateTo('/');
       return;
     }
@@ -448,17 +448,9 @@ const AuctionAppContent: React.FC = () => {
       return;
     }
 
-    // Check if lot exists in catalog once allAuctions is loaded
-    if (isAdmin && allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
-      const exists = allAuctions.some(a => a.id === rawId);
-      if (!exists) {
-        const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
-        sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
-        setRouteToast('Listing lot not found');
-        navigateTo(fallbackUrl);
-        return;
-      }
-    }
+    // The direct listing subscription resolves administrator existence; a public
+    // catalog retained during authentication cannot establish that a draft is missing.
+
   }, [currentPath, user, isAdmin, authLoading, allAuctions]);
 
   useEffect(() => {
@@ -477,7 +469,7 @@ const AuctionAppContent: React.FC = () => {
 
   // Seller editors load their assigned draft through their own trusted endpoints.
   useEffect(() => {
-    if (isEditorRoute && !isAdmin) return;
+    if (isEditorRoute && (authLoading || !isAdmin)) return;
 
     let disposed = false;
     let unsubAuction = () => {};
@@ -516,6 +508,7 @@ const AuctionAppContent: React.FC = () => {
           }
         };
         const applyAuction = (data: Auction | null) => {
+          if (disposed) return;
           if (data) {
             setAuction(data);
 
@@ -567,7 +560,7 @@ const AuctionAppContent: React.FC = () => {
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute, isAdmin, allAuctions.length]);
+  }, [activeAuctionId, isEditorRoute, isAdmin, authLoading, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
@@ -707,13 +700,14 @@ const AuctionAppContent: React.FC = () => {
     if (authLoading) return <p role="status">Loading listing workspace…</p>;
     if (!isAdmin) {
       const auctionId = editorMatch?.[1];
-      if (!user || !isSeller || !auctionId) return <p>Listing workspace unavailable.</p>;
+      if (!user || !auctionId) return <p>Listing workspace unavailable.</p>;
       return <SellerDraftWorkspace key={`${user.uid}:${auctionId}`} auctionId={auctionId} user={user}
         onBack={() => {
           navigateTo('/');
           handleOpenAccountHub('seller');
         }} />;
     }
+    if (auction.id !== editorMatch?.[1]) return <p role="status">Loading listing workspace…</p>;
     return (
       <ListingEditorWorkspace
         auction={auction}

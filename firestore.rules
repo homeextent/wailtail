@@ -138,6 +138,13 @@ service cloud.firestore {
     match /dealerIdentityClaims/{claimId} {
       allow read, write: if false;
     }
+    match /dealerListingCommands/{commandId} {
+      allow read, write: if false;
+    }
+    match /dealerListingAudits/{auditId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
 
     // Platform Settings & Media Configuration
     match /settings/promotions {

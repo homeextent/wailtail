@@ -1,9 +1,10 @@
 import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { projectPublicMedia } from './public-auctions.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
+import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
-export default function handler(req: any, res: any) {
-  return withSellerDraftRequest(req, res, undefined, async ({ firestore }, _uid, email) => {
+export function handleAdminDuplicateAuction(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, _uid, email) => {
     if (!isDesignatedAdminEmail(email)) return res.status(403).json({ error: 'Administrator access required.' });
     const { auctionId } = req.body ?? {};
     if (typeof auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(auctionId)) {
@@ -16,6 +17,7 @@ export default function handler(req: any, res: any) {
       const [listing, media] = await tx.getAll(source, firestore.collection('settings').doc(mediaId));
       const data = listing.data();
       if (!data) return null;
+      if (data.sellerType === 'dealer' || data.dealerId) return false;
       const now = Date.now();
       const title = `${typeof data.title === 'string' ? data.title : 'Vehicle Listing'} (Copy)`;
       const copy = {
@@ -35,6 +37,8 @@ export default function handler(req: any, res: any) {
       });
       return copy;
     });
+    if (copied === false) return res.status(409).json({ error: 'Dealer listings require a separately reviewed canonical application; duplication is unavailable.' });
     return copied ? res.status(201).json({ auction: copied }) : res.status(404).json({ error: 'Source listing not found.' });
   });
 }
+export default handleAdminDuplicateAuction;
