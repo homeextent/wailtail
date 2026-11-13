@@ -34,3 +34,8 @@ This review inspected committed source and prior acceptance records. It did not 
 5. Execute the approved rollout, verify live behavior and record production acceptance. Then conduct the Founding Dealer Pilot against the unchanged roadmap criteria.
 
 No extra core dealer feature milestone is required before this release review. Choosing optional M2.6 is a separate product decision. Formal Phase 1 completion remains governed by System Bible Section 11.7, including production QA, the pilot and consistent documentation.
+
+
+## Owner-supplied live preflight evidence — November 13, 2026
+
+Jeremy confirmed the named project/database and bucket. Published Storage rules allow unconditional read/write; supplied Firestore rules remain the older direct-client baseline. The named database's composite-index console view is empty. Bucket description reports US-CENTRAL1, inherited public access prevention and uniform access disabled. A bounded read-only reference scan found 226 JPEG-named objects, 163 referenced paths and 63 unclassified objects, with no referenced path missing from the supplied listing. Five referenced lot-test images are explicitly preserved by owner instruction. See the [Storage cutover preparation and limits](storage-cutover-plan.md) and its inventory. These observations supersede the earlier source-only unknowns for these specific checks; they do not establish live IAM/token denial, private-file inventory completeness or cutover readiness. No live changes were made.
