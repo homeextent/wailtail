@@ -1,14 +1,14 @@
 # PDF access review register — November 13, 2026
 
-Status: provisional classification from owner-supplied object metadata and reference scan. Jeremy identified the Porsche and RAM PDFs as vehicle reports through the content-review question. Exact report titles, issuer, personal-data/redaction status and public-disclosure approval are not yet established. No PDF bytes or page contents have been inspected. All three are classified PDF_PRIVATE_REVIEW_REQUIRED as a planning hold, not a finding that their contents are confidential and not a deployed access restriction. Current live Storage rules remain open; existing tokenized access has not been tested or revoked.
+Status: private content review completed for the uploaded Porsche and RAM PDFs. Their byte sizes and MD5 checksums match the pinned source versions below. All 14 Porsche pages and four RAM pages were visually reviewed, alongside extracted text, metadata, links, annotations, form fields and embedded-file checks. No live access change was made. Production Storage rules remain open; recording a classification does not secure an object.
 
-## Individual records
+## Individual dispositions
 
-| ID | Source path | Observed consumer | Provisional disposition |
+| ID | Source path | Consumer | Current decision |
 |---|---|---|---|
-| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url`; owner identifies a vehicle report | Preserve; privacy/redaction review required; no automatic public copy |
-| PDF-2 | `auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg` | RAM settings `fullGallery[23].url`; owner identifies a vehicle report | Preserve; privacy/redaction review required; no automatic public copy |
-| PDF-3 | `auctions/lot-test-mtur4abv/gallery/1788998403422-049qn.jpg` | No reference found in the bounded scan | Preserve/hold; apparent duplicate of PDF-1; no deletion or public copy |
+| PDF-1 | `auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg` | Porsche settings `fullGallery[124].url` | Vehicle history summary; public candidate, external album review/removal remains pending |
+| PDF-2 | `auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg` | RAM settings `fullGallery[23].url` | PUBLIC_DOCUMENT_OWNER_EXCEPTION: owner explicitly permits the existing invoice to remain public for now and plans to replace it with a corrected version |
+| PDF-3 | `auctions/lot-test-mtur4abv/gallery/1788998403422-049qn.jpg` | No reference found in bounded scan | Preserve/hold apparent duplicate; no deletion or public approval |
 
 | ID | Source generation | Metageneration | Bytes | CRC32C | MD5 |
 |---|---|---|---|---|---|
@@ -16,24 +16,37 @@ Status: provisional classification from owner-supplied object metadata and refer
 | PDF-2 | 1793403169152604 | 1 | 101387 | PwFexw== | 45H+8Cm0bqtF7sAZvsnyew== |
 | PDF-3 | 1788998405092918 | 1 | 1654228 | /hBoqw== | QzKkM8jzG29d+ln4Lidx8g== |
 
-Content type is application/pdf for all three despite .jpg names. Matching size/MD5/CRC32C makes PDF-3 an apparent duplicate of PDF-1; byte-for-byte identity has not been independently established. A duplicate is still retained.
+All three are application/pdf despite .jpg names. PDF-3 matches PDF-1's observed size/MD5/CRC32C, but its bytes were not downloaded for independent comparison. Retain it. The five owner-protected lot-test images are different objects and remain protected.
 
-All three have download-token metadata; values are not recorded. Object ACL reports NO_PUBLIC_ENTRY and bucket-level public IAM bindings are empty. This does not override open Firebase rules or prove denial of token links; inherited project/folder/organization IAM remains unverified.
+## Private review findings — no personal values recorded
 
-## Staging rules dependency
+Porsche: the supplied file is a 14-page vehicle-history/maintenance summary, not the full receipt history suggested by its table of contents. No owner residential address, phone, email or signature was found in the reviewed pages. It contains vehicle identification, a business address and an external Google Photos album link. The linked album was not inspected; review or remove that link before final public approval. No embedded files, form fields or non-link annotations were found.
 
-PDF-1 and PDF-2 are the two exact legacy read exceptions in `storage.rules`. Their placement or previous exception is not evidence of consent to publish their contents. Do not blindly publish these exceptions or copy the PDFs into auctionPublic. Do not remove them from live references or change live rules independently of the approved application/media cutover. This documentation PR makes no rules changes.
+RAM: the supplied file is a four-page parts-order invoice. Purchaser name and residential shipping address appear on page 1; the order identifier occurs in the document and title metadata. No personal values are reproduced here or in the manifest. The invoice evidences parts purchased, not installation. No embedded files, form fields or non-link annotations were found. A future sanitized public copy should remove purchaser identifying details, order identifiers and identifying metadata while preserving relevant parts/date/prices.
 
-## Content review and final decision required
+Owner decision: Jeremy states the RAM listing is his own and explicitly accepts public display of the existing invoice for now, despite the identified personal information. He will remove it and upload a corrected version after this work. Record this as a narrow owner exception, not a general policy permitting other sellers' personal information. No redaction, seller message or live replacement has been performed. The replacement date is not fixed; there is no automatic removal or reminder.
 
-The owner should privately inspect the pinned versions, identify the document purpose and determine whether the whole document is safe and authorized for public display. Do not paste token-bearing URLs, credentials or unredacted personal documents into a public PR.
+## Approval semantics and rollout boundary
 
-Choose and record one disposition per PDF after review:
-- PRIVATE_RETAIN: keep original privately; design an authenticated delivery/reference replacement and original-token revocation in an approved live plan.
-- PUBLIC_REDACTED_DERIVATIVE: retain original privately; review a separate redacted derivative, approve its exact content/hash, then plan a new public destination. Never publish the original by implication.
-- PUBLIC_DOCUMENT_APPROVED: only with explicit owner approval of the reviewed contents and compatible document presentation. Public-image gallery code must not silently treat a PDF as a JPEG.
-- HOLD_REVIEW_REQUIRED: retain without public-copy approval while purpose/authority is unclear.
+The manifest sets publication_approved=true only for PDF-2, with approval_scope=PINNED_CONTENT_ONLY_NOT_LIVE_EXECUTION. This approves the reviewed content version for the cutover plan; it does not authorize this documentation change to perform a copy, destination creation, reference update, token change, rule publication or production promotion. All destinations remain blank. A changed generation/content or corrected replacement requires a new review and mapping; do not transfer this exception automatically.
 
-For PDF-3, confirm the duplicate's role and retain it pending a separately approved retention/cleanup decision. The five owner-protected lot-test images are different objects and remain explicitly protected.
+PDF-1 remains a candidate pending external album review/removal. PDF-3 remains held. All other images/SVGs retain their previous eligibility review state.
 
-No final public/private content decision, production write, copy, deletion, reference update or token revocation is authorized by this register. See [cutover plan](storage-cutover-plan.md).
+PDF-1 and PDF-2 are the exact legacy read exceptions in staging storage.rules. Any live rules/copy/reference rollout remains coordinated and separately approved. The RAM owner's content exception does not establish privacy or denial of old token links. All three have token metadata; direct bucket IAM showed no public bindings and object ACLs had no public entry, but inherited IAM and actual token access remain unverified.
+
+## Future work: upload guidance and administrator document check
+
+Status: recorded backlog only; no upload UI or new review enforcement is implemented by this documentation change. Applies to existing seller/administrator listing gallery/document uploads; it is not dependent on optional M2.6 intake photos.
+
+Proposed seller-facing guidance, adjacent to the upload control and before file selection:
+> Documents may be displayed publicly. Remove personal information before uploading, including names you do not intend to publish, home addresses, phone numbers, email addresses, signatures, account/payment details and order identifiers. Upload a redacted copy and keep the original privately.
+
+Implementation acceptance:
+- Guidance is readable on desktop/mobile, associated with the relevant upload control, and appears before upload. It must not claim automated scanning or guaranteed redaction.
+- Administrators inspect actual document contents before approving public display; finding personal information leads to holding the document from public publication and requesting a corrected copy, unless a documented, specific owner exception applies.
+- Keep useful vehicle identifiers, service details and seller-authorized information only where appropriate; do not imply every identifier must always be removed.
+- Corrected documents receive new identity/type/checksum and review, rather than silently overwriting originals or inheriting public approval.
+- Preserve original records and record reviewer/decision/reference changes under the approved workflow; do not invent an existing private-document UI or delivery mechanism.
+- PDF-aware presentation/type validation and upload guidance should be scoped as a separate implementation PR. Filenames alone must not determine MIME handling.
+
+See [cutover plan](storage-cutover-plan.md). No production operation is authorized by this register.
