@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Storage cutover preparation (2026-11-13)
+
+- Recorded the owner-supplied 226-object inventory and bounded Firestore reference scan: 163 referenced objects, 63 held unclassified, no referenced path missing from the supplied listing. Explicitly protected all five referenced lot-test assets, including Porsche showcase and promotion consumers.
+- Added a non-executable cutover plan with metadata/reference enrichment, generation/document revision guards, public/private eligibility review, coordinated rollout and recovery/QA. No deletion, copy, URL update, token revocation, rule publication or production promotion is performed or authorized by this preparation.
+
 ### Documentation — M2.5 acceptance and production-readiness review (2026-11-13)
 
 - Synchronized README, System Bible and M2.5 guide with Jeremy's local acceptance of `8f6a1f3`, explicit PR #10 merge approval, staging merge `49efa36`, passing exact-head/post-merge CI and Vercel checks, and owner-confirmed clean local staging synchronization.
