@@ -113,9 +113,7 @@ To protect platform continuity, audit integrity, and high-value catalog transact
 
 ### 2.1 `auctions` Collection
 
-> ⚠️ **CRITICAL SECURITY AUDIT FINDING — PRODUCTION BLOCKER**:  
-> **Production blocker — auction ownership and mutation authorization.**  
-> The current Firestore security rules for `auctions/{auctionId}` allow any authenticated user to create, update, or delete auction documents (with only dealer metadata restricted to `isAdmin()`). In particular, critical ownership fields such as `sellerId`, `sellerName`, `sellerEmail`, and `sellerPhone` require explicit server-side or rule-level authorization guards to prevent unauthorized lot mutation or reassignment. While the M2.0B trusted consignor endpoint (`/api/authorize-approved-consignor`) strictly protects seller assignments against overwriting existing seller ownership, general auction ownership and mutation authorization remains a required production blocker prior to public launch.
+> **Historical production finding; staging correction accepted.** The earlier production baseline allowed authenticated auction mutations. PR #3 (`1bf4d6a`) subsequently implemented trusted mutation endpoints and restricted canonical auction reads/writes in staging. Current staging rules allow designated-administrator reads and no direct client auction writes; seller and administrator mutations use trusted server authorization. This resolves the implementation gap on staging, not the live deployment gate. Production rules and application behavior require separately approved rollout and verification; see [production-readiness review](docs/phase1-production-readiness.md).
 
 Document ID: SEO title slug format `${slug}-${shortHash}` (e.g. `1988-porsche-928-s4-automatic-mtur4abv`), generated via `slugifyTitle(title)` and `generateShortHash()` in `createNewListing()` (or legacy `current` / specific auction UUID)
 ```typescript
@@ -1000,7 +998,7 @@ export async function placeBidWithAntiSnipe(auctionId: string, bidAmount: number
    - The workflow protects designated administrator Auth accounts while those Auth identities exist. If a designated administrator's Auth identity has already been removed, lookup by email cannot recover that account's former UID. Absolute protection of orphaned administrator profile documents in that condition requires stable administrator UIDs to be added to protected server configuration. No UID is inferred or fabricated.
 5. **Release boundary**:
    - This implementation is committed and pushed to `staging`; it is not a production deployment or production security sign-off.
-   - Auction ownership and mutation authorization remains a separate production blocker.
+   - Auction ownership and mutation authorization was subsequently accepted on staging through PR #3; its production rollout and verification remain separate.
 
 ### 5.5 Mobile Viewport Hero & Gallery Architecture
 
@@ -1856,7 +1854,7 @@ The account-deletion endpoint is a trusted server-side administrative operation.
 - **No client fallback**: `deleteUserRecord()` fails closed and never performs client-side Firestore deletion if the request fails.
 - **Verification**: 44 administrator-deletion regression tests plus 41 approved-consignor endpoint tests (85 combined endpoint tests); 126 Firestore rules tests. Roo Code reported lint, TypeScript, production build and test checks passing before the staging commit. The staging commit itself must still be distinguished from a successful CI run.
 - **Known limitation**: if a designated administrator Auth identity is already absent, lookup by email cannot recover its former UID. Protecting orphaned profile records in that exceptional state requires stable administrator UIDs in protected server configuration. Do not invent or assume those UIDs.
-- **Release status**: committed to staging in `860042bc35fcc98246f6385a035fc08d3c84d01f`; not production-deployed. Auction ownership and mutation authorization remains a separate production blocker.
+- **Release status**: committed to staging in `860042bc35fcc98246f6385a035fc08d3c84d01f`; not production-deployed. Auction ownership and mutation authorization was subsequently accepted on staging through PR #3; its production rollout and verification remain separate.
 
 ### 7.6 Authentication Security & Session Defense (`AuthContext.tsx` & `AuthModal.tsx`)
 
@@ -2332,7 +2330,7 @@ The M2.0A security model hardens consignment application intake and access contr
 
 ### 10.5 Milestone Boundaries & Outstanding Work
 - **M2.0A Status**: Consignment application security hardening is complete, deployed to production, with Cloud Firestore rules deployed and required production QA passed on November 5, 2026. New submissions no longer write legacy registration metadata (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`), applicant reads require verified email claims matching normalized `sellerEmail`, and creation/modification locks prevent unauthorized state tampering. Historical application records are retained without migration or deletion.
-- **M2.0B Status**: Trusted server-side role authorization and its security corrections are implemented and verified on staging. Client-side role elevation and demo self-verification have been removed; approved-consignor authorization is performed by the trusted Firebase Admin endpoint, and user/bidder role and verification protections are enforced by Firestore rules. M2.0B is **not production-approved** while the account-deletion administrator authorization and auction ownership/mutation blockers listed in Section 11.4 remain unresolved.
+- **M2.0B Status**: Trusted server-side role authorization and its security corrections are implemented and verified on staging. Client-side role elevation and demo self-verification have been removed; approved-consignor authorization is performed by the trusted Firebase Admin endpoint, and user/bidder role and verification protections are enforced by Firestore rules. M2.0B is **not production-approved**. Account-deletion and auction mutation protections have subsequently been implemented and verified on staging; deployment, Storage cutover and operational production acceptance remain separate.
 - **Deployment Status**: Production deployment and Cloud Firestore rules deployment (`npm run deploy:rules`) are complete and verified in production.
 
 ---
@@ -2342,19 +2340,21 @@ The M2.0A security model hardens consignment application intake and access contr
 ### 11.1 Executive Summary & Current Program Status
 The Wailtail Verified Boutique Dealer Program establishes an institutional-grade, legally compliant operational framework enabling verified boutique automotive dealerships in Canada to consign and auction collector vehicles alongside private sellers.
 
-**Authoritative Program Status (as of November 8, 2026)**:
+**Authoritative Program Status (as of November 13, 2026)**:
 - **M1.0 — Dealer Foundation and Data Architecture**: **COMPLETE**.
 - **M1.1 — Dealer Verification Metadata and Security Hardening**: **COMPLETE**.
 - **M2.0A — Consignment Security and Persistence Hardening**: **COMPLETE — PRODUCTION QA PASSED** (Deployed to production, Cloud Firestore security rules deployed to GCP project `studio-apps-483721`, production QA verified on November 5, 2026).
-- **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; outstanding production blockers remain).
+- **M2.0B — Trusted Server-Side Role Authorization**: **VERIFIED ON STAGING — NOT PRODUCTION-APPROVED** (security corrections and Correction D complete; subsequent security implementation accepted on staging; production rollout/operational gates remain).
 - **M2.1**: **ACCEPTED ON STAGING** (PR #5, `e7de147`, passing post-merge checks and owner-confirmed local visual/functional acceptance). See [M2.1 acceptance](docs/m2-1-consignment-review.md).
 - **M2.2**: **ACCEPTED ON STAGING** (PR #6, `74d9089`, passing post-merge checks and Jeremy-confirmed local acceptance/synchronization).
 - **M2.3**: **ACCEPTED ON STAGING** (PR #7, `d3c5cc5`; Jeremy locally accepted reviewed head `75d3641`, approved the merge and confirmed clean local staging synchronization; exact-head/post-merge CI and Vercel checks passed). See [M2.3 acceptance](docs/m2-3-dealer-verification.md).
 - **M2.4**: **ACCEPTED ON STAGING** (PR #9, `4a55362`; owner locally accepted `d0ce29f`, approved merge and confirmed clean synchronization; post-merge CI/Vercel passed). See [M2.4 scope and acceptance](docs/m2-4-dealer-listings.md).
-- **M2.5**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **M2.5**: **ACCEPTED ON STAGING** (PR #10, `49efa36`; owner local acceptance and synchronization confirmed; post-merge CI and Vercel passed).
 - **M2.6 — Optional Private Application Photo Uploads**: **PLANNED — SEPARATELY GATED** (Not a prerequisite for core dealer program completion).
 
 The System Bible is the authoritative single source of truth for milestone scope, sequencing, dependencies, operational boundaries, and acceptance criteria.
+
+Jeremy locally accepted reviewed head `8f6a1f3`, explicitly approved PR #10, and confirmed a clean local staging checkout synchronized to merge `49efa36` on November 13, 2026. Exact-head CI run `43451784085`, post-merge CI run `43454275497` and Vercel checks passed. Production promotion and live Firebase publication remain separate. Core implementation through M2.5 is accepted on staging; formal Phase 1 completion still requires the production and pilot criteria in Section 11.7. See [Phase 1 production-readiness review](docs/phase1-production-readiness.md). M2.6 remains separately gated and non-blocking.
 
 ### 11.2 Phase 1 Strategic Objectives
 1. **Curated Commercial Integrity**: Support licensed Canadian boutique automotive dealers with curated collector inventory while preserving Wailtail's enthusiast-first, peer-to-peer auction culture.
@@ -2401,7 +2401,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 │ M2.2               │ Dealer Application Intake             │ ACCEPTED ON STAGING │
 │ M2.3               │ Manual Dealer Verification & Profiles │ ACCEPTED ON STAGING │
 │ M2.4               │ Dealer Vehicle Listing Integration    │ ACCEPTED ON STAGING │
-│ M2.5               │ Public Dealer Presentation & Badging  │ LOCAL REVIEW PENDING│
+│ M2.5               │ Public Dealer Presentation & Badging  │ ACCEPTED ON STAGING │
 │ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
 └────────────────────┴───────────────────────────────────────┴─────────────────────┘
 ```
@@ -2454,7 +2454,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Exit Criteria**: 83/83 rules unit tests pass; production deployment verified; Cloud Firestore rules deployed; production QA confirmed.
 
 #### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
-- **Status**: **VERIFIED ON STAGING (Security Corrections Applied; Pending Production Blockers Resolution)**.
+- **Status**: **VERIFIED ON STAGING — PRODUCTION ROLLOUT PENDING**.
 - **Objectives**: Replace the former client-driven self-service approved-consignor claim and role-promotion path with trusted server-side authorization, protect canonical user/bidder role and verification fields, and enforce Firebase Authentication as the sole email-verification and administrator authority. The separate administrator-initiated consignment approval workflow remains governed by designated administrator identity and Firestore admin permissions.
 - **Business Rationale**: Eliminates vulnerabilities where client-side code (`elevateApprovedConsignor`) promotes users to `'seller'` under client-controlled `isOwner(uid)` Firestore rules, and where mutable Firestore fields (`isEmailVerified`) could substitute for cryptographic Firebase Authentication token claims.
 - **Key Deliverables & Corrections**:
@@ -2469,8 +2469,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
   - **Correction D — Transactional Approval Revalidation & Retry-Safe Results**: Candidate application documents are re-read inside the Firestore transaction; promotion proceeds only while an application still exists, remains approved, and matches the verified token email. Transaction result arrays are scoped to each callback execution so SDK retries cannot contaminate the final response.
   - **Comprehensive unit and integration test coverage**: 126 passing Firestore rules emulator unit tests and 41 passing isolated M2.0B endpoint and administrative authority unit tests, including current and legacy application revocation and transaction callback retry coverage. The separate administrator account-deletion hardening adds 44 regression tests; the combined `npm run test:endpoint` suite therefore contains 85 tests.
 - **Dependencies**: M2.0A production baseline.
-- **Remaining Production Blockers**:
-  1. *Production blocker — auction ownership and mutation authorization (`auctions/{auctionId}`)*. The separate administrator account-deletion endpoint has been corrected and verified on staging, but has not been production-deployed.
+- **Remaining production release gates**: Account deletion and auction ownership/mutation protections are implemented and verified on staging (PR #3 security acceptance). They are not evidence of live deployment. Verify production application/rules rollout, Storage cutover, worker scheduling, credentials and real delivery before release; see [production-readiness review](docs/phase1-production-readiness.md).
 - **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; self-service approved-consignor claims are authorized through the trusted backend endpoint; administrator-initiated role changes remain restricted to designated administrators; application approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
@@ -2556,7 +2555,7 @@ Implementation contract:
 - **Exit Criteria**: Dealer vehicle drafts correctly link to verified dealer identities; dealer snapshot is protected from non-admin modification; $0 doc fee is locked; dealer representative can edit narrative and media for assigned lots.
 
 #### M2.5 — Public Dealer Presentation and Auction Integration
-- **Status**: **IMPLEMENTED — LOCAL REVIEW AND STAGING ACCEPTANCE PENDING**.
+- **Status**: **ACCEPTED ON STAGING** (PR #10, `49efa36`; owner local acceptance and synchronization confirmed; post-merge CI and Vercel passed).
 - **Bounded implementation**: [M2.5 scope and acceptance](docs/m2-5-public-dealers.md). Dedicated public-safe projection; current canonical verification/expiry and representative match gate badges and contact disclosures. Snapshot name/city/province remain historical attribution. Contacts additionally require current consent for the identical snapshot value; no automatic snapshot refresh. Failure suppresses claims/contacts while leaving historical lots and settlement intact. Catalog cards, lot disclosures and dealer social templates share the public summary; no raw profile/snapshot publication. Verification is manual WAILTAIL review and recorded declarations, not regulatory endorsement or condition/ownership guarantee. No live Firebase publication or production promotion is included.
 - **Objectives**: Deliver polished, transparent public dealer presentation elements across the catalog grid, auction lot headers, and promotional marketing kits.
 - **Business Rationale**: Enhances buyer trust and marketplace transparency by clearly distinguishing verified boutique dealer inventory from private party lots.
@@ -2686,5 +2685,5 @@ A successful CI run establishes that the checked commit passed the automated bui
 - Establish that outstanding production security blockers have been resolved.
 - Replace manual regression testing, production smoke testing, or production QA evidence.
 
-All production promotion remains subject to the release governance and explicit authorization requirements in Section 11.5. The M2.0B security corrections are verified on staging but remain not production-approved while the documented server-side administrator authorization for account deletion and auction ownership/mutation authorization blockers remain unresolved.
+All production promotion remains subject to the release governance and explicit authorization requirements in Section 11.5. M2.0B, account deletion and auction mutation protections are verified on staging; production rollout, Storage cutover and operational acceptance remain separately gated. Staging acceptance does not establish production completion.
 

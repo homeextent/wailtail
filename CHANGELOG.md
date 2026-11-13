@@ -8,7 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.5 — Public dealer presentation (local review pending)
+### Documentation — M2.5 acceptance and production-readiness review (2026-11-13)
+
+- Synchronized README, System Bible and M2.5 guide with Jeremy's local acceptance of `8f6a1f3`, explicit PR #10 merge approval, staging merge `49efa36`, passing exact-head/post-merge CI and Vercel checks, and owner-confirmed clean local staging synchronization.
+- Added a source-based Phase 1 production-readiness review. Distinguished accepted staging security implementation from unverified live rollout, Storage, worker/delivery and pilot gates. M2.6 remains optional and separately gated; no production operation is authorized or performed by this documentation change.
+
+### M2.5 — Public dealer presentation (2026-11-13; accepted on staging via PR #10)
 
 - Restored the custom graphic tagline on dealer exports as its own bounded row, separate from dealer attribution and verification qualification. Canvas and copy share current-status campaign rules; real canvas drawing checks cover tagline presence, row ordering/photo clearance and live-status overrides.
 
@@ -121,7 +126,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
 - **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
 - **M2.4 — Dealer Vehicle Listing Integration**: ACCEPTED ON STAGING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
-- **M2.5 — Public Dealer Presentation and Auction Integration**: IMPLEMENTED — LOCAL REVIEW PENDING. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
+- **M2.5 — Public Dealer Presentation and Auction Integration**: ACCEPTED ON STAGING. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
 
 ---
