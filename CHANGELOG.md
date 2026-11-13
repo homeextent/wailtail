@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Object metadata and provisional PDF classification (2026-11-13)
+
+- Enriched all 226 cutover inventory rows with observed source generations/metagenerations, size, MIME type, checksums, token-presence and object-ACL results. Object paths and all five owner preservation flags are unchanged; destinations remain blank and all publication approvals remain false.
+- Corrected extension-only assumptions: 216 JPEG, 3 PDF and 7 SVG content types. Added individual PDF access-review records, preservation holds, an apparent duplicate and the two staging-rule exceptions. Final content/access classification awaits private owner review. Recorded empty direct bucket public IAM bindings without claiming effective privacy or inherited-IAM verification.
+- Documentation/data only: no live file reads beyond supplied metadata, rules edits, public copies, deletion, token revocation, reference changes or production promotion.
+
 ### Production preflight — Storage cutover preparation (2026-11-13)
 
 - Recorded the owner-supplied 226-object inventory and bounded Firestore reference scan: 163 referenced objects, 63 held unclassified, no referenced path missing from the supplied listing. Explicitly protected all five referenced lot-test assets, including Porsche showcase and promotion consumers.
