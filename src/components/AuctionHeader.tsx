@@ -289,7 +289,6 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
           </div>
         </div>
 
-        <PublicDealerDisclosure dealer={auction.publicDealer} />
         {/* Main Vehicle Title */}
         <div className="mb-4">
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-zinc-900 tracking-tight font-serif">
@@ -301,6 +300,8 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
             </p>
           )}
         </div>
+
+        <PublicDealerDisclosure dealer={auction.publicDealer} />
 
         {/* Essential Vehicle Key Facts Grid / Pills */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-6 text-xs">

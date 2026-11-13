@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### M2.5 — Public dealer presentation (local review pending)
 
+- Corrected the synthetic preview viewport and mobile acceptance checks. Dealer disclosures now keep the vehicle title first and show a compact fee/tax summary with expandable contacts and verification details, instead of consuming the mobile arrival screen.
+
 - Added minimal public dealer summaries, catalog/lot badges and dealership location, CAD $0 documentation fee, informational tax text, conditional contacts and verification limitations. Current canonical verification is checked on public responses; expiry/suspension/profile failures suppress verification claims and contacts while preserving historical lot behavior.
 - Added consent withdrawal/value-matching guards and safe phone/HTTPS links. Public responses exclude private snapshots, licensing/address/evidence/representative/provenance fields.
 - Added dealer social copy/graphic attribution using fresh public-safe summaries, with no automatic posting. Extended privacy/lifecycle/presentation tests and documented local acceptance in `docs/m2-5-public-dealers.md`. No rules changes, live Firebase publication or production promotion.

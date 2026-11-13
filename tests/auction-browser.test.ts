@@ -116,8 +116,17 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const dealerLinks = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('section[aria-label="Dealer information"] a')).map(a => a.getAttribute('href'))`, returnByValue: true });
     assert.deepEqual(dealerLinks.result.value, ['tel:+19055550100', 'https://example.test/']);
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    const dealerFits = await command('Runtime.evaluate', { expression: `(() => { const panel = document.querySelector('section[aria-label="Dealer information"]'); return !!panel && panel.scrollWidth <= panel.clientWidth; })()`, returnByValue: true });
-    assert.equal(dealerFits.result.value, true, 'dealer disclosures fit mobile panel');
+    await eventually(async () => (await command('Runtime.evaluate', { expression: 'window.innerWidth', returnByValue: true })).result.value,
+      value => value === 390, 'actual mobile layout viewport is 390 CSS pixels');
+    const dealerMobile = await command('Runtime.evaluate', { expression: `(() => { const panel = document.querySelector('section[aria-label="Dealer information"]'); const details = panel.querySelector('details'); return { width: window.innerWidth, mobile: matchMedia('(max-width: 639px)').matches, fits: panel.scrollWidth <= panel.clientWidth, height: panel.getBoundingClientRect().height, collapsed: !details.open, contactHidden: panel.querySelector('a').getClientRects().length === 0 }; })()`, returnByValue: true });
+    assert.equal(dealerMobile.result.value.mobile, true);
+    assert.equal(dealerMobile.result.value.fits, true, 'dealer disclosures fit mobile panel');
+    assert.equal(dealerMobile.result.value.collapsed, true);
+    assert.equal(dealerMobile.result.value.contactHidden, true);
+    assert.ok(dealerMobile.result.value.height <= 270, 'collapsed dealer panel leaves room for vehicle and bidding');
+    await command('Runtime.evaluate', { expression: `document.querySelector('section[aria-label="Dealer information"] summary').click()` });
+    const expanded = await command('Runtime.evaluate', { expression: `(() => { const p = document.querySelector('section[aria-label="Dealer information"]'); return { open: p.querySelector('details').open, contactVisible: p.querySelector('a').getClientRects().length > 0, notice: p.innerText.includes('not provincial regulatory endorsement'), fits: p.scrollWidth <= p.clientWidth }; })()`, returnByValue: true });
+    assert.deepEqual(expanded.result.value, { open: true, contactVisible: true, notice: true, fits: true });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
 
     assert.equal(publicData.auction.reserveAmount, undefined);
