@@ -22,22 +22,40 @@ No objects were copied or deleted. No references, tokens, ACLs/IAM, rules, index
 
 ## Evidence retention and remaining work
 
-Jeremy subsequently supplied successful SHA-256 comparison of all 169 copied bundle files in an owner-private home-directory backup outside temporary storage. A private checksum manifest was saved alongside it. The backup contains source files, snapshots and proposed requests; do not attach or commit it. This establishes matching local copies, not an off-device backup, metadata/token backup completeness or a tested restore. The recovery consistency check below remains pending owner execution.
+Jeremy subsequently supplied successful SHA-256 comparison of all 169 copied bundle files in an owner-private home-directory backup outside temporary storage. A private checksum manifest was saved alongside it. The backup contains source files, snapshots and proposed requests; do not attach or commit it. This establishes matching local copies, not an off-device backup, metadata/token backup completeness or a tested restore. The owner subsequently ran the recovery consistency and representative link checker successfully at `c71ff14`; see the follow-up result below.
 
 | Remaining gate | Required evidence |
 |---|---|
-| IAM review and original token access | Owner ancestry output identified organization `941342792525` with no folder. Filtered project/organization policy commands completed without errors and returned no matching `allUsers` or `allAuthenticatedUsers` bindings. Earlier bucket policy/object ACL checks also reported no public entry. This is a bounded dated IAM observation, not denial of token URLs or open Firebase-rule access. Representative original-link checks remain pending; actual private-link denial requires separately approved restrictions/revocation |
-| Private backup and recovery | Verify all copied bundle bytes and readability, document original metadata/token backup scope, affected document fields and revision guards. Recovery template remains non-executable until actual post-cutover revisions are known; this is not a tested restore |
+| IAM review and original token access | Owner ancestry output identified organization `941342792525` with no folder. Filtered project/organization policy commands completed without errors and returned no matching `allUsers` or `allAuthenticatedUsers` bindings. Earlier bucket policy/object ACL checks also reported no public entry. This is a bounded dated IAM observation, not denial of token URLs or open Firebase-rule access. Representative approved public-PDF link checks returned HTTP 206 both with and without original tokens; actual private-link denial requires separately approved restrictions/revocation |
+| Private backup and recovery | Owner verified all 169 copied bundle files and exact proposal/recovery consistency for six reference documents. Complete original metadata/token backup scope and off-device/recovery planning remain. Recovery template remains non-executable until actual post-cutover revisions are known; this is not a tested restore |
 | Fresh execution preconditions | Recheck sources, destination absence and document revisions immediately before each approved operation; reconcile drift instead of overwriting |
 | Copy and delivery | Separately authorize create-only copies, record destination generations/checksums, verify every copied file and token-free delivery before reference changes |
 | Coordinated release | Pin app/rules/index/environment/worker sequencing, compatibility and observation/recovery plan before production authorization |
 
-PR #16 remains preparation-only. Its code head `30d2144` passed full CI run [43602613362](https://github.com/homeextent/wailtail/actions/runs/43602613362), including 22 synthetic preparer tests. Later evidence documentation does not change the executed script or authorize a live cutover. Staging merge and production execution are separate owner decisions.
+PR #16 remains preparation-only. Its code head `30d2144` passed full CI run [43602613362](https://github.com/homeextent/wailtail/actions/runs/43602613362), including 22 synthetic preparer tests. Later evidence documentation does not change the executed script or authorize a live cutover. Staging merge and production execution are separate owner decisions. The code follow-up at `c71ff14` passed full CI [43606315060](https://github.com/homeextent/wailtail/actions/runs/43606315060), including 25 synthetic tests.
 
-## Next bounded read-only review
+## Bounded read-only follow-up — completed
 
 `scripts/review_storage_cutover_evidence.py --backup <private-backup-directory>` rechecks the local backup file set and SHA-256 manifest, regenerates proposed reference writes/recovery fields from the backed-up original snapshot and approved manifest, and checks exact equality with the stored proposals. It also checks pinned copy recipes. No restore or cloud write is executed and no backup file is modified. This checks internal consistency, not freshness, off-device durability or all project data.
 
 With `--check-original-links`, it additionally issues anonymous IPv4 HTTPS GETs with a one-byte Range request to each of the two approved public PDFs, once with the original token from the private snapshot and once without it. Tokens are used in memory only; output contains sample labels and HTTP status codes, not URLs or document values. HTTPS redirects are not followed, TLS verification is retained and no Authorization header is sent. A server may ignore Range; the tool reads only one response byte then closes. Connection errors stop without exposing the URL. Missing/ambiguous snapshot tokens stop rather than guessing. This does not inspect the held PDF or all 63 held links, change tokens, prove which access mechanism allowed a read, or establish private-original denial.
 
 HTTP 200/206 means readable for that request; 401/403 means rejected; 404 alone does not prove access was securely denied. Redirects and other statuses require investigation. Current published open rules are still an exposure regardless of these representative results. Retain this baseline for later separately approved post-restriction comparison.
+
+## Owner follow-up result
+
+Jeremy confirmed a successful fast-forward to `c71ff14ca3e41219daad9c72d18ef84ceea8ee27` and supplied the checker output on November 14, 2026:
+
+| Result | Observed value |
+|---|---|
+| Backup files verified against private SHA-256 manifest | 169 |
+| Reference documents regenerated and matched | Six |
+| Recovery template consistent with original backed-up fields | True |
+| Restore executed | False |
+| Cloud write requests | Zero |
+| Approved public PDF sample 1, no token / original token | HTTP 206 / 206 |
+| Approved public PDF sample 2, no token / original token | HTTP 206 / 206 |
+
+HTTP 206 confirms each tested anonymous request could read a partial response. The token-free requests were also readable, consistent with the reported open Storage rules. This is not proof that tokens were required, revoked or denied. The held PDF, all 63 held-object links and post-restriction denial were not tested. No private URL, token or document value is reproduced here.
+
+The agreed preparation acceptance is complete: tools and private proposals are prepared and independently exercised on the owner's machine. The PR may proceed to staging-merge review after exact-head checks. This closes the bounded preparation task only; it does not close the production Storage gate, execute the proposals, authorize a restore, or approve production rollout. Future execution requires fresh native preconditions and separately approved sequencing, backups, copies, delivery/reference verification, rules/token restrictions and live QA.
