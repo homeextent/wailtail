@@ -74,3 +74,15 @@ ChatGPT-local checks rendered and verified both uploaded PDFs (14 Porsche pages 
 Authentication recovery: each rejected HTTP 401 read refreshes the local gcloud token and retries that GET once. A second 401 stops preparation; 403 and other errors are not retried. Tokens and gcloud error output are never displayed. Use a fresh output directory when rerunning after a blocked run; retain previous evidence privately.
 
 For networks where IPv6 connection attempts time out, pass `--ipv4-only`. This affects only this script’s HTTPS connections, preserves TLS certificate/hostname verification and does not change operating-system DNS or network settings. Each request prints only its service hostname, elapsed seconds and attempt number, never the object URL or token. Google Cloud CLI authentication is a separate subprocess and is not affected by this option. Ctrl+C writes a private `cancelled-summary.json`, exits 130 without a traceback, and preserves partial evidence; restart with a new output directory (no resume support).
+
+## Read-only follow-up review
+
+After verifying a private backup outside `/tmp`, run:
+
+```bash
+python3 scripts/review_storage_cutover_evidence.py \
+  --backup /absolute/path/to/private-backup \
+  --check-original-links
+```
+
+The standard-library-only follow-up does not need the virtual environment or gcloud credentials. It verifies backup checksums and snapshot/proposal/recovery consistency, then probes representative public PDF links anonymously using IPv4. It prints a sanitized result and does not persist or execute requests for recovery. See [scope and result interpretation](storage-cutover-validation-2026-11-14.md#next-bounded-read-only-review). No full re-download of 163 assets is required for this check. This is not a complete recovery drill or private-path/token-revocation acceptance.

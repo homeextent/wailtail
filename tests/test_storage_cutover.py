@@ -332,5 +332,62 @@ class IPv4TransportTests(unittest.TestCase):
             self.assertFalse((output / "shareable-summary.json").exists())
 
 
+class EvidenceReviewTests(unittest.TestCase):
+    def reviewer(self):
+        spec = importlib.util.spec_from_file_location("review", C.REPO / "scripts/review_storage_cutover_evidence.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_backup_recovery_consistency_and_tamper(self):
+        review = self.reviewer()
+        r, data = row(), jpeg()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            evidence = C.make_output(root / "evidence")
+            C.prepare([r], FakeCloud(r, data), evidence)
+            checksums = {str(p.relative_to(evidence)): C.hashlib.sha256(p.read_bytes()).hexdigest()
+                         for p in evidence.rglob("*") if p.is_file()}
+            C.private_json(root / "backup-sha256.json", checksums)
+            _, report = review.verify_backup(root, [r])
+            self.assertTrue(report["recovery_template_consistent"])
+            self.assertFalse(report["restore_executed"])
+            (evidence / "private-recovery-template.json").write_text('{}')
+            with self.assertRaisesRegex(review.C.Blocked, "Backup checksum mismatch"):
+                review.verify_backup(root, [r])
+            checksums["private-recovery-template.json"] = C.hashlib.sha256(b'{}').hexdigest()
+            (root / "backup-sha256.json").write_text(json.dumps(checksums))
+            with self.assertRaisesRegex(review.C.Blocked, "Recovery fields differ"):
+                review.verify_backup(root, [r])
+
+    def test_anonymous_probes_fixed_host_no_auth_and_secret_free_result(self):
+        review = self.reviewer()
+        r = row(kind="application/pdf")
+        opener = unittest.mock.Mock()
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.status = 206
+        opener.open.return_value = response
+        result = review.check_links([r], docs(r), opener)
+        self.assertEqual(opener.open.call_count, 2)
+        for call in opener.open.call_args_list:
+            request = call.args[0]
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(request.get_header("Range"), "bytes=0-0")
+            self.assertIsNone(request.get_header("Authorization"))
+            self.assertEqual(urllib.parse.urlsplit(request.full_url).hostname, "firebasestorage.googleapis.com")
+        self.assertNotIn("PRIVATE-TOKEN", json.dumps(result))
+        self.assertEqual(result[0]["original_token_http"], 206)
+
+    def test_probe_error_sanitized_and_redirect_not_success(self):
+        review = self.reviewer()
+        opener = unittest.mock.Mock()
+        opener.open.side_effect = RuntimeError("secret-url-token")
+        with self.assertRaisesRegex(review.C.Blocked, "Anonymous link request failed") as error:
+            review.probe(opener, "https://firebasestorage.googleapis.com/")
+        self.assertNotIn("secret", str(error.exception))
+        opener.open.side_effect = urllib.error.HTTPError("secret", 302, "secret", {}, None)
+        self.assertEqual(review.probe(opener, "https://firebasestorage.googleapis.com/"), 302)
+
+
 if __name__ == "__main__":
     unittest.main()

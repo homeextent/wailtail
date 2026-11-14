@@ -22,14 +22,22 @@ No objects were copied or deleted. No references, tokens, ACLs/IAM, rules, index
 
 ## Evidence retention and remaining work
 
-The successful bundle was created under owner-local temporary storage. It contains private files, snapshots and proposed requests; do not attach it or commit it. Preserve a verified private copy outside temporary storage before reboot or cleanup. A local duplicate is not an off-device backup. The supplied summary does not establish that this preservation has been completed.
+Jeremy subsequently supplied successful SHA-256 comparison of all 169 copied bundle files in an owner-private home-directory backup outside temporary storage. A private checksum manifest was saved alongside it. The backup contains source files, snapshots and proposed requests; do not attach or commit it. This establishes matching local copies, not an off-device backup, metadata/token backup completeness or a tested restore. The recovery consistency check below remains pending owner execution.
 
 | Remaining gate | Required evidence |
 |---|---|
-| Inherited IAM and original token access | Inspect project/folder/organization policy as applicable; test approved representative original links without printing tokens. Current open rules mean readability alone cannot identify the access mechanism. Record actual denial only after separately approved restrictions/revocation |
+| IAM review and original token access | Owner ancestry output identified organization `941342792525` with no folder. Filtered project/organization policy commands completed without errors and returned no matching `allUsers` or `allAuthenticatedUsers` bindings. Earlier bucket policy/object ACL checks also reported no public entry. This is a bounded dated IAM observation, not denial of token URLs or open Firebase-rule access. Representative original-link checks remain pending; actual private-link denial requires separately approved restrictions/revocation |
 | Private backup and recovery | Verify all copied bundle bytes and readability, document original metadata/token backup scope, affected document fields and revision guards. Recovery template remains non-executable until actual post-cutover revisions are known; this is not a tested restore |
 | Fresh execution preconditions | Recheck sources, destination absence and document revisions immediately before each approved operation; reconcile drift instead of overwriting |
 | Copy and delivery | Separately authorize create-only copies, record destination generations/checksums, verify every copied file and token-free delivery before reference changes |
 | Coordinated release | Pin app/rules/index/environment/worker sequencing, compatibility and observation/recovery plan before production authorization |
 
 PR #16 remains preparation-only. Its code head `30d2144` passed full CI run [43602613362](https://github.com/homeextent/wailtail/actions/runs/43602613362), including 22 synthetic preparer tests. Later evidence documentation does not change the executed script or authorize a live cutover. Staging merge and production execution are separate owner decisions.
+
+## Next bounded read-only review
+
+`scripts/review_storage_cutover_evidence.py --backup <private-backup-directory>` rechecks the local backup file set and SHA-256 manifest, regenerates proposed reference writes/recovery fields from the backed-up original snapshot and approved manifest, and checks exact equality with the stored proposals. It also checks pinned copy recipes. No restore or cloud write is executed and no backup file is modified. This checks internal consistency, not freshness, off-device durability or all project data.
+
+With `--check-original-links`, it additionally issues anonymous IPv4 HTTPS GETs with a one-byte Range request to each of the two approved public PDFs, once with the original token from the private snapshot and once without it. Tokens are used in memory only; output contains sample labels and HTTP status codes, not URLs or document values. HTTPS redirects are not followed, TLS verification is retained and no Authorization header is sent. A server may ignore Range; the tool reads only one response byte then closes. Connection errors stop without exposing the URL. Missing/ambiguous snapshot tokens stop rather than guessing. This does not inspect the held PDF or all 63 held links, change tokens, prove which access mechanism allowed a read, or establish private-original denial.
+
+HTTP 200/206 means readable for that request; 401/403 means rejected; 404 alone does not prove access was securely denied. Redirects and other statuses require investigation. Current published open rules are still an exposure regardless of these representative results. Retain this baseline for later separately approved post-restriction comparison.
