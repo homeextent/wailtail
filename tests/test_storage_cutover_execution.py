@@ -43,13 +43,25 @@ class ExecutionTests(unittest.TestCase):
                 return {'name':name,'rulesetName':f'projects/{E.C.PROJECT}/rulesets/test-rules'}
             return {'name':name,'source':{'files':[{'content':'rules'}]}}
         cloud.rules_read.side_effect = rules_read
-        cloud.listed.side_effect = lambda endpoint, *args: [original] if endpoint.startswith(E.C.GCS) else []
+        def listed(endpoint, item_key, extra):
+            if endpoint.endswith('/indexes'):
+                # Production diagnostic: this backend rejects every positive page size.
+                if extra.get('pageSize') != '0':
+                    raise E.C.Blocked('Invalid page size. Only 0 is supported.')
+                return []
+            if endpoint.startswith(E.C.GCS):
+                return [original]
+            self.assertEqual(extra['pageSize'],'100')
+            return []
+        cloud.listed.side_effect = listed
         with tempfile.TemporaryDirectory() as tmp:
             output = E.C.make_output(Path(tmp)/'package')
             with patch.object(E.R, 'verify_backup'), patch.object(E.shutil,'copytree'), patch.object(E.shutil,'copy2'), patch.object(E, 'documents', return_value=F.docs(r)), \
                  patch.object(E.subprocess, 'check_output', side_effect=['', 'candidate', 'tree']):
                 report = E.prepare(Path(tmp), output, cloud, [r])
             cloud.write.assert_not_called()
+            self.assertTrue(cloud.listed.call_args_list[0].args[0].endswith('/indexes'))
+            self.assertEqual(report['observed_composite_indexes'],0)
             self.assertEqual(report['cloud_write_requests'], 0)
             self.assertNotIn('PRIVATE-TOKEN', json.dumps(report))
             self.assertIn('PRIVATE-TOKEN', (output/'private-original-metadata.json').read_text())

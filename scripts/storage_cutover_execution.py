@@ -122,6 +122,9 @@ def prepare(backup, output, cloud, rows):
         check(ruleset.get("name") == release["rulesetName"] and ruleset.get("source", {}).get("files"), "Missing deployed rules source")
         releases.append({"release": release, "ruleset": ruleset})
     C.private_json(output / "private-deployed-rules.json", releases)
+    index_endpoint = f"https://firestore.googleapis.com/v1/projects/{C.PROJECT}/databases/{C.DATABASE}/collectionGroups/-/indexes"
+    indexes = cloud.listed(index_endpoint, "indexes", {"pageSize": "0"})
+    C.private_json(output / "private-index-snapshot.json", indexes)
     fresh_metadata(cloud, rows)
     originals = []
     for row in rows:
@@ -134,9 +137,6 @@ def prepare(backup, output, cloud, rows):
         check(not any(a.get("entity") in {"allUsers", "allAuthenticatedUsers"} for a in current.get("acl", [])),
               "Public object ACL requires review")
         originals.append(current)
-    index_endpoint = f"https://firestore.googleapis.com/v1/projects/{C.PROJECT}/databases/{C.DATABASE}/collectionGroups/-/indexes"
-    indexes = cloud.listed(index_endpoint, "indexes", {"pageSize": "100"})
-    C.private_json(output / "private-index-snapshot.json", indexes)
     docs = documents(cloud)
     workload = {name: cloud.listed(C.FS + "/" + name, "documents", {"pageSize": "100"})
                 for name in ("auctionReviewQueue", "auctionNotificationOutbox")}
