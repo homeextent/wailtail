@@ -100,6 +100,57 @@ class ExecutionTests(unittest.TestCase):
             with self.assertRaisesRegex(E.C.Blocked, 'Journal plan mismatch'):
                 E.Journal(journal.path, 'other-plan')
 
+    def test_copy_then_references_with_actual_destination_inventory(self):
+        r = row()
+        p = plan(r)
+        objects = {r['source_path']:dict(F.metadata(r),acl=[],metadata={})}
+        docs = F.docs(r)
+        cloud = Mock()
+        def get(url, binary=False, absent_ok=False):
+            if url.startswith(E.C.GCS):
+                name = urllib.parse.unquote(urllib.parse.urlsplit(url).path.split('/o/',1)[1])
+                if binary:
+                    return F.jpeg()
+                if name not in objects and absent_ok:
+                    return None
+                return objects[name]
+            return next(doc for doc in docs if url.endswith(doc['name']))
+        def listed(endpoint, *_):
+            if endpoint.startswith(E.C.GCS):
+                return list(objects.values())
+            collection = endpoint.removeprefix(E.C.FS+'/')
+            return [doc for doc in docs if doc['name'].split('/documents/',1)[1].rsplit('/',1)[0] == collection]
+        def write(method,url,body):
+            if url.startswith(E.C.GCS):
+                self.assertIn('ifGenerationMatch=0',url)
+                dest = dict(F.metadata(r),name=r['destination_path'],generation='987',metageneration='1',acl=[],metadata={})
+                objects[r['destination_path']] = dest
+                return {'done':True,'resource':dest}
+            self.assertEqual((method,url),('POST',E.C.FS+':commit'))
+            results=[]
+            for change in body['writes']:
+                doc = next(d for d in docs if d['name']==change['update']['name'])
+                self.assertEqual(change['currentDocument']['updateTime'],doc['updateTime'])
+                doc['fields'].update(change['update']['fields'])
+                doc['updateTime']='after'
+                results.append({'updateTime':'after'})
+            return {'writeResults':results}
+        cloud.get.side_effect=get
+        cloud.listed.side_effect=listed
+        cloud.write.side_effect=write
+        with tempfile.TemporaryDirectory() as tmp:
+            journal=E.Journal(Path(tmp)/'journal','hash')
+            with patch.object(E,'anonymous_status',return_value=206):
+                E.copy_public(p,[r],cloud,journal)
+                self.assertEqual(len(objects),2)
+                E.references(p,[r],cloud,journal)
+            self.assertIsNotNone(journal.result('commit-references'))
+            self.assertEqual(cloud.write.call_count,2)
+            self.assertEqual(docs[-1]['fields']['privateOther'],{'stringValue':'not-in-write'})
+            objects['auctionPublic/unapproved/extra']={}
+            with self.assertRaises(E.C.Blocked):
+                E.fresh_metadata(cloud,[r],[r['destination_path']])
+
     def test_reference_commit_atomic_and_drift_prevents_write(self):
         r = row()
         p = plan(r)

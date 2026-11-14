@@ -84,9 +84,10 @@ def anonymous_status(url):
     return R.probe(urllib.request.build_opener(C.NoRedirect(), C.IPv4HTTPSHandler()), url)
 
 
-def fresh_metadata(cloud, rows):
+def fresh_metadata(cloud, rows, destinations=()):
     listed = cloud.listed(C.GCS + "/o", "items", {"projection": "noAcl", "maxResults": "1000"})
-    check(len(listed) == len(rows) and {m["name"] for m in listed} == {r["source_path"] for r in rows}, "Source inventory drift")
+    expected = {r["source_path"] for r in rows} | set(destinations)
+    check(len(listed) == len(expected) and {m["name"] for m in listed} == expected, "Source/destination inventory drift")
     by_name = {m["name"]: m for m in listed}
     for row in rows:
         C.check_metadata(row, by_name[row["source_path"]])
@@ -289,7 +290,7 @@ def references(plan, rows, cloud, journal):
         receipt = journal.result("copy:" + row["destination_path"])
         check(receipt is not None, "Missing copy receipt")
         verify_destination(cloud, row, receipt)
-    fresh_metadata(cloud, rows)
+    fresh_metadata(cloud, rows, [recipe["destination_path"] for recipe in plan["copies"]])
     current_commit, _ = C.prepare_reference_writes(rows, documents(cloud))
     check(current_commit == plan["reference_commit"], "Fresh reference revision/field drift")
     def action():
