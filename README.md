@@ -6,6 +6,10 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
+## Consolidated cutover execution package
+
+The [combined execution runbook](docs/storage-cutover-execution.md) groups recovery capture, exact-plan approval, guarded copy/reference/recovery/token phases and coordinated production rollout into one task. Preparation remains GET-only; no live execution is authorized or performed. The new final/maintenance rule configs are explicit opt-in files; existing normal Storage rules remain unchanged. Full production readiness, off-device backup, reviewed scheduler/mail scope and owner approval of the exact plan remain required.
+
 ## Storage cutover validation tooling
 
 The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Owner-authenticated validation completed on November 14, 2026: 163 approved files validated, 226 sources reconciled, six reference documents prepared, zero cloud writes. See the [dated evidence record](docs/storage-cutover-validation-2026-11-14.md). Owner follow-up verified 169 backup files and six reference/recovery proposals; both approved PDFs returned HTTP 206 anonymously with and without their original tokens. This establishes a readable baseline, not private-link denial or a restore. No production cutover is claimed.

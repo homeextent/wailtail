@@ -1,0 +1,8 @@
+{
+  "firestore": [{
+    "database": "ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }],
+  "storage": {"rules": "storage.cutover-freeze.rules"}
+}

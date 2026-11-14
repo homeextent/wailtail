@@ -1,0 +1,4 @@
+{
+  "storage": {"rules": "storage.cutover.rules"},
+  "emulators": {"storage": {"host": "127.0.0.1", "port": 9199}}
+}
