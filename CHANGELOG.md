@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Consolidated Storage cutover execution package
 
+- Fixed owner-side Rules API quota-project rejection by explicitly attaching the existing project header to read-only release/ruleset requests and checking rule access before per-object metadata capture.
+
 - Added read-only private package capture of original metadata/tokens, deployed rules, indexes and bounded workload; exact-plan/native-precondition execution phases with mirrored durable journals, copy/reference verification, guarded recovery and token-only revocation. No live writes performed.
 - Added opt-in maintenance/final Storage configurations and isolated rule/atomic-reference recovery rehearsals; ordinary Firebase rules/configuration remain unchanged. Consolidated release/configuration/approval/stop criteria in one runbook; production remains gated.
 

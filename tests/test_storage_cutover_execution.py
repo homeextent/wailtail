@@ -290,6 +290,9 @@ class ExecutionTests(unittest.TestCase):
         request = cloud.opener.open.call_args.args[0]
         self.assertEqual(request.get_method(),'GET')
         self.assertEqual(urllib.parse.urlsplit(request.full_url).hostname,'firebaserules.googleapis.com')
+        self.assertEqual(request.get_header('X-goog-user-project'),E.C.PROJECT)
+        cloud.rules_read(f'projects/{E.C.PROJECT}/rulesets/test-rules')
+        self.assertEqual(cloud.opener.open.call_args.args[0].get_header('X-goog-user-project'),E.C.PROJECT)
         with self.assertRaisesRegex(E.C.Blocked,'Unexpected rules backup'):
             cloud.rules_read('projects/other/rulesets/secret')
         with self.assertRaisesRegex(E.C.Blocked,'Unexpected rules backup'):

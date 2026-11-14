@@ -53,7 +53,7 @@ class Cloud(C.ReadOnlyCloud):
               "Unexpected rules backup resource")
         for attempt in range(2):
             request = urllib.request.Request("https://firebaserules.googleapis.com/v1/" + resource,
-                headers={"Authorization": "Bearer " + self.token}, method="GET")
+                headers={"Authorization": "Bearer " + self.token, "X-Goog-User-Project": C.PROJECT}, method="GET")
             try:
                 with self.opener.open(request, timeout=60) as response:
                     data = response.read(16 * 1024 * 1024 + 1)
@@ -113,6 +113,15 @@ def prepare(backup, output, cloud, rows):
     shutil.copy2(backup / "backup-sha256.json", source_copy / "backup-sha256.json")
     R.verify_backup(source_copy, rows)
     check(not subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=C.REPO, text=True).strip(), "Tracked worktree must be clean")
+    releases = []
+    for name in (f"projects/{C.PROJECT}/releases/cloud.firestore/{C.DATABASE}",
+                 f"projects/{C.PROJECT}/releases/firebase.storage/{C.BUCKET}"):
+        release = cloud.rules_read(name)
+        check(release.get("name") == name and release.get("rulesetName"), "Missing deployed release binding")
+        ruleset = cloud.rules_read(release["rulesetName"])
+        check(ruleset.get("name") == release["rulesetName"] and ruleset.get("source", {}).get("files"), "Missing deployed rules source")
+        releases.append({"release": release, "ruleset": ruleset})
+    C.private_json(output / "private-deployed-rules.json", releases)
     fresh_metadata(cloud, rows)
     originals = []
     for row in rows:
@@ -125,15 +134,6 @@ def prepare(backup, output, cloud, rows):
         check(not any(a.get("entity") in {"allUsers", "allAuthenticatedUsers"} for a in current.get("acl", [])),
               "Public object ACL requires review")
         originals.append(current)
-    releases = []
-    for name in (f"projects/{C.PROJECT}/releases/cloud.firestore/{C.DATABASE}",
-                 f"projects/{C.PROJECT}/releases/firebase.storage/{C.BUCKET}"):
-        release = cloud.rules_read(name)
-        check(release.get("name") == name and release.get("rulesetName"), "Missing deployed release binding")
-        ruleset = cloud.rules_read(release["rulesetName"])
-        check(ruleset.get("name") == release["rulesetName"] and ruleset.get("source", {}).get("files"), "Missing deployed rules source")
-        releases.append({"release": release, "ruleset": ruleset})
-    C.private_json(output / "private-deployed-rules.json", releases)
     index_endpoint = f"https://firestore.googleapis.com/v1/projects/{C.PROJECT}/databases/{C.DATABASE}/collectionGroups/-/indexes"
     indexes = cloud.listed(index_endpoint, "indexes", {"pageSize": "100"})
     C.private_json(output / "private-index-snapshot.json", indexes)
