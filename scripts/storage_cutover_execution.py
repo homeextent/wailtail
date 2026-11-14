@@ -379,13 +379,15 @@ def verify_package_backup(root, backup):
     check(backup != C.REPO and C.REPO not in backup.parents, "Package backup must be outside Git")
     check(backup != root and root not in backup.parents and backup not in root.parents,
           "Independent package backup path required")
+    check(all(directory.stat().st_mode & 0o077 == 0 for directory in (root, backup)), "Private package directory permissions required")
     expected = R.read_json(root / "integrity-sha256.json")
     check(R.read_json(backup / "integrity-sha256.json") == expected, "Package backup manifest mismatch")
     for name, checksum in expected.items():
         check(not Path(name).is_absolute() and ".." not in Path(name).parts, "Unsafe integrity path")
         for directory in (root, backup):
             path = directory / name
-            check(not path.is_symlink() and path.resolve().is_relative_to(directory) and file_hash(path) == checksum,
+            check(not path.is_symlink() and path.resolve().is_relative_to(directory)
+                  and path.stat().st_mode & 0o077 == 0 and file_hash(path) == checksum,
                   "Package backup checksum mismatch")
     return backup
 

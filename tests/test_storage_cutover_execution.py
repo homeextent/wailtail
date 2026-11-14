@@ -211,10 +211,11 @@ class ExecutionTests(unittest.TestCase):
     def test_package_copy_verification_and_mirrored_journal(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, mirror = Path(tmp)/'local', Path(tmp)/'independent'
-            root.mkdir()
-            mirror.mkdir()
+            root.mkdir(mode=0o700)
+            mirror.mkdir(mode=0o700)
             for directory in (root,mirror):
                 (directory/'private-plan.json').write_text('private')
+                (directory/'private-plan.json').chmod(0o600)
                 (directory/'integrity-sha256.json').write_text(json.dumps({'private-plan.json':E.file_hash(directory/'private-plan.json')}))
             self.assertEqual(E.verify_package_backup(root,mirror),mirror)
             journal = E.Journal(root/'journal','hash',mirror/'journal')
