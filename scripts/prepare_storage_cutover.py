@@ -6,11 +6,14 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import io
+import http.client
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import socket
+import time
 import sys
 import urllib.error
 import urllib.parse
@@ -273,11 +276,47 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def connect_ipv4(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
+    """Resolve/connect IPv4 only for this HTTPS transport; leave global DNS untouched."""
+    host, port = address
+    last_error = None
+    for family, kind, protocol, _, endpoint in socket.getaddrinfo(
+            host, port, socket.AF_INET, socket.SOCK_STREAM):
+        connection = socket.socket(family, kind, protocol)
+        try:
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                connection.settimeout(timeout)
+            if source_address:
+                connection.bind(source_address)
+            connection.connect(endpoint)
+            return connection
+        except OSError as error:
+            last_error = error
+            connection.close()
+    if last_error:
+        raise last_error
+    raise OSError("No IPv4 address available")
+
+
+class IPv4HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = connect_ipv4
+
+
+class IPv4HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, request):
+        return self.do_open(IPv4HTTPSConnection, request, context=self._context)
+
+
 class ReadOnlyCloud:
-    def __init__(self, token, refresh_token=None):
+    def __init__(self, token, refresh_token=None, ipv4_only=False):
         self.token = token
         self.refresh_token = refresh_token
-        self.opener = urllib.request.build_opener(NoRedirect())
+        handlers = [NoRedirect()]
+        if ipv4_only:
+            handlers.append(IPv4HTTPSHandler())
+        self.opener = urllib.request.build_opener(*handlers)
 
     def get(self, url, binary=False, absent_ok=False):
         parsed = urllib.parse.urlsplit(url)
@@ -285,6 +324,7 @@ class ReadOnlyCloud:
             raise Blocked("Unexpected HTTP origin")
         for attempt in range(2):
             req = urllib.request.Request(url, headers={"Authorization": "Bearer " + self.token}, method="GET")
+            started = time.monotonic()
             try:
                 with self.opener.open(req, timeout=60) as response:
                     data = response.read(40 * 1024 * 1024 + 1)
@@ -301,6 +341,8 @@ class ReadOnlyCloud:
                         raise Blocked("Authentication returned no token")
                     continue
                 raise Blocked(f"Read-only HTTP request failed: {error.code}") from None
+            finally:
+                print(f"Read {parsed.hostname}: {time.monotonic() - started:.2f}s (attempt {attempt + 1})", flush=True)
 
     def listed(self, endpoint, item_key, extra=None):
         result, token, seen = [], "", set()
@@ -427,6 +469,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=REPO / "docs/storage-cutover-inventory-2026-11-13.csv")
     parser.add_argument("--output", required=True, type=Path, help="New private directory outside the repository")
+    parser.add_argument("--ipv4-only", action="store_true", help="Use IPv4 for this script HTTPS transport only")
     args = parser.parse_args()
     os.umask(0o077)
     output = None
@@ -436,10 +479,15 @@ def main():
         import pymupdf  # noqa: F401
         output = make_output(args.output)
         print("Obtaining Google Cloud authentication; token will not be displayed", flush=True)
-        report = prepare(rows, ReadOnlyCloud(obtain_token(), refresh_token=obtain_token), output)
+        report = prepare(rows, ReadOnlyCloud(obtain_token(), refresh_token=obtain_token, ipv4_only=args.ipv4_only), output)
         print(json.dumps(report, indent=2))
         print(f"Only share {output / 'shareable-summary.json'}. Other outputs contain private data.")
         return 0
+    except KeyboardInterrupt:
+        if output:
+            private_json(output / "cancelled-summary.json", {"status": "CANCELLED", "cloud_write_requests": 0})
+        print("CANCELLED: No cloud writes performed; retain partial evidence privately.", file=sys.stderr)
+        return 130
     except Exception as error:
         message = str(error) if isinstance(error, Blocked) else "Local/read-only preparation failed (" + type(error).__name__ + ")"
         if output:

@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Production preflight — Read-only file validation and guarded preparation
 
+- Added opt-in script-scoped IPv4 HTTPS transport for owner networks with IPv6 timeouts, sanitized request timing and clean cancellation evidence; preserved TLS verification, GET-only behavior and original assets.
+
 - Added bounded authentication recovery for owner validation: refresh once after HTTP 401 and retry only the failed GET; repeated rejection stops safely. Added transport regression coverage.
 
 - Added a manifest-pinned, GET-only owner-side preparer for live metadata/file/reference validation and private native-precondition copy/reference proposals. It has no apply mode, rejects drift/collisions, validates JPEG/PDF/SVG bytes, flags EXIF/GPS and retains all originals.

@@ -280,5 +280,57 @@ class AuthenticationTests(unittest.TestCase):
                 C.obtain_token()
 
 
+class IPv4TransportTests(unittest.TestCase):
+    def test_ipv4_connection_closes_failed_socket_and_keeps_timeout(self):
+        first, second = unittest.mock.Mock(), unittest.mock.Mock()
+        first.connect.side_effect = TimeoutError()
+        addresses = [(C.socket.AF_INET, C.socket.SOCK_STREAM, 6, "", ("192.0.2.1", 443)),
+                     (C.socket.AF_INET, C.socket.SOCK_STREAM, 6, "", ("192.0.2.2", 443))]
+        original = C.socket.getaddrinfo
+        with patch.object(C.socket, "getaddrinfo", return_value=addresses) as resolve, \
+             patch.object(C.socket, "socket", side_effect=[first, second]):
+            self.assertIs(C.connect_ipv4(("storage.googleapis.com", 443), 5), second)
+            resolve.assert_called_once_with("storage.googleapis.com", 443, C.socket.AF_INET, C.socket.SOCK_STREAM)
+            first.close.assert_called_once()
+            second.settimeout.assert_called_once_with(5)
+        self.assertIs(C.socket.getaddrinfo, original)
+
+    def test_opt_in_retains_tls_and_redirect_policy(self):
+        default = C.ReadOnlyCloud("secret")
+        ipv4 = C.ReadOnlyCloud("secret", ipv4_only=True)
+        self.assertFalse(any(isinstance(h, C.IPv4HTTPSHandler) for h in default.opener.handlers))
+        handler = next(h for h in ipv4.opener.handlers if isinstance(h, C.IPv4HTTPSHandler))
+        with patch.object(handler, "do_open", return_value="response") as opened:
+            self.assertEqual(handler.https_open("request"), "response")
+            self.assertIs(opened.call_args.args[0], C.IPv4HTTPSConnection)
+            self.assertIn("context", opened.call_args.kwargs)
+        connection = C.IPv4HTTPSConnection("storage.googleapis.com")
+        self.assertTrue(connection._context.check_hostname)
+        self.assertEqual(connection._context.verify_mode, 2)
+        self.assertIs(connection._create_connection, C.connect_ipv4)
+        self.assertTrue(any(isinstance(h, C.NoRedirect) for h in ipv4.opener.handlers))
+
+    def test_timing_does_not_log_url_or_token(self):
+        cloud = C.ReadOnlyCloud("secret-token")
+        with patch.object(cloud.opener, "open", return_value=io.BytesIO(b'{}')), \
+             patch("sys.stdout", new_callable=io.StringIO) as log:
+            cloud.get(C.GCS + "?private=secret-query")
+        self.assertIn("Read storage.googleapis.com:", log.getvalue())
+        self.assertNotIn("secret", log.getvalue())
+
+    def test_cancellation_records_safe_summary_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            args = ["prepare", "--output", str(output), "--ipv4-only"]
+            with patch.object(C.sys, "argv", args), patch.object(C, "obtain_token", return_value="secret"), \
+                 patch.object(C, "prepare", side_effect=KeyboardInterrupt), \
+                 patch("sys.stderr", new_callable=io.StringIO) as log:
+                self.assertEqual(C.main(), 130)
+            self.assertEqual(json.loads((output / "cancelled-summary.json").read_text()),
+                             {"status": "CANCELLED", "cloud_write_requests": 0})
+            self.assertNotIn("Traceback", log.getvalue())
+            self.assertFalse((output / "shareable-summary.json").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
