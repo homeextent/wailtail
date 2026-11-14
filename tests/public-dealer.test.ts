@@ -6,6 +6,18 @@ import { dealerPromoTemplates, dealerCampaignState } from '../src/utils/dealerPr
 const now = 2000;
 const profile = { verificationStatus: 'verified', verificationExpiresAt: 3000, primaryRepresentativeUid: 'rep', phone: '+1 905 555 0100', website: 'https://example.test', displayPhonePublicly: true, displayWebsitePublicly: true, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET' };
 const listing = { status: 'active', sellerType: 'dealer', dealerId: 'dealer', sellerId: 'rep', dealerDocFee: 0, taxHandling: 'dealer_collects', taxDisclaimerVersion: 'dealer-tax-v1', sourceApplicationId: 'SECRET', sourceApplicationCollection: 'consignment_applications', dealerListingRevision: 0, dealerSnapshot: { dealerId: 'dealer', dealershipName: 'Synthetic legal', displayName: 'Synthetic dealer', city: 'Toronto', province: 'ON', verifiedAt: 1000, verificationRecordVersion: '3', phone: profile.phone, website: profile.website, streetAddress: 'SECRET', dealerLicenseNumber: 'SECRET', representativeUid: 'SECRET' } };
+test('public lots retain the published service records link without exposing other private fields', () => {
+  const url = 'https://drive.google.com/file/d/synthetic-public-record/view';
+  for (const sellerType of ['private', 'dealer']) {
+    const record = { ...listing, sellerType, serviceRecordsUrl: url, sellerEmail: 'SECRET' };
+    const projected = projectPublicAuction('lot', record);
+    assert.equal(projected?.serviceRecordsUrl, url);
+    assert.equal(projected?.sellerEmail, undefined);
+    assert.equal(projected?.dealerSnapshot, undefined);
+    assert.equal(projectPublicAuction('lot', { ...record, status: 'draft' }), null);
+    assert.equal(projectPublicAuction('lot', { ...record, serviceRecordsUrl: { private: 'SECRET' } })?.serviceRecordsUrl, undefined);
+  }
+});
 test('public dealer projection is a dedicated allowlist and never exposes private provenance', () => {
   const result = publicDealerSummary(listing, profile, now)!;
   assert.deepEqual(Object.keys(result).sort(), ['name','city','province','verified','documentationFee','taxHandling','phone','website'].sort());
