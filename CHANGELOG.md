@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Production preflight — Read-only file validation and guarded preparation
 
+- Recorded owner-authenticated November 14 validation on `30d2144`: 163 approved assets validated, 226 source objects reconciled, six reference-document proposals, five protected objects retained and zero cloud writes. Inherited-access, durable backup/recovery and production execution remain separate gates.
+
 - Added opt-in script-scoped IPv4 HTTPS transport for owner networks with IPv6 timeouts, sanitized request timing and clean cancellation evidence; preserved TLS verification, GET-only behavior and original assets.
 
 - Added bounded authentication recovery for owner validation: refresh once after HTTP 401 and retry only the failed GET; repeated rejection stops safely. Added transport regression coverage.

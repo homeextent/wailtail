@@ -8,7 +8,7 @@ See [Local development and worktree housekeeping](docs/local-development.md) for
 
 ## Storage cutover validation tooling
 
-The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Synthetic CI is separate from owner-authenticated live validation; no production cutover is claimed.
+The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Owner-authenticated validation completed on November 14, 2026: 163 approved files validated, 226 sources reconciled, six reference documents prepared, zero cloud writes. See the [dated evidence record](docs/storage-cutover-validation-2026-11-14.md). No production cutover is claimed.
 
 ## M2.5 public dealer presentation — accepted on staging
 

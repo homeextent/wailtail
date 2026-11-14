@@ -17,7 +17,7 @@ The repeatable setup, preview, archive and recovery procedures are in [Local dev
 
 ### Storage cutover validation preparation
 
-The approved inventory can be checked with the [GET-only owner-side preparer](docs/storage-cutover-operations.md). Manifest hash, source versions/checksums, destination absence, file decoding/static SVG checks and current reference locations/revisions gate private operation proposals. It has no apply mode; source copies, Firestore commits, token/rules changes and production promotion require separate approval. CI uses synthetic fixtures, not live credentials; actual validation of all approved public files requires the owner-side report.
+The approved inventory can be checked with the [GET-only owner-side preparer](docs/storage-cutover-operations.md). Manifest hash, source versions/checksums, destination absence, file decoding/static SVG checks and current reference locations/revisions gate private operation proposals. It has no apply mode; source copies, Firestore commits, token/rules changes and production promotion require separate approval. CI uses synthetic fixtures, not live credentials; the owner supplied the successful report on November 14, 2026: all 163 approved files validated, all 226 source objects reconciled, six reference documents prepared, five protected objects retained, no EXIF/GPS flags and zero cloud writes. See the [dated evidence and remaining gates](docs/storage-cutover-validation-2026-11-14.md). This point-in-time preparation is not migration, privacy certification, verified recovery or production acceptance.
 
 ### Trusted application paths
 
