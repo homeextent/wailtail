@@ -6,6 +6,10 @@ Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: co
 
 See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
 
+## Storage cutover validation tooling
+
+The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Owner-authenticated validation completed on November 14, 2026: 163 approved files validated, 226 sources reconciled, six reference documents prepared, zero cloud writes. See the [dated evidence record](docs/storage-cutover-validation-2026-11-14.md). Owner follow-up verified 169 backup files and six reference/recovery proposals; both approved PDFs returned HTTP 206 anonymously with and without their original tokens. This establishes a readable baseline, not private-link denial or a restore. No production cutover is claimed.
+
 ## M2.5 public dealer presentation — accepted on staging
 
 Public catalog/lot responses now provide a minimal dealer summary with current-verification badges, historical business/city/province attribution, CAD $0 dealer documentation fee and informational tax disclosures. Business contacts require snapshot inclusion plus current consent for the same value. Missing/expired/suspended profiles suppress current verification and contacts without interrupting historical auctions. Dealer social copy/graphics use public-safe data and verification limitations. See [M2.5 scope and local review](docs/m2-5-public-dealers.md). No production or live Firebase changes are included. Jeremy locally accepted reviewed head `8f6a1f3`, explicitly approved PR #10, and confirmed a clean local staging checkout synchronized to merge `49efa36` on November 13, 2026. Exact-head CI run `43451784085`, post-merge CI run `43454275497` and Vercel checks passed. Production promotion and live Firebase publication remain separate.

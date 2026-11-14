@@ -14,7 +14,7 @@ No credentials, download tokens, complete document contents or private contact f
 
 The completed metadata scan found 226 objects totaling 26,841,315 bytes, with all required source checksums/generations present. All have download-token metadata; no token values were retained. Bucket IAM reported no direct public-principal bindings, and all object ACLs reported NO_PUBLIC_ENTRY. Inherited IAM, old versions, soft-deleted objects, actual token URL access and file contents remain unverified. Live Firebase Storage rules are still open.
 
-Three objects are application/pdf and seven are image/svg+xml. See the [PDF access review register](storage-pdf-access-review.md) for the three individually preserved PDFs, apparent duplicate and two staging legacy-rule exceptions. The uploaded Porsche/RAM contents have since been reviewed. The RAM owner explicitly accepts the existing invoice's public display for now and plans to replace it; Jeremy has approved retaining the Porsche album link and the 163 referenced public assets; the apparent duplicate remains held. These decisions are planning classifications, not deployed access changes. Image/SVG byte validation remains an execution prerequisite, despite owner approval of the referenced public set. The shared logo is an SVG; do not assume every .jpg path can be decoded as a JPEG.
+Three objects are application/pdf and seven are image/svg+xml. See the [PDF access review register](storage-pdf-access-review.md) for the three individually preserved PDFs, apparent duplicate and two staging legacy-rule exceptions. The uploaded Porsche/RAM contents have since been reviewed. The RAM owner explicitly accepts the existing invoice's public display for now and plans to replace it; Jeremy has approved retaining the Porsche album link and the 163 referenced public assets; the apparent duplicate remains held. These decisions are planning classifications, not deployed access changes. The November 14 owner-authenticated run subsequently passed byte validation for all 163 approved public assets; see the [dated evidence record](storage-cutover-validation-2026-11-14.md). Fresh source/content/reference preconditions remain an execution prerequisite. The shared logo is an SVG; do not assume every .jpg path can be decoded as a JPEG.
 
 ## Preservation contract
 
@@ -76,3 +76,8 @@ Jeremy confirmed the RAM listing is his own and permits the reviewed invoice to 
 
 
 Owner public-set decision: approve 163 referenced assets (135 Porsche consumers, 24 RAM consumers, four shared branding/promotion assets), keep the Porsche album link and preserve all 63 unmatched sources without public migration. All five test-path images have explicit consumer-based public mappings. The trusted image-upload handler's PDF replacement gap is recorded in the [mapping review](storage-cutover-destination-mappings.md); it is not fixed by this plan.
+
+
+## Read-only validation tooling
+
+The [owner-side preparer](storage-cutover-operations.md) validates metadata, approved file bytes and current Firestore references and writes private guarded operation proposals without executing writes. It pins the approved manifest hash and has no apply mode. Synthetic tests and locally reviewed PDFs are distinct from the required owner-authenticated full file run. Production cutover remains separately authorized.

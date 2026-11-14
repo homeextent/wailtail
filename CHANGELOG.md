@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Production preflight — Read-only file validation and guarded preparation
+
+- Recorded successful owner follow-up at `c71ff14`: 169 backup files, six reference/recovery proposals consistent, no restore or cloud writes; both representative approved PDFs returned anonymous HTTP 206 with and without original tokens. Preparation acceptance is distinct from remaining live cutover/security gates.
+
+- Recorded owner verification of 169 local backup files and no matching project/organization public IAM bindings. Added a read-only backup/recovery consistency and representative original PDF-link checker with anonymous IPv4 requests and sanitized results; no restore or live mutation.
+
+- Recorded owner-authenticated November 14 validation on `30d2144`: 163 approved assets validated, 226 source objects reconciled, six reference-document proposals, five protected objects retained and zero cloud writes. Inherited-access, durable backup/recovery and production execution remain separate gates.
+
+- Added opt-in script-scoped IPv4 HTTPS transport for owner networks with IPv6 timeouts, sanitized request timing and clean cancellation evidence; preserved TLS verification, GET-only behavior and original assets.
+
+- Added bounded authentication recovery for owner validation: refresh once after HTTP 401 and retry only the failed GET; repeated rejection stops safely. Added transport regression coverage.
+
+- Added a manifest-pinned, GET-only owner-side preparer for live metadata/file/reference validation and private native-precondition copy/reference proposals. It has no apply mode, rejects drift/collisions, validates JPEG/PDF/SVG bytes, flags EXIF/GPS and retains all originals.
+- Added private output handling, recovery templates, synthetic regression tests and CI coverage. Uploaded Porsche/RAM PDFs were verified locally; all-public-file live validation remains pending owner execution. No production write or rollout is performed.
+
 ### Production preflight — Public/private decisions and proposed asset destinations (2026-11-13)
 
 - Recorded owner approval of the 163 referenced public assets and retention of the Porsche album link. Mapped 135 Porsche, 24 RAM and four shared consumers to unique MIME-correct proposed paths/URLs, preserving all five protected test-path images; retained 63 unmatched originals without public migration.
