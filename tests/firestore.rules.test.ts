@@ -23,10 +23,16 @@ import {
   Firestore
 } from 'firebase/firestore';
 
-const PROJECT_ID = 'studio-apps-483721';
+// Keep this synthetic project ID aligned with the test:rules command.
+const PROJECT_ID = 'demo-wailtail-stage3';
 const DATABASE_ID = 'ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e';
-const EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST?.split(':')[0] || '127.0.0.1';
-const EMULATOR_PORT = Number(process.env.FIRESTORE_EMULATOR_HOST?.split(':')[1] || '8080');
+const emulatorAddress = process.env.FIRESTORE_EMULATOR_HOST ?? '';
+const loopback = /^127\.0\.0\.1:(\d{1,5})$/.exec(emulatorAddress);
+if (!loopback || Number(loopback[1]) < 1 || Number(loopback[1]) > 65535) {
+  throw new Error('Firestore rules tests require a loopback emulator. Run npm run test:rules.');
+}
+const EMULATOR_HOST = '127.0.0.1';
+const EMULATOR_PORT = Number(loopback[1]);
 
 const APPLICANT_EMAIL = 'applicant@wailtail.com';
 const OTHER_USER_EMAIL = 'otheruser@wailtail.com';
@@ -628,7 +634,8 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
         });
 
         const adminCtx = testEnv.authenticatedContext('admin-uid', {
-          email: ADMIN_EMAIL
+          email: ADMIN_EMAIL,
+          email_verified: true
         });
         const db = getNamedDb(adminCtx);
 
@@ -791,4 +798,733 @@ describe('Firestore Security Rules — M2.0A Consignment Hardening', () => {
       assert.strictEqual(defaultRes.status, 404, 'Document must not exist in default database');
     });
   });
+
+  describe('Firestore Security Rules — M2.0B Canonical Profile Role Hardening', () => {
+    const PROFILE_COLLECTIONS = ['users', 'bidders'] as const;
+    const ADMIN_1_EMAIL = 'jeremygoodmurphy@gmail.com';
+    const ADMIN_2_EMAIL = 'jeremy@theinnovativegroup.ca';
+    const ORDINARY_USER_UID = 'ordinary-member-1';
+    const ORDINARY_USER_EMAIL = 'ordinary@wailtail.com';
+    const OTHER_UID = 'ordinary-member-2';
+    const OTHER_EMAIL = 'member2@wailtail.com';
+
+    for (const col of PROFILE_COLLECTIONS) {
+      describe(`Collection: ${col}`, () => {
+        // 1. Owner cannot create their own profile with role: 'admin'
+        test(`1. Owner cannot create their own ${col} profile with role: 'admin'`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              role: 'admin'
+            })
+          );
+        });
+
+        // 2. Owner cannot create their own profile with role: 'seller'
+        test(`2. Owner cannot create their own ${col} profile with role: 'seller'`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              role: 'seller'
+            })
+          );
+        });
+
+        // Baseline: Owner can create their own profile with baseline role: 'bidder' or omitted role
+        test(`Owner can create their own ${col} profile with role: 'bidder' or omitted role`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Ordinary Member',
+              role: 'bidder',
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // Correction B: Owner cannot create their own profile with isEmailVerified: true when Firebase token is unverified
+        test(`Owner cannot create their own ${col} profile with isEmailVerified: true when token is unverified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: false
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Unverified Member',
+              role: 'bidder',
+              isEmailVerified: true,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // Correction B: Owner CAN create their own profile with isEmailVerified: false when Firebase token is unverified
+        test(`Owner can create their own ${col} profile with isEmailVerified: false when token is unverified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: false
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Unverified Member',
+              role: 'bidder',
+              isEmailVerified: false,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // Correction B: Owner CAN create their own profile with isEmailVerified: true when Firebase token IS verified
+        test(`Owner can create their own ${col} profile with isEmailVerified: true when token is verified (Correction B)`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertSucceeds(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              email: ORDINARY_USER_EMAIL,
+              displayName: 'Verified Member',
+              role: 'bidder',
+              isEmailVerified: true,
+              registeredAt: Date.now()
+            })
+          );
+        });
+
+        // 3. Owner cannot create another UID's profile
+        test(`3. Owner cannot create another UID's ${col} profile`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, OTHER_UID), {
+              uid: OTHER_UID,
+              email: OTHER_EMAIL,
+              role: 'bidder'
+            })
+          );
+        });
+
+        // Owner cannot inject protected dealerId or ban status on create
+        test(`Owner cannot inject protected dealerId or ban status on ${col} create`, async () => {
+          const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+            email: ORDINARY_USER_EMAIL,
+            email_verified: true
+          });
+          const db = getNamedDb(userCtx);
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              dealerId: 'dealer-123',
+              role: 'bidder'
+            })
+          );
+
+          await assertFails(
+            setDoc(doc(db, col, ORDINARY_USER_UID), {
+              uid: ORDINARY_USER_UID,
+              isBanned: false,
+              role: 'bidder'
+            })
+          );
+        });
+
+        // Setup existing baseline profile before update tests
+        describe('Update Guards', () => {
+          beforeEach(async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: true,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+              await setDoc(doc(rootDb, col, OTHER_UID), {
+                uid: OTHER_UID,
+                email: OTHER_EMAIL,
+                displayName: 'Other Member',
+                role: 'bidder',
+                isEmailVerified: true,
+                totalBidsPlaced: 0,
+                registeredAt: Date.now()
+              });
+            });
+          });
+
+          // 4. Owner cannot change their own role to 'admin'
+          test(`4. Owner cannot change their own role to 'admin' in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'admin'
+              })
+            );
+          });
+
+          // 5. Owner cannot change their own role to 'seller'
+          test(`5. Owner cannot change their own role to 'seller' in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+
+          // 6. Owner cannot change another user's role
+          test(`6. Owner cannot change another user's role in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, OTHER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+
+          // 7. Owner cannot change protected dealerId
+          test(`7. Owner cannot change protected dealerId in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                dealerId: 'dealer-fraud-1'
+              })
+            );
+          });
+
+          // Owner cannot modify ban flags
+          test(`Owner cannot modify ban flags in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isBanned: false,
+                bannedFromBidding: false
+              })
+            );
+          });
+
+          // 8. Ordinary permitted profile updates continue to work
+          test(`8. Ordinary permitted profile updates continue to work in ${col}`, async () => {
+            const userCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(userCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                displayName: 'Updated Name',
+                phone: '416-555-0199',
+                totalBidsPlaced: 2,
+                highestBidPlaced: 45000,
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // Correction B: Owner cannot update their own isEmailVerified to true when token is unverified
+          test(`Owner cannot update their own isEmailVerified to true in ${col} when token is unverified (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const unverifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isEmailVerified: true
+              })
+            );
+          });
+
+          // Correction B: Unverified user CAN perform legitimate ordinary profile updates without touching isEmailVerified
+          test(`Unverified user can perform legitimate ordinary profile updates in ${col} without modifying isEmailVerified (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const unverifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                displayName: 'Updated Unverified Name',
+                phone: '416-555-0188',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // Correction B: Verified user CAN update their own isEmailVerified to true
+          test(`Verified user can update their own isEmailVerified to true in ${col} (Correction B)`, async () => {
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+              const rootDb = getNamedDb(context);
+              await setDoc(doc(rootDb, col, ORDINARY_USER_UID), {
+                uid: ORDINARY_USER_UID,
+                email: ORDINARY_USER_EMAIL,
+                displayName: 'Ordinary Member',
+                role: 'bidder',
+                isEmailVerified: false,
+                totalBidsPlaced: 1,
+                registeredAt: Date.now()
+              });
+            });
+
+            const verifiedCtx = testEnv.authenticatedContext(ORDINARY_USER_UID, {
+              email: ORDINARY_USER_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(verifiedCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                isEmailVerified: true,
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // 9. Designated administrators retain authorized role-management capability
+          test(`9. Designated administrator 1 retains authorized role-management capability in ${col}`, async () => {
+            const adminCtx = testEnv.authenticatedContext('admin-uid-1', {
+              email: ADMIN_1_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(adminCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller',
+                updatedAt: Date.now()
+              })
+            );
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'admin',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // 11. Second designated administrator recognized
+          test(`11. Second designated administrator (${ADMIN_2_EMAIL}) retains authorized role-management capability in ${col}`, async () => {
+            const adminCtx = testEnv.authenticatedContext('admin-uid-2', {
+              email: ADMIN_2_EMAIL,
+              email_verified: true
+            });
+            const db = getNamedDb(adminCtx);
+
+            await assertSucceeds(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller',
+                updatedAt: Date.now()
+              })
+            );
+          });
+
+          // Admin with unverified email cannot modify roles
+          test(`Admin with unverified email cannot modify roles in ${col}`, async () => {
+            const unverifiedAdminCtx = testEnv.authenticatedContext('admin-uid-unverified', {
+              email: ADMIN_1_EMAIL,
+              email_verified: false
+            });
+            const db = getNamedDb(unverifiedAdminCtx);
+
+            await assertFails(
+              updateDoc(doc(db, col, ORDINARY_USER_UID), {
+                role: 'seller'
+              })
+            );
+          });
+        });
+      });
+    }
+
+    // 10. An unrelated user cannot obtain admin privileges by storing role: 'admin' in a profile
+    test('10. An unrelated user cannot obtain admin privileges by having role: "admin" in their profile', async () => {
+      const attackerUid = 'attacker-uid';
+      const attackerEmail = 'attacker@evil.com';
+
+      // Seed an attacker profile document with role: 'admin' using rules-disabled admin bypass
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const rootDb = getNamedDb(context);
+        await setDoc(doc(rootDb, 'users', attackerUid), {
+          uid: attackerUid,
+          email: attackerEmail,
+          role: 'admin',
+          isEmailVerified: true
+        });
+      });
+
+      // Attacker signs in with attackerEmail and valid token
+      const attackerCtx = testEnv.authenticatedContext(attackerUid, {
+        email: attackerEmail,
+        email_verified: true
+      });
+      const db = getNamedDb(attackerCtx);
+
+      // Attempt to access administrative dealer_profiles collection (protected by isAdmin())
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'rogue-dealer'), {
+          legalBusinessName: 'Rogue Dealership Inc.',
+          dealerLicenseNumber: 'ROGUE-999'
+        })
+      );
+
+      // Attempt to update another user's role
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'admin'
+        })
+      );
+    });
+
+    // Correction A & B: User cannot use isEmailVerified in users or bidders to gain administrator authority
+    test('Correction A & B: User cannot use isEmailVerified in users or bidders to gain administrator authority', async () => {
+      const nonAdminUid = 'non-admin-verified-uid';
+      const nonAdminEmail = 'user.with.verified.profile@wailtail.com';
+
+      // Seed profile with isEmailVerified: true and role: 'bidder'
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        const rootDb = getNamedDb(context);
+        await setDoc(doc(rootDb, 'users', nonAdminUid), {
+          uid: nonAdminUid,
+          email: nonAdminEmail,
+          role: 'bidder',
+          isEmailVerified: true
+        });
+        await setDoc(doc(rootDb, 'bidders', nonAdminUid), {
+          uid: nonAdminUid,
+          email: nonAdminEmail,
+          role: 'bidder',
+          isEmailVerified: true
+        });
+      });
+
+      const userCtx = testEnv.authenticatedContext(nonAdminUid, {
+        email: nonAdminEmail,
+        email_verified: true
+      });
+      const db = getNamedDb(userCtx);
+
+      // Attempt to access admin collections (must fail because email is not designated admin)
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'dealer-bypass-attempt'), {
+          legalBusinessName: 'Bypass Inc.'
+        })
+      );
+
+      // Attempt to update another user's role (must fail)
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'admin'
+        })
+      );
+    });
+
+    // Allowlisted admin identity with unverified token cannot exercise administrator authority
+    test('Allowlisted admin with unverified Firebase token cannot exercise administrative authority', async () => {
+      const unverifiedAdminCtx = testEnv.authenticatedContext('admin-unverified-uid', {
+        email: ADMIN_1_EMAIL,
+        email_verified: false
+      });
+      const db = getNamedDb(unverifiedAdminCtx);
+
+      // Attempt to write to admin-only collection
+      await assertFails(
+        setDoc(doc(db, 'dealer_profiles', 'unverified-admin-dealer'), {
+          legalBusinessName: 'Unverified Admin Corp.'
+        })
+      );
+
+      // Attempt to modify another user's role
+      await assertFails(
+        updateDoc(doc(db, 'users', OTHER_UID), {
+          role: 'seller'
+        })
+      );
+    });
+  });
+});
+
+
+describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
+  before(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: PROJECT_ID,
+      firestore: {
+        host: EMULATOR_HOST,
+        port: EMULATOR_PORT,
+        rules: fs.readFileSync('firestore.rules', 'utf8')
+      }
+    });
+  });
+
+  after(async () => {
+    await testEnv.cleanup();
+  });
+
+  beforeEach(async () => {
+    await clearNamedDatabase();
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      const db = getNamedDb(ctx);
+      await Promise.all([
+        setDoc(doc(db, 'auctions/lot'), { sellerId: 'seller', status: 'draft', reserveAmount: 10000 }),
+        setDoc(doc(db, 'auctions/lot/bids/bid'), { bidderEmail: 'bidder@example.com' }),
+        setDoc(doc(db, 'auctions/lot/media/hero'), { private: true }),
+        setDoc(doc(db, 'auctionPublic/published'), { title: 'Published lot' }),
+        setDoc(doc(db, 'auctionPublic/published/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/unpublished/media/hero'), { assetId: 'hero' }),
+        setDoc(doc(db, 'auctionPublic/published/internal/item'), { private: true }),
+        setDoc(doc(db, 'users/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'bidders/seller'), { uid: 'seller', role: 'seller' }),
+        setDoc(doc(db, 'auctionNotificationOutbox/private'), { to: ['private@example.test'], status: 'queued' }),
+        setDoc(doc(db, 'settings/promotions'), { enabled: true })
+      ]);
+    });
+  });
+
+  for (const uid of ['guest', 'seller', 'other']) {
+    test(`${uid} cannot mutate canonical auctions or protected feeds`, async () => {
+      const ctx = uid === 'guest' ? testEnv.unauthenticatedContext() : testEnv.authenticatedContext(uid);
+      const db = getNamedDb(ctx);
+      await assertFails(setDoc(doc(db, 'auctions/new'), { sellerId: uid }));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: uid, reserveAmount: 1 }));
+      await assertFails(deleteDoc(doc(db, 'auctions/lot')));
+      for (const path of ['auctions/lot/bids/new', 'auctions/lot/media/new', 'auctions/lot/unknown/new',
+        'bids/new', 'comments/new', 'auctionPublic/new', 'settings/promotions', 'settings/media-lot',
+        'promo_analytics/new', 'inquiries/new', 'auctionNotificationOutbox/new', 'mail/new', 'emails/new', 'emailLogs/new']) {
+        await assertFails(setDoc(doc(db, path), { actor: uid }));
+      }
+    });
+  }
+
+  test('public reads are limited to published projections and explicit feeds', async () => {
+    const db = getNamedDb(testEnv.unauthenticatedContext());
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published')));
+    await assertSucceeds(getDoc(doc(db, 'auctionPublic/published/media/hero')));
+    await assertSucceeds(getDoc(doc(db, 'settings/promotions')));
+    for (const path of ['auctions/lot', 'auctions/lot/bids/bid', 'auctions/lot/media/hero',
+      'auctionPublic/unpublished/media/hero', 'auctionPublic/published/internal/item', 'auctionNotificationOutbox/private']) {
+      await assertFails(getDoc(doc(db, path)));
+    }
+  });
+
+  test('profile reads are self-scoped and clients cannot delete their own moderation records', async () => {
+    const self = getNamedDb(testEnv.authenticatedContext('seller'));
+    const other = getNamedDb(testEnv.authenticatedContext('other'));
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(getDoc(doc(self, name, 'seller')));
+      await assertFails(getDoc(doc(other, name, 'seller')));
+      await assertFails(getDocs(collection(self, name)));
+      await assertFails(deleteDoc(doc(self, name, 'seller')));
+    }
+  });
+
+  for (const email of [ADMIN_EMAIL, 'jeremy@theinnovativegroup.ca']) {
+    test(`verified designated administrator retains privileged reads (${email})`, async () => {
+      const db = getNamedDb(testEnv.authenticatedContext('admin', { email, email_verified: true }));
+      const unverified = getNamedDb(testEnv.authenticatedContext('unverified', { email, email_verified: false }));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot')));
+      await assertSucceeds(getDoc(doc(db, 'auctionNotificationOutbox/private')));
+      await assertFails(setDoc(doc(db, 'auctionNotificationOutbox/direct'), { status: 'queued' }));
+      await assertSucceeds(getDoc(doc(db, 'auctions/lot/bids/bid')));
+      await assertSucceeds(getDocs(collection(db, 'users')));
+      await assertSucceeds(updateDoc(doc(db, 'settings/promotions'), { enabled: false }));
+      await assertFails(getDoc(doc(unverified, 'auctions/lot')));
+      await assertFails(updateDoc(doc(db, 'auctions/lot'), { sellerId: 'other' }));
+    });
+  }
+  test('member administration, branding and promotions remain administrator-scoped', async () => {
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    const member = getNamedDb(testEnv.authenticatedContext('seller', { email: APPLICANT_EMAIL, email_verified: true }));
+    const guest = getNamedDb(testEnv.unauthenticatedContext());
+    for (const name of ['users', 'bidders']) {
+      await assertSucceeds(updateDoc(doc(admin, name, 'seller'), { role: 'bidder', isBanned: true, bannedFromBidding: true }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { isBanned: false }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { role: 'admin' }));
+      await assertFails(updateDoc(doc(member, name, 'seller'), { watchlist: ['lot'] }));
+      await assertSucceeds(updateDoc(doc(member, name, 'seller'), { displayName: 'My display name' }));
+    }
+    await assertSucceeds(setDoc(doc(admin, 'settings/global'), { siteName: 'Test brand', privateAdminField: 'private' }));
+    await assertFails(getDoc(doc(guest, 'settings/global')));
+    await assertFails(updateDoc(doc(member, 'settings/global'), { siteName: 'Spoofed' }));
+    await assertSucceeds(updateDoc(doc(admin, 'settings/promotions'), { enabled: false, cards: [{ imageUrl: 'https://example.test/promo.jpg' }] }));
+    await assertSucceeds(getDoc(doc(guest, 'settings/promotions')));
+    await assertFails(updateDoc(doc(member, 'settings/promotions'), { enabled: true }));
+    for (const context of [admin, member, guest]) {
+      await assertFails(setDoc(doc(context, 'inquiries/client-spoof'), { senderId: 'seller' }));
+      await assertFails(setDoc(doc(context, 'memberActionLimits/seller'), { lastInquiryAt: 0 }));
+      await assertFails(deleteDoc(doc(context, 'auctions/lot')));
+    }
+  });
+
+  test('M2.1 internal review and history are private and cannot be forged by any client', async () => {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = getNamedDb(context);
+      await setDoc(doc(db, 'consignmentReviews/application'), { revision: 1, assigneeEmail: ADMIN_EMAIL });
+      await setDoc(doc(db, 'consignmentReviews/application/events/event'), { value: 'PRIVATE', revision: 1 });
+      await setDoc(doc(db, 'consignment_applications/applicant-record'), { sellerEmail: APPLICANT_EMAIL, status: 'pending' });
+    });
+    const actors = [
+      testEnv.unauthenticatedContext(),
+      testEnv.authenticatedContext('applicant', { email: APPLICANT_EMAIL, email_verified: true }),
+      testEnv.authenticatedContext('other', { email: OTHER_USER_EMAIL, email_verified: true, role: 'admin' }),
+      testEnv.authenticatedContext('unverified', { email: ADMIN_EMAIL, email_verified: false })
+    ];
+    for (const actor of actors) {
+      const db = getNamedDb(actor);
+      for (const path of ['consignmentReviews/application', 'consignmentReviews/application/events/event']) {
+        await assertFails(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { value: 'forged' }));
+      }
+    }
+    const applicant = getNamedDb(testEnv.authenticatedContext('owner', { email: APPLICANT_EMAIL, email_verified: true }));
+    await assertSucceeds(getDoc(doc(applicant, 'consignment_applications/applicant-record')));
+    for (const email of [ADMIN_EMAIL, 'jeremy@theinnovativegroup.ca']) {
+      const db = getNamedDb(testEnv.authenticatedContext(email, { email, email_verified: true }));
+      for (const path of ['consignmentReviews/application', 'consignmentReviews/application/events/event']) {
+        await assertSucceeds(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { value: 'forged' }));
+        await assertFails(updateDoc(doc(db, path), { value: 'changed' }));
+        await assertFails(deleteDoc(doc(db, path)));
+      }
+    }
+  });
+
+  test('M2.2 dealer intake and idempotency records cannot bypass trusted submission', async () => {
+    for (const email of [undefined, APPLICANT_EMAIL]) {
+      const db = getNamedDb(email ? testEnv.authenticatedContext('applicant', { email, email_verified: true }) : testEnv.unauthenticatedContext());
+      for (const name of ['consignment_applications', 'consignments']) {
+        const legacy = { status: 'pending', sellerEmail: APPLICANT_EMAIL, year: 2000, make: 'Test', model: 'Vehicle' };
+        await assertSucceeds(setDoc(doc(db, name, `old-private-${email ? 'auth' : 'guest'}`), legacy));
+        await assertSucceeds(setDoc(doc(db, name, `explicit-private-${email ? 'auth' : 'guest'}`), { ...legacy, applicantType: 'private' }));
+        for (const extra of [{ applicantType: 'dealer' }, { applicantType: 'other' },
+          { submittedDealershipName: 'Bypass' }, { submittedDbaName: 'Bypass' }, { submittedDealerLicenseNumber: '123' },
+          { submittedLicensingJurisdiction: 'ON' }, { dealershipOwnershipDeclaration: true }, { legalSellerOfRecordDeclaration: true },
+          { noBrokeredInventoryDeclaration: true }, { declarationVersion: 'forged' }, { declarationAcceptedAt: 1 }]) {
+          await assertFails(setDoc(doc(db, name, 'bypass'), { ...legacy, ...extra }));
+        }
+      }
+      await assertFails(setDoc(doc(db, 'consignmentIntakeCommands/forged'), { hash: 'forged' }));
+      await assertFails(getDoc(doc(db, 'consignmentIntakeCommands/forged')));
+    }
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    await assertFails(setDoc(doc(admin, 'consignmentIntakeCommands/forged'), { hash: 'forged' }));
+    await assertFails(getDoc(doc(admin, 'consignmentIntakeCommands/forged')));
+  });
+
+  test('M2.3 profiles, cases, claims and immutable audit history require trusted server mutations', async () => {
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      const db = getNamedDb(ctx);
+      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits', 'dealerListingCommands', 'dealerListingAudits']) {
+        await setDoc(doc(db, collection, 'm23-record'), { dealerId: 'dealer', verificationStatus: 'verified', revision: 1 });
+      }
+    });
+    for (const actor of [testEnv.unauthenticatedContext(),
+      testEnv.authenticatedContext('rep', { email: 'rep@example.test', email_verified: true }),
+      testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true })]) {
+      const db = getNamedDb(actor);
+      for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealerIdentityClaims', 'dealer_verification_audits', 'dealerListingCommands', 'dealerListingAudits']) {
+        await assertFails(setDoc(doc(db, collection, 'new'), { verificationStatus: 'verified' }));
+        await assertFails(updateDoc(doc(db, collection, 'm23-record'), { verificationStatus: 'verified', reason: 'rewrite' }));
+        await assertFails(deleteDoc(doc(db, collection, 'm23-record')));
+      }
+    }
+    const admin = getNamedDb(testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true }));
+    for (const collection of ['dealer_profiles', 'dealerVerificationCases', 'dealer_verification_audits', 'dealerListingAudits']) await assertSucceeds(getDoc(doc(admin, collection, 'm23-record')));
+    await assertFails(getDoc(doc(admin, 'dealerIdentityClaims', 'm23-record')));
+    await assertFails(getDoc(doc(admin, 'dealerListingCommands', 'm23-record')));
+  });
+
 });

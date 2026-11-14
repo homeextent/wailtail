@@ -11,7 +11,7 @@ function localApiPlugin(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         if (req.url && req.url.startsWith('/api/send-consignment-email')) {
           try {
-            const { default: handler } = await server.ssrLoadModule('./api/send-consignment-email.ts');
+            const { default: handler } = await server.ssrLoadModule('./server/api/send-consignment-email.ts');
             await handler(req, res);
             return;
           } catch (err: any) {
@@ -24,7 +24,7 @@ function localApiPlugin(): Plugin {
         }
         if (req.url && req.url.startsWith('/api/youtube-playlist')) {
           try {
-            const { default: handler } = await server.ssrLoadModule('./api/youtube-playlist.ts');
+            const { default: handler } = await server.ssrLoadModule('./server/api/youtube-playlist.ts');
             const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
             (req as any).query = Object.fromEntries(urlObj.searchParams.entries());
             await handler(req, res);

@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Temporary, explicitly approved maintenance rules. Existing media stays
+    // readable; direct client writes/listing are denied. Replace with the final
+    // cutover rules after all replacement references and delivery are verified.
+    match /auctions/{allPaths=**} {
+      allow get: if true;
+    }
+    match /auctionPublic/{auctionId}/{assetId} {
+      allow get: if true;
+    }
+  }
+}

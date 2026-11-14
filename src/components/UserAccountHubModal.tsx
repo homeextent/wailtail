@@ -74,8 +74,8 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 }) => {
   const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller } = useAuth();
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
-  const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
-  const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
+  const isAdmin = Boolean(contextAdmin);
+  const isSeller = Boolean(isAdmin || contextSeller || userProfile?.role?.toLowerCase() === 'seller');
   
   const resolveValidTab = (tab?: string): 'bids' | 'watchlist' | 'seller' | 'consignments' | 'notifications' => {
     const validTabs = ['bids', 'watchlist', 'seller', 'consignments', 'notifications'];
@@ -133,6 +133,8 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   }, [isOpen, user, onClose]);
 
   // Load activity summary and saved watchlist from service
+  const [sellerListingsError, setSellerListingsError] = useState(false);
+
   const loadActivity = async (isManualRefresh = false) => {
     if (!user?.uid) {
       setLoading(false);
@@ -142,11 +144,24 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
     else setLoading(true);
 
     try {
-      const [data, watchlistData] = await Promise.all([
+      setSellerListingsError(false);
+      const [data, watchlistData, owned] = await Promise.all([
+
         fetchUserActivitySummary(user.uid, user.email || ''),
-        fetchUserWatchlist(user.uid)
+        fetchUserWatchlist(user.uid),
+        (async () => {
+          const response = await fetch('/api/seller-draft-list', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${await user.getIdToken()}` }
+          });
+          if (!response.ok) throw new Error('Could not load seller listings.');
+          const result = await response.json();
+          if (!Array.isArray(result.listings)) throw new Error('Invalid seller listing response.');
+          return result.listings as typeof summary.sellerListings;
+        })().catch(() => null)
       ]);
-      setSummary(data);
+      setSellerListingsError(owned === null);
+      setSummary({ ...data, sellerListings: owned ?? [] });
 
       if (watchlistData && watchlistData.length > 0) {
         if (allAuctions && allAuctions.length > 0) {
@@ -202,13 +217,13 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
 
   // Determine user role label and badge style
   const roleDisplay = useMemo(() => {
-    if (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN') {
+    if (isAdmin) {
       return {
         label: 'ADMIN',
         badgeClass: 'bg-red-950/80 text-red-300 border-red-800/80'
       };
     }
-    if (isSeller || userProfile?.role?.toUpperCase() === 'SELLER' || summary.sellerListings.length > 0) {
+    if (isSeller) {
       return {
         label: 'SELLER',
         badgeClass: 'bg-amber-950/80 text-amber-300 border-amber-800/80'
@@ -218,7 +233,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
       label: 'BIDDER',
       badgeClass: 'bg-sky-950/80 text-sky-300 border-sky-800/80'
     };
-  }, [isAdmin, isSeller, userProfile?.role, summary.sellerListings.length]);
+  }, [isAdmin, isSeller, summary.sellerListings.length]);
 
   // Tab visibility rules:
   // - Tab 1: My Bids & Activity: Always visible
@@ -227,15 +242,13 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   const showSellerTab = Boolean(
     isAdmin || 
     isSeller || 
-    userProfile?.role?.toUpperCase() === 'SELLER' || 
     summary.sellerListings.length > 0
   );
 
   const showConsignmentsTab = Boolean(
     summary.consignments.length > 0 || 
     isAdmin || 
-    isSeller || 
-    userProfile?.role?.toUpperCase() === 'SELLER'
+    isSeller
   );
 
   if (!isOpen || !user) return null;
@@ -740,6 +753,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
               )}
 
               {/* TAB: WATCHLIST */}
+              {summary.historyLimitReached && <p role="status" className="px-6 py-2 text-sm text-amber-300">This account has more activity than can be displayed here.</p>}
               {activeTab === 'watchlist' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
@@ -912,7 +926,9 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                     )}
                   </div>
 
-                  {summary.sellerListings.length === 0 ? (
+                  {sellerListingsError ? (
+                    <p role="alert">Could not load your listings. Refresh to try again.</p>
+                  ) : summary.sellerListings.length === 0 ? (
                     /* Zero-State Callout for Seller Listings */
                     <div className="p-8 rounded-xl bg-slate-800/40 border border-slate-800 text-center space-y-3">
                       <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-400">

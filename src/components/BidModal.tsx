@@ -35,7 +35,7 @@ export const BidModal: React.FC<BidModalProps> = ({
   onOpenAuth,
   onOpenLegalModal
 }) => {
-  const { user, userProfile, isEmailVerified, manualVerifyForDemo } = useAuth();
+  const { user, userProfile, isEmailVerified } = useAuth();
   
   const hasZeroBids = (auction.bidCount ?? 0) === 0;
   const minRequired = hasZeroBids
@@ -350,30 +350,20 @@ export const BidModal: React.FC<BidModalProps> = ({
               </div>
 
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 text-left">
-                Check your inbox for the verification email sent during signup, or verify instantly below.
+                Check your inbox for the verification email sent during signup, then click the button below to check your status.
               </div>
 
               <div className="space-y-2 pt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await manualVerifyForDemo();
-                  }}
-                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow flex items-center justify-center gap-2"
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Verify Email for This Session</span>
-                </button>
-
                 <button
                   type="button"
                   onClick={() => {
                     onClose();
                     onOpenAuth();
                   }}
-                  className="w-full py-2 rounded-lg border border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-semibold"
+                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow flex items-center justify-center gap-2"
                 >
-                  Open Verification Screen
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Open Verification Screen</span>
                 </button>
               </div>
             </div>

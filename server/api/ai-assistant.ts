@@ -15,7 +15,7 @@ import {
   AiRefineSectionRequest,
   ListingDraftSchema,
   ShowcaseChapter
-} from '../src/types';
+} from '../../src/types.js';
 
 export const maxDuration = 60;
 

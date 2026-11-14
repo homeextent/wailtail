@@ -10,7 +10,6 @@ import {
 } from '../types';
 import { 
   updateAuctionConfig,
-  updateAuctionStatus,
   setAuctionEndingSoon,
   createNewListing,
   subscribeToAllAuctions,
@@ -24,6 +23,7 @@ import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { useAuth } from '../context/AuthContext';
+import { DealerAttributionPanel } from './DealerListingControls';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
 import { YouTubePlaylistSection, extractYouTubeVideoId } from './YouTubePlaylistSection';
@@ -54,7 +54,6 @@ import {
   Trash2, 
   Plus, 
   UploadCloud, 
-  RotateCcw, 
   ArrowUp, 
   ArrowDown, 
   Play, 
@@ -269,22 +268,14 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   onOpenAccountHub,
   onOpenSocialKit
 }) => {
-  const { user, userProfile } = useAuth();
-  const isAdmin = userProfile?.role?.toLowerCase() === 'admin';
+  const { user, userProfile, isAdmin } = useAuth();
 
   // Safe fallback for invalid workspace parameters: if id is 'new' or lot document does not exist
   useEffect(() => {
     const rawId = auction?.id?.trim();
     const isInvalidId = !rawId || rawId === 'new' || rawId === 'undefined';
-    const isNonExistentInCatalog = Boolean(
-      allAuctions &&
-      allAuctions.length > 0 &&
-      rawId &&
-      rawId !== MAIN_AUCTION_ID &&
-      !allAuctions.some((lot) => lot.id === rawId)
-    );
-
-    if (isInvalidId || isNonExistentInCatalog) {
+    // App resolves document existence through the direct administrator subscription.
+    if (isInvalidId) {
       const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
       try {
         sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
@@ -322,7 +313,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const visibleAuctions = useMemo(() => {
     if (isAdmin) return availableAuctions;
     return availableAuctions.filter(
-      (lot) => lot.sellerId === user?.uid || (lot.sellerEmail && lot.sellerEmail.toLowerCase() === user?.email?.toLowerCase())
+      (lot) => Boolean(user?.uid) && lot.sellerId === user?.uid
     );
   }, [availableAuctions, isAdmin, user]);
 
@@ -853,30 +844,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setEndTimeInput(formatForInput(endMs));
   };
   const [now, setNow] = useState(Date.now());
-  const [withdrawing, setWithdrawing] = useState(false);
-
-  const isPendingReview = auction.status === 'pending_review';
-  const isReadOnlyForSeller = !isAdmin && isPendingReview;
-
-  const handleWithdrawToDraft = async () => {
-    try {
-      setWithdrawing(true);
-      setStatus('draft');
-      await updateAuctionStatus(auction.id, 'draft');
-      await onUpdateAuction({ status: 'draft' });
-      setMessage({
-        type: 'info',
-        text: 'Listing withdrawn to draft. You now have full editing access to update your vehicle information.'
-      });
-    } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: `Failed to withdraw listing: ${err?.message || 'Unknown error'}`
-      });
-    } finally {
-      setWithdrawing(false);
-    }
-  };
+  const isReadOnlyForSeller = !isAdmin &&
+    (!user?.uid || auction.sellerId !== user.uid || auction.status !== 'draft');
 
   // Tick countdown timer every 1000ms for live preview evaluation
   useEffect(() => {
@@ -1033,6 +1002,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
   // MASTER SAVE HANDLER
   const handleSaveWorkspace = async () => {
+    if (isReadOnlyForSeller) return;
     setSaving(true);
     setMessage(null);
     try {
@@ -1308,7 +1278,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (parsed.engine) setEngine(parsed.engine);
       if (parsed.exteriorColor) setExteriorColor(parsed.exteriorColor);
       if (parsed.interior) setInterior(parsed.interior);
-      if (parsed.sellerName) setSellerName(parsed.sellerName);
+      if (parsed.sellerName && auction.sellerType !== 'dealer') setSellerName(parsed.sellerName);
       if (parsed.sellerEmail) setSellerEmail(parsed.sellerEmail);
       if (parsed.sellerPhone) {
         setSellerPhone(parsed.sellerPhone.replace(/[^0-9+\-() ]/g, ''));
@@ -1551,7 +1521,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         if (parts[2]) setLocationCountry(parts[2]);
       }
 
-      if (synthesizedDraft.sellerName) setSellerName(synthesizedDraft.sellerName);
+      if (synthesizedDraft.sellerName && auction.sellerType !== 'dealer') setSellerName(synthesizedDraft.sellerName);
 
       if (!isBadgeOverridden && synthesizedDraft.highlightsBadge) {
         setHighlightsBadge(synthesizedDraft.highlightsBadge);
@@ -2313,6 +2283,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </button>
         </div>
       </header>
+      {isAdmin && user && auction.sellerType === 'dealer' && <DealerAttributionPanel key={auction.id} auction={auction} user={user} />}
 
       {/* HIGH-VISIBILITY BANNER: PENDING CURATION REVIEW */}
       {isReadOnlyForSeller && (
@@ -2320,18 +2291,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 animate-pulse" />
             <span className="text-xs sm:text-sm font-bold tracking-tight">
-              Listing Submitted for Curation Review — Form is read-only while administrators review your submission.
+              This listing is read-only. Contact an administrator if it needs to return to draft.
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleWithdrawToDraft}
-            disabled={withdrawing}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95 flex items-center gap-1.5 flex-shrink-0"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>{withdrawing ? 'Withdrawing...' : 'Withdraw Listing to Draft'}</span>
-          </button>
+
         </div>
       )}
 
@@ -2828,6 +2791,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                       <input
                         type="text"
                         value={sellerName}
+                        readOnly={auction.sellerType === 'dealer'}
                         onChange={(e) => setSellerName(e.target.value)}
                         placeholder="Private Consignor"
                         className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"

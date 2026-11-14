@@ -1,3 +1,5 @@
+import { ConsignmentReviewModal } from './ConsignmentReviewModal';
+import { requestAuctionReturnToDraft } from '../services/auctionReview';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -35,6 +37,7 @@ import {
   purgeAllListings,
   updateAuctionConfig,
   saveGlobalBranding,
+  subscribeToGlobalBranding,
   getStoredGlobalBranding,
   compressImageDataUrl,
   uploadImageToStorage,
@@ -120,7 +123,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 }) => {
   const { user: authUser, userProfile: authUserProfile } = useAuth();
 
+  async function returnListingToDraft(lot: Auction, notes = '') {
+    if (!authUser) throw new Error('Administrator authentication required.');
+    const { sellerDraftRevision } = lot as Auction & { sellerDraftRevision?: number };
+    await requestAuctionReturnToDraft(authUser, lot.id, sellerDraftRevision ?? 0, notes);
+  }
+
+
   // Active Management Tab: 'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'
+  const [reviewApplication, setReviewApplication] = useState<ConsignmentApplication | null>(null);
   const [activeTab, setActiveTab] = useState<'bidders' | 'consignments' | 'inventory' | 'ledger' | 'branding'>('bidders');
 
   // Multi-Select Engine Selection States
@@ -588,7 +599,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     const targetEmail = confirmDeleteUser.email || 'User';
     setDeletingUser(true);
     try {
-      await deleteUserRecord(targetId, currentAdminId);
+      await deleteUserRecord(targetId);
       setBiddersList(prev => prev.filter(b => b.uid !== targetId));
       setBiddersTotal(prev => Math.max(0, prev - 1));
       showToast(`Permanently deleted account for ${targetEmail}.`);
@@ -973,6 +984,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const [defaultStartingBid, setDefaultStartingBid] = useState<number>(auction.startingBid || 1000);
   const [defaultMinIncrement, setDefaultMinIncrement] = useState<number>(auction.minimumIncrement || 250);
   const [savingBranding, setSavingBranding] = useState<boolean>(false);
+  useEffect(() => subscribeToGlobalBranding(data => {
+    if (!data) return;
+    if (typeof data.siteLogo === 'string') setSiteLogo(data.siteLogo);
+    if (typeof data.siteName === 'string') setSiteName(data.siteName);
+    if (typeof data.siteTagline === 'string') setSiteTagline(data.siteTagline);
+    if (Number.isSafeInteger(data.defaultStartingBid)) setDefaultStartingBid(data.defaultStartingBid!);
+    if (Number.isSafeInteger(data.defaultMinIncrement)) setDefaultMinIncrement(data.defaultMinIncrement!);
+  }), []);
+
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1008,7 +1028,6 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   const handleSaveGlobalSettings = async () => {
     setSavingBranding(true);
     try {
-      const targetAuctionId = auction.id?.trim() || MAIN_AUCTION_ID;
       await saveGlobalBranding({
         siteLogo,
         siteName,
@@ -1017,23 +1036,6 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         defaultMinIncrement: Number(defaultMinIncrement),
         currency: 'CAD'
       });
-
-      await updateAuctionConfig(targetAuctionId, {
-        siteLogo,
-        siteName,
-        siteTagline,
-        startingBid: Number(defaultStartingBid),
-        minimumIncrement: Number(defaultMinIncrement),
-        currency: 'CAD'
-      });
-
-      const updatedMedia: MediaConfiguration = {
-        ...mediaConfig,
-        siteLogo,
-        siteName,
-        siteTagline
-      };
-      await onUpdateMediaConfig(updatedMedia);
 
       showToast('Branding identity and CAD defaults saved successfully across the platform!');
     } catch (err: any) {
@@ -2282,6 +2284,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
                       {/* Contextual Action Buttons */}
                       <div className="flex flex-wrap items-center gap-2.5 md:flex-col md:items-end shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-zinc-800">
+                        <button type="button" onClick={() => setReviewApplication(app)} className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600">View application</button>
                         {isApproved ? (
                           <div className="flex items-center gap-2">
                             {convertedAuctionId ? (
@@ -2294,7 +2297,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 <span>→</span>
                               </button>
                             ) : (
-                              <button
+                              <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                                 type="button"
                                 onClick={() => setConfirmApproveApp(app)}
                                 className="px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
@@ -2334,10 +2337,10 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                         ) : (
                           /* PENDING */
                           <div className="flex items-center gap-2">
-                            <button
+                            <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                               type="button"
                               onClick={() => setConfirmApproveApp(app)}
-                              disabled={convertingId === app.id}
+
                               className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                             >
                               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -2716,7 +2719,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                         );
                                         if (revisionNotes === null) return;
                                         try {
-                                          await batchUpdateAuctionStatus([lot.id], 'draft');
+                                          await returnListingToDraft(lot, revisionNotes);
                                           sendListingRevisionRequestedEmail(lot, revisionNotes).catch(err => {
                                             console.warn('Non-blocking revision request email error:', err);
                                           });
@@ -2753,7 +2756,11 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                   onChange={async (e) => {
                                     const nextSt = e.target.value as Auction['status'];
                                     try {
-                                      await batchUpdateAuctionStatus([lot.id], nextSt);
+                                      if (lotStatus === 'pending_review' && nextSt === 'draft') {
+                                        await returnListingToDraft(lot);
+                                      } else {
+                                        await batchUpdateAuctionStatus([lot.id], nextSt);
+                                      }
                                       showToast(`Successfully updated status for 1 vehicle lot to ${nextSt.toUpperCase()}.`);
                                     } catch (err: any) {
                                       showToast(`Failed to update status: ${err.message}`, 'error');
@@ -3259,7 +3266,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     Purge all auction documents and restore clean baseline state
                   </p>
                 </div>
-                <button
+                <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                   type="button"
                   onClick={async () => {
                     if (confirm('Permanently purge all catalog listings, media configurations, and local cache? This cannot be undone.')) {
@@ -4204,6 +4211,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         </div>
       )}
 
+      {reviewApplication && authUser && <ConsignmentReviewModal application={reviewApplication} user={authUser} onClose={() => setReviewApplication(null)} />}
       {/* MODAL: APPROVE & CONVERT CONSIGNMENT CONFIRMATION */}
       {confirmApproveApp && (
         <div
@@ -4237,14 +4245,14 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               >
                 Cancel
               </button>
-              <button
+              <button disabled title="Unavailable in this staging revision; use Vehicle Inventory draft creation or selected-listing deletion."
                 type="button"
                 onClick={async () => {
                   const target = confirmApproveApp;
                   setConfirmApproveApp(null);
                   await handleConvertConsignment(target);
                 }}
-                disabled={convertingId === confirmApproveApp.id}
+
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />

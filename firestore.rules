@@ -10,6 +10,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
         request.auth.token.email != null && 
+        ('email_verified' in request.auth.token && request.auth.token.email_verified == true) &&
         (request.auth.token.email.lower() == 'jeremygoodmurphy@gmail.com' ||
          request.auth.token.email.lower() == 'jeremy@theinnovativegroup.ca');
     }
@@ -18,60 +19,131 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Auctions & Media Subcollections
-    match /auctions/{auctionId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && 
-        (!request.resource.data.keys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']) || isAdmin());
-      allow update: if isAuthenticated() && 
-        (isAdmin() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion']));
-      allow delete: if isAuthenticated();
+    function isTokenEmailVerified() {
+      return isAuthenticated() &&
+        ('email_verified' in request.auth.token && request.auth.token.email_verified == true);
+    }
 
-      match /{document=**} {
-        allow read: if true;
-        allow create, update, delete: if isAuthenticated();
+    // Canonical auction writes are owned by trusted server operations.
+    // Keep these rules on the security branch until replacement clients are ready.
+    match /auctions/{auctionId} {
+      allow read: if isAdmin();
+
+      match /bids/{bidId} {
+        allow read: if isAdmin();
+      }
+
+      match /media/{mediaId} {
+        allow read: if isAdmin();
       }
     }
 
-    // Bids & Bidding Telemetry
     match /bids/{bidId} {
-      allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+      allow read: if isAdmin();
     }
 
-    // Comments & Community Q&A
     match /comments/{commentId} {
+      allow read: if isAdmin();
+    }
+
+    // The server creates a projection only after approving public visibility.
+    match /auctionPublic/{auctionId} {
       allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAdmin();
+
+      match /{feed}/{itemId} {
+        allow read: if feed in ['bids', 'comments', 'media'] &&
+          exists(/databases/$(database)/documents/auctionPublic/$(auctionId));
+      }
     }
 
     // User Accounts & Moderation Registry
     match /users/{userId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
-      allow update: if isAdmin() || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
-      allow delete: if isOwner(userId) || isAdmin();
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin() || (
+        isOwner(userId) &&
+        (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
+        (!('isBanned' in request.resource.data)) &&
+        (!('bannedFromBidding' in request.resource.data)) &&
+        (!('bannedAt' in request.resource.data)) &&
+        (!('role' in request.resource.data) || request.resource.data.role == 'bidder') &&
+        (!('isEmailVerified' in request.resource.data) || request.resource.data.isEmailVerified == false || isTokenEmailVerified())
+      );
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
+          'role',
+          'dealerId',
+          'isBanned',
+          'bannedFromBidding',
+          'bannedAt'
+        ]) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isEmailVerified']) ||
+         request.resource.data.isEmailVerified == false ||
+         isTokenEmailVerified())
+      );
+      // Account deletion and moderation cleanup are server operations.
     }
 
     match /bidders/{bidderId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && (!('dealerId' in request.resource.data) || isAdmin());
-      allow update: if isAdmin() || (isOwner(bidderId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['dealerId']));
-      allow delete: if isOwner(bidderId) || isAdmin();
+      allow get: if isOwner(bidderId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin() || (
+        isOwner(bidderId) &&
+        (!('dealerId' in request.resource.data)) &&
+        (!('watchlist' in request.resource.data)) &&
+        (!('isBanned' in request.resource.data)) &&
+        (!('bannedFromBidding' in request.resource.data)) &&
+        (!('bannedAt' in request.resource.data)) &&
+        (!('role' in request.resource.data) || request.resource.data.role == 'bidder') &&
+        (!('isEmailVerified' in request.resource.data) || request.resource.data.isEmailVerified == false || isTokenEmailVerified())
+      );
+      allow update: if isAdmin() || (
+        isOwner(bidderId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'watchlist',
+          'role',
+          'dealerId',
+          'isBanned',
+          'bannedFromBidding',
+          'bannedAt'
+        ]) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isEmailVerified']) ||
+         request.resource.data.isEmailVerified == false ||
+         isTokenEmailVerified())
+      );
+      // Account deletion and moderation cleanup are server operations.
     }
 
     // Dealer Profiles (Private Canonical Records)
     match /dealer_profiles/{dealerId} {
-      allow read, create, update: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false;
       allow delete: if false;
     }
 
     // Dealer Verification Audits (Append-only Administrative History)
     match /dealer_verification_audits/{auditId} {
-      allow read, create: if isAdmin();
+      allow read: if isAdmin();
+      allow create: if false;
       allow update, delete: if false;
+    }
+
+    match /dealerVerificationCases/{caseId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /dealerIdentityClaims/{claimId} {
+      allow read, write: if false;
+    }
+    match /dealerListingCommands/{commandId} {
+      allow read, write: if false;
+    }
+    match /dealerListingAudits/{auditId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Platform Settings & Media Configuration
@@ -80,25 +152,47 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Promo Analytics & Click Telemetry
-    match /promo_analytics/{promoId} {
-      allow read: if true;
-      allow create, update: if true;
+    // Generic settings rules must never overlap with a broader client grant.
+    match /settings/{settingId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() && settingId == 'global';
     }
 
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+    match /promo_analytics/{promoId} {
+      allow read: if isAdmin();
     }
 
     match /mediaConfig/{configId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /media/{docId} {
-      allow read: if true;
-      allow write, create, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
+    }
+
+    // M2.1: server-authored private review metadata and append-only history.
+    // Applicants may read their application, but never these separate records.
+    match /consignmentReviews/{reviewId} {
+      allow read: if isAdmin();
+      allow write: if false;
+      match /events/{eventId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+
+    match /consignmentIntakeCommands/{commandId} {
+      allow read, write: if false;
+    }
+
+    function isLegacyPrivateIntake() {
+      return (!('applicantType' in request.resource.data) || request.resource.data.applicantType == 'private') &&
+        !request.resource.data.keys().hasAny([
+          'submittedDealershipName', 'submittedDbaName', 'dealershipName',
+          'submittedDealerLicenseNumber', 'dealerLicenseNumber', 'submittedLicensingJurisdiction',
+          'licensingJurisdiction', 'dealershipOwnershipDeclaration', 'legalSellerOfRecordDeclaration',
+          'noBrokeredInventoryDeclaration', 'declarationVersion', 'declarationAcceptedAt'
+        ]);
     }
 
     // Intake Forms & Direct Communications
@@ -109,7 +203,7 @@ service cloud.firestore {
 
     match /consignment_applications/{appId} {
       allow create: if isAdmin() || (
-        request.resource.data.status == 'pending' &&
+        request.resource.data.status == 'pending' && isLegacyPrivateIntake() &&
         !request.resource.data.keys().hasAny([
           'sellerType',
           'dealerId',
@@ -143,7 +237,7 @@ service cloud.firestore {
 
     match /consignments/{consignmentId} {
       allow create: if isAdmin() || (
-        request.resource.data.status == 'pending' &&
+        request.resource.data.status == 'pending' && isLegacyPrivateIntake() &&
         !request.resource.data.keys().hasAny([
           'sellerType',
           'dealerId',
@@ -176,24 +270,23 @@ service cloud.firestore {
     }
 
     match /inquiries/{inquiryId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
-    // Outbox Queues
+    match /auctionNotificationOutbox/{notificationId} {
+      allow read: if isAdmin();
+    }
+
     match /mail/{mailId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /emails/{emailId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
 
     match /emailLogs/{logId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated();
+      allow read: if isAdmin();
     }
   }
 }

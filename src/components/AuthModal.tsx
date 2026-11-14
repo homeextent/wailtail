@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { db, auth } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import { isDesignatedAdminEmail } from '../config/adminConfig';
 import { 
   X, 
   Mail, 
@@ -44,8 +45,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     signInGoogle, 
     resetPassword,
     resendVerificationEmail, 
-    checkEmailVerification,
-    manualVerifyForDemo 
+    checkEmailVerification
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'verify' | 'forgot'>(
@@ -106,20 +106,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return false;
     }
 
-    // Inspect user role from Firestore
-    let userRole = '';
-    try {
-      const userDocSnap = await getDoc(doc(db, 'users', authenticatedUid));
-      if (userDocSnap.exists()) {
-        userRole = (userDocSnap.data()?.role || '').toLowerCase();
-      }
-    } catch (err) {
-      console.warn('Could not read user role from Firestore:', err);
-    }
-
-    const cleanEmail = (userEmail || '').toLowerCase();
-    const isDesignatedAdmin = cleanEmail === 'jeremygoodmurphy@gmail.com' || cleanEmail === 'jeremy@theinnovativegroup.ca';
-    const isUserAdmin = userRole === 'admin' || isDesignatedAdmin;
+    const isUserAdmin = isDesignatedAdminEmail(userEmail);
 
     try {
       sessionStorage.removeItem('wailtail_pending_admin_deeplink');
@@ -196,19 +183,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const loggedUser = await signInEmail(email.trim(), password);
 
-      // Strict Email Verification Guard: evaluate total email verification state across both sources
-      let profileVerified = false;
-      if (loggedUser) {
-        try {
-          const userDocSnap = await getDoc(doc(db, 'users', loggedUser.uid));
-          if (userDocSnap.exists()) {
-            profileVerified = Boolean(userDocSnap.data()?.isEmailVerified);
-          }
-        } catch {
-          // ignore
-        }
-      }
-      const isVerified = Boolean(loggedUser?.emailVerified || profileVerified || userProfile?.isEmailVerified);
+      // Strict Email Verification Guard: evaluate authoritative verification state from Firebase Authentication
+      const isVerified = Boolean(loggedUser?.emailVerified);
 
       if (!isVerified) {
         await signOut(auth).catch(() => {});
@@ -339,17 +315,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(false);
       setError(parseAuthError(err));
     }
-  };
-
-  const handleQuickDemoVerify = async () => {
-    await manualVerifyForDemo(email.trim(), password);
-    const currentUser = auth.currentUser;
-    if (currentUser) {
-      const handled = await resolveAdminDeeplinkAfterAuth(currentUser.uid, currentUser.email);
-      if (handled) return;
-    }
-    if (onSuccess) onSuccess();
-    handleClose();
   };
 
   return (
@@ -813,20 +778,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 >
                   Resend Verification Email
                 </button>
-
-                <div className="pt-3 border-t border-zinc-200">
-                  <button
-                    type="button"
-                    onClick={handleQuickDemoVerify}
-                    className="w-full py-2 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold border border-zinc-300 flex items-center justify-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Instant Demo Verification</span>
-                  </button>
-                  <p className="text-[10px] text-zinc-400 mt-1">
-                    Demo helper to test bidding immediately without opening email.
-                  </p>
-                </div>
               </div>
             </div>
           )}

@@ -70,8 +70,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, userProfile: contextProfile, isAdmin: contextAdmin, isSeller: contextSeller, isEmailVerified, signOut } = useAuth();
   const userProfile = userProfileProp !== undefined ? userProfileProp : contextProfile;
-  const isAdmin = Boolean(contextAdmin || userProfile?.role?.toLowerCase() === 'admin');
-  const isSeller = Boolean(contextSeller || userProfile?.role?.toLowerCase() === 'seller');
+  const isAdmin = Boolean(contextAdmin);
+  const isSeller = Boolean(isAdmin || contextSeller || userProfile?.role?.toLowerCase() === 'seller');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -191,11 +191,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand / Logo (Preserving Native Horizontal Aspect Ratio & Subtitle) */}
-          <div className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
             <a 
               href="/catalog" 
               onClick={handleLogoClick}
-              className="flex items-center gap-2.5 sm:gap-3 group transition-opacity hover:opacity-90 max-h-11 cursor-pointer"
+              className="flex items-center gap-2.5 sm:gap-3 group transition-opacity hover:opacity-90 max-h-11 min-w-0 cursor-pointer"
               title="Wailtail - Vehicle Auction Catalog"
             >
               {effectiveLogo && effectiveLogo.trim() !== '' ? (
@@ -214,10 +214,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {/* Dynamic Brand Name & Tagline */}
               <div className="flex flex-col justify-center min-w-0">
-                <span className="font-black italic tracking-tight text-lg sm:text-2xl leading-none text-white font-sans whitespace-nowrap uppercase">
+                <span className="font-black italic tracking-tight text-lg sm:text-2xl leading-none text-white font-sans truncate uppercase">
                   {effectiveName}
                 </span>
-                <span className="text-[8px] sm:text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-400 mt-0.5 whitespace-nowrap">
+                <span className="text-[8px] sm:text-[9px] uppercase tracking-[0.2em] font-semibold text-zinc-400 mt-0.5 truncate">
                   {effectiveTagline}
                 </span>
               </div>
@@ -386,7 +386,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <span>My Watchlist</span>
                         </button>
 
-                        {(isSeller || isAdmin) && (
+                        {(isSeller || isAdmin || Boolean(userProfile?.dealerId)) && (
                           <button
                             onClick={() => {
                               setIsUserMenuOpen(false);
@@ -451,7 +451,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Mobile Action Controls: Compact avatar + Hamburger Toggle (viewports below md:) */}
-          <div className="flex md:hidden items-center gap-1">
+          <div className="flex md:hidden items-center gap-1 flex-shrink-0">
             {/* Compact User Profile Avatar Button (or Sign In if logged out) */}
             {user ? (
               <button
@@ -557,7 +557,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>My Watchlist</span>
                   </button>
 
-                  {(isSeller || isAdmin) && (
+                  {(isSeller || isAdmin || Boolean(userProfile?.dealerId)) && (
                     <button
                       type="button"
                       onClick={() => {

@@ -73,36 +73,9 @@ export const ContactSellerModal: React.FC<ContactSellerModalProps> = ({
         sellerEmail: 'jeremy@theinnovativegroup.ca'
       });
 
-      // Dispatch non-blocking serverless email notification to platform administrators
-      try {
-        const response = await fetch('/api/send-consignment-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            type: 'inquiry',
-            name: senderName,
-            email: senderEmail,
-            phone: phone.trim() || undefined,
-            topic,
-            message: message.trim(),
-            vehicleTitle
-          })
-        });
-
-        if (!response.ok) {
-          const errDetail = await response.text();
-          console.error('[ContactSellerModal] Serverless email dispatch returned error status:', response.status, errDetail);
-        }
-      } catch (emailErr) {
-        // Fallback Email Logging: ensure user inquiry still completes cleanly without UI errors
-        console.error('[ContactSellerModal] Error dispatching inquiry email notification:', emailErr);
-      }
-
       setStatusMessage({
         type: 'success',
-        text: 'Inquiry submitted and delivered to consignor/admin!'
+        text: 'Inquiry saved. Notification queued for the seller.'
       });
       setMessage('');
       setTimeout(() => {

@@ -8,9 +8,219 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.0A — Consignment Application Security Hardening (Staging Verification)
+### Consolidated Storage cutover execution package
 
-> **Release Status**: Implemented, verified, committed, and pushed to the `staging` branch (Commits: `ebf277406a591f40454ef86ec35bce3c2b3e2c4b`, `488cefc5fc946f499df31d47842f4a5ae95dc15a`). Awaiting production promotion and Firestore security rules deployment to GCP project `studio-apps-483721`. M2.0B role-escalation hardening remains outstanding. This release is not yet deployed to production.
+- Matched the owner-observed index API contract (`pageSize=0` only), preserved document pagination and moved index checks ahead of per-object capture to fail early on backend incompatibilities.
+
+- Fixed owner-side Rules API quota-project rejection by explicitly attaching the existing project header to read-only release/ruleset requests and checking rule access before per-object metadata capture.
+
+- Added read-only private package capture of original metadata/tokens, deployed rules, indexes and bounded workload; exact-plan/native-precondition execution phases with mirrored durable journals, copy/reference verification, guarded recovery and token-only revocation. No live writes performed.
+- Added opt-in maintenance/final Storage configurations and isolated rule/atomic-reference recovery rehearsals; ordinary Firebase rules/configuration remain unchanged. Consolidated release/configuration/approval/stop criteria in one runbook; production remains gated.
+
+### Production preflight — Read-only file validation and guarded preparation
+
+- Recorded successful owner follow-up at `c71ff14`: 169 backup files, six reference/recovery proposals consistent, no restore or cloud writes; both representative approved PDFs returned anonymous HTTP 206 with and without original tokens. Preparation acceptance is distinct from remaining live cutover/security gates.
+
+- Recorded owner verification of 169 local backup files and no matching project/organization public IAM bindings. Added a read-only backup/recovery consistency and representative original PDF-link checker with anonymous IPv4 requests and sanitized results; no restore or live mutation.
+
+- Recorded owner-authenticated November 14 validation on `30d2144`: 163 approved assets validated, 226 source objects reconciled, six reference-document proposals, five protected objects retained and zero cloud writes. Inherited-access, durable backup/recovery and production execution remain separate gates.
+
+- Added opt-in script-scoped IPv4 HTTPS transport for owner networks with IPv6 timeouts, sanitized request timing and clean cancellation evidence; preserved TLS verification, GET-only behavior and original assets.
+
+- Added bounded authentication recovery for owner validation: refresh once after HTTP 401 and retry only the failed GET; repeated rejection stops safely. Added transport regression coverage.
+
+- Added a manifest-pinned, GET-only owner-side preparer for live metadata/file/reference validation and private native-precondition copy/reference proposals. It has no apply mode, rejects drift/collisions, validates JPEG/PDF/SVG bytes, flags EXIF/GPS and retains all originals.
+- Added private output handling, recovery templates, synthetic regression tests and CI coverage. Uploaded Porsche/RAM PDFs were verified locally; all-public-file live validation remains pending owner execution. No production write or rollout is performed.
+
+### Production preflight — Public/private decisions and proposed asset destinations (2026-11-13)
+
+- Recorded owner approval of the 163 referenced public assets and retention of the Porsche album link. Mapped 135 Porsche, 24 RAM and four shared consumers to unique MIME-correct proposed paths/URLs, preserving all five protected test-path images; retained 63 unmatched originals without public migration.
+- Specified create-only destination/source version guards, token-safe metadata, PDF flags, reference revision validation and original retention. No copies, URL writes, rule changes, token revocation or production promotion performed.
+- Recorded the demonstrated trusted PDF replacement/upload compatibility gap for a separately scoped implementation decision; no upload behavior was changed.
+
+### Production preflight — Private PDF review and owner RAM exception (2026-11-13)
+
+- Recorded private visual/text/metadata review of the checksum-matching Porsche history summary and RAM parts invoice without committing PDFs or personal values. Porsche remains a public candidate pending external-album review; the apparent duplicate remains held.
+- Recorded the RAM listing owner's explicit approval for the pinned invoice to remain public for now and his intended later corrected replacement. Manifest content approval is scoped separately from live execution; no destinations, production changes or general consent policy are implied.
+- Added future-work acceptance criteria for privacy guidance beside gallery/document uploads and administrator document review. No upload UI, automated scanning, redaction, messages or private-document workflow was implemented.
+
+### Production preflight — Object metadata and provisional PDF classification (2026-11-13)
+
+- Enriched all 226 cutover inventory rows with observed source generations/metagenerations, size, MIME type, checksums, token-presence and object-ACL results. Object paths and all five owner preservation flags are unchanged; destinations remain blank and all publication approvals remain false.
+- Corrected extension-only assumptions: 216 JPEG, 3 PDF and 7 SVG content types. Added individual PDF access-review records, preservation holds, an apparent duplicate and the two staging-rule exceptions. Final content/access classification awaits private owner review. Recorded empty direct bucket public IAM bindings without claiming effective privacy or inherited-IAM verification.
+- Documentation/data only: no live file reads beyond supplied metadata, rules edits, public copies, deletion, token revocation, reference changes or production promotion.
+
+### Production preflight — Storage cutover preparation (2026-11-13)
+
+- Recorded the owner-supplied 226-object inventory and bounded Firestore reference scan: 163 referenced objects, 63 held unclassified, no referenced path missing from the supplied listing. Explicitly protected all five referenced lot-test assets, including Porsche showcase and promotion consumers.
+- Added a non-executable cutover plan with metadata/reference enrichment, generation/document revision guards, public/private eligibility review, coordinated rollout and recovery/QA. No deletion, copy, URL update, token revocation, rule publication or production promotion is performed or authorized by this preparation.
+
+### Documentation — M2.5 acceptance and production-readiness review (2026-11-13)
+
+- Synchronized README, System Bible and M2.5 guide with Jeremy's local acceptance of `8f6a1f3`, explicit PR #10 merge approval, staging merge `49efa36`, passing exact-head/post-merge CI and Vercel checks, and owner-confirmed clean local staging synchronization.
+- Added a source-based Phase 1 production-readiness review. Distinguished accepted staging security implementation from unverified live rollout, Storage, worker/delivery and pilot gates. M2.6 remains optional and separately gated; no production operation is authorized or performed by this documentation change.
+
+### M2.5 — Public dealer presentation (2026-11-13; accepted on staging via PR #10)
+
+- Restored the custom graphic tagline on dealer exports as its own bounded row, separate from dealer attribution and verification qualification. Canvas and copy share current-status campaign rules; real canvas drawing checks cover tagline presence, row ordering/photo clearance and live-status overrides.
+
+- Corrected dealer marketing copy to provide distinct enthusiast, marketplace and three-post thread formats with vehicle-led hooks, grounded facts/bids, stage-aware calls to action and concise verification qualifications. Refresh public lot data before copying; expired/closed/unavailable lots cannot generate false live/ending-soon claims.
+
+- Corrected the synthetic preview viewport and mobile acceptance checks. Dealer disclosures now keep the vehicle title first and show a compact fee/tax summary with expandable contacts and verification details, instead of consuming the mobile arrival screen.
+
+- Added minimal public dealer summaries, catalog/lot badges and dealership location, CAD $0 documentation fee, informational tax text, conditional contacts and verification limitations. Current canonical verification is checked on public responses; expiry/suspension/profile failures suppress verification claims and contacts while preserving historical lot behavior.
+- Added consent withdrawal/value-matching guards and safe phone/HTTPS links. Public responses exclude private snapshots, licensing/address/evidence/representative/provenance fields.
+- Added dealer social copy/graphic attribution using fresh public-safe summaries, with no automatic posting. Extended privacy/lifecycle/presentation tests and documented local acceptance in `docs/m2-5-public-dealers.md`. No rules changes, live Firebase publication or production promotion.
+- Synchronized M2.4 acceptance: Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local staging at `4a55362`; post-merge CI and Vercel preview passed.
+
+
+### M2.4 — Dealer vehicle listing integration (2026-11-08; accepted on staging via PR #9)
+
+- Added explicit canonical dealer vehicle approval/draft creation through a trusted designated-admin endpoint. Current verification, protected UID links, authoritative representative Auth, case revision, inspected-application fingerprint, deterministic listing IDs and actor-bound retries protect atomic listing/media/application/audit creation.
+- Added private creation-time dealer snapshots, protected attribution/provenance, CAD $0 documentation fees and versioned informational tax indicators. Dedicated draft tax changes are audited; forward publication checks current verification and confirmed tax handling. Public dealer presentation remains M2.5.
+- Added admin application/editor controls and assigned-UID representative workspace access without global role promotion. Generic protected-field edits, dealer duplication and email-based dealer consignor authorization are denied; legacy/private one-click conversion remains disabled.
+- Extended isolated acceptance for conversion/rollback/conflicts, ownership, snapshot privacy/immutability, media, submission, tax/lifecycle publication and private regressions. See `docs/m2-4-dealer-listings.md`. Exact-head/post-merge CI and owner local review passed; PR #9 merged at `4a55362`. No live rules/index publication, migration or production promotion is included.
+
+### Documentation — M2.3 staging acceptance synchronization (2026-11-08)
+
+- Synchronized README, System Bible, changelog and M2.3 guide with owner local acceptance of `75d3641`, PR #7 merge at `d3c5cc5`, successful post-merge CI/Vercel checks and owner-confirmed clean local staging synchronization. This is documentation only; production and live Firebase rules/index publication remain separate.
+- Corrected the remaining M2.1 changelog heading to match its already-recorded staging acceptance and aligned the catalog-badge cross-reference with the existing M2.5 roadmap. M2.4 remains planned.
+
+### M2.3 — Manual Dealer Verification and Canonical Profiles (2026-11-08; accepted on staging via PR #7)
+
+- Added bounded administrator account lookup by exact email/UID with eligibility display and explicit selection. Saves retain independent Auth and protected-link checks; no account creation, role promotion or automatic association. Added guided verification method/source choices with Other/custom evidence, field guidance, and local timezone date controls with absolute timestamp storage. Jeremy confirmed local acceptance of the revised selector, dropdowns, local-time controls and successful representative selection.
+
+- Owner local review confirmed verification saves successfully. Save success/error feedback now scrolls into view and receives focus; representative UID instructions clarify manual administrator account association. The revised feedback behavior was subsequently locally accepted.
+
+- Added a dedicated admin verification view from dealer application review, separating applicant claims from canonical business information and manual evidence.
+- Added a trusted administrator endpoint for explicit review, verify/reverify, rejection, suspension, profile update and renewal. Canonical profile, exact verified-Auth UID links, duplicate-identity reservations, case revision and immutable before/after audit commit atomically; no role or vehicle approval is granted.
+- Added server-time expiry/suspension eligibility checks for dealer-attributed seller save, submit, upload and removal operations. Private seller behavior and disabled conversion remain unchanged.
+- Denied direct client writes to dealer profiles and audits, added private cases/claims and audit index configuration. No live rules/index deployment, migration or production promotion is included. See `docs/m2-3-dealer-verification.md` for limits and local acceptance.
+- M2.3 reviewed head `75d3641` was locally accepted and explicitly approved by Jeremy, then merged via PR #7 as `d3c5cc5`. Exact-head CI run `42505627075` (attempt 2) and post-merge CI run `42507149793` passed, as did Vercel checks. Jeremy confirmed clean local staging synchronization at the merge. M2.2 remains accepted via PR #6 (`74d9089`).
+
+### M2.2 — Dealer Application and Intake (2026-11-07; accepted on staging via PR #6)
+
+- Corrected the over-restrictive text-state readiness gate reported during local review: explicit consent/declaration checkboxes gate the button; native field validation and trusted server validation enforce required details. Submission reads actual visible FormData values, including autofilled contacts/business/location, and retains them on failure. Added a browser regression using native value setters without React input events and checking persisted values.
+
+- Made the existing mandatory dealer declarations visible in submission readiness: the submit button stays disabled until the ownership/terms agreement and all three declarations are confirmed. Required details are validated on submission. Added required markers, explanatory text and browser checks for each unchecked declaration and a missing licence. Existing HTML and server enforcement remain in place.
+
+- Corrected the local-review scrolling defect: a shrinkable scroll container now surrounds the disabled-state fieldset. Added real wheel-input coverage for both applicant modes at desktop and mobile widths; programmatic submission tests alone did not establish field reachability.
+
+- Extended the existing form with applicant classification, private dealer business/licensing details, authorized representative contacts and three explicit ownership/seller-of-record/no-broker declarations.
+- Added trusted guest-capable submission validation, server timestamps/pending status, versioned declaration acceptance, atomic canonical/legacy persistence and duplicate-retry protection. Direct non-admin dealer writes are denied under candidate rules; existing private compatibility and protected administrative metadata remain intact.
+- Added dealer information to M2.1 review and expanded endpoint, bypass, concurrency and browser coverage. Added a guarded `/intake` preview and mocked all mail delivery in the synthetic harness.
+- M2.1 is accepted on staging at `e7de147`: post-merge CI/preview passed, the owner's checkout synchronized, and the owner confirmed local visual/functional acceptance. Future visual changes require owner local verification before PR merge approval.
+- No live Firebase rules, production promotion, dealer verification/profile creation, account promotion or conversion is included. See `docs/m2-2-dealer-intake.md` for verification boundaries.
+
+### M2.1 — Administrative Consignment Application Review (2026-11-07; accepted on staging via PR #5)
+
+- Added a dedicated read-only application detail modal with complete captured fields, explicit missing values, submitted declarations, separate canonical verification information and legacy review metadata.
+- Added private administrator notes, designated-curator assignments and paginated append-only review history through an authenticated server endpoint. Notes and assignments use separate private records, server-derived authors/timestamps, transactional revision checks and idempotent retries; viewing never changes application status.
+- Preserved legacy source identity and existing curation controls, including disabled one-click conversion. Added focused authorization, failure, privacy, concurrency, pagination and browser reload coverage. See `docs/m2-1-consignment-review.md` for actual verification and exclusions.
+- Reconciled stale PR status statements: PR #3 was accepted and merged; PR #2 was closed without merging and its historical rehearsal evidence/branch remain preserved. Production Storage remains separate.
+
+### Documentation — Local development workflow and housekeeping (2026-11-07)
+
+- Recorded PR #3's independently accepted staging merge at `1bf4d6a` and successful post-merge CI/preview; production release, Firebase rules and Storage migration remain separate.
+- Documented the active `wailtail-staging` workspace, task-branch/PR workflow, primary-repository dependency, emulator preview and ordinary Vite/API configuration boundary.
+- Added verified private-backup and absolute-path worktree move/removal guidance. Recorded the completed retirement of the worker-test and Storage rehearsal worktrees while preserving their history and local artifacts. GitHub branches and PR #2 remain separate.
+
+### Independent audit follow-up — Stage 3 staging security
+- Replaced the one-hour notification cutoff with persisted exponential retries, a 23-hour creation-based safety window, 24-attempt cap and transactional two-minute worker claims. Provider payloads/idempotency keys remain stable; exhausted records are retained for reconciliation.
+- Reduced catalog/settings polling to 30 seconds while retaining five-second lot updates; hidden tabs suspend requests, refresh on return and clean up on unsubscribe.
+- Clarified oversized reset errors and added no-partial-write, browser deletion-error, retired-service and polling lifecycle coverage. Production rules publication, Storage migration and staging merge approval remain separate.
+
+
+### Security — Auction Security Gate (implementation review)
+
+- Finished the staging legacy-path compatibility implementation: trusted watchlists and bounded own-account activity, atomic private inquiries with server-derived identity and recipients, public branding projection, trusted platform uploads and administrator-scoped legacy notifications. Branding failures now propagate and global settings no longer mutate the selected auction. New drafts read validated CAD defaults.
+- Explicitly disabled broad catalog purge, legacy bidder purge, one-click consignment conversion and client-written promotion counters. Inventory draft creation, selected-listing deletion, member moderation and audited bid retraction remain available.
+- Expanded acceptance coverage for member privacy, watch retry safety, inquiry persistence/notifications, branding, promotions, member permissions, gallery order, showcase/video continuity and browser controls with reload persistence. Staging merge acceptance uses required CI and preview checks on the exact PR head; production Storage and rules changes remain separate.
+
+- Fixed native Node ESM module resolution in the consolidated API after preview runtime logs exposed extensionless import failures. Added a regression test that compiles and loads all 28 handlers with native Node rather than the development TypeScript loader.
+
+- Consolidated 28 API handlers behind one allowlisted Vercel Function to resolve the Hobby plan deployment rejection. Existing API URLs and per-handler authorization remain in place. Handler source moved to `server/api/`; browser integration uses the same router. Added focused routing, method, credential, scheduler and deployment-layout regression coverage.
+
+- Added ownership-scoped seller draft discovery, trusted narrative and media operations, private previews, submission for review and designated-administrator return to draft.
+- Replaced public canonical reads with field projections for catalog, lot media, bid history and comments. Added server-authorized bidding, comment mutations, inventory edits and bounded deletion, atomic bulk statuses, gallery persistence and published image uploads.
+- Added audited bid retraction, draft duplication from saved source data and a selected-auction bid reset that preserves unrelated auctions and ordinary comments. Removed client fallback that reported successful duplication after a failed save.
+- Moved start, expiry and settlement decisions to server time. Added a bearer-protected worker for unattended transitions and a private notification outbox with Resend dispatch, stable idempotency keys and reconciliation for expired retry windows. Scheduler activation and real email delivery remain deployment acceptance items.
+- CI run 42382737880 passed at `36d539d`, covering build, lint, 97 endpoint tests, 133 rules tests, integrated auction workflows and headless Chrome. Routing consolidation requires fresh head-revision CI and a successful Vercel preview. Notification tests use mocked provider responses and simulate both provider failure and failure after provider acceptance.
+- PR #3 was subsequently accepted and merged into staging as `1bf4d6a`. The staging legacy compatibility audit is documented in `docs/stage3-staging-acceptance.md`; deliberately disabled actions are excluded from staging acceptance. Production Storage migration, PDF-token revocation and demo cleanup are outside this PR's execution scope.
+
+### Security — Server-Authorized Administrator Account Deletion (Staging)
+
+- **Implementation commit**: [`860042bc35fcc98246f6385a035fc08d3c84d01f`](https://github.com/homeextent/wailtail/commit/860042bc35fcc98246f6385a035fc08d3c84d01f) hardens `api/admin-delete-user.ts` and the production client service `deleteUserRecord()`.
+- **Verified administrator authority**: The endpoint accepts POST only, verifies a Firebase ID token with revocation checking, requires `email_verified === true`, and authorizes only the two designated administrator emails through the shared `src/config/adminConfig.ts` allowlist. Administrator UID/email are derived from the verified token; request-body `adminUid` is not trusted.
+- **Deletion safeguards**: Rejects self-deletion and protects both designated administrator accounts by checking the target Auth identity and independently resolving current designated administrator Auth UIDs by allowlisted email. Unexpected lookup failures fail closed.
+- **Server-owned cleanup**: The server deletes the target Firebase Auth identity and then cleans direct `users/{uid}` and `bidders/{uid}` documents plus legacy documents with an exact matching `uid` field. Email-only deletion queries are not used. The client sends only `{ uid }` with a Bearer token and has no client-side Firestore fallback.
+- **Partial-failure and retry behaviour**: Firebase Auth deletion and Firestore cleanup are not atomic. Query or batch failures return HTTP 500 (`admin/incomplete-deletion`); a retry tolerates an already-absent Auth identity and retries Firestore cleanup. Exact-UID query errors are not swallowed.
+- **Regression coverage**: 44 administrator account-deletion tests and 41 approved-consignor endpoint tests (85 combined `npm run test:endpoint` tests); 126 Firestore rules tests. Roo Code reported `npm run lint`, `npx tsc --noEmit`, `npm run build`, endpoint tests, rules tests and `git diff --check` passing before the commit. This is reported local verification, not confirmation of a GitHub Actions run for this commit.
+- **Known limitation**: If a designated administrator Auth identity is already absent, lookup by email cannot recover its former UID. Protecting orphaned administrator profile documents in that exceptional state requires stable administrator UIDs in protected server configuration.
+- **Release boundary**: Committed and pushed to `staging`; not production-deployed. Auction ownership and mutation authorization remains a separate production security blocker.
+
+### Development & Continuous Integration
+- **GitHub Actions CI workflow (`.github/workflows/ci.yml`)**: Added automated validation on pushes to `staging` and `main`, pull requests targeting those branches, and manual workflow dispatch. The job uses Node.js 22 and Java 21, installs dependencies with `npm ci`, then runs the production build/TypeScript checks, ESLint, endpoint tests, and Firestore security rules emulator tests.
+- **ESLint configuration and dependencies**: Added the ESLint flat configuration (`eslint.config.js`) and required development dependencies. React Hooks Rules of Hooks violations are enforced; broader lint adoption remains progressive, with selected legacy rules intentionally not enforced yet.
+- **React Hooks correction (`src/components/YouTubePlaylistSection.tsx`)**: Moved the conditional early return below the component's hooks to preserve consistent hook invocation order.
+- **Optional Resend dependency typing (`api/send-consignment-email.ts`)**: Replaced the suppression directive with a documented `@ts-expect-error`, preserving the optional SDK import and existing HTTP API fallback.
+- **Verified staging CI run**: GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121) completed successfully for commit [`a28f8b0`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07). The run passed the production build/TypeScript checks, ESLint, **41 endpoint tests**, and **126 Firestore security rules tests**. This is CI validation evidence for the staging commit, not production deployment or production security sign-off.
+
+### Next Milestone
+- **M2.1 — Administrative Consignment Application Review**: ACCEPTED ON STAGING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
+
+### Milestone Status
+- **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
+- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
+- **M2.4 — Dealer Vehicle Listing Integration**: ACCEPTED ON STAGING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
+- **M2.5 — Public Dealer Presentation and Auction Integration**: ACCEPTED ON STAGING. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
+- **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
+
+---
+
+## 2026-11-05 — Trusted Server-Side Role Authorization (M2.0B Milestone & Security Corrections)
+
+### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
+
+> **Release Status**: VERIFIED ON STAGING (M2.0B Security Corrections A–D Applied). Implemented trusted server-side authorization endpoint `/api/authorize-approved-consignor`, hardened Firestore security rules for canonical `users` and `bidders` collections against self-promotion and self-verification, established Firebase Authentication as the sole email-verification authority, added token revocation verification, removed client-side role elevation (`elevateApprovedConsignor`) and legacy demo self-verification (`manualVerifyForDemo`), and aligned administrator authority to the verified explicit email allowlist. Final recorded coverage: 126 Firestore rules emulator tests and 41 isolated endpoint and authority tests. *M2.0B is verified on staging, not production-approved; documented production security blockers remain unresolved.*
+
+- **Correction A — Firebase Authentication Established as Sole Email-Verification Authority (`src/context/AuthContext.tsx`, `src/config/adminConfig.ts`)**:
+  - **Authoritative Identity State**: Redefined `isEmailVerified` as `Boolean(user?.emailVerified)` deriving exclusively from authenticated Firebase user state. Eradicated logic where mutable Firestore profile field `userProfile.isEmailVerified` could substitute for Firebase Authentication verified identity.
+  - **Administrative Root of Trust**: `isAdmin` requires all four invariants: (1) Authenticated Firebase user, (2) email present, (3) email matches explicit designated administrator allowlist (`jeremygoodmurphy@gmail.com` or `jeremy@theinnovativegroup.ca`), and (4) Firebase Authentication reports `emailVerified === true`. Evaluated deterministically via centralized `evaluateAdminAuthority()`.
+  - **Firebase User Refresh Mechanism**: Integrated `await reload(currentUser)` on auth state change and login hydration when unverified, ensuring auth context does not rely indefinitely on a stale Firebase user object after external verification link confirmation.
+  - **Eliminated Privilege Bypass in Sign-In**: Removed fallback to `userProfile.isEmailVerified` in `signInEmail()` and `AuthModal.tsx`; unverified credentials cannot hydrate sessions or bypass verification guards.
+
+- **Correction B — Firestore Rules Hardened Against Self-Verification & Workflow Audit (`firestore.rules`, `src/services/auctionService.ts`)**:
+  - **Create Locks on Verification Fields**: Rules for `users/{userId}` and `bidders/{bidderId}` enforce that `isEmailVerified: true` can only be stored if `request.auth.token.email_verified == true` (`isTokenEmailVerified()`). Unverified tokens cannot create documents claiming verified status.
+  - **Update Locks on Verification Fields**: Non-admin owners are barred from updating `isEmailVerified` to `true` unless their authenticated Firebase token claim has `email_verified == true`. Legitimate profile updates (`displayName`, `phone`, `updatedAt`) remain functional for unverified users.
+  - **Administrative Workflow Audit**: Audited `setUserEmailVerified()` in `src/services/auctionService.ts` and administrator Member Directory toggle in `AdminPortalPage.tsx`. Documented that Firestore `isEmailVerified` is strictly an informational and directory management field that cannot establish authentication trust or privileges.
+  - **Disabled Insecure Demo Verification**: Deprecated and disabled `manualVerifyForDemo()` in `AuthContext.tsx`, removing the client-side self-verification bypass and removing the "Instant Demo Verification" button from `AuthModal.tsx` and `BidModal.tsx`.
+
+- **Correction C — Revocation-Aware Token Verification (`api/authorize-approved-consignor.ts`)**:
+  - **Token Revocation Check**: Updated Firebase Admin SDK token verification to `auth.verifyIdToken(idToken, true)`, actively verifying whether the token has been revoked.
+  - **Graceful Error Handling**: Detects `auth/id-token-revoked` and rejects revoked tokens with HTTP 401 and code `auth/id-token-revoked` without executing any Firestore writes or mutating consignor/auction linkages.
+
+- **Separate Production Blockers Identified**:
+  - **Administrator account-deletion blocker (subsequently resolved on staging)**: At the M2.0B review point, `api/admin-delete-user.ts` still accepted caller-supplied `uid` and `adminUid` without server-side token verification. This was subsequently corrected in staging commit `860042bc35fcc98246f6385a035fc08d3c84d01f`; the endpoint is not yet production-deployed. The separate auction ownership and mutation authorization blocker remains open.
+  - **Production blocker — auction ownership and mutation authorization**: Firestore auction update/delete rules remain overly permissive; ownership-related fields (`sellerId`, `sellerName`) require strict server-side or rules-level mutation locks to prevent unauthorized lot reassignment.
+
+- **Correction D — Transactional Approval Revalidation & Retry-Safe Results (`api/authorize-approved-consignor.ts`, `tests/authorize-approved-consignor.test.ts`)**:
+  - Re-reads candidate approval documents inside the Firestore transaction and proceeds only when a document still exists, remains `approved`, and its normalized seller email matches the verified Firebase token email.
+  - Derives auction linkage candidates from the freshly revalidated application records; revoked or changed applications cannot authorize profile promotion or auction assignment.
+  - Scopes `linkedAuctions`, `missingAuctions`, and `conflicts` to each transaction callback execution so retries cannot accumulate stale or duplicate response data.
+  - Adds regression coverage for revocation in the current `consignment_applications` collection and legacy `consignments` fallback, valid approval, retry result isolation, retry-time revocation, existing auction assignment conflicts, and idempotent authorization.
+- **Comprehensive Verification & Regression Testing**:
+  - **126 Passing Firestore Rules Tests (`npm run test:rules`)**: 112 baseline M2.0A/M2.0B tests + 14 new tests validating self-verification prevention on create and update across `users` and `bidders`, verified user update allowances, and isolation of admin permissions from unverified allowlisted tokens and profile claims.
+  - **41 Passing Isolated Endpoint & Authority Tests (`npm run test:endpoint`)**: Includes token revocation rejection (`checkRevoked: true`), zero writes on revoked/expired/unverified tokens, designated administrator evaluation, transactional approval revalidation for current and legacy application collections, retry-safe result isolation, conflict protection, and idempotency.
+  - **Clean Build, Lint & Type Check**: The recorded staging validation passed `npm run lint`, `npx tsc --noEmit`, and `npm run build`. The final Correction D report also records 41 endpoint tests and 126 rules tests passing.
+
+---
+
+## 2026-11-05 — Consignment Security & Persistence Hardening (M2.0A Milestone)
+
+### M2.0A — Consignment Security & Persistence Hardening
+
+> **Release Status**: COMPLETE — PRODUCTION QA PASSED. Implemented, verified with emulator test suite, committed, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026.
 
 - **Consignment Application Security Hardening (`firestore.rules`)**:
   - **Verified-Email Authorization for Applicant Reads**: Restructured read authorization for consignment documents. Applicants must be authenticated, have a non-null email claim in their Firebase Auth token, have `email_verified == true`, and have their lowercased authenticated email claim match `resource.data.sellerEmail`.
@@ -30,12 +240,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Emulator Security Verification & Build Validation**:
   - **83 Passing Firestore Rules Emulator Unit Tests (`tests/firestore.rules.test.ts`)**: Successfully executed full unit test suite targeting named Firestore database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e` via `npm run test:rules`.
   - **Test Suite Coverage**: Validated guest application creation, authenticated creation, creation status enforcement, rejection of unauthorized creation metadata (11 administrator/role fields + 12 protected dealer fields across both collections), verified-email applicant read authorization, unverified email read rejection, missing email claim read rejection, unrelated applicant read denial, unscoped query rejection, email-scoped query authorization, administrator full query/document access, non-admin update denial, non-admin delete denial, legacy collection parity, and named database isolation.
-  - **Testing Boundaries**: Emulator tests validate rule logic within local emulator suites (`@firebase/rules-unit-testing`) and do not constitute live production penetration testing, nor do they imply that production Firestore rules on GCP have been updated prior to formal deployment.
+  - **Testing Boundaries**: Emulator tests validate rule logic within local emulator suites (`@firebase/rules-unit-testing`) and do not constitute live production penetration testing. Production rules were separately deployed and verified with production QA.
   - **Build Verification**: Verified zero TypeScript or bundling errors via `npm run build`.
 
 - **Milestone Scope & Roadmap Distinction**:
   - Implements the M2.0A Consignment Application Security Hardening scope.
-  - M2.0B role-escalation hardening (hardening role promotion pathways from client-side `elevateApprovedConsignor` to secure backend/admin claims or verification endpoints) remains outstanding as upcoming work.
+  - At the time of the M2.0A release, M2.0B trusted server-side role authorization remained the next milestone. M2.0B has since been implemented and verified on staging; it is not production-approved while separate security blockers remain unresolved.
+  - Milestones M2.1 through M2.5 remain planned.
+  - Milestone M2.6 remains planned and separately gated (not a prerequisite for core dealer program completion).
 
 ---
 

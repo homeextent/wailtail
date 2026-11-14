@@ -1,5 +1,65 @@
 # Wailtail Collector Car Auction Platform
 
+## Staging development workflow
+
+Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: confirm `git status -sb` and `git branch --show-current` before editing. Start focused task branches from synchronized `staging`, review them through a PR into `staging`, and reserve `main` for separately approved production releases. The existing `wailtail-auction` folder holds the shared Git repository and must remain while linked worktrees depend on it.
+
+See [Local development and worktree housekeeping](docs/local-development.md) for daily commands, safe previews, absolute-path moves, private backups and the completed local setup.
+
+## Consolidated cutover execution package
+
+The [combined execution runbook](docs/storage-cutover-execution.md) groups recovery capture, exact-plan approval, guarded copy/reference/recovery/token phases and coordinated production rollout into one task. Preparation remains GET-only; no live execution is authorized or performed. The new final/maintenance rule configs are explicit opt-in files; existing normal Storage rules remain unchanged. Full production readiness, off-device backup, reviewed scheduler/mail scope and owner approval of the exact plan remain required.
+
+## Storage cutover validation tooling
+
+The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Owner-authenticated validation completed on November 14, 2026: 163 approved files validated, 226 sources reconciled, six reference documents prepared, zero cloud writes. See the [dated evidence record](docs/storage-cutover-validation-2026-11-14.md). Owner follow-up verified 169 backup files and six reference/recovery proposals; both approved PDFs returned HTTP 206 anonymously with and without their original tokens. This establishes a readable baseline, not private-link denial or a restore. No production cutover is claimed.
+
+## M2.5 public dealer presentation — accepted on staging
+
+Public catalog/lot responses now provide a minimal dealer summary with current-verification badges, historical business/city/province attribution, CAD $0 dealer documentation fee and informational tax disclosures. Business contacts require snapshot inclusion plus current consent for the same value. Missing/expired/suspended profiles suppress current verification and contacts without interrupting historical auctions. Dealer social copy/graphics use public-safe data and verification limitations. See [M2.5 scope and local review](docs/m2-5-public-dealers.md). No production or live Firebase changes are included. Jeremy locally accepted reviewed head `8f6a1f3`, explicitly approved PR #10, and confirmed a clean local staging checkout synchronized to merge `49efa36` on November 13, 2026. Exact-head CI run `43451784085`, post-merge CI run `43454275497` and Vercel checks passed. Production promotion and live Firebase publication remain separate.
+
+Core dealer functionality through M2.5 is accepted on staging. See [Phase 1 production-readiness review](docs/phase1-production-readiness.md) for remaining release evidence, operational gates and pilot requirements. M2.6 remains optional and separately gated.
+
+## M2.4 dealer listing integration — accepted on staging
+
+Canonical dealer applications now have an explicit admin vehicle-approval/draft action, independent of business verification. The trusted server assigns the representative UID, immutable internal dealer snapshot, CAD $0 documentation fee and versioned informational tax indicator. Creation, application approval and audit commit atomically with retry/concurrency protection. Assigned representatives use the restricted narrative/media workspace without a global seller-role promotion. Forward public visibility requires current verification and confirmed tax handling; public dealer presentation remains M2.5.
+
+See [M2.4 scope, tests and local acceptance](docs/m2-4-dealer-listings.md). Legacy/private one-click conversion remains disabled; dealer duplication and snapshot reassignment are unavailable. No production promotion or live Firebase publication is included. Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local synchronization to its staging merge `4a55362`. Post-merge CI and Vercel preview passed; production and live Firebase publication remain separate.
+
+## M2.3 dealer verification — accepted on staging
+
+Dealer applications now open a dedicated manual verification view. Designated administrators record evidence, link one existing email-verified representative UID, create a private canonical business profile and explicitly verify, reject, suspend, update or renew it. Profile/link changes and immutable before/after audit records commit atomically. Dealer-attributed seller mutations enforce current verification and expiry. Vehicle approval, conversion and public dealer attribution remain separate.
+
+An administrator can look up one exact representative email/UID and explicitly select the eligible account. Guided method/source choices retain required evidence details; date controls use a named local timezone while storing absolute timestamps.
+
+See [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Jeremy locally accepted reviewed head `75d3641` and explicitly approved PR #7, merged into staging as `d3c5cc5` on November 8, 2026. Exact-head CI, post-merge CI and Vercel checks passed; Jeremy confirmed his clean local staging checkout synchronized to that merge. Production and live Firebase rules/index publication remain separate. Future visual changes still require local acceptance before merge approval.
+
+## M2.2 dealer intake — accepted on staging
+
+The existing vehicle application form now distinguishes private sellers and dealers. Dealer applications require legal business name, optional DBA, licence number, Canadian licensing jurisdiction, representative contacts and three explicit declarations. A server endpoint validates both flows, stamps pending status and declaration acceptance time, and atomically writes canonical and legacy application records. Submitting does not verify a dealer or grant access.
+
+See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). **Visual changes require Jeremy's local visual/functional verification before PR merge approval.** M2.2 was locally accepted and merged through PR #6 at `74d9089`; Jeremy confirmed his clean staging checkout synchronized to that merge. No production rules are published by a PR.
+
+## M2.1 administrative consignment review — accepted on staging
+
+The Consignment Pipeline now offers a dedicated **View application** inspection modal. Submitted vehicle/contact/condition information remains read-only and visibly separate from existing canonical dealer verification information. Opening a record does not mark it reviewed or change its status. Missing data and missing historical reviewers are shown explicitly.
+
+Designated administrators can explicitly save private notes and curator assignments. The authenticated `/api/admin-consignment-review` endpoint stores these in separate `consignmentReviews/{source}:{applicationId}` records, with append-only `events`, server-derived authors/timestamps, revision conflicts and idempotent command retries. Applicant-readable documents never receive private notes. History loads in pages of 50; legacy collection records retain their source identity. Existing status controls remain separate, and one-click conversion remains disabled.
+
+See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). M2.1 merged through PR #5 as `e7de147`; post-merge CI/preview passed and Jeremy confirmed local visual and functional acceptance. Production deployment and rules publication remain separate.
+
+## Auction security staging checkpoint
+
+The staging compatibility audit was integrated through PR #3. Watchlists, member activity and private inquiries use authenticated server operations. Public branding exposes three approved display fields; platform image uploads use the trusted administrator uploader. Designated administrators retain member moderation and global/promotion configuration under candidate rules. Broad catalog purge, legacy bidder purge, one-click consignment conversion and client promotion counters are explicitly disabled. Create drafts and delete selected listings through Vehicle Inventory instead. See [Stage 3 staging acceptance](docs/stage3-staging-acceptance.md) for the release boundary and coverage.
+
+PR #3, merged into `staging` on November 7, 2026 as `1bf4d6a`, integrates trusted seller editing, public field projections, bidding, administrator inventory and gallery operations, comment authorization, bid retraction, scoped bid reset, draft duplication, and transactional settlement. Independent review accepted head `293ffbb`; post-merge CI and Vercel preview passed. The staging security integration milestone is complete. Production release and Firebase rules publication are separate decisions.
+
+Deployment uses one Vercel Function, `api/router.ts`, to stay within the Hobby plan function limit. Handler implementations and shared server helpers live in `server/api/`. `vercel.json` preserves existing `/api/<endpoint>` URLs through an explicit allowlist router, ahead of the SPA fallback. New endpoint implementations belong in `server/api/` and must be added to the router. Each handler retains its own method and authorization checks. Server imports use explicit `.js` extensions for native Node ESM. Endpoint tests also compile and load every handler in native Node, without the development loader.
+
+Use the demo emulator environment for verification. Run `npm run build`, `npm run lint`, `npm run test:endpoint`, `npm run test:rules`, `npm run test:seller-emulator`, and `npm run test:auction-browser`. CI runs these checks. For interactive inspection, `npm run test:seller-browser` serves synthetic seller, administrator and public routes on port 4178. The normal `npm run dev` uses the checked-in Firebase project configuration.
+
+Unattended start and expiry use `GET /api/reconcile-auction-clock`. Auction notification delivery uses `GET /api/dispatch-auction-notifications`. Each requires a scheduler bearer token matching `CRON_SECRET`. Delivery additionally requires `RESEND_API_KEY`, and `RESEND_FROM_EMAIL` is stored with the message when queued. Trusted uploads require `FIREBASE_STORAGE_BUCKET`. The deployment scheduler must invoke both workers regularly, and actual email delivery still needs an authorized mailbox check. Tests mock the provider and verify stable retry keys, not inbox delivery. Delivery uses persisted exponential backoff (one minute to one hour), at most 24 attempts within 23 hours of creation, and two-minute transactional claims. Exhausted or invalid messages are retained for operator reconciliation; do not blindly replay uncertain deliveries beyond Resend's 24-hour idempotency window. Catalog and public settings poll every 30 seconds, lot detail every five seconds; hidden tabs suspend requests and refresh on return.
+
 Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed for curated classic, collector, and enthusiast cars. It features clean Canadian CAD financials, soft-close anti-sniping protection, real-time bidding telemetry, rich editorial showcase chapters, and a multi-car vehicle catalog architecture.
 
 ---
@@ -47,7 +107,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 
 ### Serverless & Cloud Infrastructure
 - **Serverless AI Writing Assistant (`api/ai-assistant.ts`)**: Vercel serverless function routing to `gemini-2.5-flash` with resilient model fallbacks (`gemini-flash-latest`, `gemini-2.0-flash`), extended 60-second execution budget (`maxDuration = 60`), 8192 token output capacity, and edge `bodyParser` expanded to `sizeLimit: '4.5mb'` to support multi-page PDF ingestion without HTTP 413 drops.
-- **Serverless User Deletion (`api/admin-delete-user.ts`)**: Vercel serverless function leveraging `firebase-admin` SDK with ESM interop resolution (`(admin as any).default || admin`) and private key newline unescaping (`replace(/\\n/g, '\n')`) to securely purge user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`), with self-deletion guards and Firestore batch document purging.
+- **Serverless Administrator Account Deletion (`api/admin-delete-user.ts`)**: Vercel endpoint requiring a revocation-aware Firebase ID token from a verified designated administrator. The server rejects self-deletion and designated-administrator targets, deletes the Auth identity, then cleans direct and exact-UID legacy profile records in `users` and `bidders`. Auth and Firestore cleanup are non-atomic and retryable; the client has no Firestore fallback.
 - **Serverless Email Proxy (`api/send-consignment-email.ts`)**: Multi-template Vercel serverless function dispatching structured and dual-branded HTML notifications for consignment intake (`type: 'consignment'`), private buyer inquiries (`type: 'inquiry'`), seller consignment receipts (`type: 'consignment_receipt'`), consignment approval notices with seller claim onboarding (`type: 'consignment_approved'`), consignment rejection notifications (`type: 'consignment_rejected'`), outbid alerts (`type: 'outbid_notification'`), winning bidder confirmations (`type: 'winning_bid_confirmation'`), newly verified bidder welcomes (`type: 'welcome_bidder'`), and platform feedback reports (`type: 'feedback_report'`) via Resend API (with SendGrid fallback). Equipped with actionable 1-click triage deep links (`/admin?tab=consignments&id=${appId}&action=approve|reject`) and case-insensitive admin recipient deduplication.
 - **Serverless YouTube Ingestion (`api/youtube-playlist.ts`)**: Server-side XML RSS Atom feed fetcher bypassing client CORS restrictions for 1-click YouTube playlist chapter auto-import.
 - **Firebase Cloud Storage Asset Pipeline**: Direct Storage URL streaming (`uploadImageToStorage`) with client-side canvas micro-compression (`compressImageDataUrl`) and a 900KB serialized payload size cap in `saveMediaConfig()`.
@@ -189,7 +249,7 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
    - **Multi-Select Bulk Action Engine**: Checkbox selection engine with floating action toolbar supporting batch status changes, bulk approvals/rejections, and batch deletions chunked safely into 150-item sets for Firestore batch write reliability.
    - **Cascading Deletion Controls**: Atomic service methods in `auctionService.ts` (`batchDeleteAuctions`, `batchDeleteConsignments`, `deleteListing`, `deleteConsignmentApplication`) preventing orphaned records across auctions and consignment submissions.
    - **1-Click Email Triage Deep-Links**: Actionable email CTAs (`/admin?tab=consignments&id=${appId}&action=approve|reject`) in `api/send-consignment-email.ts` with auto-filtering, modal surfacing, and history cleanup in `AdminPortalPage.tsx`.
-   - Atomic moderation controls: 3-way role switching (`ADMIN` $\leftrightarrow$ `SELLER` $\leftrightarrow$ `BIDDER`), ban/unban toggling, email verification override, and permanent user deletion (`deleteUserRecord` delegating to `/api/admin-delete-user` for Auth identity deletion prior to Firestore document purging).
+   - Atomic moderation controls: 3-way role switching (`ADMIN` ↔ `SELLER` ↔ `BIDDER`), ban/unban toggling, and email verification override. Permanent user deletion is delegated entirely to the authenticated server endpoint `/api/admin-delete-user`; the client sends a Bearer token and `{ uid }` and never falls back to direct Firestore deletion.
    - 1-click consignment intake approval & draft conversion (`convertConsignmentToDraftListing`) promoting consignors to `SELLER` and auto-generating vehicle listings.
 8. **Unified User Account Activity Hub & Notification Center (`UserAccountHubModal.tsx`)**:
    - Global activity hub accessible to registered users directly from the navigation bar.
@@ -248,11 +308,11 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
     - **Deterministic Rendering & Dismissal Purge**: Eradicated ✕ dismiss buttons, dismissal handlers, and permanent `localStorage` caching (`wailtail_dismissed_promos`, `LOT_HEADER_BANNER_ID`) across all promotional surfaces, making campaign visibility 100% deterministic based on admin toggles, audience targeting, and schedule dates.
     - **Decoupled Guest Telemetry (`promo_analytics`)**: Decouples click logging from admin-restricted settings into `promo_analytics/{promoId}` using atomic `increment(1)` writes (`'catalog_banner'`, `'lot_header_banner'`). Grants public guest click logging without 403 Forbidden security exceptions while keeping campaign settings securely restricted to administrators.
 19. **Serverless User Deletion & Authentication Security Architecture (`/api/admin-delete-user.ts`, `AuthContext.tsx`, `AuthModal.tsx`)**:
-    - **Serverless User Deletion (`api/admin-delete-user.ts`)**: Dedicated endpoint leveraging `firebase-admin` with static ESM interop resolution (`(admin as any).default || admin`) and private key newline unescaping (`replace(/\\n/g, '\n')`) to securely purge user identities from Firebase Authentication (`admin.auth().deleteUser(uid)`), with self-deletion protection and atomic batch purging across Firestore `users/{uid}` and `bidders/{uid}` collections.
+    - **Server-side Administrator Account Deletion (`api/admin-delete-user.ts`)**: Requires a Bearer Firebase ID token verified with revocation checking (`verifyIdToken(idToken, true)`), a verified email matching the shared designated-administrator allowlist, and a target UID supplied separately from administrator identity. Self-deletion and both designated administrator targets are rejected. The server deletes the Auth identity and cleans direct profile documents plus legacy records matched by exact UID in `users` and `bidders`; no email-only deletion query is used. Auth and Firestore cleanup are not atomic: incomplete cleanup returns an error and can be retried. The client `deleteUserRecord()` has no Firestore fallback.
     - **Orphaned Auth Session Revocation Guard (`AuthContext.tsx`)**: Real-time `onSnapshot` listener on `users/{uid}` paired with `onAuthStateChanged` hydration verification. If an administrator deletes an account, the active session is instantly terminated (`signOut(auth)`), state is purged, a toast alert is surfaced (`"This account has been deleted by an administrator."`), and the user is redirected to `/`.
-    - **Strict Email Verification Enforcement**: Auto-logout post-signup prevents unauthenticated browsing, unverified sign-in attempts are blocked across `AuthModal.tsx` and `AuthContext.tsx`, credentialed unauthenticated status checks (`checkEmailVerification(email, pass)`) allow logged-out status confirmation, and `isEmailVerified: true` is atomically synchronized across `users` and `bidders` collections in Firestore.
+    - **Strict Email Verification Enforcement (M2.0B Security Corrections)**: Firebase Authentication `user.emailVerified` serves as the sole email verification and administrative authority (`isEmailVerified = Boolean(user?.emailVerified)`). Auto-logout post-signup prevents unauthenticated browsing, unverified sign-in attempts are blocked across `AuthModal.tsx` and `AuthContext.tsx`, and credentialed status checks (`checkEmailVerification(email, pass)`) reload the user instance to verify confirmation against Firebase Auth. Firestore rules strictly forbid ordinary users from creating or updating profiles with `isEmailVerified: true` without a verified token claim (`request.auth.token.email_verified == true`). Insecure client-side demo self-verification has been removed.
     - **Google OAuth Direct State Hydration**: Instant UI state hydration in `signInGoogle()` eliminating listener suppression flags and manual page refreshes, setting `isEmailVerified: true`, enforcing banned user checks, and provisioning `role: 'admin'` for designated `ADMIN_EMAILS`.
-    - **Deferred Welcome Email Dispatch**: Suppressed during raw account creation, `sendWelcomeBidderEmail()` dispatches strictly upon confirmed email verification or staff manual verification override in `/admin`.
+    - **Deferred Welcome Email Dispatch**: Suppressed during raw account creation, `sendWelcomeBidderEmail()` dispatches strictly upon confirmed Firebase Authentication email verification (`currentUser.emailVerified === true`), guarded against duplicates via `welcomeEmailSent` in Firestore state.
 20. **Deep-Link Auth Preservation & Admin Triage Pipeline (`App.tsx`, `AuthModal.tsx`, `AdminPortalPage.tsx`)**:
     - **Route Gating Suspension**: Halts premature redirects to `/` while authentication state is initializing (`authLoading`).
     - **Session Storage Triage Cache**: Captures triage parameters (`tab`, `id`, `action`) under `sessionStorage` key `wailtail_pending_admin_deeplink` for unauthenticated deep-link visitors.
@@ -261,10 +321,10 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
 21. **Automated Consignment Rejection Notifications & Non-Blocking Pipeline (`api/send-consignment-email.ts`, `auctionService.ts`)**:
     - **Serverless Rejection Template**: Generates high-visibility `type: 'consignment_rejected'` HTML status updates (`[Wailtail] Consignment Application Update — ${vehicleTitle}`) informing consignors of curation decisions with fallback vehicle taxonomy.
     - **Resilient Delivery Execution**: Evaluates fallback recipient parameters (`sellerEmail` vs `email`) and runs dispatches in non-blocking asynchronous routines (`Promise.allSettled` for bulk rejections), ensuring SMTP delivery latency never halts atomic Firestore status transitions.
-22. **Seller Workspace Claim Onboarding & Approved-Consignor Role Elevation (`AuthContext.tsx`, `AuthModal.tsx`)**:
+22. **Seller Workspace Claim Onboarding & Trusted Approved-Consignor Authorization (`AuthContext.tsx`, `AuthModal.tsx`)**:
     - **Claim Link Routing**: Delivers customized claim links (`action=claim_seller&appId=...&lot=...&email=...`) targeting `/dashboard/listings/[id]/edit`.
     - **Registration Auto-Fill & Emerald Banner**: Pre-fills the approved seller's email address and renders a specialized onboarding banner in `AuthModal.tsx`.
-    - **Client-Side Approved-Consignor Role Elevation (`elevateApprovedConsignor`) — Pending M2.0B Hardening**: Verifies approved consignment applications matching the user's email, mutates user roles across `users/{uid}` and `bidders/{uid}` to `'seller'` under client-side `isOwner(uid)` rules, assigns `sellerId` and `sellerName` to `auctions/{convertedAuctionId}`, and updates local React state for authoring workspace authorization. This represents current legacy/client-side behavior; M2.0A did not resolve user/bidder self-promotion, and transitioning role elevation to trusted server-side authorization remains the explicit responsibility of M2.0B.
+    - **Trusted Server-Side Consignor Role Elevation (`/api/authorize-approved-consignor`, `AuthContext.tsx`) — Implemented in M2.0B**: Transitions approved consignor onboarding to server-side token verification using Firebase Admin SDK. Cryptographically verifies caller ID token, matches approved consignment applications, executes atomic updates across `users/{uid}` and `bidders/{uid}` to `'seller'`, safely links converted lots in `auctions/{convertedAuctionId}` with conflict detection, and refreshes the canonical user profile in client React context without optimistic self-promotion. Client-side role elevation (`elevateApprovedConsignor`) has been completely eradicated.
 23. **Real-Time Clock-Driven Auction Lifecycles & Silent Background Reconciliation (`src/utils/formatters.ts`, `src/components/AuctionHeader.tsx`, `src/components/VehicleCatalogGrid.tsx`)**:
     - **Real-Time Clock Evaluation**: `getEffectiveAuctionStatus()` continuously evaluates real-time timestamps against `startTime` and `endTime` thresholds to dynamically resolve lot states (`upcoming`, `active`, `ending_soon`, `ended`, `sold`).
     - **Zero-Refresh UI Transitions**: `formatAuctionCountdown()` triggers seamless client-side status shifts across lifecycle boundaries without page reloads. `VehicleCatalogGrid.tsx` pairs normalized predicates (`isLive`, `isUpcoming`, `isEnded`) with a 1-second interval ticker to update catalog filter tab counts dynamically.
@@ -373,40 +433,69 @@ Wailtail is a modern, Bring-a-Trailer style vehicle auction platform designed fo
       - Staging synchronized with `main` at the time of promotion.
       - Vercel production deployment confirmed Ready.
       - Cloud Firestore security rules separately deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`).
-40. **Consignment Application Security Hardening (M2.0A Milestone)**:
+41. **Consignment Application Security Hardening (M2.0A Milestone)**:
     - **Verified-Email Read Authorization**: Consignment application access requires an authenticated Firebase user whose verified email claim (`email_verified == true`) exactly matches the document's normalized `sellerEmail`. Access authorization is derived strictly from the cryptographic token claim rather than unverified client-supplied identifiers (`registeredUserId`).
     - **Creation & Modification Locks**: Non-admin creation strictly requires `status: 'pending'` and bars injection of administrator-controlled metadata, protected dealer verification fields, and registration linkage fields (`registeredUserId`, `isRegisteredUser`, `registeredUserRole`). New M2.0A submissions no longer write these registration fields. Non-admin document updates and deletions are completely locked (`allow update, delete: if isAdmin();`). Guest submissions remain supported for initial intake.
     - **Historical Compatibility & Dual Collection Parity**: Both `consignment_applications` and legacy `consignments` enforce identical security rules. Historical application documents retain legacy registration metadata without migration or deletion and remain readable by authorized applicants.
     - **Persistence & Notification Resilience**: Submissions normalize `sellerEmail` to lowercase upon creation. Primary persistence errors in `consignment_applications` propagate directly to the caller without synthetic fallback IDs, legacy dual-write is non-fatal best effort, and serverless notifications execute post-persistence in a non-blocking background routine with a 5000ms timeout guard.
     - **Emulator Verification**: 83 passing unit tests (`npm run test:rules`) executed against named database instance `ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`.
-    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is fully implemented and verified on `staging`, awaiting production promotion. Downstream M2.0B role-escalation hardening (preventing user/bidder self-promotion and establishing trusted server-side authorization for `elevateApprovedConsignor`) remains outstanding and planned.
+    - **Release Posture & Milestone Boundaries**: M2.0A consignment application security hardening is complete, deployed to production, with Cloud Firestore security rules successfully deployed to GCP project `studio-apps-483721` (`ai-studio-wailtailauction-c952df6d-bb0b-4072-915f-2c67e5ee2b6e`), and required production QA confirmed on November 5, 2026. M2.0B trusted server-side role authorization and its security corrections are **verified on staging**, but are **not production-approved**. The separate administrator account-deletion vulnerability has since been corrected and tested on staging in commit `860042bc35fcc98246f6385a035fc08d3c84d01f`; it has not been production-deployed. Auction ownership and mutation authorization was subsequently implemented and accepted on staging through PR #3; production rollout and live verification remain separate.
 
 ---
 
 ## 3. Getting Started
 
 ### Prerequisites
-- Node.js (v18+) or Bun / npm / yarn
-- Firebase Project configured with Firestore and Authentication
+- Node.js 22 and npm
+- Java 21 (required for Firebase emulator-backed security rules tests)
+- Firebase project configured with Firestore and Authentication
 
-### Installation
+### Installation and safe interactive preview
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/wailtail-auction.git
-cd wailtail-auction
+# New independent clone; existing linked worktrees should follow docs/local-development.md.
+git clone https://github.com/homeextent/wailtail.git wailtail-staging
+cd wailtail-staging
+git switch staging
+npm ci
 
-# Install dependencies
-npm install
+# Guarded demo Auth, Firestore and Storage with synthetic public/admin/seller fixtures.
+npm run test:seller-browser
+```
 
-# Setup environment variables
-cp .env.example .env.local
+Open the URLs printed by the harness on `http://127.0.0.1:4178`. The preview uses synthetic data, not a copy of the production catalog. Stop it with Ctrl+C. Close other emulator instances that use its ports before starting.
 
-# Start development server
-npm run dev
+`npm run dev` starts Vite with the checked-in Firebase project configuration. Its local middleware serves only the email and YouTube handlers; other `/api` requests proxy to `http://localhost:3000`, or the configured `VERCEL_URL` host. It is not a complete isolated API environment. Confirm API and Firebase targets before any normal-development mutation testing. Do not copy credentials from archived test workspaces into a new environment without checking their project scope.
 
-# Run Firestore security rules emulator unit tests
+
+### Continuous Integration & Local Validation
+
+GitHub Actions runs the repository CI workflow defined in `.github/workflows/ci.yml` on:
+- Pushes to `staging` and `main`.
+- Pull requests targeting `staging` and `main`.
+- Manual `workflow_dispatch` execution.
+
+The workflow uses Node.js 22 and Java 21 (for the Firebase emulator), installs the lockfile-pinned dependencies with `npm ci`, and runs the following checks in order:
+
+1. `npm run build` — TypeScript compilation followed by the Vite production build.
+2. `npm run lint` — ESLint validation.
+3. `npm run test:endpoint` — serverless endpoint and authorization tests.
+4. `npm run test:rules` — Firestore security rules tests executed through the Firebase emulator.
+
+Run the same validation locally before pushing changes:
+
+```bash
+npm ci
+npm run build
+npm run lint
+npm run test:endpoint
 npm run test:rules
 ```
+
+Java 21 is required locally when running the Firebase emulator-backed rules suite. The combined `npm test` script also runs both test suites, but does not replace the build and lint checks.
+
+**Current reported staging test coverage:** `npm run test:endpoint` runs 85 tests (41 approved-consignor authorization tests and 44 administrator account-deletion tests); `npm run test:rules` runs 126 Firestore rules emulator tests. Roo Code reported `npm run lint`, `npx tsc --noEmit`, `npm run build`, and both test suites passing before account-deletion commit `860042bc35fcc98246f6385a035fc08d3c84d01f`. This local verification report is not a substitute for a successful GitHub Actions run associated with that commit.
+
+**CI is validation, not deployment.**
 
 ### Environment Configuration Requirements
 
@@ -468,16 +557,30 @@ Ensure valid 11-character video IDs or URLs are used. The application automatica
 
 ---
 
-## 5. Planned Features & Upcoming Releases
+## 5. Phase 1 Roadmap & Program Status
 
-The following features represent architectural enhancements identified for upcoming platform milestones. Both features are currently **planned** and **not yet implemented**.
+Wailtail is actively executing the **Phase 1 Verified Boutique Dealer Program**, establishing an institutional framework for licensed Canadian boutique classic and collector vehicle dealerships to consign and auction inventory alongside private sellers.
 
-### 1. Consignment Application Detail & Review
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**: A dedicated, read-only administrative inspection modal within the Admin Consignment Pipeline (`AdminPortalPage.tsx`). Provides comprehensive review of submitted vehicle specifications, provenance notes, seller contact details, submission timestamps, and lifecycle status. Introduces private administrative review notes, explicit separation between applicant-submitted declarations and administrator-verified metadata, and future pathways to request supplementary documentation from consignors.
-- **Architectural Requirements**: Opening or inspecting the detail view must never trigger implicit status transitions. Viewing data must never mutate submitted application documents. Status changes (approval, rejection, draft conversion) must remain explicit administrative actions. The existing private seller curation workflow must remain completely unaffected.
+For comprehensive milestone specifications, commercial boundaries, architecture, acceptance criteria, and release governance, refer to the authoritative [`SYSTEM_BIBLE.md`](SYSTEM_BIBLE.md).
 
-### 2. Optional Consignment Photo Upload
-- **Status**: PLANNED — NOT IMPLEMENTED.
-- **Proposed Capability**: Optional multi-photo upload capability integrated into the initial consignment intake application (`ConsignmentModal.tsx`), with a strong recommendation for applicants to submit at least five initial photographs (JPEG, PNG, WebP). Features client-side image preview and removal before submission, secure upload directly to Firebase Cloud Storage, association of photo URLs with the consignment record, and private isolation of uploaded images until administrative curation and approval. Approved photos can subsequently be selected for transfer into the Listing Editor Workspace gallery.
-- **Architectural Requirements**: Binary photo payloads or Base64 strings must never be stored in Firestore documents. Existing Firebase Storage security rules, MIME validation, and file-size constraints must be audited prior to implementation. Clean lifecycle management and orphaned file cleanup must be established. Full compatibility with the existing Listing Editor media pipeline (`uploadImageToStorage`) must be maintained.
+### Program Status Summary (as of November 5, 2026)
+
+| Milestone | Title & Focus | Status | Details |
+| :--- | :--- | :--- | :--- |
+| **M1.0** | Dealer Foundation and Data Architecture | **COMPLETE** | Core schemas, TypeScript interfaces, and baseline security rules. |
+| **M1.1** | Dealer Verification Metadata and Security Hardening | **COMPLETE** | Dual-collection protection for all 6 trusted verification fields; 18/18 live probe checks passed; production deployed. |
+| **M2.0A** | Consignment Security and Persistence Hardening | **COMPLETE** | Verified-email applicant reads, token-derived auth, modification locks, 83 emulator tests; deployed to production with Cloud Firestore rules; production QA passed. |
+| **M2.0B** | Trusted Server-Side Role Authorization | **VERIFIED ON STAGING** | Firebase Admin SDK ID-token verification with revocation checking; transactional approved-consignor revalidation; protected user/bidder roles and verification state; removal of client-side role elevation; 126 Firestore rules tests and 41 M2.0B endpoint/authority tests. *Not production-approved.* |
+| **Admin Account Deletion Hardening** | Server-Authorized Account Deletion | **VERIFIED ON STAGING** | Revocation-aware designated-administrator authorization; self-deletion and designated-account protection; server-owned Auth and Firestore cleanup with retry handling; 44 regression tests (85 combined endpoint tests). *Not production-deployed; auction mutation security was subsequently accepted on staging through PR #3. Production rollout and live verification remain separate.* |
+
+| **M2.1** | Administrative Consignment Application Review | **ACCEPTED ON STAGING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
+| **M2.2** | Dealer Application and Intake | **ACCEPTED ON STAGING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
+| **M2.3** | Manual Dealer Verification & Profile Creation | **ACCEPTED ON STAGING** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
+| **M2.4** | Dealer Vehicle Listing Integration | **ACCEPTED ON STAGING** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
+| **M2.5** | Public Dealer Presentation & Badging | **ACCEPTED ON STAGING** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
+| **M2.6** | Optional Private Application Photo Uploads | **PLANNED (GATED)** | Multi-photo upload in consignment intake; private Cloud Storage bucket; curation transfer to listing gallery. *Separately gated; non-blocker for core program.* |
+
+### Phase 1 Governance & Commercial Boundaries
+- **Core Milestone Execution Order**: M2.0B → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 (with M2.6 separately gated and non-blocking). Administrator account-deletion hardening is a separate security workstream, not a change to the dealer-program milestone sequence.
+- **Commercial Invariants**: Exclusive vehicle ownership (no broker/pass-through inventory); one primary authorized representative per dealer; manual admin verification; verification decoupled from lot curation; private canonical profiles; $0 dealer listing fees, $0 commissions, $0 doc fees, and $0 buyer premiums.
+- **Detailed Specification**: See [`SYSTEM_BIBLE.md` (Section 11)](SYSTEM_BIBLE.md:2280) for authoritative requirements, dependencies, release gates, and Founding Dealer Pilot KPIs.

@@ -11,16 +11,19 @@ import {
   updateProfile,
   reload
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { AlertCircle, X } from 'lucide-react';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile } from '../types';
 import { sendWelcomeBidderEmail, setUserEmailVerified } from '../services/auctionService';
+import {
+  ADMIN_EMAILS as DESIGNATED_ADMIN_EMAILS_LIST,
+  isDesignatedAdminEmail,
+  normalizeEmail,
+  evaluateAdminAuthority
+} from '../config/adminConfig';
 
-export const ADMIN_EMAILS = [
-  'jeremygoodmurphy@gmail.com',
-  'jeremy@theinnovativegroup.ca'
-];
+export const ADMIN_EMAILS = DESIGNATED_ADMIN_EMAILS_LIST;
 
 let isRegistrationInProgress = false;
 
@@ -52,83 +55,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   /**
-   * Security rule-compliant seller elevation targeting users/{uid} and bidders/{uid} directly under isOwner(uid) authentication.
-   * Updates corresponding draft auction documents and immediately updates local userProfile React state.
+   * Trusted Server-Side Consignor Authorization (Milestone M2.0B)
+   * Requests server-side verification and authorization from /api/authorize-approved-consignor.
+   * If authorized by the server, returns the refreshed canonical user profile from Firestore.
    */
-  const elevateApprovedConsignor = async (
-    userOrUid: User | string,
-    userEmail?: string,
-    displayName?: string
-  ): Promise<boolean> => {
-    const uid = typeof userOrUid === 'string' ? userOrUid : userOrUid.uid;
-    const rawEmail = (userEmail || (typeof userOrUid !== 'string' ? userOrUid.email : '') || '').trim();
-    const cleanEmail = rawEmail.toLowerCase();
-    if (!cleanEmail || !uid) return false;
-
+  const requestServerConsignorAuthorization = async (
+    currentUser: User
+  ): Promise<UserProfile | null> => {
     try {
-      const colRef = collection(db, 'consignment_applications');
-      const q = query(colRef, where('sellerEmail', '==', cleanEmail));
-      let snap = await getDocs(q);
-
-      if (snap.empty && cleanEmail !== rawEmail) {
-        snap = await getDocs(query(colRef, where('sellerEmail', '==', rawEmail)));
+      if (!currentUser.emailVerified) {
+        return null;
       }
+      const token = await currentUser.getIdToken();
+      if (!token) return null;
 
-      const approvedDocs = snap.docs.filter((d) => {
-        const data = d.data();
-        return data?.status === 'approved';
+      const res = await fetch('/api/authorize-approved-consignor', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
       });
 
-      if (approvedDocs.length === 0) {
-        return false;
+      if (!res.ok) {
+        return null;
       }
 
-      const now = Date.now();
-
-      // Wrap Firestore writes under active auth in try/catch blocks with error logging
-      try {
-        await setDoc(doc(db, 'users', uid), { role: 'seller', updatedAt: now }, { merge: true });
-      } catch (userDocErr) {
-        console.error(`[AuthContext] Error updating users/${uid} to seller role:`, userDocErr);
-      }
-
-      try {
-        await setDoc(doc(db, 'bidders', uid), { role: 'seller', updatedAt: now }, { merge: true });
-      } catch (bidderDocErr) {
-        console.error(`[AuthContext] Error updating bidders/${uid} to seller role:`, bidderDocErr);
-      }
-
-      // Update draft auction document doc(db, 'auctions', convertedAuctionId)
-      const sellerResolvedName = displayName || (typeof userOrUid !== 'string' ? userOrUid.displayName : '') || cleanEmail.split('@')[0];
-      for (const appDoc of approvedDocs) {
-        const appData = appDoc.data();
-        const convertedAuctionId = appData?.convertedAuctionId;
-        if (convertedAuctionId) {
-          try {
-            const auctionRef = doc(db, 'auctions', convertedAuctionId);
-            await setDoc(auctionRef, {
-              sellerId: uid,
-              sellerName: sellerResolvedName
-            }, { merge: true });
-          } catch (auctionErr) {
-            console.error(`[AuthContext] Could not link seller ${uid} to auction ${convertedAuctionId}:`, auctionErr);
-          }
+      const data = await res.json();
+      if (data && data.success && data.authorized) {
+        const freshSnap = await getDoc(doc(db, 'users', currentUser.uid));
+        if (freshSnap.exists()) {
+          const freshData = { uid: freshSnap.id, ...freshSnap.data() } as UserProfile;
+          setUserProfile(freshData);
+          setUser((prev: User | null) => {
+            if (prev) {
+              (prev as any).role = freshData.role;
+            }
+            return prev;
+          });
+          return freshData;
         }
       }
-
-      // Immediately update React state so userProfile.role reflects 'seller' in memory without requiring a page refresh
-      setUserProfile((prev: UserProfile | null) => (prev ? { ...prev, role: 'seller' } : prev));
-      setUser((prev: User | null) => {
-        if (prev) {
-          (prev as any).role = 'seller';
-        }
-        return prev;
-      });
-
-      return true;
+      return null;
     } catch (err) {
-      console.error('[AuthContext] Error during approved consignor elevation:', err);
-      return false;
+      console.warn('[AuthContext] Notice during server consignor authorization:', err);
+      return null;
     }
   };
 
@@ -150,6 +121,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
         try {
+          // Firebase User Refresh: Ensure auth context does not rely indefinitely on a stale Firebase user object
+          if (!currentUser.emailVerified) {
+            try {
+              await reload(currentUser);
+            } catch (reloadErr) {
+              console.warn('[AuthContext] Notice reloading user on auth change:', reloadErr);
+            }
+          }
+
           const userRef = doc(db, 'users', currentUser.uid);
           let snap = await getDoc(userRef);
 
@@ -171,9 +151,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               return;
             }
 
-            const isVerified = Boolean(currentUser.emailVerified || data.isEmailVerified);
+            // Sole email-verification authority: Authenticated Firebase user emailVerified
+            const isVerified = Boolean(currentUser.emailVerified);
 
-            // Strict Unverified Session Enforcement: If both are false, prevent session login hydration and execute signOut(auth)
+            // Strict Unverified Session Enforcement: If false, prevent session login hydration and execute signOut(auth)
             if (!isVerified) {
               console.warn(`[AuthContext] Unverified session detected for uid: ${currentUser.uid}. Enforcing signOut.`);
               await fbSignOut(auth).catch(() => {});
@@ -186,8 +167,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             let updatedNeeded = false;
             const updates: Partial<UserProfile> = {};
 
-            const userEmail = (currentUser.email || '').toLowerCase();
-            const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+            const userEmail = normalizeEmail(currentUser.email);
+            const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
             
             // Ensure role is assigned
             if (isDesignatedAdmin && data.role !== 'admin') {
@@ -196,8 +177,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               updatedNeeded = true;
             } else if (!data.role) {
               data.role = isDesignatedAdmin ? 'admin' : 'bidder';
-              updates.role = data.role;
-              updatedNeeded = true;
+              if (isDesignatedAdmin) {
+                updates.role = 'admin';
+                updatedNeeded = true;
+              }
             }
 
             // Update email verified status if changed
@@ -280,7 +263,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } else {
           const data = snap.data() as UserProfile;
-          const isVerified = Boolean(firebaseUser.emailVerified || data.isEmailVerified);
+          // Sole email-verification authority: Authenticated Firebase user emailVerified
+          const isVerified = Boolean(firebaseUser.emailVerified);
           if (!isVerified) {
             console.warn(`[AuthContext] Real-time check: Session email unverified. Revoking session.`);
             await fbSignOut(auth).catch(() => {});
@@ -295,43 +279,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, [user?.uid]);
 
-  const isAdmin = Boolean(
-    userProfile?.role === 'admin' ||
-    (user?.email && ADMIN_EMAILS.some(adminEmail => adminEmail.toLowerCase() === user.email?.toLowerCase()))
-  );
+  // Establish Firebase Authentication as the sole email-verification authority.
+  // Mutable Firestore profile fields (userProfile.isEmailVerified) must NEVER substitute for Firebase Auth state.
+  const isEmailVerified = Boolean(user?.emailVerified);
+
+  // Administrative root of trust: Verified account state & explicit email allowlist ONLY.
+  // Administrator identity requires ALL of the following:
+  // 1. Authenticated Firebase user.
+  // 2. Email present.
+  // 3. Email matches explicit designated administrator allowlist.
+  // 4. Firebase Authentication reports emailVerified === true.
+  // Mutable profile roles or Firestore fields must NEVER independently establish administrative authority.
+  const isAdmin = evaluateAdminAuthority(user, userProfile);
 
   const isSeller = Boolean(
     isAdmin || userProfile?.role === 'seller'
   );
 
-  const isEmailVerified = Boolean(user?.emailVerified || userProfile?.isEmailVerified);
-
   const signInEmail = async (email: string, pass: string): Promise<User> => {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     await reload(cred.user);
 
-    // If cred.user.emailVerified is true, execute await setUserEmailVerified(cred.user.uid, true)
-    if (cred.user.emailVerified) {
-      try {
-        await setUserEmailVerified(cred.user.uid, true);
-      } catch (syncErr) {
-        console.warn('Could not sync emailVerified to Firestore on signInEmail:', syncErr);
-      }
-    }
-
-    // Check both Firebase Auth user.emailVerified and Firestore staff override userProfile.isEmailVerified
-    let profileData: UserProfile | null = null;
-    try {
-      const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      if (snap.exists()) {
-        profileData = { uid: snap.id, ...snap.data() } as UserProfile;
-      }
-    } catch {
-      // ignore
-    }
-
-    const isProfileVerified = Boolean(profileData?.isEmailVerified);
-    const isVerified = Boolean(cred.user.emailVerified || isProfileVerified);
+    // Sole email-verification authority: Authenticated Firebase user emailVerified
+    const isVerified = Boolean(cred.user.emailVerified);
     if (!isVerified) {
       await fbSignOut(auth).catch(() => {});
       setUser(null);
@@ -339,21 +309,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Email verification required. Please check your inbox to verify your email address before signing in.');
     }
 
-    // Re-evaluate elevateApprovedConsignor immediately after email verification and authentication succeed
-    const userEmail = (cred.user.email || email).toLowerCase();
-    const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-    if (!isDesignatedAdmin) {
+    // Sync verified status to Firestore once verified by Firebase Auth
+    try {
+      await setUserEmailVerified(cred.user.uid, true);
+    } catch (syncErr) {
+      console.warn('Could not sync emailVerified to Firestore on signInEmail:', syncErr);
+    }
+
+    let profileData: UserProfile | null = null;
+    try {
+      const snap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (snap.exists()) {
+        profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Re-evaluate approved consignor role via trusted server authorization
+    const userEmail = normalizeEmail(cred.user.email || email);
+    const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
+    if (!isDesignatedAdmin && isVerified) {
       try {
-        const elevated = await elevateApprovedConsignor(
-          cred.user,
-          userEmail,
-          cred.user.displayName || profileData?.displayName
-        );
-        if (elevated && profileData) {
-          profileData.role = 'seller';
+        const freshProfile = await requestServerConsignorAuthorization(cred.user);
+        if (freshProfile) {
+          profileData = freshProfile;
         }
-      } catch (elevateErr) {
-        console.warn('Could not elevate approved consignor on signInEmail:', elevateErr);
+      } catch (authErr) {
+        console.warn('Could not complete consignor authorization on signInEmail:', authErr);
       }
     }
 
@@ -399,9 +382,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Could not send verification email:', e);
       }
 
-      const userEmail = (cred.user.email || email).toLowerCase();
-      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-      let assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
+      const userEmail = normalizeEmail(cred.user.email || email);
+      const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
+      let assignedRole: 'admin' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
       const resolvedDisplayName = displayName || email.split('@')[0] || 'Member';
 
       // Create base user document in users/{uid} while authenticated
@@ -423,26 +406,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Error creating user doc:', e);
       }
 
-      // Execute await elevateApprovedConsignor(cred.user, email) before calling signOut(auth),
-      // ensuring Firestore writes to users/{uid}, bidders/{uid}, and auctions/{convertedAuctionId} happen while request.auth is active.
-      if (!isDesignatedAdmin) {
-        try {
-          const elevated = await elevateApprovedConsignor(
-            cred.user,
-            email,
-            resolvedDisplayName
-          );
-          if (elevated) {
-            assignedRole = 'seller';
-          }
-        } catch (elevateErr) {
-          // Catch and handle Firestore permission errors silently if no approved consignment exists for a registering user
-          console.warn('Could not elevate approved consignor on sign up:', elevateErr);
-        }
+      try {
+        await setDoc(doc(db, 'bidders', cred.user.uid), newProfile);
+      } catch (e) {
+        console.warn('Error creating bidder doc:', e);
       }
-      
+
       // Immediately execute signOut to prevent automatic Firebase client session auto-login.
-      // Only fires after all Firestore profile writes and consignment elevations complete.
+      // Consignor role promotion occurs securely via server endpoint once email verification is completed.
       await fbSignOut(auth).catch(() => {});
       setUser(null);
       setUserProfile(null);
@@ -481,8 +452,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const userRef = doc(db, 'users', cred.user.uid);
       const snap = await getDoc(userRef);
-      const userEmail = (cred.user.email || '').toLowerCase();
-      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+      const userEmail = normalizeEmail(cred.user.email);
+      const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
 
       let profile: UserProfile;
 
@@ -497,60 +468,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updateNeeded = true;
         } else if (!data.role) {
           data.role = isDesignatedAdmin ? 'admin' : 'bidder';
-          updates.role = data.role;
-          updateNeeded = true;
+          if (isDesignatedAdmin) {
+            updates.role = 'admin';
+            updateNeeded = true;
+          }
         }
 
         profile = { ...data, uid: cred.user.uid };
 
-        // Check if user has an approved consignment application
-        try {
-          const hasApprovedConsignment = await elevateApprovedConsignor(
-            cred.user.uid,
-            userEmail,
-            cred.user.displayName || profile.displayName || userEmail.split('@')[0]
-          );
-          if (hasApprovedConsignment && !isDesignatedAdmin && profile.role !== 'seller') {
-            profile.role = 'seller';
-            updates.role = 'seller';
-            updateNeeded = true;
+        // Check if user is an approved consignor via trusted server authorization
+        if (!isDesignatedAdmin) {
+          try {
+            const freshProfile = await requestServerConsignorAuthorization(cred.user);
+            if (freshProfile) {
+              profile = freshProfile;
+            }
+          } catch (authErr) {
+            console.warn('Could not check consignor authorization on Google sign in:', authErr);
           }
-        } catch (elevateErr) {
-          console.warn('Could not elevate approved consignor on Google sign in:', elevateErr);
         }
 
         if (updateNeeded) {
           await updateDoc(userRef, updates).catch((err) => console.warn('Admin/user role sync notice:', err));
         }
       } else {
-        let assignedRole: 'admin' | 'seller' | 'bidder' = isDesignatedAdmin ? 'admin' : 'bidder';
-
-        // Check if user has an approved consignment application
-        try {
-          const hasApprovedConsignment = await elevateApprovedConsignor(
-            cred.user.uid,
-            userEmail,
-            cred.user.displayName || userEmail.split('@')[0]
-          );
-          if (hasApprovedConsignment && !isDesignatedAdmin) {
-            assignedRole = 'seller';
-          }
-        } catch (elevateErr) {
-          console.warn('Could not elevate approved consignor on new Google profile:', elevateErr);
-        }
-
         const newProfile: UserProfile = {
           uid: cred.user.uid,
           email: cred.user.email || '',
           displayName: cred.user.displayName || (cred.user.email ? cred.user.email.split('@')[0] : 'Bidder'),
-          role: assignedRole,
+          role: isDesignatedAdmin ? 'admin' : 'bidder',
           isEmailVerified: true, // Google OAuth pre-verifies email addresses
           registeredAt: Date.now(),
           totalBidsPlaced: 0,
           highestBidPlaced: 0
         };
         await setDoc(userRef, newProfile).catch((err) => console.warn('Error storing Google user profile:', err));
+        await setDoc(doc(db, 'bidders', cred.user.uid), newProfile).catch((err) => console.warn('Error storing Google bidder profile:', err));
         profile = newProfile;
+
+        // Check if user is an approved consignor via trusted server authorization
+        if (!isDesignatedAdmin) {
+          try {
+            const freshProfile = await requestServerConsignorAuthorization(cred.user);
+            if (freshProfile) {
+              profile = freshProfile;
+            }
+          } catch (authErr) {
+            console.warn('Could not check consignor authorization on new Google profile:', authErr);
+          }
+        }
       }
 
       if (profile.isBanned || profile.bannedFromBidding) {
@@ -680,23 +646,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Could not fetch user profile in checkEmailVerification:', fetchErr);
       }
 
-      const userEmail = (targetUser.email || emailForCheck || '').toLowerCase();
-      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
+      const userEmail = normalizeEmail(targetUser.email || emailForCheck);
+      const isDesignatedAdmin = isDesignatedAdminEmail(userEmail);
 
-      // Re-evaluate elevateApprovedConsignor(user, email) immediately after email verification and authentication succeed
-      let elevatedRole: 'seller' | undefined;
+      // Re-evaluate approved consignor role via trusted server authorization
       if (!isDesignatedAdmin) {
         try {
-          const elevated = await elevateApprovedConsignor(
-            targetUser,
-            userEmail,
-            targetUser.displayName || profileData?.displayName || userEmail.split('@')[0]
-          );
-          if (elevated) {
-            elevatedRole = 'seller';
+          const freshProfile = await requestServerConsignorAuthorization(targetUser);
+          if (freshProfile) {
+            profileData = freshProfile;
           }
-        } catch (elevateErr) {
-          console.warn('Could not elevate approved consignor on checkEmailVerification:', elevateErr);
+        } catch (authErr) {
+          console.warn('Could not authorize consignor on checkEmailVerification:', authErr);
         }
       }
 
@@ -705,14 +666,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           uid: targetUser.uid,
           email: targetUser.email || emailForCheck || '',
           displayName: targetUser.displayName || (targetUser.email || emailForCheck || '').split('@')[0],
-          role: isDesignatedAdmin ? 'admin' : (elevatedRole || 'bidder'),
+          role: isDesignatedAdmin ? 'admin' : 'bidder',
           isEmailVerified: true,
           registeredAt: Date.now(),
           totalBidsPlaced: 0,
           highestBidPlaced: 0
         };
-      } else if (elevatedRole) {
-        profileData.role = elevatedRole;
       }
 
       (targetUser as any).role = profileData.role;
@@ -745,70 +704,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const manualVerifyForDemo = async (emailForDemo?: string, passForDemo?: string) => {
-    let targetUser = auth.currentUser;
-    if (!targetUser && emailForDemo && passForDemo) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, emailForDemo.trim(), passForDemo);
-        targetUser = cred.user;
-      } catch (err) {
-        console.warn('Demo verify sign-in error:', err);
-      }
-    }
-
-    if (!targetUser) return;
-
-    try {
-      await setUserEmailVerified(targetUser.uid, true);
-    } catch (err) {
-      console.warn(err);
-    }
-
-    let profileData: UserProfile | null = null;
-    try {
-      const snap = await getDoc(doc(db, 'users', targetUser.uid));
-      if (snap.exists()) {
-        profileData = { uid: snap.id, ...snap.data(), isEmailVerified: true } as UserProfile;
-      }
-    } catch {
-      // ignore
-    }
-
-    if (!profileData && userProfile) {
-      profileData = { ...userProfile, isEmailVerified: true };
-    } else if (!profileData) {
-      const userEmail = (targetUser.email || emailForDemo || '').toLowerCase();
-      const isDesignatedAdmin = ADMIN_EMAILS.some(e => e.toLowerCase() === userEmail);
-      profileData = {
-        uid: targetUser.uid,
-        email: targetUser.email || emailForDemo || '',
-        displayName: targetUser.displayName || (targetUser.email || emailForDemo || '').split('@')[0],
-        role: isDesignatedAdmin ? 'admin' : 'bidder',
-        isEmailVerified: true,
-        registeredAt: Date.now(),
-        totalBidsPlaced: 0,
-        highestBidPlaced: 0
-      };
-    }
-
-    setUser(targetUser);
-    setUserProfile(profileData);
-
-    const recipientEmail = (targetUser.email || profileData?.email || '').trim();
-    if (recipientEmail && profileData?.welcomeEmailSent !== true) {
-      console.log(`[Welcome Email] Dispatching welcome email in manualVerifyForDemo for ${recipientEmail} (${targetUser.uid})`);
-      sendWelcomeBidderEmail(
-        targetUser.uid,
-        recipientEmail,
-        profileData?.displayName || recipientEmail.split('@')[0]
-      ).then((sent) => {
-        if (sent && profileData) profileData.welcomeEmailSent = true;
-      }).catch((err) => {
-        console.warn('[Welcome Email] Demo welcome email dispatch notice:', err);
-      });
-    } else if (profileData?.welcomeEmailSent === true) {
-      console.log(`[Welcome Email] Skipped welcome email in manualVerifyForDemo: welcomeEmailSent sentinel is true for ${targetUser.uid}`);
-    }
+  /**
+   * Deprecated and disabled for security (M2.0B Correction B).
+   * Verified email identity must be established through Firebase Authentication.
+   * Client-side writes to Firestore cannot establish verified identity.
+   */
+  const manualVerifyForDemo = async (_emailForDemo?: string, _passForDemo?: string) => {
+    console.warn('[AuthContext] manualVerifyForDemo has been disabled for security. Email verification must be established via Firebase Authentication.');
   };
 
   return (

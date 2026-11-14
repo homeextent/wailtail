@@ -48,25 +48,45 @@ export interface DealerProfile {
   verifierUid?: string;
   verificationMethod?: string;
   verificationExpiresAt?: number;
+  verificationCaseId?: string;
+  primaryRepresentativeEmail?: string;
+  sourceReferenceDescription?: string;
+  sourceReferenceType?: string;
+  checkedAt?: number;
+  contactVisibilityConsent?: { phone: boolean; website: boolean; recordedAt: number; recordedBy: string };
   createdAt: number;
   updatedAt: number;
 }
 
 export interface DealerVerificationAudit {
   id?: string;
-  dealerId: string;
-  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated';
-  status: 'pending' | 'verified' | 'rejected' | 'suspended';
-  verifierUid: string;
-  verificationMethod: string;
-  sourceReferenceDescription?: string;
-  sourceReference?: string;
-  notes?: string;
+  caseId: string;
+  applicationId: string;
+  source: 'consignment_applications' | 'consignments';
+  dealerId: string | null;
+  action: 'verified' | 'rejected' | 'suspended' | 'reviewed' | 'updated' | 'renewed';
+  reason: string;
+  administratorUid: string;
+  administratorEmail: string;
   timestamp: number;
-  createdAt?: number;
+  revision: number;
+  before: { review: Record<string, unknown>; profile: DealerProfile | null };
+  after: { review: Record<string, unknown>; profile: DealerProfile | null };
+}
+
+export interface PublicDealerSummary {
+  name: string;
+  city: string;
+  province: string;
+  verified: boolean;
+  documentationFee?: 0;
+  taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration';
+  phone?: string;
+  website?: string;
 }
 
 export interface Auction {
+  publicDealer?: PublicDealerSummary;
   id: string;
   title: string;
   subtitle: string;
@@ -121,6 +141,9 @@ export interface Auction {
   dealerDocFee?: 0;
   taxHandling?: 'dealer_collects' | 'buyer_pays_at_registration' | 'requires_confirmation';
   taxDisclaimerVersion?: string;
+  dealerListingRevision?: number;
+  sourceApplicationId?: string;
+  sourceApplicationCollection?: 'consignment_applications';
   createdAt: number;
   updatedAt: number;
 }
@@ -455,6 +478,7 @@ export interface ConsignmentEmailPayload {
 }
 
 export interface ConsignmentApplication {
+  reviewSource?: 'consignment_applications' | 'consignments';
   id?: string;
   year: string | number;
   make: string;
@@ -480,6 +504,11 @@ export interface ConsignmentApplication {
   registeredUserRole?: string;
   applicantType?: 'private' | 'dealer';
   submittedDealershipName?: string;
+  submittedDbaName?: string;
+  noBrokeredInventoryDeclaration?: boolean;
+  termsAccepted?: boolean;
+  declarationVersion?: string;
+  declarationAcceptedAt?: number;
   dealershipName?: string;
   submittedDealerLicenseNumber?: string;
   dealerLicenseNumber?: string;
@@ -543,6 +572,7 @@ export interface UserConsignmentItem {
 }
 
 export interface UserActivitySummary {
+  historyLimitReached?: boolean;
   activeBids: UserBidActivity[];
   wonAuctions: UserWonAuction[];
   sellerListings: UserSellerListing[];

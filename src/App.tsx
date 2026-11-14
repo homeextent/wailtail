@@ -7,6 +7,8 @@ import {
   initializeMediaConfigIfNotExists,
   subscribeToAuction, 
   subscribeToAllAuctions,
+  subscribeToPublicAuction,
+  subscribeToPublicAuctions,
   subscribeToBids, 
   subscribeToComments, 
   subscribeToMediaConfig,
@@ -46,6 +48,7 @@ import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
 import { HowItWorksModal, HowItWorksTab } from './components/HowItWorksModal';
 import { SocialPromoKitModal } from './components/SocialPromoKitModal';
+import { SellerDraftWorkspace } from './components/SellerDraftWorkspace';
 import { ListingEditorWorkspace } from './components/ListingEditorWorkspace';
 import { VehicleCatalogGrid } from './components/VehicleCatalogGrid';
 import { AdminPortalPage } from './components/AdminPortalPage';
@@ -69,7 +72,7 @@ import { formatExternalUrl } from './utils/formatters';
 import { trackPageView, trackProvenanceClick } from './utils/analytics';
 
 const AuctionAppContent: React.FC = () => {
-  const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin } = useAuth();
+  const { user, userProfile: initialUserProfile, loading: authLoading, isAdmin: authIsAdmin, isSeller: authIsSeller } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(initialUserProfile);
 
   // Sync initial profile from auth context
@@ -93,11 +96,9 @@ const AuctionAppContent: React.FC = () => {
     };
   }, [user?.uid]);
 
-  const isAdmin = Boolean(
-    authIsAdmin || 
-    userProfile?.role?.toUpperCase() === 'ADMIN' || 
-    (user as any)?.role === 'ADMIN'
-  );
+  // Client-side administrative presentation state derives strictly from verified admin identity
+  const isAdmin = Boolean(authIsAdmin);
+  const isSeller = Boolean(isAdmin || authIsSeller || userProfile?.role === 'seller');
 
   // Synchronous localStorage Branding Hydration to eliminate initial loading flash
   const [globalBranding, setGlobalBranding] = useState(() => {
@@ -141,10 +142,13 @@ const AuctionAppContent: React.FC = () => {
     siteTagline: globalBranding.siteTagline
   }));
 
+  const [brandingLoaded, setBrandingLoaded] = useState(false);
+
   // Real-time Firestore synchronization for global branding (/settings/global)
   useEffect(() => {
     const unsubBranding = subscribeToGlobalBranding((cloudBranding) => {
       if (cloudBranding) {
+        setBrandingLoaded(true);
         const next = {
           siteLogo: cloudBranding.siteLogo !== undefined ? cloudBranding.siteLogo : globalBranding.siteLogo,
           siteName: cloudBranding.siteName || globalBranding.siteName,
@@ -383,9 +387,7 @@ const AuctionAppContent: React.FC = () => {
     if (authLoading) return;
 
     if (isAdminRoute) {
-      const isAuthorized = Boolean(
-        user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-      );
+      const isAuthorized = Boolean(user && isAdmin);
       if (!isAuthorized) {
         const search = window.location.search || (currentPath.includes('?') ? currentPath.slice(currentPath.indexOf('?')) : '');
         const searchParams = new URLSearchParams(search);
@@ -423,12 +425,10 @@ const AuctionAppContent: React.FC = () => {
 
     if (!isProtectedListingRoute || isAdminRoute) return;
 
-    const isAuthorized = Boolean(
-      user && (user.role === 'seller' || user.role === 'admin' || isAdmin)
-    );
+    const isAuthorized = Boolean(user);
 
     if (!isAuthorized) {
-      setRouteToast('Access Denied: Consignor or Administrator privileges required to access the listing workspace.');
+      setRouteToast('Sign in to access your assigned listing workspace.');
       navigateTo('/');
       return;
     }
@@ -448,17 +448,9 @@ const AuctionAppContent: React.FC = () => {
       return;
     }
 
-    // Check if lot exists in catalog once allAuctions is loaded
-    if (allAuctions.length > 0 && rawId !== MAIN_AUCTION_ID) {
-      const exists = allAuctions.some(a => a.id === rawId);
-      if (!exists) {
-        const fallbackUrl = isAdmin ? '/admin?tab=inventory' : '/catalog';
-        sessionStorage.setItem('wailtail_route_toast', 'Listing lot not found');
-        setRouteToast('Listing lot not found');
-        navigateTo(fallbackUrl);
-        return;
-      }
-    }
+    // The direct listing subscription resolves administrator existence; a public
+    // catalog retained during authentication cannot establish that a draft is missing.
+
   }, [currentPath, user, isAdmin, authLoading, allAuctions]);
 
   useEffect(() => {
@@ -471,14 +463,15 @@ const AuctionAppContent: React.FC = () => {
 
   // Subscribe to all auctions catalog
   useEffect(() => {
-    const unsub = subscribeToAllAuctions((list) => {
-      setAllAuctions(list || []);
-    });
-    return () => unsub();
-  }, []);
+    const subscribe = isAdmin ? subscribeToAllAuctions : subscribeToPublicAuctions;
+    return subscribe(setAllAuctions);
+  }, [isAdmin]);
 
-  // Initialize and subscribe to Firestore for active vehicle auction
+  // Seller editors load their assigned draft through their own trusted endpoints.
   useEffect(() => {
+    if (isEditorRoute && (authLoading || !isAdmin)) return;
+
+    let disposed = false;
     let unsubAuction = () => {};
     let unsubBids = () => {};
     let unsubComments = () => {};
@@ -495,27 +488,30 @@ const AuctionAppContent: React.FC = () => {
 
     const setupFirestore = async () => {
       try {
-        await initializeAuctionIfNotExists();
-        await initializeMediaConfigIfNotExists(targetAuctionId);
-        
-        unsubAuction = subscribeToAuction(targetAuctionId, (data) => {
+        if (isAdmin && isEditorRoute) {
+          await initializeAuctionIfNotExists();
+          await initializeMediaConfigIfNotExists(targetAuctionId);
+        }
+        if (disposed) return;
+
+        const applyMedia = (cloudMedia: MediaConfiguration | null) => {
+          if (cloudMedia) {
+            setCurrentMedia(cloudMedia);
+
+            try {
+              localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
+            } catch (e) {
+              // ignore
+            }
+          } else {
+            setCurrentMedia(targetAuctionId === MAIN_AUCTION_ID ? DEFAULT_MEDIA_CONFIG : BLANK_MEDIA_CONFIG);
+          }
+        };
+        const applyAuction = (data: Auction | null) => {
+          if (disposed) return;
           if (data) {
             setAuction(data);
-            if (data.siteLogo !== undefined || data.siteName || data.siteTagline) {
-              setGlobalBranding((prev) => {
-                const next = {
-                  siteLogo: data.siteLogo !== undefined ? data.siteLogo : prev.siteLogo,
-                  siteName: data.siteName || prev.siteName,
-                  siteTagline: data.siteTagline || prev.siteTagline
-                };
-                try {
-                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
-                } catch {
-                  // ignore
-                }
-                return next;
-              });
-            }
+
           } else {
             setAuction(BLANK_AUCTION);
             if (isEditorRoute) {
@@ -526,7 +522,19 @@ const AuctionAppContent: React.FC = () => {
             }
           }
           setLoading(false);
-        });
+        };
+
+        if (isAdmin && isEditorRoute) {
+          unsubAuction = subscribeToAuction(targetAuctionId, applyAuction);
+        } else {
+          unsubAuction = subscribeToPublicAuction(targetAuctionId, (data, detail) => {
+            applyAuction(data);
+            applyMedia(detail?.media ?? null);
+            setBids(detail?.bids ?? []);
+            setComments(detail?.comments ?? []);
+          });
+          return;
+        }
 
         unsubBids = subscribeToBids(targetAuctionId, (bidList) => {
           setBids(bidList);
@@ -536,33 +544,7 @@ const AuctionAppContent: React.FC = () => {
           setComments(commList);
         });
 
-        unsubMedia = subscribeToMediaConfig((cloudMedia) => {
-          if (cloudMedia) {
-            setCurrentMedia(cloudMedia);
-            if (cloudMedia.siteLogo !== undefined || cloudMedia.siteName || cloudMedia.siteTagline) {
-              setGlobalBranding((prev) => {
-                const next = {
-                  siteLogo: cloudMedia.siteLogo !== undefined ? cloudMedia.siteLogo : prev.siteLogo,
-                  siteName: cloudMedia.siteName || prev.siteName,
-                  siteTagline: cloudMedia.siteTagline || prev.siteTagline
-                };
-                try {
-                  localStorage.setItem(GLOBAL_BRANDING_STORAGE_KEY, JSON.stringify(next));
-                } catch {
-                  // ignore
-                }
-                return next;
-              });
-            }
-            try {
-              localStorage.setItem(`wailtail_custom_media_${targetAuctionId}`, JSON.stringify(cloudMedia));
-            } catch (e) {
-              // ignore
-            }
-          } else {
-            setCurrentMedia(targetAuctionId === MAIN_AUCTION_ID ? DEFAULT_MEDIA_CONFIG : BLANK_MEDIA_CONFIG);
-          }
-        }, targetAuctionId);
+        unsubMedia = subscribeToMediaConfig(applyMedia, targetAuctionId);
       } catch (err) {
         console.error('Error initializing auction:', err);
         setLoading(false);
@@ -572,19 +554,20 @@ const AuctionAppContent: React.FC = () => {
     setupFirestore();
 
     return () => {
+      disposed = true;
       unsubAuction();
       unsubBids();
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute, allAuctions.length]);
+  }, [activeAuctionId, isEditorRoute, isAdmin, authLoading, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
-    setIsWatching(next);
-    localStorage.setItem('wailtail_watching', String(next));
     try {
       const newCount = await toggleWatchAuction(auction.id, next);
+      setIsWatching(next);
+      localStorage.setItem('wailtail_watching', String(next));
       setAuction((prev) => ({ ...prev, watchCount: newCount }));
     } catch (e) {
       console.warn('Could not update watchlist count:', e);
@@ -663,9 +646,7 @@ const AuctionAppContent: React.FC = () => {
 
   // Dedicated Full-Page Admin Operations Portal Route (/admin)
   if (isAdminRoute) {
-    const isAuthorized = Boolean(
-      user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-    );
+    const isAuthorized = Boolean(user && isAdmin);
     if (isAuthorized) {
       return (
         <AdminPortalPage
@@ -716,6 +697,17 @@ const AuctionAppContent: React.FC = () => {
 
   // Dedicated Full-Page Authoring Route (/dashboard/listings/[id]/edit)
   if (isEditorRoute) {
+    if (authLoading) return <p role="status">Loading listing workspace…</p>;
+    if (!isAdmin) {
+      const auctionId = editorMatch?.[1];
+      if (!user || !auctionId) return <p>Listing workspace unavailable.</p>;
+      return <SellerDraftWorkspace key={`${user.uid}:${auctionId}`} auctionId={auctionId} user={user}
+        onBack={() => {
+          navigateTo('/');
+          handleOpenAccountHub('seller');
+        }} />;
+    }
+    if (auction.id !== editorMatch?.[1]) return <p role="status">Loading listing workspace…</p>;
     return (
       <ListingEditorWorkspace
         auction={auction}
@@ -726,19 +718,13 @@ const AuctionAppContent: React.FC = () => {
           navigateTo(`/dashboard/listings/${newAuctionId}/edit`);
         }}
         onUpdateAuction={async (updates) => {
+          await updateAuctionConfig(auction.id, updates);
           setAuction((prev) => ({ ...prev, ...updates }));
-          try {
-            await updateAuctionConfig(auction.id, updates);
-          } catch (err) {
-            console.warn('Saved auction updates locally:', err);
-          }
         }}
         onUpdateMediaConfig={handleUpdateMediaConfig}
         onBackToPublic={() => navigateTo('/')}
         onBackToDashboard={() => {
-          const userIsAdmin = Boolean(
-            user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-          );
+          const userIsAdmin = Boolean(user && isAdmin);
           if (userIsAdmin) {
             navigateTo('/admin?tab=inventory');
           } else {
@@ -753,9 +739,9 @@ const AuctionAppContent: React.FC = () => {
   }
 
   // Dedicated Full-Page Public Vehicle Catalog Route (/catalog)
-  const effectiveSiteLogo = currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
-  const effectiveSiteName = currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
-  const effectiveSiteTagline = currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
+  const effectiveSiteLogo = brandingLoaded ? globalBranding.siteLogo : currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
+  const effectiveSiteName = brandingLoaded ? globalBranding.siteName : currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
+  const effectiveSiteTagline = brandingLoaded ? globalBranding.siteTagline : currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
 
   if (isCatalogRoute) {
     return (
@@ -1181,9 +1167,7 @@ const AuctionAppContent: React.FC = () => {
         onClose={() => {
           setIsAuthModalOpen(false);
           if (isAdminRoute) {
-            const isAuthorized = Boolean(
-              user && (isAdmin || userProfile?.role?.toUpperCase() === 'ADMIN' || (user as any)?.role === 'ADMIN')
-            );
+            const isAuthorized = Boolean(user && isAdmin);
             if (!isAuthorized) {
               navigateTo('/');
             }
