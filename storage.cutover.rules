@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Publish only in the approved coordinated cutover AFTER replacement media
+    // and document references are verified. No legacy exceptions remain.
+    match /auctionPublic/{auctionId}/{assetId} {
+      allow get: if true;
+    }
+  }
+}

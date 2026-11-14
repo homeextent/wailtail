@@ -51,7 +51,7 @@ jobs:
       - name: Test read-only cutover preparation with synthetic data
         run: |
           python -m pip install -r scripts/storage-cutover-requirements.txt
-          python -m unittest discover -s tests -p test_storage_cutover.py -v
+          python -m unittest discover -s tests -p 'test_storage_cutover*.py' -v
 
       - name: Run production build and TypeScript checks
         run: npm run build
@@ -67,6 +67,9 @@ jobs:
 
       - name: Run isolated auction workflow tests
         run: npm run test:seller-emulator
+
+      - name: Test final cutover Storage rules in isolation
+        run: npm run test:cutover-rules
 
       - name: Run isolated auction browser tests
         run: npm run test:auction-browser

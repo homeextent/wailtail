@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Consolidated Storage cutover execution package
+
+- Matched the owner-observed index API contract (`pageSize=0` only), preserved document pagination and moved index checks ahead of per-object capture to fail early on backend incompatibilities.
+
+- Fixed owner-side Rules API quota-project rejection by explicitly attaching the existing project header to read-only release/ruleset requests and checking rule access before per-object metadata capture.
+
+- Added read-only private package capture of original metadata/tokens, deployed rules, indexes and bounded workload; exact-plan/native-precondition execution phases with mirrored durable journals, copy/reference verification, guarded recovery and token-only revocation. No live writes performed.
+- Added opt-in maintenance/final Storage configurations and isolated rule/atomic-reference recovery rehearsals; ordinary Firebase rules/configuration remain unchanged. Consolidated release/configuration/approval/stop criteria in one runbook; production remains gated.
+
 ### Production preflight — Read-only file validation and guarded preparation
 
 - Recorded successful owner follow-up at `c71ff14`: 169 backup files, six reference/recovery proposals consistent, no restore or cloud writes; both representative approved PDFs returned anonymous HTTP 206 with and without original tokens. Preparation acceptance is distinct from remaining live cutover/security gates.
