@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Public service-records link correction
+
+- Include the existing published `serviceRecordsUrl` in the public auction projection so the Cloud Dossier links render for signed-out visitors. Listing data and Storage mappings are unchanged; private fields and unpublished lots remain excluded.
+
 ### Consolidated Storage cutover execution package
 
 - Matched the owner-observed index API contract (`pageSize=0` only), preserved document pagination and moved index checks ahead of per-object capture to fail early on backend incompatibilities.

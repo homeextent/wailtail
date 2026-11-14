@@ -7,7 +7,8 @@ const TEXT_FIELDS = [
   'title', 'subtitle', 'headline', 'siteLogo', 'siteName', 'siteTagline', 'make', 'model',
   'generation', 'vin', 'mileage', 'location', 'locationCity', 'locationProvince',
   'locationCountry', 'engine', 'drivetrain', 'exteriorColor', 'interior', 'titleStatus',
-  'currency', 'distanceUnit', 'leadHeroImage', 'highlightsBadge', 'hagertyValuationUrl'
+  'currency', 'distanceUnit', 'leadHeroImage', 'highlightsBadge', 'hagertyValuationUrl',
+  'serviceRecordsUrl'
 ] as const;
 
 const NUMBER_FIELDS = [
