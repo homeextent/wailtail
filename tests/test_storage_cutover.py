@@ -227,5 +227,58 @@ class CutoverTests(unittest.TestCase):
             cloud.listed(C.GCS + "/o", "items")
 
 
+class AuthenticationTests(unittest.TestCase):
+    def cloud(self, codes, refresh):
+        cloud = C.ReadOnlyCloud("old-secret", refresh_token=refresh)
+        requests = []
+        def opened(request, timeout):
+            requests.append(request)
+            code = codes.pop(0)
+            if code != 200:
+                raise urllib.error.HTTPError(request.full_url, code, "secret-body", {}, None)
+            return io.BytesIO(b'{"ok": true}')
+        cloud.opener.open = opened
+        return cloud, requests
+
+    def test_refresh_retries_only_failed_get_once(self):
+        refresh = unittest.mock.Mock(return_value="new-secret")
+        cloud, requests = self.cloud([401, 200], refresh)
+        self.assertEqual(cloud.get(C.GCS), {"ok": True})
+        refresh.assert_called_once_with()
+        self.assertEqual([r.get_method() for r in requests], ["GET", "GET"])
+        self.assertEqual([r.get_header("Authorization") for r in requests],
+                         ["Bearer old-secret", "Bearer new-secret"])
+        self.assertEqual(requests[0].full_url, requests[1].full_url)
+
+    def test_second_401_stops_without_exposing_credentials(self):
+        refresh = unittest.mock.Mock(return_value="new-secret")
+        cloud, requests = self.cloud([401, 401], refresh)
+        with self.assertRaisesRegex(C.Blocked, "^Read-only HTTP request failed: 401$"):
+            cloud.get(C.GCS, absent_ok=True)
+        self.assertEqual(len(requests), 2)
+        refresh.assert_called_once_with()
+
+    def test_other_errors_do_not_refresh(self):
+        for code in (403, 404, 500):
+            refresh = unittest.mock.Mock()
+            cloud, requests = self.cloud([code], refresh)
+            with self.assertRaises(C.Blocked):
+                cloud.get(C.GCS)
+            refresh.assert_not_called()
+            self.assertEqual(len(requests), 1)
+        cloud, _ = self.cloud([404], refresh)
+        self.assertIsNone(cloud.get(C.GCS, absent_ok=True))
+        refresh.assert_not_called()
+
+    def test_authentication_failure_is_sanitized(self):
+        with patch.object(C.subprocess, "check_output", side_effect=RuntimeError("secret")):
+            with self.assertRaisesRegex(C.Blocked, "^Google Cloud authentication failed;") as result:
+                C.obtain_token()
+            self.assertNotIn("secret", str(result.exception))
+        with patch.object(C.subprocess, "check_output", return_value="  "):
+            with self.assertRaisesRegex(C.Blocked, "Authentication returned no token"):
+                C.obtain_token()
+
+
 if __name__ == "__main__":
     unittest.main()

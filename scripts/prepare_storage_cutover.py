@@ -274,25 +274,33 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class ReadOnlyCloud:
-    def __init__(self, token):
+    def __init__(self, token, refresh_token=None):
         self.token = token
+        self.refresh_token = refresh_token
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def get(self, url, binary=False, absent_ok=False):
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or parsed.hostname not in {"storage.googleapis.com", "firestore.googleapis.com"}:
             raise Blocked("Unexpected HTTP origin")
-        req = urllib.request.Request(url, headers={"Authorization": "Bearer " + self.token}, method="GET")
-        try:
-            with self.opener.open(req, timeout=60) as response:
-                data = response.read(40 * 1024 * 1024 + 1)
-                if len(data) > 40 * 1024 * 1024:
-                    raise Blocked("Response exceeds bounded size")
-                return data if binary else json.loads(data)
-        except urllib.error.HTTPError as error:
-            if absent_ok and error.code == 404:
-                return None
-            raise Blocked(f"Read-only HTTP request failed: {error.code}") from None
+        for attempt in range(2):
+            req = urllib.request.Request(url, headers={"Authorization": "Bearer " + self.token}, method="GET")
+            try:
+                with self.opener.open(req, timeout=60) as response:
+                    data = response.read(40 * 1024 * 1024 + 1)
+                    if len(data) > 40 * 1024 * 1024:
+                        raise Blocked("Response exceeds bounded size")
+                    return data if binary else json.loads(data)
+            except urllib.error.HTTPError as error:
+                if absent_ok and error.code == 404:
+                    return None
+                if error.code == 401 and attempt == 0 and self.refresh_token:
+                    print("Refreshing Google Cloud authentication after HTTP 401; retrying read once", flush=True)
+                    self.token = self.refresh_token()
+                    if not self.token:
+                        raise Blocked("Authentication returned no token")
+                    continue
+                raise Blocked(f"Read-only HTTP request failed: {error.code}") from None
 
     def listed(self, endpoint, item_key, extra=None):
         result, token, seen = [], "", set()
@@ -403,6 +411,18 @@ def prepare(rows, cloud, output):
     return report
 
 
+def obtain_token():
+    try:
+        token = subprocess.check_output(
+            ["gcloud", "auth", "print-access-token"], text=True,
+            timeout=180, stderr=subprocess.DEVNULL).strip()
+    except Exception:
+        raise Blocked("Google Cloud authentication failed; check gcloud authentication locally") from None
+    if not token:
+        raise Blocked("Authentication returned no token")
+    return token
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=REPO / "docs/storage-cutover-inventory-2026-11-13.csv")
@@ -416,10 +436,7 @@ def main():
         import pymupdf  # noqa: F401
         output = make_output(args.output)
         print("Obtaining Google Cloud authentication; token will not be displayed", flush=True)
-        token = subprocess.check_output(["gcloud", "auth", "print-access-token"], text=True, timeout=180).strip()
-        if not token:
-            raise Blocked("Authentication returned no token")
-        report = prepare(rows, ReadOnlyCloud(token), output)
+        report = prepare(rows, ReadOnlyCloud(obtain_token(), refresh_token=obtain_token), output)
         print(json.dumps(report, indent=2))
         print(f"Only share {output / 'shareable-summary.json'}. Other outputs contain private data.")
         return 0

@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Production preflight — Read-only file validation and guarded preparation
 
+- Added bounded authentication recovery for owner validation: refresh once after HTTP 401 and retry only the failed GET; repeated rejection stops safely. Added transport regression coverage.
+
 - Added a manifest-pinned, GET-only owner-side preparer for live metadata/file/reference validation and private native-precondition copy/reference proposals. It has no apply mode, rejects drift/collisions, validates JPEG/PDF/SVG bytes, flags EXIF/GPS and retains all originals.
 - Added private output handling, recovery templates, synthetic regression tests and CI coverage. Uploaded Porsche/RAM PDFs were verified locally; all-public-file live validation remains pending owner execution. No production write or rollout is performed.
 
