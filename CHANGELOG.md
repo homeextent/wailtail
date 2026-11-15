@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Public polling read budget
+
+- Slow non-live public detail refreshes to one minute and back off failed public requests to five minutes; preserve five-second live/imminent-start updates and hidden-tab pause. Documented confirmed read amplification and the unproven origin of the overnight quota spike in `docs/public-read-budget.md`.
+
 ### Public service-records link correction
 
 - Include the existing published `serviceRecordsUrl` in the public auction projection so the Cloud Dossier links render for signed-out visitors. Listing data and Storage mappings are unchanged; private fields and unpublished lots remain excluded.
