@@ -1,6 +1,6 @@
 // A single request at a time, with no network polling in hidden tabs.
 export function startVisiblePolling(
-  task: (signal: AbortSignal) => Promise<void>, intervalMs: number,
+  task: (signal: AbortSignal) => Promise<void | number>, intervalMs: number,
   visibility: Pick<Document, 'visibilityState' | 'addEventListener' | 'removeEventListener'> | undefined =
     typeof document === 'undefined' ? undefined : document
 ) {
@@ -16,10 +16,14 @@ export function startVisiblePolling(
     running = true;
     resume = false;
     controller = new AbortController();
-    try { await task(controller.signal); }
+    let nextDelay = intervalMs;
+    try {
+      const delay = await task(controller.signal);
+      if (typeof delay === 'number' && Number.isFinite(delay) && delay >= intervalMs) nextDelay = delay;
+    }
     finally {
       running = false;
-      if (!stopped && visible()) timer = setTimeout(() => void poll(), resume ? 0 : intervalMs);
+      if (!stopped && visible()) timer = setTimeout(() => void poll(), resume ? 0 : nextDelay);
     }
   };
   const changed = () => {

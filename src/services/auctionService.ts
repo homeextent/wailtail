@@ -1,4 +1,5 @@
 import { startVisiblePolling } from './visiblePolling';
+import { publicPollingDelay } from './publicPollingPolicy';
 import { isDesignatedAdminEmail } from '../config/adminConfig';
 import {
   doc,
@@ -473,6 +474,8 @@ function pollPublicAuctions(
   callback: (result: PublicAuctionResponse | null) => void
 ) {
   let received = false;
+  let failures = 0;
+  const detail = url.includes('?auctionId=');
   return startVisiblePolling(async signal => {
     try {
       const user = url.includes('?auctionId=') ? auth.currentUser : null;
@@ -485,16 +488,23 @@ function pollPublicAuctions(
       if (signal.aborted) return;
       if (response.status === 404) {
         callback(null);
+        failures = 0;
+        received = true;
+        return publicPollingDelay(detail, 0);
       } else {
         if (!response.ok) throw new Error(`Public auction request failed: ${response.status}`);
         const result = await response.json();
         if (!signal.aborted) callback(result);
+        failures = 0;
+        received = true;
+        return publicPollingDelay(detail, 0, result.auction?.status, result.auction?.startTime);
       }
-      received = true;
     } catch (error) {
       if (!signal.aborted) {
         console.error('Public auction request failed:', error);
         if (!received) callback(null);
+        failures++;
+        return publicPollingDelay(detail, failures);
       }
     }
   }, url.includes('?auctionId=') ? 5000 : 30_000);
