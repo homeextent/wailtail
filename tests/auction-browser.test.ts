@@ -565,6 +565,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
     })()` });
     await eventually(text, value => value.includes('Draft images (2)') && value.includes('Gallery · engine'), 'gallery upload preserves category');
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Pick from Gallery'); if (!button) return false; button.click(); return true; })()`);
+    await click(`(() => { const image = document.querySelector('img[alt="Draft engine photo"]'); if (!image) return false; image.closest('button').click(); return true; })()`);
+    await eventually(text, value => value.includes('Private draft hero placement saved.') && value.includes('Hero · engine'), 'gallery picker assigns private hero by asset ID');
+    await click(`(() => { const row = Array.from(document.querySelectorAll('#private-draft-images li')).find(row => row.textContent.includes('Hero · engine')); const select = row?.querySelector('select'); if (!select) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'gallery'); select.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
+    await eventually(text, value => value.includes('Image placement saved.') && value.includes('Gallery · engine'), 'draft reassignment restores gallery category');
+
     await command('Runtime.evaluate', { expression: 'globalThis.__placementReload = true' });
     await command('Page.reload');
     await eventually(async () => {

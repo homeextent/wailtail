@@ -343,6 +343,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
   const [activeStep, setActiveStep] = useState<number>(1);
   const [saving, setSaving] = useState(false);
+  const [draftImageRefresh, setDraftImageRefresh] = useState(0);
   const [draftImageViews, setDraftImageViews] = useState<DraftImageView[]>([]);
   useEffect(() => setDraftImageViews([]), [auction.id, auction.status]);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -1832,8 +1833,26 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   };
 
   // Select Photo from Existing Gallery Modal
-  const handleSelectFromGallery = (selectedUrl: string) => {
+  const handleSelectFromGallery = async (selectedUrl: string, selectedId?: string) => {
     if (!pickerTarget) return;
+    const privateImage = draftImageViews.find(image => image.id === selectedId);
+    if (privateImage) {
+      if (!user || pickerTarget.type !== 'hero') return;
+      try {
+        const headers = { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' };
+        const read = await fetch('/api/seller-draft-read', { method: 'POST', headers, body: JSON.stringify({ auctionId: auction.id }) });
+        if (!read.ok) throw new Error('Could not reload draft image placement.');
+        const draft = await read.json();
+        const response = await fetch('/api/seller-draft-media', { method: 'POST', headers,
+          body: JSON.stringify({ auctionId: auction.id, assetId: privateImage.id, action: 'assign',
+            expectedRevision: draft.revision, placement: 'hero', category: privateImage.category }) });
+        if (!response.ok) throw new Error('Image placement changed. Reload and try again.');
+        setDraftImageRefresh(value => value + 1);
+        setPickerTarget(null);
+        setMessage({ type: 'success', text: 'Private draft hero placement saved.' });
+      } catch (error) { setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Image assignment failed.' }); }
+      return;
+    }
 
     const matchedGalleryItem = galleryImages.find(img => img.url === selectedUrl);
     const caption = matchedGalleryItem?.caption || matchedGalleryItem?.title || '';
@@ -3053,7 +3072,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
                   <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
-                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}`} auctionId={auction.id} user={user} mediaOnly onImagesChanged={setDraftImageViews} onBack={() => {}} />
+                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly onImagesChanged={setDraftImageViews} onBack={() => {}} />
                   </section>
                 )}
 
@@ -3063,7 +3082,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Hero Carousel Slides ({heroImages.length}) · {draftImageViews.filter(image => image.placement === 'hero').length} private draft</span>
+                        <span>Hero Carousel Slides ({heroImages.length + draftImageViews.filter(image => image.placement === 'hero').length}) · {draftImageViews.filter(image => image.placement === 'hero').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         The first image serves as the main lead hero photo. Drag cards or use arrows to reorder.
@@ -3198,7 +3217,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length}) · {draftImageViews.filter(image => image.placement === 'gallery').length} private draft</span>
+                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length}) · {draftImageViews.filter(image => image.placement === 'gallery').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         Upload multi-angle photography or PDF reports categorized by section.
@@ -4607,7 +4626,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               {(() => {
                 const filteredItems = [
                   ...heroImages.map((hUrl, idx) => ({ id: `hero-${idx}`, url: hUrl, title: `Hero Photo #${idx + 1}`, caption: '', category: 'exterior' as const, isPdf: false })),
-                  ...galleryImages
+                  ...galleryImages,
+                  ...(pickerTarget?.type === 'hero' ? draftImageViews.map(image => ({ id: image.id, url: image.url, title: 'Draft ' + image.category + ' photo', caption: '', category: image.category as GalleryImage['category'], isPdf: false })) : [])
                 ].filter((item) => {
                   if (!item.url || !item.url.trim()) return false;
                   // Exclude non-image PDF inspection documents from selectable options
@@ -4649,7 +4669,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         <button
                           key={item.id || idx}
                           type="button"
-                          onClick={() => handleSelectFromGallery(item.url)}
+                          onClick={() => void handleSelectFromGallery(item.url, item.id)}
                           className="relative group w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500 bg-slate-950 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all duration-200 cursor-pointer"
                         >
                           {!isBroken ? (
