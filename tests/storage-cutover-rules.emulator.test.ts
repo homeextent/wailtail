@@ -5,6 +5,12 @@ import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 
+test('ordinary Storage deployment cannot restore pre-cutover legacy exceptions', () => {
+  const config = JSON.parse(readFileSync('firebase.json', 'utf8'));
+  assert.equal(config.storage.rules, 'storage.rules');
+  assert.equal(readFileSync(config.storage.rules, 'utf8'), readFileSync('storage.cutover.rules', 'utf8'));
+});
+
 test('final cutover rules deny legacy exceptions and all direct client writes', async () => {
   const projectId = 'demo-wailtail-stage3';
   const host = process.env.FIREBASE_STORAGE_EMULATOR_HOST;

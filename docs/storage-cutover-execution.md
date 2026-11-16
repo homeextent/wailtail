@@ -1,6 +1,6 @@
 # Consolidated Storage cutover execution package
 
-Status: preparation/implementation only. No live-operation approval, writes, configuration changes, production promotion, scheduler activation or real email have occurred in this task. PR #16 preparation acceptance remains complete; this package is its focused execution follow-up, not another inventory project. The three stages below replace separate documentation/approval rounds. One explicit approval may cover the exact plan plus named production actions; native phase checks still stop unsafe later operations.
+Status: the owner-authorized cutover executed on November 14–16, 2026. See [bounded production acceptance evidence](storage-cutover-acceptance-2026-11-16.md) for exact results, preserved originals, live policies, mailbox delivery, worker states and limitations. The steps below are the historical approved execution procedure, not instructions to rerun completed migration or revocation. Ordinary Storage rules are now aligned with the final policy in source; no new rules publication is performed by alignment. Formal Phase 1/pilot completion and notification activation remain separate.
 
 ## 1. One preparation package
 
@@ -70,7 +70,7 @@ Flags are operator acknowledgments, not proof of human approval, maintenance, de
 
 Use the local Firebase binary with explicit project/config only after approval. `firebase.cutover-freeze.json` selects the temporary maintenance rules, while `firebase.cutover.json` selects final rules; the normal `firebase.json` and `storage.rules` remain unchanged in this PR, so routine tests/deploys do not prematurely remove the accepted legacy exceptions. Index publication should be additive: refuse a prompt to delete unrelated indexes. Publishing rules/indexes is not atomic with Vercel promotion; the maintenance window and result checks bridge those steps.
 
-The final rule state must become the future normal deployment configuration in the approved release follow-up; until then **do not run ordinary `firebase deploy --only storage`**, which selects the older `storage.rules`. This package's exact-config hashes prevent the executor silently switching policy, but cannot prevent an unrelated operator from deploying an older file.
+The final rule state has been copied byte-for-byte into the ordinary `storage.rules` in the closeout source change. Until that change is integrated and the operator checkout updated, **do not run ordinary `firebase deploy --only storage`** from an older checkout, which would select the pre-cutover exceptions. This package's exact-config hashes prevent the executor silently switching policy, but cannot prevent an unrelated operator from deploying an older file.
 
 ### Stop and recovery rules
 

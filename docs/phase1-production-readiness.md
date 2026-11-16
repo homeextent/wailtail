@@ -2,7 +2,13 @@
 
 Review date: November 13, 2026. Source baseline: staging `49efa367e482486a26c597d426b1f927a880accc` (PR #10). Production branch baseline: main `fef05a54dabea0792f9aac468277426c6591df47`. GitHub comparison reports staging ahead by 174 commits and behind by zero. This establishes ancestry, not approval of that whole release or proof of the deployed production revision.
 
-## Current disposition
+## November 16 production checkpoint
+
+The authorized application/rules/index/Storage cutover and bounded operational observation completed; see [production cutover evidence](storage-cutover-acceptance-2026-11-16.md). Clock and review jobs are enabled, one authorized review email reached the owner inbox, and notification dispatch remains paused. All originals are preserved; legacy tokens are denied. Quota recovered without upgrading the AI-shared-quota database. Ordinary Storage policy alignment is prepared with this record, not independently deployed. Full production dealer workflow acceptance and the Founding Dealer Pilot remain separate; formal Phase 1 is not declared complete.
+
+The following original review and appended planning entries are dated pre-cutover history, superseded for live-operation status by the November 16 evidence.
+
+## Original pre-cutover disposition
 
 Core dealer implementation through M2.5 is accepted on staging. Jeremy confirmed local acceptance and clean synchronization to `49efa36`; exact-head and post-merge CI and Vercel checks passed. M1.0/M1.1 and M2.0A have recorded production acceptance. M2.0B and M2.1–M2.5 remain staging work pending a separately authorized production release. M2.6 private intake photo uploads remain optional and separately gated; they do not block the core dealer release.
 
