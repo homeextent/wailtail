@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Browser reload verification
+
+- Require a new document before accepting saved seller narrative after reload in the isolated browser test. The prior old-DOM match could race the next navigation and trigger a Chrome command timeout; product code and assertion coverage remain unchanged.
+
 ### Production cutover closeout — November 16, 2026
 
 - Align ordinary `storage.rules` with the source-verified deployed final policy; regression prevents restoring legacy PDF exceptions through routine deployment. No live rules mutation in this change.
