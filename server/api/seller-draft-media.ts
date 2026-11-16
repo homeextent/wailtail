@@ -1,10 +1,12 @@
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 import { checkDraftNarrativeWrite, draftMediaId, withSellerDraftRequest } from './seller-draft-narrative.js';
 
 export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAdminServices) {
-  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid, email) => {
+    const admin = isDesignatedAdminEmail(email);
     const input = req.body;
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         typeof input.auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(input.auctionId) ||
@@ -25,13 +27,13 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
 
     const decision = await firestore.runTransaction(async transaction => {
       const record = (await transaction.get(auction)).data();
-      if (!record || record.sellerId !== uid ||
+      if (!record || (!admin && record.sellerId !== uid) ||
           (record.status !== 'draft' && record.status !== 'pending_review')) return 404;
 
       if (action === 'remove') {
-        const access = checkDraftNarrativeWrite(record, uid, expectedRevision);
+        const access = checkDraftNarrativeWrite(record, admin ? record.sellerId : uid, expectedRevision);
         if (access !== 200) return access;
-        if (!await dealerListingEligible(transaction, firestore, record, uid)) return 403;
+        if (!admin && !await dealerListingEligible(transaction, firestore, record, uid)) return 403;
       }
       const metadata = (await transaction.get(asset)).data();
       if (!metadata || metadata.removedAt || metadata.objectPath !== objectPath) return 404;

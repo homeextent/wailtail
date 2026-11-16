@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import type { User } from 'firebase/auth';
 
 const videoFields = [
@@ -86,13 +86,15 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false }: {
   auctionId: string;
+  mediaOnly?: boolean;
   user: User;
   onBack: () => void;
   // React consumes this JSX attribute when remounting the workspace.
   key?: string;
 }) {
+  const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');
   const [paragraphs, setParagraphs] = useState('');
@@ -177,7 +179,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     if (!draft || busy || (action !== 'preview' && !editable)) return;
     setBusy(true);
     setError('');
-    setMessage('');
+    setMessage(action === 'upload' ? 'Uploading private draft image…' : '');
     try {
       if (action === 'preview' && typeof target === 'string') {
         const response = await request(user, 'media', { action, auctionId, assetId: target });
@@ -212,16 +214,16 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 p-6">
-      <button type="button" onClick={onBack}>Back to dashboard</button>
-      {error && <p role="alert">{error}</p>}
-      {message && <p role="status">{message}</p>}
+    <div className={mediaOnly ? 'space-y-4 text-zinc-100' : 'mx-auto max-w-3xl space-y-5 p-6'}>
+      {!mediaOnly && <button type="button" onClick={onBack}>Back to dashboard</button>}
+      {error && <p role="alert" className="rounded-lg border border-red-500 bg-red-950 p-3 text-sm text-red-100">{error}</p>}
+      {message && <p role="status" className="rounded-lg border border-emerald-600 bg-emerald-950 p-3 text-sm text-emerald-100">{message}</p>}
       {!draft && !error && <p>Loading listing…</p>}
       {draft && <>
-        <h1 className="text-2xl font-bold">{draft.title}</h1>
-        {draft.dealer && <section aria-label="Assigned dealer listing"><h2>Assigned dealer listing</h2><p>{draft.dealer.businessName} · {draft.dealer.city}, {draft.dealer.province} · Documentation fee: CAD $0</p><p>Dealer attribution, vehicle identity and financial fields are managed by administrators.</p></section>}
+        {!mediaOnly && <h1 className="text-2xl font-bold">{draft.title}</h1>}
+        {!mediaOnly && draft.dealer && <section aria-label="Assigned dealer listing"><h2>Assigned dealer listing</h2><p>{draft.dealer.businessName} · {draft.dealer.city}, {draft.dealer.province} · Documentation fee: CAD $0</p><p>Dealer attribution, vehicle identity and financial fields are managed by administrators.</p></section>}
         {!editable && <p>{draft.canEdit === false ? 'This dealer listing is read-only because current verification or account links are unavailable. Contact an administrator.' : 'This listing is read-only while it is under review.'}</p>}
-        <fieldset disabled={!editable || busy} className="space-y-4">
+        {!mediaOnly && <fieldset disabled={!editable || busy} className="space-y-4">
           <label className="block">Overview heading
             <input className="block w-full rounded border p-2" maxLength={240}
               value={heading} onChange={event => setHeading(event.target.value)} />
@@ -282,37 +284,43 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
           </div>
           {editable && dirty && <p>Save your changes before submitting for review.</p>}
-        </fieldset>
+        </fieldset>}
         <section aria-labelledby="draft-media-heading" className="space-y-3">
-          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images</h2>
-          {editable && <label className="block">Upload JPEG (up to 2 MiB)
-            <input type="file" accept="image/jpeg" disabled={busy} onChange={event => {
+          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images ({galleryOrder.length})</h2>
+          <p className="text-sm text-zinc-400">Photos save immediately to this private draft. Use Preview to view them. Public hero and gallery placement is separate.</p>
+          {editable && <div className="flex flex-wrap items-center gap-3">
+            <button type="button" disabled={busy} onClick={() => imageInput.current?.click()}
+              className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:opacity-50">
+              {busy ? 'Working…' : 'Upload draft photos'}
+            </button>
+            <span className="text-sm text-zinc-400">JPEG · up to 2 MiB per photo</span>
+            <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" accept="image/jpeg" disabled={busy} onChange={event => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = '';
               if (file) void updateMedia('upload', file);
             }} />
-          </label>}
+          </div>}
           <ul className="space-y-2">
-            {galleryOrder.map((assetId, index) => <li key={assetId} className="flex gap-4">
+            {galleryOrder.map((assetId, index) => <li key={assetId} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-100">
               <span>{index + 1}. {imageLabel(assetId)}</span>
-              <button type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
+              <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
               {editable && <>
-                <button type="button" disabled={busy || index === 0} onClick={() => {
+                {!mediaOnly && <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy || index === 0} onClick={() => {
                   const next = [...galleryOrder];
                   [next[index - 1], next[index]] = [next[index], next[index - 1]];
                   setGalleryOrder(next);
                   setMessage(`${imageLabel(assetId)} moved to position ${index}. Save narrative to keep this order.`);
-                }}>Move up</button>
-                <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
+                }}>Move up</button>}
+                <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
               </>}
             </li>)}
           </ul>
           {preview && <div>
-            <button type="button" onClick={() => setPreview(null)}>Close preview</button>
-            <img src={preview.image} alt="Private draft preview" className="max-h-96 max-w-full" />
+            <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" onClick={() => setPreview(null)}>Close preview</button>
+            <img src={preview.image} alt="Private draft preview" className="mt-3 max-h-96 max-w-full rounded-lg border border-zinc-700" />
           </div>}
         </section>
       </>}
-    </main>
+    </div>
   );
 }

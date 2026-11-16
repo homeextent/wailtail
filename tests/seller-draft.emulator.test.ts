@@ -410,6 +410,24 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(uploadAuctionImage, image, other.idToken)).status, 403);
         assert.equal((await invoke(uploadAuctionImage, { ...image, auctionId: createdAuction.id }, admin.idToken)).status, 409);
         assert.equal((await invoke(uploadAuctionImage, { ...image, dataUrl: 'data:image/jpeg;base64,YQ==' }, admin.idToken)).status, 422);
+        // Administrators stage draft photos privately; the public uploader stays closed to drafts.
+        const privateId = createdAuction.id;
+        const privateCommand = { auctionId: privateId, expectedRevision: 0, jpegBase64: jpeg.toString('base64') };
+        const privateUpload = await invoke(upload, privateCommand, admin.idToken);
+        assert.equal(privateUpload.status, 201);
+        const privateAsset = (privateUpload.payload as any).assetId;
+        const assetDoc = await firestore.collection('auctions').doc(privateId).collection('draftAssets').doc(privateAsset).get();
+        assert.equal(assetDoc.get('objectPath'), `auctionDraft/${privateId}/${privateAsset}`);
+        await assertDenied(await getObject(assetDoc.get('objectPath')), 'anonymous admin draft image');
+        assert.equal((await invoke(read, { auctionId: privateId }, admin.idToken)).status, 200);
+        assert.equal((await invoke(read, { auctionId: privateId }, other.idToken)).status, 404);
+        assert.equal((await invoke(media, { auctionId: privateId, assetId: privateAsset, action: 'preview' }, admin.idToken)).status, 200);
+        assert.equal((await invoke(media, { auctionId: privateId, assetId: privateAsset, action: 'preview' }, other.idToken)).status, 404);
+        assert.equal((await invoke(upload, privateCommand, admin.idToken)).status, 409);
+        await firestore.collection('auctions').doc(privateId).update({ status: 'pending_review' });
+        assert.equal((await invoke(upload, { ...privateCommand, expectedRevision: 1 }, admin.idToken)).status, 409);
+        assert.equal((await invoke(media, { auctionId: privateId, assetId: privateAsset, action: 'preview' }, admin.idToken)).status, 200);
+        await firestore.collection('auctions').doc(privateId).update({ status: 'draft' });
         const uploaded = await invoke(uploadAuctionImage, image, admin.idToken);
         assert.equal(uploaded.status, 201);
         const { url: hero } = uploaded.payload as { url: string };

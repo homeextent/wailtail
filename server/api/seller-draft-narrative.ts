@@ -1,3 +1,4 @@
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { getFirebaseAdminServices, type FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
@@ -278,7 +279,8 @@ export async function withSellerDraftRequest(
 }
 
 export function handleSellerDraftRead(req: any, res: any, services?: Pick<FirebaseAdminServices, 'auth' | 'firestore'>) {
-  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid, email) => {
+    const admin = isDesignatedAdminEmail(email);
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body) ||
         Object.keys(body).length !== 1 || typeof body.auctionId !== 'string' ||
@@ -291,12 +293,12 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
     const mediaRef = firestore.collection('settings').doc(draftMediaId(auctionId));
     const draft = await firestore.runTransaction(async transaction => {
       const record = (await transaction.get(auctionRef)).data();
-      if (!record || record.sellerId !== uid ||
+      if (!record || (!admin && record.sellerId !== uid) ||
           (record.status !== 'draft' && record.status !== 'pending_review')) return null;
 
       const media = (await transaction.get(mediaRef)).data();
       const assets = await transaction.get(auctionRef.collection('draftAssets').where('removedAt', '==', null).limit(100));
-      const canEdit = await dealerListingEligible(transaction, firestore, record, uid);
+      const canEdit = admin || await dealerListingEligible(transaction, firestore, record, uid);
       return {
         canEdit,
         ...(record.sellerType === 'dealer' ? { dealer: {

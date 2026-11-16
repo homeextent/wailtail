@@ -23,6 +23,8 @@ import { fetchYouTubeMetadata } from '../utils/youtubeMetadata';
 import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, formatExternalUrl } from '../utils/formatters';
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { useAuth } from '../context/AuthContext';
+import { readAndUploadImage } from '../utils/imageUpload';
+import { SellerDraftWorkspace } from './SellerDraftWorkspace';
 import { DealerAttributionPanel } from './DealerListingControls';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
@@ -1725,6 +1727,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     showcaseIndex?: number;
     category?: GalleryImage['category'];
   }) => {
+    if (auction.status === 'draft' || auction.status === 'pending_review') {
+      const input = document.querySelector<HTMLInputElement>('#private-draft-images input[type="file"]');
+      if (input && !input.disabled) input.click();
+      else setMessage({ type: 'info', text: 'Draft images are read-only while the listing is under review.' });
+      return;
+    }
     setActiveUploadTarget(target);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -1760,25 +1768,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (validFiles.length === 0) return;
     }
 
+    setMessage({ type: 'info', text: 'Uploading images…' });
     try {
       const readResults = await Promise.all(
-        validFiles.map(file => {
-          return new Promise<{ dataUrl: string; name: string; cleanedName: string }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-              const rawDataUrl = event.target?.result as string;
-              if (rawDataUrl) {
-                const compressed = await compressImageDataUrl(rawDataUrl);
-                const dataUrl = await uploadImageToStorage(auction.id, compressed, activeUploadTarget?.type || 'gallery');
-                const cleanedName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-                resolve({ dataUrl, name: file.name, cleanedName });
-              } else {
-                reject(new Error('Failed to read image data'));
-              }
-            };
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
+        validFiles.map(async file => {
+          const dataUrl = await readAndUploadImage(file, async rawDataUrl => {
+            const compressed = await compressImageDataUrl(rawDataUrl);
+            return uploadImageToStorage(auction.id, compressed, activeUploadTarget.type);
           });
+          return { dataUrl, name: file.name, cleanedName: file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') };
         })
       );
 
@@ -1823,7 +1821,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       setMessage({ type: 'success', text: `Uploaded ${readResults.length} file(s)!` });
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
-      setMessage({ type: 'error', text: 'Error reading uploaded files.' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Image upload failed.' });
     }
   };
 
@@ -2300,7 +2298,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
       {/* GLOBAL TOAST / FEEDBACK BANNER */}
       {message && (
-        <div className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between border-b transition-all ${
+        <div role={message.type === 'error' ? 'alert' : 'status'} className={`px-6 py-2.5 text-xs font-semibold flex items-center justify-between border-b transition-all ${
           message.type === 'success' 
             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80' 
             : message.type === 'info'
@@ -3046,6 +3044,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 {/* Collector Photography Guide & Recommended Shot List */}
                 <PhotoGuideDrawer />
+
+                {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
+                  <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
+                    <SellerDraftWorkspace key={auction.id} auctionId={auction.id} user={user} mediaOnly onBack={() => {}} />
+                  </section>
+                )}
 
                 {/* 5A: HERO CAROUSEL BUILDER */}
                 <div className="space-y-3">

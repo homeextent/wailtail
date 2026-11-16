@@ -1,3 +1,4 @@
+import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
@@ -27,16 +28,17 @@ function parseUpload(body: unknown) {
 }
 
 export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseAdminServices) {
-  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid) => {
+  return withSellerDraftRequest(req, res, services, async ({ firestore }, uid, email) => {
+    const admin = isDesignatedAdminEmail(email);
     const input = parseUpload(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-draft-image' });
 
     const auction = firestore.collection('auctions').doc(input.auctionId);
     const decision = await firestore.runTransaction(async transaction => {
       const record = (await transaction.get(auction)).data();
-      const access = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
+      const access = checkDraftNarrativeWrite(record, admin ? record?.sellerId : uid, input.expectedRevision);
       if (access !== 200) return access;
-      return await dealerListingEligible(transaction, firestore, record!, uid) ? 200 : 403;
+      return admin || await dealerListingEligible(transaction, firestore, record!, uid) ? 200 : 403;
     });
     if (decision !== 200) return res.status(decision).json({ error: 'draft-unavailable' });
 
@@ -61,9 +63,9 @@ export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseA
     // rejected write can leave a private unattached object for reconciliation.
     const status = await firestore.runTransaction(async transaction => {
       const record = (await transaction.get(auction)).data();
-      const current = checkDraftNarrativeWrite(record, uid, input.expectedRevision);
+      const current = checkDraftNarrativeWrite(record, admin ? record?.sellerId : uid, input.expectedRevision);
       if (current !== 200) return current;
-      if (!await dealerListingEligible(transaction, firestore, record!, uid)) return 403;
+      if (!admin && !await dealerListingEligible(transaction, firestore, record!, uid)) return 403;
 
       if ((await transaction.get(activeAssets)).size >= 100) return 409;
 
