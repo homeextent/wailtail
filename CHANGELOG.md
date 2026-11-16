@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Private draft image upload correction
 
+- Refine owner-reviewed controls: keep private uploads within administrator Section 5, open the picker without scrolling, and style upload/preview/remove controls in both workspaces.
+
 - Administrator draft editors now use the private draft image asset workflow, with authenticated previews and revision/state checks; the public uploader still rejects unpublished listings. Assigned representatives retain their existing restricted upload path.
 - Surface asynchronous image read/compression/upload failures instead of leaving file selection silently pending; show upload progress. Draft image assets persist separately from public hero/gallery URLs and remain private pending a separate publishing workflow.
 

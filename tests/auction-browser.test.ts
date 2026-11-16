@@ -516,6 +516,22 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
     await eventually(text, value => value.includes('Protected dealer attribution') && value.includes('Canonical Browser Dealer Inc.'), 'admin editor protects dealer attribution');
     await eventually(text, value => value.includes('Draft images (0)'), 'administrator private draft image controls');
+    const uploadLayout = await command('Runtime.evaluate', { expression: `(() => {
+      const panel = document.querySelector('#private-draft-images');
+      return { inGallery: !!panel?.closest('#sec-gallery'), button: panel?.querySelector('button')?.textContent?.trim() };
+    })()`, returnByValue: true });
+    assert.equal(uploadLayout.result.value.inGallery, true);
+    assert.equal(uploadLayout.result.value.button, 'Upload draft photos');
+    const pickerRoute = await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      let opened = 0;
+      input.addEventListener('click', event => { event.preventDefault(); opened++; }, {once:true});
+      const before = window.scrollY;
+      Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Upload Hero Photos')).click();
+      return {opened, before, after: window.scrollY};
+    })()`, returnByValue: true });
+    assert.equal(pickerRoute.result.value.opened, 1);
+    assert.equal(pickerRoute.result.value.after, pickerRoute.result.value.before);
     await command('Runtime.evaluate', { expression: `(() => {
       const input = document.querySelector('#private-draft-images input[type="file"]');
       const transfer = new DataTransfer();

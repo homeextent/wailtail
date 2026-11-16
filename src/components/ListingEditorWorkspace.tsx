@@ -1728,8 +1728,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     category?: GalleryImage['category'];
   }) => {
     if (auction.status === 'draft' || auction.status === 'pending_review') {
-      document.getElementById('private-draft-images')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setMessage({ type: 'info', text: 'Use Draft images for private JPEG uploads below. Public hero/gallery uploads require a published listing.' });
+      const input = document.querySelector<HTMLInputElement>('#private-draft-images input[type="file"]');
+      if (input && !input.disabled) input.click();
+      else setMessage({ type: 'info', text: 'Draft images are read-only while the listing is under review.' });
       return;
     }
     setActiveUploadTarget(target);
@@ -2293,12 +2294,6 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
           </div>
 
         </div>
-      )}
-
-      {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
-        <section id="private-draft-images" className="border border-emerald-800 p-4">
-          <SellerDraftWorkspace key={auction.id} auctionId={auction.id} user={user} mediaOnly onBack={() => {}} />
-        </section>
       )}
 
       {/* GLOBAL TOAST / FEEDBACK BANNER */}
@@ -3049,6 +3044,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 {/* Collector Photography Guide & Recommended Shot List */}
                 <PhotoGuideDrawer />
+
+                {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
+                  <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
+                    <SellerDraftWorkspace key={auction.id} auctionId={auction.id} user={user} mediaOnly onBack={() => {}} />
+                  </section>
+                )}
 
                 {/* 5A: HERO CAROUSEL BUILDER */}
                 <div className="space-y-3">
