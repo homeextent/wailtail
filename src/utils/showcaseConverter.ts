@@ -4,7 +4,7 @@ import {
   ShowcaseChapterCategory, 
   PREDEFINED_CHAPTER_TITLES,
   CHAPTER_SPEC_PRESETS 
-} from '../types';
+} from '../types.js';
 
 /**
  * Normalizes any section or chapter object into the strict ShowcaseChapter interface

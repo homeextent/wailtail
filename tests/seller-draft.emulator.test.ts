@@ -9,7 +9,7 @@ import settleAuction from '../server/api/admin-settle-auction';
 import uploadAuctionImage from '../server/api/admin-upload-auction-image';
 import saveAuctionMedia from '../server/api/admin-save-auction-media';
 import deleteAuction from '../server/api/admin-delete-auction';
-import updateAuction from '../server/api/admin-update-auction';
+import updateAuction, { handleAdminUpdateAuction } from '../server/api/admin-update-auction';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
@@ -428,6 +428,60 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(upload, { ...privateCommand, expectedRevision: 1 }, admin.idToken)).status, 409);
         assert.equal((await invoke(media, { auctionId: privateId, assetId: privateAsset, action: 'preview' }, admin.idToken)).status, 200);
         await firestore.collection('auctions').doc(privateId).update({ status: 'draft' });
+        const placementId = `placement-${randomUUID()}`;
+        const placementRef = firestore.collection('auctions').doc(placementId);
+        await placementRef.set({ ...identity, sellerId: owner.uid });
+        const stage = async (placement: string, category: string, revision: number) => {
+          const result = await invoke(upload, { auctionId: placementId, expectedRevision: revision,
+            jpegBase64: jpeg.toString('base64'), placement, category }, admin.idToken);
+          assert.equal(result.status, 201);
+          return (result.payload as any).assetId;
+        };
+        const heroId = await stage('hero', 'exterior', 0);
+        const galleryId = await stage('gallery', 'interior', 1);
+        assert.equal((await placementRef.collection('draftAssets').doc(galleryId).get()).get('category'), 'interior');
+        const assign = { auctionId: placementId, assetId: galleryId, action: 'assign', expectedRevision: 2, placement: 'gallery', category: 'engine' };
+        assert.equal((await invoke(media, assign, other.idToken)).status, 404);
+        assert.equal((await invoke(media, { ...assign, category: 'invalid' }, owner.idToken)).status, 422);
+        assert.equal((await invoke(media, assign, owner.idToken)).status, 200);
+        assert.equal((await invoke(media, assign, owner.idToken)).status, 409);
+        assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: placementId })).status, 404);
+        assert.equal((await invoke(updateAuction, { auctionId: placementId, updates: { status: 'preview' } }, other.idToken)).status, 403);
+        const publish = await invoke(updateAuction, { auctionId: placementId, updates: { status: 'preview' } }, admin.idToken);
+        assert.equal(publish.status, 200, JSON.stringify(publish.payload));
+        const publishedMediaRef = firestore.collection('settings').doc(`media-${placementId}`);
+        const publishedMedia = (await publishedMediaRef.get()).data()!;
+        assert.equal(publishedMedia.heroImages.length, 1);
+        assert.equal(publishedMedia.fullGallery.length, 1);
+        assert.equal(publishedMedia.fullGallery[0].category, 'engine');
+        assert.equal((await fetch(publishedMedia.heroImages[0])).status, 200);
+        assert.equal((await fetch(publishedMedia.fullGallery[0].url)).status, 200);
+        await assertDenied(await getObject(`auctionDraft/${placementId}/${heroId}`), 'private source retained');
+        const preserved = await invoke(saveAuctionMedia, { auctionId: placementId, config: { heroImages: [], fullGallery: [] } }, admin.idToken);
+        assert.equal(preserved.status, 200);
+        assert.equal((await publishedMediaRef.get()).get('heroImages').length, 1);
+        // Republish replaces copies rather than duplicating hero/gallery entries.
+        await placementRef.update({ status: 'draft' });
+        assert.equal((await invoke(updateAuction, { auctionId: placementId, updates: { status: 'preview' } }, admin.idToken)).status, 200);
+        assert.equal((await publishedMediaRef.get()).get('heroImages').length, 1);
+        assert.equal((await publishedMediaRef.get()).get('fullGallery').length, 1);
+        // A concurrent asset change must prevent the visibility transition and clean only attempt-owned copies.
+        await placementRef.update({ status: 'draft' });
+        let publicationTransactions = 0;
+        const racingDb = new Proxy(firestore, { get(target, key) {
+          if (key === 'runTransaction') return async (operation: any) => {
+            if (++publicationTransactions === 2) await placementRef.collection('draftAssets').doc(galleryId).update({ category: 'underbody' });
+            return target.runTransaction(operation);
+          };
+          const value = Reflect.get(target, key, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }});
+        const beforeCopies = (await getStorage(app).bucket(bucket).getFiles({ prefix: `auctionPublic/${placementId}/` }))[0].length;
+        const conflict = await invoke((req, res) => handleAdminUpdateAuction(req, res, { auth, firestore: racingDb }),
+          { auctionId: placementId, updates: { status: 'preview' } }, admin.idToken);
+        assert.equal(conflict.status, 409);
+        assert.equal((await placementRef.get()).get('status'), 'draft');
+        assert.equal((await getStorage(app).bucket(bucket).getFiles({ prefix: `auctionPublic/${placementId}/` }))[0].length, beforeCopies);
         const uploaded = await invoke(uploadAuctionImage, image, admin.idToken);
         assert.equal(uploaded.status, 201);
         const { url: hero } = uploaded.payload as { url: string };

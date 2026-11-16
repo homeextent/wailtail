@@ -1,3 +1,4 @@
+import { prepareDraftImages, checkDraftImagePlans, writeDraftImagePlans } from './_lib/publishDraftImages.js';
 import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
 import { dealerPublicationEligible } from './_lib/dealerListing.js';
@@ -41,7 +42,12 @@ export function handleAdminUpdateAuction(req: any, res: any, services?: Pick<Fir
     if (!Object.keys(patch).length) return res.status(422).json({ error: 'No listing fields supplied.' });
 
     const refs = ids.map(id => firestore.collection('auctions').doc(id));
-    const result = await firestore.runTransaction(async tx => {
+    let prepared;
+    try { prepared = await prepareDraftImages(firestore, ids as string[], patch.status); }
+    catch (error) { return res.status(409).json({ error: error instanceof Error ? error.message : 'Image publication preparation failed.' }); }
+    let result;
+    try {
+    result = await firestore.runTransaction(async tx => {
       const snapshots = await tx.getAll(...refs);
       if (snapshots.some(snapshot => !snapshot.exists)) return null;
       // Read all dealer eligibility records before scheduling any transaction writes.
@@ -55,6 +61,8 @@ export function handleAdminUpdateAuction(req: any, res: any, services?: Pick<Fir
               !await dealerPublicationEligible(tx, firestore, current)) return false;
         }
       }
+      await checkDraftImagePlans(tx, prepared.plans);
+      writeDraftImagePlans(tx, prepared.plans);
       const now = Date.now();
       return snapshots.map(snapshot => {
         const current = snapshot.data()!;
@@ -69,6 +77,11 @@ export function handleAdminUpdateAuction(req: any, res: any, services?: Pick<Fir
           winningEmailSent: current.winningEmailSent === true };
       });
     });
+    } catch (error) {
+      await prepared.cleanup();
+      return res.status(409).json({ error: error instanceof Error ? error.message : 'Image publication failed.' });
+    }
+    if (result === false || result === null) await prepared.cleanup();
     if (result === false) return res.status(409).json({ error: 'Dealer publication requires current verification and confirmed tax handling; dealer identity and CAD currency are protected.' });
     if (!result) return res.status(404).json({ error: 'Listing not found.' });
     return res.status(200).json(bulk ? { listings: result } : result[0]);

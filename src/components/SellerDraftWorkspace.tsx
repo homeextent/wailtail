@@ -23,7 +23,10 @@ interface SellerVideoChapter {
   videoUrl: string;
 }
 
+export interface DraftImageView { id: string; placement: 'hero' | 'gallery'; category: string; url: string }
+interface DraftAsset { id: string; placement: 'hero' | 'gallery'; category: string }
 interface Draft {
+  assets: DraftAsset[];
   canEdit?: boolean;
   dealer?: { businessName: string; city: string; province: string; documentationFee: number };
   videoChapters: SellerVideoChapter[];
@@ -86,14 +89,18 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged }: {
   auctionId: string;
   mediaOnly?: boolean;
+  onImagesChanged?: (images: DraftImageView[]) => void;
   user: User;
   onBack: () => void;
   // React consumes this JSX attribute when remounting the workspace.
   key?: string;
 }) {
+  const [uploadPlacement, setUploadPlacement] = useState<'hero' | 'gallery'>('gallery');
+  const [uploadCategory, setUploadCategory] = useState('exterior');
+  const imageCache = useRef(new Map<string, string>());
   const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');
@@ -125,6 +132,27 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     });
     return () => controller.abort();
   }, [auctionId, user]);
+
+  const assetKey = JSON.stringify((draft?.assetIds ?? []).map(id => draft?.assets.find(asset => asset.id === id)).filter(Boolean));
+  useEffect(() => {
+    if (!onImagesChanged) return;
+    const controller = new AbortController();
+    const assets: DraftAsset[] = JSON.parse(assetKey);
+    void (async () => {
+      const views: DraftImageView[] = [];
+      for (const asset of assets) {
+        let url = imageCache.current.get(asset.id);
+        if (!url) {
+          const response = await request(user, 'media', { action: 'preview', auctionId, assetId: asset.id }, controller.signal);
+          url = await readImage(await response.blob());
+          imageCache.current.set(asset.id, url);
+        }
+        views.push({ ...asset, url });
+      }
+      if (!controller.signal.aborted) onImagesChanged(views);
+    })().catch(error => { if (!controller.signal.aborted) setError(error.message); });
+    return () => controller.abort();
+  }, [assetKey, auctionId, user, onImagesChanged]);
 
   const videoPatch = Object.fromEntries(videoFields
     .filter(([key]) => draft && video[key] !== draft[key])
@@ -175,7 +203,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     }
   }
 
-  async function updateMedia(action: 'upload' | 'preview' | 'remove', target: File | string) {
+  async function updateMedia(action: 'upload' | 'preview' | 'remove' | 'assign', target: File | string, placement = uploadPlacement, category = uploadCategory) {
     if (!draft || busy || (action !== 'preview' && !editable)) return;
     setBusy(true);
     setError('');
@@ -192,17 +220,23 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
         }
         const image = await readImage(target);
         const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
-          auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1]
+          auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1], placement, category
         });
         setGalleryOrder(order => [...order, result.assetId]);
-        setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId] });
+        setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId], assets: [...draft.assets, { id: result.assetId, placement, category }] });
         setMessage('Image uploaded.');
+      } else if (action === 'assign' && typeof target === 'string') {
+        const result = await draftRequest<{ revision: number }>(user, 'media', {
+          action, auctionId, assetId: target, expectedRevision: draft.revision, placement, category
+        });
+        setDraft({ ...draft, revision: result.revision, assets: draft.assets.map(asset => asset.id === target ? { ...asset, placement, category } : asset) });
+        setMessage('Image placement saved.');
       } else if (action === 'remove' && typeof target === 'string') {
         const result = await draftRequest<{ revision: number }>(user, 'media', {
           action, auctionId, assetId: target, expectedRevision: draft.revision
         });
         setGalleryOrder(order => order.filter(id => id !== target));
-        setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target) });
+        setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target), assets: draft.assets.filter(asset => asset.id !== target) });
         if (preview?.assetId === target) setPreview(null);
         setMessage('Image removed from the draft.');
       }
@@ -287,22 +321,35 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
         </fieldset>}
         <section aria-labelledby="draft-media-heading" className="space-y-3">
           <h2 id="draft-media-heading" className="text-xl font-bold">Draft images ({galleryOrder.length})</h2>
-          <p className="text-sm text-zinc-400">Photos save immediately to this private draft. Use Preview to view them. Public hero and gallery placement is separate.</p>
+          <p className="text-sm text-zinc-400">Photos and placement save immediately to this private draft. They become public only when an administrator publishes the listing.</p>
           {editable && <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={busy} onClick={() => imageInput.current?.click()}
+            <button type="button" disabled={busy} onClick={() => { if (imageInput.current) { delete imageInput.current.dataset.placement; delete imageInput.current.dataset.category; imageInput.current.click(); } }}
               className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:opacity-50">
               {busy ? 'Working…' : 'Upload draft photos'}
             </button>
+            <label>Placement <select aria-label="New draft image placement" value={uploadPlacement} disabled={busy} onChange={event => setUploadPlacement(event.target.value as 'hero' | 'gallery')} className="rounded border bg-zinc-900 p-2 text-white"><option value="hero">Hero</option><option value="gallery">Gallery</option></select></label>
+            <label>Category <select aria-label="New draft image category" value={uploadCategory} disabled={busy} onChange={event => setUploadCategory(event.target.value)} className="rounded border bg-zinc-900 p-2 text-white">{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select></label>
             <span className="text-sm text-zinc-400">JPEG · up to 2 MiB per photo</span>
             <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" accept="image/jpeg" disabled={busy} onChange={event => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = '';
-              if (file) void updateMedia('upload', file);
+              if (file) void updateMedia('upload', file, event.currentTarget.dataset.placement === 'hero' ? 'hero' : event.currentTarget.dataset.placement === 'gallery' ? 'gallery' : uploadPlacement, event.currentTarget.dataset.category || uploadCategory);
             }} />
           </div>}
           <ul className="space-y-2">
             {galleryOrder.map((assetId, index) => <li key={assetId} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-100">
               <span>{index + 1}. {imageLabel(assetId)}</span>
+              <span>{draft.assets.find(asset => asset.id === assetId)?.placement === 'hero' ? 'Hero' : 'Gallery'} · {draft.assets.find(asset => asset.id === assetId)?.category}</span>
+              {editable && <select aria-label={`Placement for ${imageLabel(assetId)}`} disabled={busy} className="rounded border bg-zinc-900 p-2 text-white"
+                value={draft.assets.find(asset => asset.id === assetId)?.placement || 'gallery'}
+                onChange={event => void updateMedia('assign', assetId, event.target.value as 'hero' | 'gallery', draft.assets.find(asset => asset.id === assetId)?.category || 'exterior')}>
+                <option value="hero">Hero</option><option value="gallery">Gallery</option>
+              </select>}
+              {editable && <select aria-label={`Category for ${imageLabel(assetId)}`} disabled={busy} className="rounded border bg-zinc-900 p-2 text-white"
+                value={draft.assets.find(asset => asset.id === assetId)?.category || 'exterior'}
+                onChange={event => void updateMedia('assign', assetId, draft.assets.find(asset => asset.id === assetId)?.placement || 'gallery', event.target.value)}>
+                {['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}
+              </select>}
               <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
               {editable && <>
                 {!mediaOnly && <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy || index === 0} onClick={() => {

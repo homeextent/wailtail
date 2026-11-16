@@ -1,3 +1,4 @@
+import { parseImagePlacement } from './_lib/draftImagePlacement.js';
 import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { dealerListingEligible } from './_lib/dealerEligibility.js';
 import { randomUUID } from 'node:crypto';
@@ -10,8 +11,10 @@ const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 function parseUpload(body: unknown) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'jpegBase64'].includes(key))) return null;
+  if (Object.keys(input).some(key => !['auctionId', 'expectedRevision', 'jpegBase64', 'placement', 'category'].includes(key))) return null;
   const { auctionId, expectedRevision, jpegBase64 } = input;
+  const placement = parseImagePlacement(input);
+  if (!placement) return null;
   if (typeof auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(auctionId) ||
       typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) ||
       expectedRevision < 0 || expectedRevision >= Number.MAX_SAFE_INTEGER ||
@@ -24,7 +27,7 @@ function parseUpload(body: unknown) {
       bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff ||
       bytes[bytes.length - 2] !== 0xff || bytes[bytes.length - 1] !== 0xd9) return null;
 
-  return { auctionId, expectedRevision, bytes };
+  return { auctionId, expectedRevision, bytes, ...placement };
 }
 
 export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseAdminServices) {
@@ -71,7 +74,7 @@ export function handleSellerDraftUpload(req: any, res: any, services?: FirebaseA
 
       const now = Date.now();
       transaction.create(auction.collection('draftAssets').doc(assetId), {
-        objectPath, contentType: 'image/jpeg', byteLength: input.bytes.length, createdAt: now, removedAt: null
+        placement: input.placement, category: input.category, objectPath, contentType: 'image/jpeg', byteLength: input.bytes.length, createdAt: now, removedAt: null
       });
       transaction.update(auction, { sellerDraftRevision: input.expectedRevision + 1, updatedAt: now });
       return 200;

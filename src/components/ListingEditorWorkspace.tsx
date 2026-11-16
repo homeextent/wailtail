@@ -24,7 +24,7 @@ import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, form
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { useAuth } from '../context/AuthContext';
 import { readAndUploadImage } from '../utils/imageUpload';
-import { SellerDraftWorkspace } from './SellerDraftWorkspace';
+import { SellerDraftWorkspace, type DraftImageView } from './SellerDraftWorkspace';
 import { DealerAttributionPanel } from './DealerListingControls';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
@@ -343,6 +343,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
   const [activeStep, setActiveStep] = useState<number>(1);
   const [saving, setSaving] = useState(false);
+  const [draftImageViews, setDraftImageViews] = useState<DraftImageView[]>([]);
+  useEffect(() => setDraftImageViews([]), [auction.id, auction.status]);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // AI Assistant and In-line Generator states
@@ -1729,7 +1731,11 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   }) => {
     if (auction.status === 'draft' || auction.status === 'pending_review') {
       const input = document.querySelector<HTMLInputElement>('#private-draft-images input[type="file"]');
-      if (input && !input.disabled) input.click();
+      if (input && !input.disabled) {
+        input.dataset.placement = target.type === 'hero' ? 'hero' : 'gallery';
+        input.dataset.category = target.category || 'exterior';
+        input.click();
+      }
       else setMessage({ type: 'info', text: 'Draft images are read-only while the listing is under review.' });
       return;
     }
@@ -3047,7 +3053,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
                   <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
-                    <SellerDraftWorkspace key={auction.id} auctionId={auction.id} user={user} mediaOnly onBack={() => {}} />
+                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}`} auctionId={auction.id} user={user} mediaOnly onImagesChanged={setDraftImageViews} onBack={() => {}} />
                   </section>
                 )}
 
@@ -3057,7 +3063,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Hero Carousel Slides ({heroImages.length})</span>
+                        <span>Hero Carousel Slides ({heroImages.length}) · {draftImageViews.filter(image => image.placement === 'hero').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         The first image serves as the main lead hero photo. Drag cards or use arrows to reorder.
@@ -3192,7 +3198,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length})</span>
+                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length}) · {draftImageViews.filter(image => image.placement === 'gallery').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         Upload multi-angle photography or PDF reports categorized by section.
@@ -4200,7 +4206,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             {/* 2. Hero Media Carousel */}
             <div className="rounded-2xl overflow-hidden border border-zinc-200 shadow-sm bg-zinc-900">
               <HeroMediaCarousel
-                images={heroImages.length > 0 ? heroImages : ['https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85']}
+                images={heroImages.length + draftImageViews.filter(image => image.placement === 'hero').length > 0 ? [...heroImages, ...draftImageViews.filter(image => image.placement === 'hero').map(image => image.url)] : ['https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85']}
                 onOpenLightbox={(idx) => setPreviewLightboxIndex(idx)}
                 onScrollToVideo={() => {}}
                 onScrollToGallery={() => {}}
@@ -4340,14 +4346,14 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             <YouTubePlaylistSection mediaConfig={currentMedia} />
 
             {/* 6. Section 5: Categorized Photo Gallery Grid */}
-            {galleryImages.length > 0 && (
+            {galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-700">
                   <ImageIcon className="w-4 h-4" />
-                  <span>Full Categorized Photo Gallery ({galleryImages.length} items)</span>
+                  <span>Full Categorized Photo Gallery ({galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length} items)</span>
                 </div>
                 <PhotoGalleryGrid
-                  images={galleryImages}
+                  images={[...galleryImages, ...draftImageViews.filter(image => image.placement === 'gallery').map(image => ({ id: image.id, url: image.url, category: image.category as GalleryImage['category'], title: 'Draft vehicle photo', isPdf: false }))]}
                   selectedImageIndex={previewLightboxIndex}
                   onOpenLightbox={(idx) => setPreviewLightboxIndex(idx)}
                   onCloseLightbox={() => setPreviewLightboxIndex(null)}

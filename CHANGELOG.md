@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Draft image placement and publication
+
+- Preserve hero/gallery intent and category for private uploads, allow draft reassignment, and render assigned images in authenticated administrator previews.
+- Promote private draft assets through administrator publication with eligibility/revision checks, guarded attempt-copy cleanup and atomic Firestore status/media registration. Keep private originals, merge registered copies on later media saves, and avoid duplicate placements on republish. See `docs/draft-image-publication.md` for cross-service limitations.
+
+
 ### Private draft image upload correction
 
 - Refine owner-reviewed controls: keep private uploads within administrator Section 5, open the picker without scrolling, and style upload/preview/remove controls in both workspaces.

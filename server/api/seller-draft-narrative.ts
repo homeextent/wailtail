@@ -310,6 +310,7 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
         videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',
         youtubePlaylistUrl: typeof media?.youtubePlaylistUrl === 'string' && isPlaylistUrl(media.youtubePlaylistUrl)
           ? media.youtubePlaylistUrl : '',
+        assets: assets.docs.map(asset => ({ id: asset.id, placement: asset.get('placement') || 'gallery', category: asset.get('category') || 'exterior' })),
         assetIds: orderedDraftAssets(
           assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
           media?.sellerDraftGalleryOrder
