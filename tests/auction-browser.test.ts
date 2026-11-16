@@ -279,9 +279,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Narrative saved.'), 'seller save acknowledgement');
     await eventually(state, value => value.heading === 'Browser saved overview', 'seller narrative persisted');
+    // Page.reload acknowledges the request before replacing the document. A
+    // saved input in the old DOM must not satisfy the persistence assertion.
+    await command('Runtime.evaluate', { expression: 'globalThis.__wailtailReloadMarker = true' });
     await command('Page.reload');
     await eventually(async () => {
-      const value = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('input')).some(input => input.value === 'Browser saved overview')`, returnByValue: true });
+      const value = await command('Runtime.evaluate', { expression: `globalThis.__wailtailReloadMarker !== true && document.readyState !== 'loading' && Array.from(document.querySelectorAll('input')).some(input => input.value === 'Browser saved overview')`, returnByValue: true });
       return value.result?.value;
     }, Boolean, 'seller narrative after reload');
 
