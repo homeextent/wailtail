@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Browser reload verification
+
+- Require a new document before accepting saved seller narrative after reload in the isolated browser test. The prior old-DOM match could race the next navigation and trigger a Chrome command timeout; product code and assertion coverage remain unchanged.
+
+### Production cutover closeout — November 16, 2026
+
+- Align ordinary `storage.rules` with the source-verified deployed final policy; regression prevents restoring legacy PDF exceptions through routine deployment. No live rules mutation in this change.
+- Synchronize current operational evidence: 163 public copies, six reference updates, 226 preserved originals/token-path denial, production releases, confirmed review inbox delivery, enabled clock/review and paused notifications, recovered quota and bounded observation. Full dealer production acceptance/pilot remain separate.
+
 ### Public polling read budget
 
 - Slow non-live public detail refreshes to one minute and back off failed public requests to five minutes; preserve five-second live/imminent-start updates and hidden-tab pause. Documented confirmed read amplification and the unproven origin of the overnight quota spike in `docs/public-read-budget.md`.

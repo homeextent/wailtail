@@ -317,12 +317,13 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
     const publicPaths = [
       `auctionPublic/${auctionId}/asset`,
       `auctionPublic/${auctionId}/branding-fixture`,
-      `auctionPublic/${auctionId}/promotion-fixture`,
-      'auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg',
-      'auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg'
+      `auctionPublic/${auctionId}/promotion-fixture`
     ];
     const privatePaths = [
       objectPath,
+      // Post-cutover, even the two formerly approved legacy paths are denied.
+      'auctions/1988-porsche-928-c3uyca60/gallery/1792949925577-tjvc0.jpg',
+      'auctions/2019-ram-rebel-3a0455wx/gallery/1793403168695-t0pxg.jpg',
       `applicationPrivate/${auctionId}/asset`,
       'auctions/1988-porsche-928-c3uyca60/gallery/unapproved.pdf',
       `auctions/${auctionId}/branding/legacy-logo.jpg`,
