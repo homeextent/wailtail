@@ -86,8 +86,9 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false }: {
   auctionId: string;
+  mediaOnly?: boolean;
   user: User;
   onBack: () => void;
   // React consumes this JSX attribute when remounting the workspace.
@@ -177,7 +178,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
     if (!draft || busy || (action !== 'preview' && !editable)) return;
     setBusy(true);
     setError('');
-    setMessage('');
+    setMessage(action === 'upload' ? 'Uploading private draft image…' : '');
     try {
       if (action === 'preview' && typeof target === 'string') {
         const response = await request(user, 'media', { action, auctionId, assetId: target });
@@ -212,16 +213,16 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-5 p-6">
-      <button type="button" onClick={onBack}>Back to dashboard</button>
+    <div className="mx-auto max-w-3xl space-y-5 p-6">
+      {!mediaOnly && <button type="button" onClick={onBack}>Back to dashboard</button>}
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
       {!draft && !error && <p>Loading listing…</p>}
       {draft && <>
-        <h1 className="text-2xl font-bold">{draft.title}</h1>
-        {draft.dealer && <section aria-label="Assigned dealer listing"><h2>Assigned dealer listing</h2><p>{draft.dealer.businessName} · {draft.dealer.city}, {draft.dealer.province} · Documentation fee: CAD $0</p><p>Dealer attribution, vehicle identity and financial fields are managed by administrators.</p></section>}
+        {!mediaOnly && <h1 className="text-2xl font-bold">{draft.title}</h1>}
+        {!mediaOnly && draft.dealer && <section aria-label="Assigned dealer listing"><h2>Assigned dealer listing</h2><p>{draft.dealer.businessName} · {draft.dealer.city}, {draft.dealer.province} · Documentation fee: CAD $0</p><p>Dealer attribution, vehicle identity and financial fields are managed by administrators.</p></section>}
         {!editable && <p>{draft.canEdit === false ? 'This dealer listing is read-only because current verification or account links are unavailable. Contact an administrator.' : 'This listing is read-only while it is under review.'}</p>}
-        <fieldset disabled={!editable || busy} className="space-y-4">
+        {!mediaOnly && <fieldset disabled={!editable || busy} className="space-y-4">
           <label className="block">Overview heading
             <input className="block w-full rounded border p-2" maxLength={240}
               value={heading} onChange={event => setHeading(event.target.value)} />
@@ -282,9 +283,10 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
             <button type="button" disabled={dirty} onClick={() => void apply('submit')}>Submit for review</button>
           </div>
           {editable && dirty && <p>Save your changes before submitting for review.</p>}
-        </fieldset>
+        </fieldset>}
         <section aria-labelledby="draft-media-heading" className="space-y-3">
-          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images</h2>
+          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images ({galleryOrder.length})</h2>
+          <p>Private draft assets, saved immediately. Preview requires authentication. These images are not published or added to the public hero/gallery.</p>
           {editable && <label className="block">Upload JPEG (up to 2 MiB)
             <input type="file" accept="image/jpeg" disabled={busy} onChange={event => {
               const file = event.currentTarget.files?.[0];
@@ -297,12 +299,12 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
               <span>{index + 1}. {imageLabel(assetId)}</span>
               <button type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
               {editable && <>
-                <button type="button" disabled={busy || index === 0} onClick={() => {
+                {!mediaOnly && <button type="button" disabled={busy || index === 0} onClick={() => {
                   const next = [...galleryOrder];
                   [next[index - 1], next[index]] = [next[index], next[index - 1]];
                   setGalleryOrder(next);
                   setMessage(`${imageLabel(assetId)} moved to position ${index}. Save narrative to keep this order.`);
-                }}>Move up</button>
+                }}>Move up</button>}
                 <button type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
               </>}
             </li>)}
@@ -313,6 +315,6 @@ export function SellerDraftWorkspace({ auctionId, user, onBack }: {
           </div>}
         </section>
       </>}
-    </main>
+    </div>
   );
 }

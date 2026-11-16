@@ -1,5 +1,7 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+
+Draft-upload correction in preparation: administrator unpublished editors stage JPEGs in private `auctionDraft` assets through authenticated draft endpoints. Public hero/gallery uploads remain restricted to published listings. No live rules change or production deployment is part of this correction. See `docs/draft-image-upload-acceptance.md`.
 ## Auction Security Gate implementation checkpoint
 
 PR #3 was independently accepted at head `293ffbb` and merged into `staging` on November 7, 2026 as `1bf4d6a`. The merge tree matches the reviewed head; post-merge CI and Vercel preview passed. The staging security integration milestone is complete. Production release and Firebase rules publication require a separate decision. The Phase 1 Verified Boutique Dealer Program milestone definitions remain in Section 11.

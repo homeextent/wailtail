@@ -515,12 +515,22 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const convertedId = converted.application.convertedAuctionId;
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
     await eventually(text, value => value.includes('Protected dealer attribution') && value.includes('Canonical Browser Dealer Inc.'), 'admin editor protects dealer attribution');
+    await eventually(text, value => value.includes('Draft images (0)'), 'administrator private draft image controls');
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array([255,216,255,0,255,217])], 'synthetic.jpg', {type:'image/jpeg'}));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()` });
+    await eventually(text, value => value.includes('Image uploaded.') && value.includes('Draft images (1)'), 'administrator draft image uploaded privately');
     await fill('select[aria-label="Dealer tax handling"]', 'dealer_collects', true);
     await fill('textarea[aria-label="Dealer tax change reason"]', 'Synthetic tax arrangement confirmed by curator');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save dealer tax indicator'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
+    await eventually(text, value => value.includes('Draft images (1)'), 'representative sees persisted administrator draft image');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Narrative saved.'), 'assigned representative saves without role promotion');

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Private draft image upload correction
+
+- Administrator draft editors now use the private draft image asset workflow, with authenticated previews and revision/state checks; the public uploader still rejects unpublished listings. Assigned representatives retain their existing restricted upload path.
+- Surface asynchronous image read/compression/upload failures instead of leaving file selection silently pending; show upload progress. Draft image assets persist separately from public hero/gallery URLs and remain private pending a separate publishing workflow.
+
+
 ### Browser reload verification
 
 - Require a new document before accepting saved seller narrative after reload in the isolated browser test. The prior old-DOM match could race the next navigation and trigger a Chrome command timeout; product code and assertion coverage remain unchanged.
