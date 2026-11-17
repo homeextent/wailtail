@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Representative editor tab title
+
+- Use the authenticated route draft title for representative editor tabs, scoped to listing ID and signed-in UID. Show a neutral draft title until loaded; administrator tabs also wait for their matching route listing. Preserve existing editor controls and permissions.
+
 ### Draft image placement and publication
 
 - Support JPG/JPEG and PNG in Hero, plus JPG/JPEG, PNG and PDF in Gallery. Keep supported-file filtering, multiple selection and a 2 MiB per-file limit. Validate MIME/byte agreement on upload and publication, force PDF gallery/documentation placement, prevent chapter/hero PDF assignment, preserve document titles, and serve PDFs as downloads. Published-gallery PDF uploads use the same bounded validation.

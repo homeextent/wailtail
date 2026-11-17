@@ -93,8 +93,9 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all', heroOffset = 0 }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all', heroOffset = 0, onDraftLoaded }: {
   auctionId: string;
+  onDraftLoaded?: (record: { auctionId: string; userId: string; title: string }) => void;
   mediaOnly?: boolean;
   galleryFilter?: string;
   heroOffset?: number;
@@ -127,6 +128,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     draftRequest<Draft>(user, 'read', { auctionId }, controller.signal).then(record => {
       if (controller.signal.aborted) return;
       setDraft(record);
+      onDraftLoaded?.({ auctionId, userId: user.uid, title: record.title });
       setGalleryOrder(record.assetIds);
       setVideoChapters(record.videoChapters);
       setChapters(record.showcaseChapters);
@@ -137,7 +139,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
       if (!controller.signal.aborted) setError(err.message);
     });
     return () => controller.abort();
-  }, [auctionId, user]);
+  }, [auctionId, user, onDraftLoaded]);
 
   const assetKey = JSON.stringify((draft?.assetIds ?? []).map(id => draft?.assets.find(asset => asset.id === id)).filter(Boolean));
   useEffect(() => {

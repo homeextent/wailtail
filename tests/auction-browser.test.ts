@@ -676,6 +676,11 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
+    const editorTitle = await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+      return result.result.value;
+    }, value => value === `Listing Editor: ${converted.listing.title} — Wailtail`, 'representative tab uses the assigned draft title rather than the public selection');
+    assert.equal(editorTitle, `Listing Editor: ${converted.listing.title} — Wailtail`);
     await eventually(text, value => value.includes('Hero Photos (3)') && value.includes('Gallery Photos (4)') && value.includes('Service report.pdf'), 'representative sees persisted administrator placements');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
