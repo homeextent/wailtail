@@ -582,12 +582,42 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       const transfer = new DataTransfer(); transfer.items.add(new File([bytes], 'gallery.jpg', {type:'image/jpeg'}));
       input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
     })()` });
-    await eventually(text, value => value.includes('Categorized Gallery & Inspection Docs (1)') && value.includes('Gallery · engine'), 'gallery upload preserves category');
+    const privatePhotos = async () => {
+      const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('[data-private-placement] [data-asset-id]')).map(card => ({ id:card.dataset.assetId, category:card.dataset.category, placement:card.closest('[data-private-placement]').dataset.privatePlacement }))`, returnByValue:true });
+      return result.result.value as {id:string;category:string;placement:string}[];
+    };
+    await eventually(privatePhotos, photos => photos.some(photo => photo.placement === 'gallery' && photo.category === 'engine'), 'gallery upload preserves category');
+    const compact = await command('Runtime.evaluate', { expression: `(() => {
+      const hero = document.querySelector('[data-private-placement="hero"] [data-asset-id]');
+      return {heroSelects:hero.querySelectorAll('select').length, lead:hero.innerText.includes('Lead Hero'), gallerySelects:document.querySelector('[data-private-placement="gallery"] [data-asset-id]').querySelectorAll('select').length};
+    })()`, returnByValue:true });
+    assert.deepEqual(compact.result.value, {heroSelects:0,lead:true,gallerySelects:1});
+    await click(`(() => { const button = document.querySelector('[data-private-placement="hero"] button[aria-label^="Preview"]'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(text, value => value.includes('Close preview'), 'thumbnail opens photo preview');
+    await click(`(() => { document.querySelector('[role="dialog"] button').click(); return true; })()`);
     await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Pick from Gallery'); if (!button) return false; button.click(); return true; })()`);
     await click(`(() => { const image = document.querySelector('img[alt="Draft engine photo"]'); if (!image) return false; image.closest('button').click(); return true; })()`);
-    await eventually(text, value => value.includes('Private draft hero placement saved.') && value.includes('Hero · engine'), 'gallery picker assigns private hero by asset ID');
-    await click(`(() => { const row = Array.from(document.querySelectorAll('[data-private-placement] [data-asset-id]')).find(row => row.textContent.includes('Hero · engine')); const select = row?.querySelector('select'); if (!select) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'gallery'); select.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
-    await eventually(text, value => value.includes('Image placement saved.') && value.includes('Gallery · engine'), 'draft reassignment restores gallery category');
+    await eventually(privatePhotos, photos => photos.some(photo => photo.placement === 'hero' && photo.category === 'engine'), 'gallery picker assigns private hero by asset ID');
+    await click(`(() => { const card = document.querySelector('[data-private-placement="hero"] [data-category="engine"]'); const button = card?.querySelector('button[aria-label^="Remove"]'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(privatePhotos, photos => photos.length === 2, 'compact trash control removes picked hero');
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]'); input.dataset.placement='gallery'; input.dataset.category='engine';
+      const canvas = document.createElement('canvas'); canvas.width=2;canvas.height=2;
+      const bytes=Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), c=>c.charCodeAt(0)); const transfer=new DataTransfer();
+      for(let i=0;i<3;i++) transfer.items.add(new File([bytes], 'gallery-'+i+'.jpg', {type:'image/jpeg'}));
+      input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()` });
+    await eventually(privatePhotos, photos => photos.filter(photo=>photo.placement==='gallery').length===3, 'multiple gallery uploads appear as compact cards');
+    await click(`(() => { const cards=document.querySelectorAll('[data-private-placement="gallery"] [data-asset-id]');const select=cards[1]?.querySelector('select'); if(!select)return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'exterior');select.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`);
+    await eventually(privatePhotos, photos=>photos.some(photo=>photo.placement==='gallery'&&photo.category==='exterior'), 'compact gallery category change saved');
+    const galleryBefore = (await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id);
+    await click(`(() => { const tab=Array.from(document.querySelectorAll('#sec-gallery button')).find(button=>button.textContent.trim().startsWith('Engine Bay'));if(!tab)return false;tab.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery').length===2, 'engine filter shows only matching photos');
+    await click(`(() => { const card=document.querySelector('[data-private-placement="gallery"] [data-asset-id]');const button=card?.querySelector('button[aria-label$=" right"]');if(!button||button.disabled)return false;button.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery')[0]?.id===galleryBefore[2], 'filtered Right control swaps matching photos');
+    await click(`(() => { const tab=Array.from(document.querySelectorAll('#sec-gallery button')).find(button=>button.querySelector('span')?.textContent==='All');if(!tab)return false;tab.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery').length===3, 'all category restored');
+    assert.deepEqual((await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id), [galleryBefore[2],galleryBefore[1],galleryBefore[0]]);
 
     await click(`(() => {
       const section = document.querySelector('#sec-narrative');
@@ -598,10 +628,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const reorder = await command('Runtime.evaluate', { expression: `(() => {
       const rows = document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]');
       const id = rows[1].dataset.assetId;
-      Array.from(rows[1].querySelectorAll('button')).find(button => button.textContent === 'Move up').click();
+      rows[1].querySelector('button[aria-label$=" left"]').click();
       return id;
     })()`, returnByValue: true });
-    await eventually(text, value => value.includes('Photo order saved.'), 'hero order saved immediately');
+    await eventually(privatePhotos, photos => photos.filter(photo=>photo.placement==='hero')[0]?.id===reorder.result.value, 'hero order saved immediately');
     await delay(500); // Allow the media snapshot to arrive before checking unsaved state.
     const unsavedHeading = await command('Runtime.evaluate', { expression: `document.querySelector('#sec-narrative input').value`, returnByValue: true });
     assert.equal(unsavedHeading.result.value, 'Unsaved heading survives photo ordering');
@@ -609,11 +639,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Runtime.evaluate', { expression: 'globalThis.__placementReload = true' });
     await command('Page.reload');
     await eventually(async () => {
-      const result = await command('Runtime.evaluate', { expression: `!globalThis.__placementReload && document.readyState !== 'loading' && document.body.innerText.includes('Hero Carousel Slides (2)') && document.body.innerText.includes('Hero · exterior') && document.body.innerText.includes('Gallery · engine')`, returnByValue: true });
+      const result = await command('Runtime.evaluate', { expression: `!globalThis.__placementReload && document.readyState !== 'loading' && document.body.innerText.includes('Hero Carousel Slides (2)') && document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]').length === 2 && document.querySelectorAll('[data-private-placement="gallery"] [data-asset-id]').length === 3`, returnByValue: true });
       return result.result.value;
     }, Boolean, 'image placement survives a new document');
     const orderAfterReload = await command('Runtime.evaluate', { expression: `document.querySelector('[data-private-placement="hero"] [data-asset-id]').dataset.assetId`, returnByValue: true });
     assert.equal(orderAfterReload.result.value, reorder.result.value);
+    assert.deepEqual((await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id), [galleryBefore[2],galleryBefore[1],galleryBefore[0]]);
 
 
 
@@ -623,7 +654,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
-    await eventually(text, value => value.includes('Hero Photos (2)') && value.includes('Gallery Photos (1)') && value.includes('Hero · exterior') && value.includes('Gallery · engine'), 'representative sees persisted administrator placements');
+    await eventually(text, value => value.includes('Hero Photos (2)') && value.includes('Gallery Photos (3)'), 'representative sees persisted administrator placements');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Narrative saved.'), 'assigned representative saves without role promotion');

@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Draft image placement and publication
 
+- Restore compact production-style thumbnail overlays: hero lead/position badges, drag and Left/Right ordering, gallery category selector and trash buttons. Remove redundant per-photo Hero/Gallery selectors. Replace gallery photo filename strips with ordering controls; retain meaningful document titles and click-to-preview. Filtered gallery ordering swaps only visible neighbours and preserves hidden photo slots.
+
 - Remove the duplicate Draft images panel. Restore direct Hero/Gallery controls with private thumbnails, category filters, placement and immediately saved ordering. Multiple JPEG selection reports progress, individual validation failures and partial completion; uncertain server failures stop the batch for reload/reconciliation.
 
 - Preserve hero/gallery intent and category for private uploads, allow draft reassignment, and render assigned images in authenticated administrator previews. Include private images in hero gallery selection by asset ID and reflect private assignments in counts.

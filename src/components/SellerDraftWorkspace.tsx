@@ -1,3 +1,5 @@
+import { PhotoEditorCard } from './PhotoEditorCard';
+import { moveVisiblePhoto } from '../utils/photoOrdering';
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
@@ -90,10 +92,11 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all' }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all', heroOffset = 0 }: {
   auctionId: string;
   mediaOnly?: boolean;
   galleryFilter?: string;
+  heroOffset?: number;
   onImagesChanged?: (images: DraftImageView[]) => void;
   user: User;
   onBack: () => void;
@@ -117,7 +120,6 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState<{ assetId: string; image: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -205,17 +207,12 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     }
   }
 
-  async function updateMedia(action: 'preview' | 'remove' | 'assign', target: string, placement: 'hero' | 'gallery' = 'gallery', category = uploadCategory) {
-    if (!draft || busy || (action !== 'preview' && !editable)) return;
+  async function updateMedia(action: 'remove' | 'assign', target: string, placement: 'hero' | 'gallery' = 'gallery', category = uploadCategory) {
+    if (!draft || busy || !editable) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      if (action === 'preview' && typeof target === 'string') {
-        const response = await request(user, 'media', { action, auctionId, assetId: target });
-        setPreview({ assetId: target, image: await readImage(await response.blob()) });
-        return;
-      }
       if (action === 'assign' && typeof target === 'string') {
         const result = await draftRequest<{ revision: number }>(user, 'media', {
           action, auctionId, assetId: target, expectedRevision: draft.revision, placement, category
@@ -228,7 +225,6 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
         });
         setGalleryOrder(order => order.filter(id => id !== target));
         setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target), assets: draft.assets.filter(asset => asset.id !== target) });
-        if (preview?.assetId === target) setPreview(null);
         setMessage('Image removed from the draft.');
       }
     } catch (err) {
@@ -276,16 +272,22 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     } finally { uploadLock.current = false; setBusy(false); }
   }
 
-  async function moveImage(assetId: string, direction: number) {
+  async function moveImage(assetId: string, direction: -1 | 1, targetId?: string) {
     if (!draft || !editable || busy) return;
     const placement = draft.assets.find(asset => asset.id === assetId)?.placement;
-    const group = draft.assetIds.filter(id => draft.assets.find(asset => asset.id === id)?.placement === placement);
-    const position = group.indexOf(assetId);
-    const other = group[position + direction];
-    if (!other) return;
-    const order = [...draft.assetIds];
-    const a = order.indexOf(assetId), b = order.indexOf(other);
-    [order[a], order[b]] = [order[b], order[a]];
+    const visible = (id: string) => {
+      const asset = draft.assets.find(asset => asset.id === id);
+      return asset?.placement === placement && (placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter);
+    };
+    let order: string[];
+    if (targetId) {
+      if (targetId === assetId || !visible(targetId)) return;
+      order = [...draft.assetIds];
+      const destination = order.indexOf(targetId);
+      order.splice(order.indexOf(assetId), 1);
+      order.splice(destination, 0, assetId);
+    } else order = moveVisiblePhoto(draft.assetIds, draft.assetIds.indexOf(assetId), direction, visible);
+    if (order === draft.assetIds) return;
     setBusy(true); setError('');
     try {
       const result = await draftRequest<{ revision: number }>(user, 'media', {
@@ -299,25 +301,21 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
 
   function privateCards(placement: 'hero' | 'gallery') {
     if (!draft) return null;
-    const assets = draft.assetIds.map(id => draft.assets.find(asset => asset.id === id)).filter((asset): asset is DraftAsset => !!asset && asset.placement === placement);
+    const assets = draft.assetIds.map(id => draft.assets.find(asset => asset.id === id)).filter((asset): asset is DraftAsset => !!asset && asset.placement === placement && (placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter));
     return <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-private-placement={placement}>
-      {assets.filter(asset => placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter).map(asset => <div key={asset.id} data-asset-id={asset.id} className="rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950 text-zinc-100 text-xs">
-        <button type="button" className="block w-full" disabled={busy} onClick={() => void updateMedia('preview', asset.id)} aria-label={`Preview ${imageLabel(asset.id)}`}>
-          {imageViews.find(image => image.id === asset.id)?.url ? <img src={imageViews.find(image => image.id === asset.id)?.url} alt={`Private ${placement} photo`} className="w-full aspect-[4/3] object-cover" /> : <span>Loading photo…</span>}
-        </button>
-        <div className="p-2 space-y-2">
-          <span>{placement === 'hero' ? 'Hero' : 'Gallery'} · {asset.category}</span>
-          {editable && <>
-            <select aria-label={`Placement for ${imageLabel(asset.id)}`} disabled={busy} value={placement} className="w-full rounded border border-zinc-700 bg-zinc-900 p-1" onChange={event => void updateMedia('assign', asset.id, event.target.value as 'hero' | 'gallery', asset.category)}><option value="hero">Hero</option><option value="gallery">Gallery</option></select>
-            <select aria-label={`Category for ${imageLabel(asset.id)}`} disabled={busy} value={asset.category} className="w-full rounded border border-zinc-700 bg-zinc-900 p-1" onChange={event => void updateMedia('assign', asset.id, placement, event.target.value)}>{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" disabled={busy || assets[0]?.id === asset.id} onClick={() => void moveImage(asset.id, -1)}>Move up</button>
-              <button type="button" disabled={busy || assets[assets.length - 1]?.id === asset.id} onClick={() => void moveImage(asset.id, 1)}>Move down</button>
-              <button type="button" disabled={busy} onClick={() => void updateMedia('remove', asset.id)}>Remove</button>
-            </div>
-          </>}
-        </div>
-      </div>)}
+      {assets.map((asset, index) => <PhotoEditorCard key={asset.id} assetId={asset.id}
+        src={imageViews.find(image => image.id === asset.id)?.url} title={imageLabel(asset.id)}
+        heroPosition={placement === 'hero' ? index + heroOffset : undefined} category={asset.category}
+        disabled={busy || !editable} canLeft={index > 0} canRight={index < assets.length - 1}
+        onCategory={editable ? category => void updateMedia('assign', asset.id, placement, category) : undefined}
+        onRemove={editable ? () => void updateMedia('remove', asset.id) : undefined}
+        onMove={editable ? direction => void moveImage(asset.id, direction) : undefined}
+        dragProps={placement === 'hero' && editable ? {
+          draggable: !busy,
+          onDragStart: event => { event.dataTransfer.setData('application/x-wailtail-photo', asset.id); event.dataTransfer.effectAllowed = 'move'; },
+          onDragOver: event => event.preventDefault(),
+          onDrop: event => { event.preventDefault(); const source = event.dataTransfer.getData('application/x-wailtail-photo'); if (assets.some(asset => asset.id === source)) void moveImage(source, 1, asset.id); }
+        } : undefined} />)}
     </div>;
   }
 
@@ -339,10 +337,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
       }} />
       {heroTarget && createPortal(privateCards('hero'), heroTarget)}
       {galleryTarget && createPortal(privateCards('gallery'), galleryTarget)}
-      {preview && <div role="dialog" aria-modal="true" aria-label="Photo preview" className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-6" onClick={() => setPreview(null)}>
-        <button type="button" className="text-white p-3" onClick={() => setPreview(null)}>Close preview</button>
-        <img src={preview.image} alt="Private draft preview" className="max-h-[80vh] max-w-full object-contain" />
-      </div>}
+
     </div>;
   }
 
@@ -436,7 +431,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
             </div>}
             {privateCards(placement)}
           </section>)}
-          {preview && <div><button type="button" onClick={() => setPreview(null)}>Close preview</button><img src={preview.image} alt="Private draft preview" className="max-h-96 max-w-full" /></div>}
+
         </section>
       </>}
     </div>

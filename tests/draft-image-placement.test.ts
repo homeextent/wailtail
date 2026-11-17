@@ -1,3 +1,4 @@
+import { moveVisiblePhoto } from '../src/utils/photoOrdering';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyPublishedDraftImages, parseImagePlacement } from '../server/api/_lib/draftImagePlacement';
@@ -18,4 +19,15 @@ test('publication maps hero/gallery/chapter assets without private paths and rep
   assert.equal(result.fullGallery[0].category, 'interior');
   assert.equal(result.showcaseChapters[0].photoUrl, 'new');
   assert.equal(JSON.stringify(result).includes('private'), false);
+});
+
+test('filtered photo ordering swaps visible neighbours and preserves hidden slots and boundaries', () => {
+  const photos = [{id:'a', category:'exterior'}, {id:'b', category:'interior'}, {id:'c', category:'exterior'}, {id:'d', category:'engine'}];
+  const exterior = (photo: typeof photos[number]) => photo.category === 'exterior';
+  assert.deepEqual(moveVisiblePhoto(photos, 0, 1, exterior).map(photo => photo.id), ['c','b','a','d']);
+  assert.deepEqual(moveVisiblePhoto(photos, 2, -1, exterior).map(photo => photo.id), ['c','b','a','d']);
+  assert.equal(moveVisiblePhoto(photos, 0, -1, exterior), photos);
+  assert.equal(moveVisiblePhoto(photos, 2, 1, exterior), photos);
+  assert.equal(moveVisiblePhoto(photos, 1, 1, exterior), photos);
+  assert.deepEqual(moveVisiblePhoto(photos, 0, 1, () => true).map(photo => photo.id), ['b','a','c','d']);
 });

@@ -1,3 +1,5 @@
+import { PhotoEditorCard } from './PhotoEditorCard';
+import { moveVisiblePhoto } from '../utils/photoOrdering';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Auction, 
@@ -3079,7 +3081,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                 {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
                   <div>
-                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly galleryFilter={galleryActiveFilter} onImagesChanged={setDraftImageViews} onBack={() => {}} />
+                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly heroOffset={heroImages.length} galleryFilter={galleryActiveFilter} onImagesChanged={setDraftImageViews} onBack={() => {}} />
                   </div>
                 )}
 
@@ -3140,84 +3142,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </button>
                   </div>
 
-                  <div id="private-hero-cards" />
                   {/* Hero Images Grid with Drag & Reorder */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {heroImages.map((imgUrl, hIdx) => (
-                      <div
-                        key={hIdx}
-                        draggable
-                        onDragStart={(e) => handleHeroDragStart(e, hIdx)}
-                        onDrop={(e) => handleHeroDrop(e, hIdx)}
-                        onDragOver={(e) => e.preventDefault()}
-                        className={`relative rounded-xl overflow-hidden border aspect-[4/3] bg-black group transition-all cursor-move select-none shadow-md ${
-                          hIdx === 0 
-                            ? 'border-amber-500/80 ring-1 ring-amber-500/40' 
-                            : 'border-zinc-800 hover:border-zinc-600'
-                        } ${draggedHeroIdx === hIdx ? 'opacity-40 scale-95' : 'opacity-100'}`}
-                      >
-                        <img 
-                          src={imgUrl} 
-                          alt={`Hero slide ${hIdx + 1}`} 
-                          className="w-full h-full object-cover pointer-events-none" 
-                        />
-
-                        {/* Top Badge Overlay */}
-                        <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                            hIdx === 0 
-                              ? 'bg-amber-500 text-black font-black' 
-                              : 'bg-black/75 text-zinc-300 backdrop-blur-xs'
-                          }`}>
-                            {hIdx === 0 ? '★ Lead Hero' : `#${hIdx + 1}`}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => setHeroImages(heroImages.filter((_, i) => i !== hIdx))}
-                            className="w-6 h-6 rounded bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-md cursor-pointer transition-colors opacity-90 group-hover:opacity-100"
-                            title="Remove slide"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Bottom Reorder Bar */}
-                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-1.5 flex items-center justify-between z-10">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveHero(hIdx, 'left')}
-                            disabled={hIdx === 0}
-                            className={`p-1 rounded text-[10px] font-bold flex items-center gap-0.5 ${
-                              hIdx === 0 
-                                ? 'text-zinc-600 cursor-not-allowed' 
-                                : 'text-zinc-200 hover:text-white bg-black/60 hover:bg-black/90 cursor-pointer'
-                            }`}
-                            title="Move slide left"
-                          >
-                            <ChevronLeft className="w-3 h-3" />
-                            <span>Left</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleMoveHero(hIdx, 'right')}
-                            disabled={hIdx === heroImages.length - 1}
-                            className={`p-1 rounded text-[10px] font-bold flex items-center gap-0.5 ${
-                              hIdx === heroImages.length - 1 
-                                ? 'text-zinc-600 cursor-not-allowed' 
-                                : 'text-zinc-200 hover:text-white bg-black/60 hover:bg-black/90 cursor-pointer'
-                            }`}
-                            title="Move slide right"
-                          >
-                            <span>Right</span>
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    {heroImages.map((imgUrl, hIdx) => <PhotoEditorCard key={hIdx} src={imgUrl} title={`Hero slide ${hIdx + 1}`} heroPosition={hIdx}
+                      canLeft={hIdx > 0} canRight={hIdx < heroImages.length - 1}
+                      onMove={direction => handleMoveHero(hIdx, direction === -1 ? 'left' : 'right')}
+                      onRemove={() => setHeroImages(heroImages.filter((_, index) => index !== hIdx))}
+                      dragProps={{ draggable: true, onDragStart: event => handleHeroDragStart(event, hIdx), onDragOver: event => event.preventDefault(), onDrop: event => handleHeroDrop(event, hIdx) }} />)}
                   </div>
                 </div>
+
+                <div id="private-hero-cards" />
 
                 {/* 5B: FULL CATEGORIZED GALLERY */}
                 <div className="pt-4 border-t border-zinc-800 space-y-4">
@@ -3332,65 +3267,14 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   <div id="private-gallery-cards" />
                   {/* Gallery Items Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {galleryImages
-                      .map((img, originalIndex) => ({ img, originalIndex }))
+                    {galleryImages.map((img, originalIndex) => ({ img, originalIndex }))
                       .filter(({ img }) => galleryActiveFilter === 'all' || img.category === galleryActiveFilter)
-                      .map(({ img, originalIndex }) => (
-                        <div
-                          key={img.id || originalIndex}
-                          className="relative rounded-xl overflow-hidden border border-zinc-800 aspect-[4/3] bg-zinc-950 group shadow-sm flex flex-col justify-between"
-                        >
-                          {/* Image or PDF Document Preview */}
-                          {img.isPdf ? (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-zinc-900">
-                              <FileText className="w-8 h-8 text-red-400 mb-1" />
-                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">
-                                PDF Document
-                              </span>
-                              <span className="text-[11px] text-zinc-400 line-clamp-2 mt-0.5 font-medium">
-                                {img.title}
-                              </span>
-                            </div>
-                          ) : (
-                            <img
-                              src={img.url}
-                              alt={img.title || 'Vehicle photo'}
-                              className="w-full h-full object-cover"
-                            />
-                          )}
-
-                          {/* Top Controls Overlay: Category Selector + High-Vis Delete Button */}
-                          <div className="absolute top-1.5 inset-x-1.5 flex items-center justify-between z-10">
-                            <select
-                              value={img.category || 'exterior'}
-                              onChange={(e) => handleUpdateGalleryCategory(originalIndex, e.target.value as any)}
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/85 text-zinc-200 border border-zinc-700 backdrop-blur-xs cursor-pointer uppercase tracking-wider"
-                            >
-                              <option value="exterior">Exterior</option>
-                              <option value="interior">Interior</option>
-                              <option value="engine">Engine</option>
-                              <option value="underbody">Underbody</option>
-                              <option value="documentation">Docs</option>
-                            </select>
-
-                            <button
-                              type="button"
-                              onClick={() => setGalleryImages(galleryImages.filter((_, i) => i !== originalIndex))}
-                              className="w-6 h-6 rounded bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-md cursor-pointer transition-colors opacity-90 group-hover:opacity-100"
-                              title="Delete photo"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          {/* Bottom Caption Bar */}
-                          <div className="absolute bottom-0 inset-x-0 bg-black/80 backdrop-blur-xs px-2 py-1 z-10">
-                            <p className="text-[10px] text-zinc-300 truncate font-medium">
-                              {img.title || img.caption || 'Vehicle Photo'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                      .map(({ img, originalIndex }, visibleIndex, visible) => <PhotoEditorCard key={img.id || originalIndex}
+                        src={img.url} title={img.title || img.caption || 'Vehicle photo'} isPdf={img.isPdf} category={img.category}
+                        canLeft={visibleIndex > 0} canRight={visibleIndex < visible.length - 1}
+                        onCategory={category => handleUpdateGalleryCategory(originalIndex, category as GalleryImage['category'])}
+                        onMove={direction => setGalleryImages(images => moveVisiblePhoto<GalleryImage>(images, originalIndex, direction, image => galleryActiveFilter === 'all' || image.category === galleryActiveFilter))}
+                        onRemove={() => setGalleryImages(images => images.filter((_, index) => index !== originalIndex))} />)}
                   </div>
                 </div>
               </section>
