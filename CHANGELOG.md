@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Administrator draft save and public preview
+
+- Stop sending protected currentBid from editor saves. Derive zero-bid starting amounts and reserve state inside the administrator update transaction, preserving concurrent bidder values.
+- Expose the existing public preview lifecycle state to administrators with an explicit Publish Preview action and public-visibility guidance. Preserve preview across date boundaries and disable header/sticky bidding controls; existing server bidding rejection and clock exclusion remain unchanged. Cover preview publication and withdrawal in the isolated browser workflow.
+
 ### Representative editor tab title
 
 - Use the authenticated route draft title for representative editor tabs, scoped to listing ID and signed-in UID. Show a neutral draft title until loaded; administrator tabs also wait for their matching route listing. Preserve existing editor controls and permissions.

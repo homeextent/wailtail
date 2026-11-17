@@ -506,13 +506,13 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                 className={`px-8 py-3.5 rounded-lg font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all shadow-lg ${
                   effectiveStatus === 'ended' || effectiveStatus === 'sold'
                     ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed border border-zinc-600'
-                    : effectiveStatus === 'upcoming'
+                    : effectiveStatus === 'upcoming' || effectiveStatus === 'preview'
                     ? 'bg-blue-800/80 text-blue-200 border border-blue-700/80 cursor-not-allowed'
                     : 'bg-emerald-600 hover:bg-emerald-500 text-white hover:shadow-emerald-900/30 hover:scale-[1.02] active:scale-[0.99] border border-emerald-400/30'
                 }`}
               >
                 <Gavel className="w-4 h-4" />
-                <span>{effectiveStatus === 'ended' || effectiveStatus === 'sold' ? 'Auction Closed' : effectiveStatus === 'upcoming' ? 'Preview Mode' : 'Place Bid'}</span>
+                <span>{effectiveStatus === 'ended' || effectiveStatus === 'sold' ? 'Auction Closed' : effectiveStatus === 'upcoming' || effectiveStatus === 'preview' ? 'Preview Mode' : 'Place Bid'}</span>
               </button>
 
               <div className="text-[11px] text-zinc-400 text-center lg:text-right">

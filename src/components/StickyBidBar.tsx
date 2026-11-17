@@ -112,7 +112,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
 
           <button
             onClick={onOpenBid}
-            disabled={isEnded || isUpcoming}
+            disabled={timeData.statusType !== 'active'}
             className={`px-4 sm:px-6 py-2 rounded-lg font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md transition-all ${
               isEnded
                 ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
@@ -122,7 +122,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
             }`}
           >
             <Gavel className="w-4 h-4" />
-            <span>{isEnded ? 'Ended' : isUpcoming ? 'Upcoming' : 'Place Bid'}</span>
+            <span>{timeData.statusType === 'preview' ? 'Preview — bidding disabled' : isEnded ? 'Ended' : isUpcoming ? 'Upcoming' : 'Place Bid'}</span>
           </button>
         </div>
       </div>

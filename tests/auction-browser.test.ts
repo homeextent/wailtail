@@ -689,6 +689,26 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(verificationState, value => value.listing?.status === 'pending_review' && value.user.role === 'bidder' && value.listingAudits === 2, 'dealer submission keeps roles and audit records intact');
     await eventually(text, value => value.includes('read-only while it is under review'), 'submitted dealer draft locks representative fields');
 
+    await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
+    await eventually(text, value => value.includes('Protected dealer attribution'), 'admin reopens submitted draft');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `!!document.querySelector('select[aria-label="Auction lifecycle status"] option[value="preview"]')`, returnByValue: true });
+      return result.result.value;
+    }, Boolean, 'administrator public-preview control');
+    await fill('select[aria-label="Auction lifecycle status"]', 'preview', true);
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Publish Preview'); if (!button || button.disabled) return false; button.click(); return true; })()`);
+    await eventually(verificationState, value => value.listing?.status === 'preview', 'administrator publishes non-bidding preview');
+    const previewResponse = await fetch(origin + '/api/public-auctions?auctionId=' + convertedId);
+    assert.equal(previewResponse.status, 200);
+    const previewData = await previewResponse.json();
+    assert.equal(previewData.auction.status, 'preview');
+    assert.ok(previewData.media.heroImages.length >= 3);
+    await fill('select[aria-label="Auction lifecycle status"]', 'draft', true);
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Save Draft'); if (!button || button.disabled) return false; button.click(); return true; })()`);
+    await eventually(verificationState, value => value.listing?.status === 'draft', 'administrator withdraws preview');
+    assert.equal((await fetch(origin + '/api/public-auctions?auctionId=' + convertedId)).status, 404);
+
+
 
   } catch (error) {
     console.error(serverLog);
