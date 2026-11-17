@@ -103,6 +103,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.ok(catalog.includes('Synthetic Public Dealer'));
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
+    for (const route of ['lot', 'vehicle']) {
+      await command('Page.navigate', { url: origin + `/${route}/${fixture.publicAuctionId}?actor=public` });
+      await eventually(text, value => value.includes('Synthetic public description'), `${route} resolves the requested public listing`);
+    }
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=public` });
     await eventually(text, value => value.toLowerCase().includes('synthetic public overview') &&
       value.includes('Synthetic public description'), 'public auction detail');
@@ -730,6 +734,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Save Draft'); if (!button || button.disabled) return false; button.click(); return true; })()`);
     await eventually(verificationState, value => value.listing?.status === 'draft', 'administrator withdraws preview');
     assert.equal((await fetch(origin + '/api/public-auctions?auctionId=' + convertedId)).status, 404);
+    for (const route of ['lot', 'vehicle', 'auctions']) {
+      await command('Page.navigate', { url: origin + `/${route}/${convertedId}?actor=public` });
+      const unavailable = await eventually(text, value => value.includes('Listing unavailable'), `${route} withdrawn listing does not substitute the public selection`);
+      assert.ok(!unavailable.includes('Synthetic public description'));
+      const title = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+      assert.equal(title.result.value, 'Listing unavailable — Wailtail');
+    }
+
 
 
 

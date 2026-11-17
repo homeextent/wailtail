@@ -301,11 +301,12 @@ const AuctionAppContent: React.FC = () => {
 
   // Extract active vehicle listing ID from route if on editor or public auction detail
   const editorMatch = currentPath.match(/\/dashboard\/listings\/([^/?#]+)\/edit/);
-  const publicAuctionMatch = currentPath.match(/\/auctions\/([^/?#]+)/);
+  const publicAuctionMatch = currentPath.match(/\/(?:#?auctions|lot|vehicle)\/([^/?#]+)/);
   const routeAuctionId = editorMatch ? editorMatch[1] : publicAuctionMatch ? publicAuctionMatch[1] : '';
 
   const [activeAuctionId, setActiveAuctionId] = useState<string>(routeAuctionId);
   const [allAuctions, setAllAuctions] = useState<Auction[]>([]);
+  const [publicRouteResult, setPublicRouteResult] = useState<{ id: string; available: boolean } | null>(null);
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
 
@@ -335,6 +336,11 @@ const AuctionAppContent: React.FC = () => {
     }
 
     if (isSpecificAuctionRoute) {
+      if (publicRouteResult?.id !== routeAuctionId || !publicRouteResult.available || auction.id !== routeAuctionId) {
+        document.title = publicRouteResult?.id === routeAuctionId && !publicRouteResult.available
+          ? 'Listing unavailable — Wailtail' : 'Loading listing — Wailtail';
+        return;
+      }
       const { year, make, model, generation, title } = auction || {};
       if (year && make && model) {
         const genPart = generation ? ` ${generation}` : '';
@@ -364,6 +370,7 @@ const AuctionAppContent: React.FC = () => {
     routeAuctionId,
     user?.uid,
     draftEditorTitle,
+    publicRouteResult,
     auction?.id,
     auction?.year, 
     auction?.make, 
@@ -494,7 +501,7 @@ const AuctionAppContent: React.FC = () => {
       return;
     }
 
-    const targetAuctionId = activeAuctionId || (allAuctions.length > 0 ? allAuctions[0].id : MAIN_AUCTION_ID);
+    const targetAuctionId = routeAuctionId || activeAuctionId || (allAuctions.length > 0 ? allAuctions[0].id : MAIN_AUCTION_ID);
 
     const setupFirestore = async () => {
       try {
@@ -538,6 +545,8 @@ const AuctionAppContent: React.FC = () => {
           unsubAuction = subscribeToAuction(targetAuctionId, applyAuction);
         } else {
           unsubAuction = subscribeToPublicAuction(targetAuctionId, (data, detail) => {
+            if (disposed) return;
+            if (isSpecificAuctionRoute) setPublicRouteResult({ id: targetAuctionId, available: data?.id === targetAuctionId });
             applyAuction(data);
             applyMedia(detail?.media ?? null);
             setBids(detail?.bids ?? []);
@@ -570,7 +579,7 @@ const AuctionAppContent: React.FC = () => {
       unsubComments();
       unsubMedia();
     };
-  }, [activeAuctionId, isEditorRoute, isAdmin, authLoading, allAuctions.length]);
+  }, [activeAuctionId, routeAuctionId, isSpecificAuctionRoute, isEditorRoute, isAdmin, authLoading, allAuctions.length]);
 
   const handleToggleWatch = async () => {
     const next = !isWatching;
@@ -753,6 +762,19 @@ const AuctionAppContent: React.FC = () => {
   const effectiveSiteLogo = brandingLoaded ? globalBranding.siteLogo : currentMedia.siteLogo || auction.siteLogo || globalBranding.siteLogo || '';
   const effectiveSiteName = brandingLoaded ? globalBranding.siteName : currentMedia.siteName || auction.siteName || globalBranding.siteName || 'wailtail';
   const effectiveSiteTagline = brandingLoaded ? globalBranding.siteTagline : currentMedia.siteTagline || auction.siteTagline || globalBranding.siteTagline || 'Single-Car Auctions';
+
+  // Never render the catalog selection under a different explicit listing URL.
+  if (isSpecificAuctionRoute && (!routeAuctionId || publicRouteResult?.id !== routeAuctionId ||
+      !publicRouteResult.available || auction.id !== routeAuctionId)) {
+    const unavailable = !routeAuctionId || (publicRouteResult?.id === routeAuctionId && !publicRouteResult.available);
+    return <main className="min-h-screen bg-[#f7f8fa] text-zinc-900 flex items-center justify-center p-6">
+      <div className="text-center space-y-4">
+        <h1 className="text-2xl font-bold">{unavailable ? 'Listing unavailable' : 'Loading listing…'}</h1>
+        <p role="status">{unavailable ? 'This listing is not currently public or could not be loaded.' : 'Loading the requested vehicle listing.'}</p>
+        <a className="underline" href="/catalog">View all auctions</a>
+      </div>
+    </main>;
+  }
 
   if (isCatalogRoute) {
     return (

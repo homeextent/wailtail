@@ -165,7 +165,7 @@ server.get('/admin-fixture', async (_req, res, next) => {
   }
 });
 // Serve the real app at its real routes, with Firebase modules replaced only in this harness.
-server.get(['/intake','/','/catalog','/auctions/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (req, res) => {
+server.get(['/intake','/','/catalog','/auctions/:auctionId','/lot/:auctionId','/vehicle/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (req, res) => {
   const entry = req.path === '/intake' ? '/tests/intake-browser.tsx' : '/tests/full-app-browser.tsx';
   res.type('html').send('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Isolated Wailtail app</title><div id="root"></div><script type="module" src="' + entry + '"></script></html>');
 });
