@@ -523,6 +523,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal(uploadLayout.result.value.inGallery, true);
     assert.equal(uploadLayout.result.value.multiple, true);
     assert.equal(uploadLayout.result.value.duplicate, false);
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => { const input=document.querySelector('#private-draft-images input[type="file"]');return !!input && !input.disabled; })()`, returnByValue:true });
+      return result.result.value;
+    }, Boolean, 'private upload control is ready');
     const pickerRoute = await command('Runtime.evaluate', { expression: `(() => {
       const input = document.querySelector('#private-draft-images input[type="file"]');
       let opened = 0;
