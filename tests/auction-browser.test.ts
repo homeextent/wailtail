@@ -589,6 +589,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const row = Array.from(document.querySelectorAll('[data-private-placement] [data-asset-id]')).find(row => row.textContent.includes('Hero · engine')); const select = row?.querySelector('select'); if (!select) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'gallery'); select.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
     await eventually(text, value => value.includes('Image placement saved.') && value.includes('Gallery · engine'), 'draft reassignment restores gallery category');
 
+    await click(`(() => {
+      const section = document.querySelector('#sec-narrative');
+      const input = section?.querySelector('input'); if (!input) return false;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Unsaved heading survives photo ordering');
+      input.dispatchEvent(new Event('input', {bubbles:true})); return true;
+    })()`);
     const reorder = await command('Runtime.evaluate', { expression: `(() => {
       const rows = document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]');
       const id = rows[1].dataset.assetId;
@@ -596,6 +602,10 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       return id;
     })()`, returnByValue: true });
     await eventually(text, value => value.includes('Photo order saved.'), 'hero order saved immediately');
+    await delay(500); // Allow the media snapshot to arrive before checking unsaved state.
+    const unsavedHeading = await command('Runtime.evaluate', { expression: `document.querySelector('#sec-narrative input').value`, returnByValue: true });
+    assert.equal(unsavedHeading.result.value, 'Unsaved heading survives photo ordering');
+
     await command('Runtime.evaluate', { expression: 'globalThis.__placementReload = true' });
     await command('Page.reload');
     await eventually(async () => {

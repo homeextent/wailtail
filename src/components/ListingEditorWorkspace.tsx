@@ -929,8 +929,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setEndTimeInput(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
   }, [auction.id]);
 
+  // Private order writes must not rehydrate unrelated, unsaved editor fields.
+  const hydratedMedia = useRef<{ auctionId: string; signature: string } | null>(null);
   // Synchronize media config state when mediaConfig or auction changes
   useEffect(() => {
+    const signature = JSON.stringify({ ...mediaConfig, updatedAt: undefined, sellerDraftGalleryOrder: undefined, draftPublishedUrls: undefined });
+    if (hydratedMedia.current?.auctionId === auction.id && hydratedMedia.current.signature === signature) return;
+    hydratedMedia.current = { auctionId: auction.id, signature };
     const isMain = auction.id === MAIN_AUCTION_ID;
     setOverviewHeading(mediaConfig.overviewHeading ?? (isMain ? 'Vehicle Overview & Provenance' : ''));
     if (mediaConfig.overviewParagraphs && mediaConfig.overviewParagraphs.length > 0) {
