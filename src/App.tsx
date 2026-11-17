@@ -503,8 +503,6 @@ const AuctionAppContent: React.FC = () => {
 
     const targetAuctionId = routeAuctionId || activeAuctionId || (allAuctions.length > 0 ? allAuctions[0].id : MAIN_AUCTION_ID);
 
-    if (isSpecificAuctionRoute) setPublicRouteResult(null);
-
     const setupFirestore = async () => {
       try {
         if (isAdmin && isEditorRoute) {
