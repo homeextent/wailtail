@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Preview withdrawal browser acceptance
+
+- Wait for the complete workspace save and enabled action before changing preview back to Draft. The listing status commits before the separate media save completes; the browser test previously raced the disabled Saving state. Preserve single-click actions and the anonymous 404 withdrawal assertion; application behavior is unchanged.
+
 ### Administrator draft save and public preview
 
 - Stop sending protected currentBid from editor saves. Derive zero-bid starting amounts and reserve state inside the administrator update transaction, preserving concurrent bidder values.
