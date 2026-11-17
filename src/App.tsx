@@ -309,6 +309,8 @@ const AuctionAppContent: React.FC = () => {
 
   const [routeToast, setRouteToast] = useState<string | null>(null);
 
+  const [draftEditorTitle, setDraftEditorTitle] = useState<{ auctionId: string; userId: string; title: string } | null>(null);
+
   // Synchronize document.title dynamically with route, view state, and active auction
   useEffect(() => {
     // Avoid redundant pageview events during brief intermediary authentication loading states
@@ -323,7 +325,10 @@ const AuctionAppContent: React.FC = () => {
     }
 
     if (isEditorRoute) {
-      const displayTitle = auction?.title?.trim() || 'Draft Listing';
+      const loadedTitle = isAdmin
+        ? (auction?.id === routeAuctionId ? auction.title : '')
+        : (draftEditorTitle?.auctionId === routeAuctionId && draftEditorTitle.userId === user?.uid ? draftEditorTitle.title : '');
+      const displayTitle = loadedTitle?.trim() || 'Draft Listing';
       document.title = `Listing Editor: ${displayTitle} — Wailtail`;
       trackPageView(window.location.pathname + window.location.search, document.title);
       return;
@@ -355,6 +360,11 @@ const AuctionAppContent: React.FC = () => {
     isEditorRoute, 
     isSpecificAuctionRoute, 
     authLoading,
+    isAdmin,
+    routeAuctionId,
+    user?.uid,
+    draftEditorTitle,
+    auction?.id,
     auction?.year, 
     auction?.make, 
     auction?.model, 
@@ -702,6 +712,7 @@ const AuctionAppContent: React.FC = () => {
       const auctionId = editorMatch?.[1];
       if (!user || !auctionId) return <p>Listing workspace unavailable.</p>;
       return <SellerDraftWorkspace key={`${user.uid}:${auctionId}`} auctionId={auctionId} user={user}
+        onDraftLoaded={setDraftEditorTitle}
         onBack={() => {
           navigateTo('/');
           handleOpenAccountHub('seller');

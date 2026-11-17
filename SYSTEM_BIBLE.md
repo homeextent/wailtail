@@ -1,5 +1,7 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+Representative editor title correction (staging proposal): derive the browser tab from the authenticated route draft, with a neutral loading fallback; do not reuse the public catalog selection.
+
 
 Draft-upload correction accepted on staging in PR #26; follow-up placement/publication correction in preparation: administrator unpublished editors stage JPG/PNG images and gallery PDF documents in private `auctionDraft` assets through authenticated draft endpoints. Public hero/gallery uploads remain restricted to published listings. No live rules change or production deployment is part of this correction. See `docs/draft-image-upload-acceptance.md` and `docs/draft-image-publication.md`. The follow-up uses the compact production Hero/Gallery cards with private thumbnails, multiple-photo uploads, click-to-preview and saved ordering; gallery photo filenames are replaced by Left/Right controls, while document titles are retained; supported-file filters and a 2 MiB per-file limit apply to JPG/PNG images and gallery-only PDFs, with guarded administrator publication; production promotion remains separate.
 ## Auction Security Gate implementation checkpoint
