@@ -1744,6 +1744,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       if (input && !input.disabled) {
         input.dataset.placement = target.type === 'hero' ? 'hero' : 'gallery';
         input.dataset.category = target.category || 'exterior';
+        input.accept = target.type === 'gallery' ? '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf' : '.jpg,.jpeg,.png,image/jpeg,image/png';
         input.click();
       }
       else setMessage({ type: 'info', text: 'Draft images are read-only while the listing is under review.' });
@@ -1752,6 +1753,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setActiveUploadTarget(target);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+      fileInputRef.current.accept = target.type === 'gallery' ? '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf' : '.jpg,.jpeg,.png,image/jpeg,image/png';
       fileInputRef.current.click();
     }
   };
@@ -1765,14 +1767,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const oversizedErrors: string[] = [];
 
     for (const f of files) {
-      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
-      if (isPdf && f.size > 25 * 1024 * 1024) {
-        oversizedErrors.push(`Document ${f.name} exceeds the 25MB limit. Please compress the file or provide a cloud link (Google Drive / Dropbox) under Vehicle Identity.`);
-      } else if (!isPdf && f.size > 20 * 1024 * 1024) {
-        oversizedErrors.push(`Image ${f.name} exceeds the 20MB raw limit. Please compress the image prior to upload.`);
-      } else {
-        validFiles.push(f);
-      }
+      const isPdf = f.type === 'application/pdf';
+      if (!['image/jpeg','image/png', ...(activeUploadTarget.type === 'gallery' ? ['application/pdf'] : [])].includes(f.type) || f.size > 2 * 1024 * 1024) {
+        oversizedErrors.push(`${f.name}: use JPG/PNG${activeUploadTarget.type === 'gallery' ? ' or PDF' : ''}, up to 2 MiB per file.`);
+      } else validFiles.push(f);
     }
 
     if (oversizedErrors.length > 0) {
@@ -1789,7 +1787,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       const readResults = await Promise.all(
         validFiles.map(async file => {
           const dataUrl = await readAndUploadImage(file, async rawDataUrl => {
-            const compressed = await compressImageDataUrl(rawDataUrl);
+            const compressed = file.type === 'image/jpeg' ? await compressImageDataUrl(rawDataUrl) : rawDataUrl;
             return uploadImageToStorage(auction.id, compressed, activeUploadTarget.type);
           });
           return { dataUrl, name: file.name, cleanedName: file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') };
@@ -2133,7 +2131,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         type="file"
         ref={fileInputRef}
         onChange={handleFileSelected}
-        accept="image/png, image/jpeg, image/webp, image/gif, application/pdf"
+        accept=".jpg,.jpeg,.png,.pdf,image/png,image/jpeg,application/pdf"
         multiple
         className="hidden"
       />
@@ -4265,7 +4263,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   <span>Full Categorized Photo Gallery ({galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length} items)</span>
                 </div>
                 <PhotoGalleryGrid
-                  images={[...galleryImages, ...draftImageViews.filter(image => image.placement === 'gallery').map(image => ({ id: image.id, url: image.url, category: image.category as GalleryImage['category'], title: 'Draft vehicle photo', isPdf: false }))]}
+                  images={[...galleryImages, ...draftImageViews.filter(image => image.placement === 'gallery').map(image => ({ id: image.id, url: image.url, category: image.category as GalleryImage['category'], title: image.title || 'Draft vehicle photo', isPdf: image.contentType === 'application/pdf' }))]}
                   selectedImageIndex={previewLightboxIndex}
                   onOpenLightbox={(idx) => setPreviewLightboxIndex(idx)}
                   onCloseLightbox={() => setPreviewLightboxIndex(null)}
@@ -4520,7 +4518,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 const filteredItems = [
                   ...heroImages.map((hUrl, idx) => ({ id: `hero-${idx}`, url: hUrl, title: `Hero Photo #${idx + 1}`, caption: '', category: 'exterior' as const, isPdf: false })),
                   ...galleryImages,
-                  ...(pickerTarget?.type === 'hero' ? draftImageViews.map(image => ({ id: image.id, url: image.url, title: 'Draft ' + image.category + ' photo', caption: '', category: image.category as GalleryImage['category'], isPdf: false })) : [])
+                  ...(pickerTarget?.type === 'hero' ? draftImageViews.filter(image => image.contentType !== 'application/pdf').map(image => ({ id: image.id, url: image.url, title: 'Draft ' + image.category + ' photo', caption: '', category: image.category as GalleryImage['category'], isPdf: false })) : [])
                 ].filter((item) => {
                   if (!item.url || !item.url.trim()) return false;
                   // Exclude non-image PDF inspection documents from selectable options

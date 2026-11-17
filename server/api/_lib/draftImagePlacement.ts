@@ -17,12 +17,12 @@ export function applyPublishedDraftImages(config: Record<string, any>, assets: A
   });
   const urls = new Set([...(config.draftPublishedUrls ?? []), ...active.flatMap(asset => [asset.publishedUrl, asset.previousPublishedUrl].filter(Boolean))]);
   const heroImages = [...(config.heroImages ?? []).filter((url: string) => !urls.has(url)),
-    ...active.filter(asset => asset.placement === 'hero').map(asset => asset.publishedUrl)];
+    ...active.filter(asset => asset.placement === 'hero' && asset.contentType !== 'application/pdf').map(asset => asset.publishedUrl)];
   const fullGallery = [...(config.fullGallery ?? []).filter((item: any) => !urls.has(item.url)),
     ...active.filter(asset => asset.placement !== 'hero').map(asset => ({ id: asset.id, url: asset.publishedUrl,
-      category: asset.category || 'exterior', title: 'Vehicle photo', isPdf: false }))];
+      category: asset.category || 'exterior', title: asset.title || (asset.contentType === 'application/pdf' ? 'Inspection report' : 'Vehicle photo'), isPdf: asset.contentType === 'application/pdf' }))];
   const showcaseChapters = (config.showcaseChapters ?? []).map((chapter: any) => {
-    const asset = active.find(asset => asset.id === chapter.photoAssetId);
+    const asset = active.find(asset => asset.id === chapter.photoAssetId && asset.contentType !== 'application/pdf');
     return asset ? { ...chapter, photoUrl: asset.publishedUrl } : chapter;
   });
   return { ...config, heroImages, fullGallery, showcaseChapters, ...(showcaseChapters.length ? { inlineShowcase: showcaseChapters.map(chapterToSection) } : {}), draftPublishedUrls: active.map(asset => asset.publishedUrl) };

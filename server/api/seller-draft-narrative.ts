@@ -179,7 +179,7 @@ async function handleSellerDraftCommand(
         }
         for (const id of photoIds) {
           const asset = (await transaction.get(auctionRef.collection('draftAssets').doc(id))).data();
-          if (!asset || asset.removedAt !== null || asset.objectPath !== `auctionDraft/${input.auctionId}/${id}`) return 422;
+          if (!asset || asset.contentType === 'application/pdf' || asset.removedAt !== null || asset.objectPath !== `auctionDraft/${input.auctionId}/${id}`) return 422;
         }
         const chapters = current.map(chapter => {
           const edit = edits.get(chapter?.id);
@@ -310,7 +310,7 @@ export function handleSellerDraftRead(req: any, res: any, services?: Pick<Fireba
         videoSubtitle: typeof media?.videoSubtitle === 'string' ? media.videoSubtitle : '',
         youtubePlaylistUrl: typeof media?.youtubePlaylistUrl === 'string' && isPlaylistUrl(media.youtubePlaylistUrl)
           ? media.youtubePlaylistUrl : '',
-        assets: assets.docs.map(asset => ({ id: asset.id, placement: asset.get('placement') || 'gallery', category: asset.get('category') || 'exterior' })),
+        assets: assets.docs.map(asset => ({ id: asset.id, placement: asset.get('placement') || 'gallery', category: asset.get('category') || 'exterior', contentType: asset.get('contentType') || 'image/jpeg', title: asset.get('title') || '' })),
         assetIds: orderedDraftAssets(
           assets.docs.sort((a, b) => Number(a.get('createdAt')) - Number(b.get('createdAt'))).map(asset => asset.id),
           media?.sellerDraftGalleryOrder

@@ -38,6 +38,7 @@ export function PhotoEditorCard({ src, title, isPdf, heroPosition, category, onC
     {isPdf ? <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-zinc-900">
       <FileText className="w-8 h-8 text-red-400 mb-1" /><span className="text-[10px] font-bold text-zinc-300 uppercase">PDF Document</span>
       <span className="text-[11px] text-zinc-400 line-clamp-2 mt-0.5">{title || 'Inspection report'}</span>
+      {src && <a href={src} download={title?.endsWith('.pdf') ? title : `${title || 'Inspection report'}.pdf`} className="text-xs text-amber-400 underline mt-1">Download PDF</a>}
     </div> : <button ref={trigger} type="button" disabled={!src} onClick={() => setOpen(true)} aria-label={`Preview ${title || 'photo'}`} className="block w-full h-full cursor-zoom-in">
       {src ? <img src={src} alt={title || 'Vehicle photo'} draggable={false} className="w-full h-full object-cover" /> : <span className="text-zinc-400 text-xs">Loading photo…</span>}
     </button>}

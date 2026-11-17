@@ -56,6 +56,7 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
     const asset = auction.collection('draftAssets').doc(assetId);
     const objectPath = `auctionDraft/${auctionId}/${assetId}`;
 
+    let contentType = 'image/jpeg';
     const decision = await firestore.runTransaction(async transaction => {
       const record = (await transaction.get(auction)).data();
       if (!record || (!admin && record.sellerId !== uid) ||
@@ -69,6 +70,8 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
       const metadata = (await transaction.get(asset)).data();
       if (!metadata || metadata.removedAt || metadata.objectPath !== objectPath) return 404;
 
+      contentType = metadata.contentType || 'image/jpeg';
+      if (action === 'assign' && contentType === 'application/pdf' && (placement?.placement !== 'gallery' || placement.category !== 'documentation')) return 422;
       if (action === 'assign') {
         transaction.update(asset, placement!);
         transaction.update(auction, { sellerDraftRevision: expectedRevision + 1, updatedAt: Date.now() });
@@ -84,7 +87,7 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
       return 200;
     });
 
-    if (decision === 422) return res.status(422).json({ error: 'draft-image-assigned' });
+    if (decision === 422) return res.status(422).json({ error: action === 'remove' ? 'draft-image-assigned' : 'invalid-image-placement' });
     if (decision !== 200) return res.status(decision).json({ error: 'draft-media-unavailable' });
     if (action !== 'preview') return res.status(200).json({ revision: expectedRevision + 1 });
 
@@ -92,7 +95,9 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
     if (!bucket) return res.status(503).json({ error: 'draft-storage-unconfigured' });
     const file = getStorage((services ?? getFirebaseAdminServices()).app).bucket(bucket).file(objectPath);
     const [bytes] = await file.download();
-    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (contentType === 'application/pdf') res.setHeader('Content-Disposition', 'attachment; filename="inspection-report.pdf"');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.status(200).send(bytes);
   });

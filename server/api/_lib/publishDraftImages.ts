@@ -1,3 +1,4 @@
+import { validDraftFile, draftFileExtension } from './draftFile.js';
 import { randomUUID } from 'node:crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdminServices } from './firebaseAdmin.js';
@@ -52,8 +53,9 @@ export async function prepareDraftImages(db: any, ids: string[], status: unknown
       const copyImage = async (asset: any) => {
         if (!/^[0-9a-f-]{36}$/.test(asset.id) || asset.objectPath !== `auctionDraft/${id}/${asset.id}`) throw new Error('Invalid draft image reference.');
         const [bytes] = await bucket.file(asset.objectPath).download();
-        if (bytes.length < 5 || bytes.length > 2 * 1024 * 1024 || bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255 || bytes[bytes.length - 2] !== 255 || bytes[bytes.length - 1] !== 217) throw new Error('Invalid draft image bytes.');
-        const path = `auctionPublic/${id}/${randomUUID()}.jpg`;
+        const contentType = asset.contentType || 'image/jpeg';
+        if (!validDraftFile(bytes, contentType) || (contentType === 'application/pdf' && (asset.placement === 'hero' || asset.category !== 'documentation'))) throw new Error('Invalid draft file bytes or placement.');
+        const path = `auctionPublic/${id}/${randomUUID()}.${draftFileExtension(contentType)}`;
         const file = bucket.file(path);
         // Register intent before the write so an ambiguous Storage response can be reconciled.
         // The attempt marker and generation guard prevent deleting another writer's object.
@@ -61,8 +63,8 @@ export async function prepareDraftImages(db: any, ids: string[], status: unknown
         asset.previousPublishedUrl = asset.publishedUrl;
         asset.publishedUrl = `${origin}/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(path)}?alt=media`;
         copies.push({ file, assetRef: ref.collection('draftAssets').doc(asset.id), url: asset.publishedUrl });
-        await file.save(bytes, { resumable: false, contentType: 'image/jpeg',
-          metadata: { metadata: { draftPublicationAttempt: attempt } }, preconditionOpts: { ifGenerationMatch: 0 } });
+        await file.save(bytes, { resumable: false, contentType,
+          metadata: { ...(contentType === 'application/pdf' ? { contentDisposition: 'attachment; filename="inspection-report.pdf"' } : {}), metadata: { draftPublicationAttempt: attempt } }, preconditionOpts: { ifGenerationMatch: 0 } });
       };
       const results = await Promise.allSettled(Array.from({ length: Math.min(4, plan.assets.length) }, async () => {
         while (nextImage < plan.assets.length) await copyImage(plan.assets[nextImage++]);

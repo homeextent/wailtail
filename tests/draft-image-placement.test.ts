@@ -1,3 +1,4 @@
+import { decodeDraftFile } from '../server/api/_lib/draftFile';
 import { moveVisiblePhoto } from '../src/utils/photoOrdering';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,4 +31,18 @@ test('filtered photo ordering swaps visible neighbours and preserves hidden slot
   assert.equal(moveVisiblePhoto(photos, 2, 1, exterior), photos);
   assert.equal(moveVisiblePhoto(photos, 1, 1, exterior), photos);
   assert.deepEqual(moveVisiblePhoto(photos, 0, 1, () => true).map(photo => photo.id), ['b','a','c','d']);
+});
+
+test('draft files validate MIME/byte agreement, size and PDF boundaries', () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jJ1sAAAAASUVORK5CYII=', 'base64');
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n');
+  assert.ok(decodeDraftFile(png.toString('base64'), 'image/png'));
+  assert.ok(decodeDraftFile(pdf.toString('base64'), 'application/pdf'));
+  assert.equal(decodeDraftFile(png.toString('base64'), 'image/jpeg'), null);
+  assert.equal(decodeDraftFile(pdf.toString('base64'), 'image/png'), null);
+  assert.equal(decodeDraftFile(Buffer.from('%PDF-1.4\ntruncated').toString('base64'), 'application/pdf'), null);
+  assert.equal(decodeDraftFile(Buffer.from('<svg/>').toString('base64'), 'image/png'), null);
+  assert.equal(decodeDraftFile(Buffer.alloc(2*1024*1024+1).toString('base64'), 'application/pdf'), null);
+  const media = applyPublishedDraftImages({heroImages:[],fullGallery:[]}, [{id:'pdf',removedAt:null,contentType:'application/pdf',placement:'gallery',category:'documentation',title:'Service report.pdf',publishedUrl:'public.pdf'}]);
+  assert.equal(media.fullGallery[0].isPdf,true); assert.equal(media.fullGallery[0].title,'Service report.pdf');
 });
