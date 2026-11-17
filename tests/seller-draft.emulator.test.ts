@@ -445,6 +445,17 @@ test('trusted seller lifecycle on isolated Auth, Firestore and Storage emulators
         assert.equal((await invoke(media, { ...assign, category: 'invalid' }, owner.idToken)).status, 422);
         assert.equal((await invoke(media, assign, owner.idToken)).status, 200);
         assert.equal((await invoke(media, assign, owner.idToken)).status, 409);
+        const reorder = { auctionId: placementId, action: 'reorder', expectedRevision: 3, assetIds: [galleryId, heroId] };
+        assert.equal((await invoke(media, reorder, other.idToken)).status, 404);
+        assert.equal((await invoke(media, { ...reorder, assetIds: [heroId, heroId] }, admin.idToken)).status, 422);
+        assert.equal((await invoke(media, { ...reorder, assetIds: [heroId] }, admin.idToken)).status, 422);
+        assert.equal((await invoke(media, reorder, admin.idToken)).status, 200);
+        assert.equal((await invoke(media, reorder, admin.idToken)).status, 409);
+        assert.deepEqual(((await invoke(read, { auctionId: placementId }, owner.idToken)).payload as any).assetIds, [galleryId, heroId]);
+        await placementRef.update({ status: 'pending_review' });
+        assert.equal((await invoke(media, { ...reorder, expectedRevision: 4 }, admin.idToken)).status, 409);
+        await placementRef.update({ status: 'draft' });
+        assert.equal((await invoke(media, { ...reorder, expectedRevision: 4, assetIds: [heroId, galleryId] }, owner.idToken)).status, 200);
         assert.equal((await invoke(publicAuctions, {}, undefined, 'GET', { auctionId: placementId })).status, 404);
         assert.equal((await invoke(updateAuction, { auctionId: placementId, updates: { status: 'preview' } }, other.idToken)).status, 403);
         const publish = await invoke(updateAuction, { auctionId: placementId, updates: { status: 'preview' } }, admin.idToken);

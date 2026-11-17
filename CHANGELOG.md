@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Draft image placement and publication
 
+- Remove the duplicate Draft images panel. Restore direct Hero/Gallery controls with private thumbnails, category filters, placement and immediately saved ordering. Multiple JPEG selection reports progress, individual validation failures and partial completion; uncertain server failures stop the batch for reload/reconciliation.
+
 - Preserve hero/gallery intent and category for private uploads, allow draft reassignment, and render assigned images in authenticated administrator previews. Include private images in hero gallery selection by asset ID and reflect private assignments in counts.
 - Promote private draft assets through administrator publication with eligibility/revision checks, guarded attempt-copy cleanup and atomic Firestore status/media registration. Keep private originals, merge registered copies on later media saves, and avoid duplicate placements on republish. See `docs/draft-image-publication.md` for cross-service limitations.
 

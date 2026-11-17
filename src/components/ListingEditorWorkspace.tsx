@@ -981,7 +981,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const s2Status = overviewParagraphsText.trim().length > 50 ? 'complete' : 'draft';
     const s3Status = compiledOverviewSpecs.length >= 6 ? 'complete' : `${compiledOverviewSpecs.length} specs`;
     const s4Status = showcaseChapters.length > 0 ? 'complete' : 'draft';
-    const s5Status = heroImages.length > 0 && galleryImages.length > 0 ? 'complete' : (heroImages.length === 0 ? 'No hero' : 'draft');
+    const hasHero = heroImages.length > 0 || draftImageViews.some(image => image.placement === 'hero');
+    const hasGallery = galleryImages.length > 0 || draftImageViews.some(image => image.placement === 'gallery');
+    const s5Status = hasHero && hasGallery ? 'complete' : (!hasHero ? 'No hero' : 'draft');
     const s6Status = videoChapters.length > 0 ? 'complete' : 'optional';
     const s7Status = startingBid > 0 && minimumIncrement > 0 ? 'complete' : 'review';
 
@@ -994,7 +996,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       { id: 6, label: 'Videos & Driving', anchor: 'sec-videos', status: s6Status, icon: Video },
       { id: 7, label: 'Financials & Dates', anchor: 'sec-financials', status: s7Status, icon: DollarSign }
     ];
-  }, [title, vin, make, model, overviewParagraphsText, compiledOverviewSpecs, showcaseChapters, heroImages, galleryImages, videoChapters, startingBid, minimumIncrement]);
+  }, [title, vin, make, model, overviewParagraphsText, compiledOverviewSpecs, showcaseChapters, heroImages, galleryImages, draftImageViews, videoChapters, startingBid, minimumIncrement]);
 
   // Scroll smoothly to section anchor
   const scrollToSection = (anchorId: string, stepId: number) => {
@@ -3071,9 +3073,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 <PhotoGuideDrawer />
 
                 {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
-                  <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
-                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly onImagesChanged={setDraftImageViews} onBack={() => {}} />
-                  </section>
+                  <div>
+                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly galleryFilter={galleryActiveFilter} onImagesChanged={setDraftImageViews} onBack={() => {}} />
+                  </div>
                 )}
 
                 {/* 5A: HERO CAROUSEL BUILDER */}
@@ -3133,6 +3135,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     </button>
                   </div>
 
+                  <div id="private-hero-cards" />
                   {/* Hero Images Grid with Drag & Reorder */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {heroImages.map((imgUrl, hIdx) => (
@@ -3294,12 +3297,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   {/* Category Filter Pills */}
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
                     {[
-                      { id: 'all', label: 'All', count: galleryImages.length },
-                      { id: 'exterior', label: 'Exterior', count: galleryImages.filter(g => g.category === 'exterior').length },
-                      { id: 'interior', label: 'Interior', count: galleryImages.filter(g => g.category === 'interior').length },
-                      { id: 'engine', label: 'Engine Bay', count: galleryImages.filter(g => g.category === 'engine').length },
-                      { id: 'underbody', label: 'Underbody', count: galleryImages.filter(g => g.category === 'underbody').length },
-                      { id: 'documentation', label: 'Docs & Records', count: galleryImages.filter(g => g.category === 'documentation').length }
+                      { id: 'all', label: 'All', count: galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length },
+                      { id: 'exterior', label: 'Exterior', count: galleryImages.filter(g => g.category === 'exterior').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'exterior').length },
+                      { id: 'interior', label: 'Interior', count: galleryImages.filter(g => g.category === 'interior').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'interior').length },
+                      { id: 'engine', label: 'Engine Bay', count: galleryImages.filter(g => g.category === 'engine').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'engine').length },
+                      { id: 'underbody', label: 'Underbody', count: galleryImages.filter(g => g.category === 'underbody').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'underbody').length },
+                      { id: 'documentation', label: 'Docs & Records', count: galleryImages.filter(g => g.category === 'documentation').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'documentation').length }
                     ].map((tab) => (
                       <button
                         key={tab.id}
@@ -3321,6 +3324,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     ))}
                   </div>
 
+                  <div id="private-gallery-cards" />
                   {/* Gallery Items Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {galleryImages

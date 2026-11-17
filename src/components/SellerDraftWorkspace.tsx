@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 
 const videoFields = [
@@ -89,18 +90,20 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all' }: {
   auctionId: string;
   mediaOnly?: boolean;
+  galleryFilter?: string;
   onImagesChanged?: (images: DraftImageView[]) => void;
   user: User;
   onBack: () => void;
   // React consumes this JSX attribute when remounting the workspace.
   key?: string;
 }) {
-  const [uploadPlacement, setUploadPlacement] = useState<'hero' | 'gallery'>('gallery');
   const [uploadCategory, setUploadCategory] = useState('exterior');
+  const [imageViews, setImageViews] = useState<DraftImageView[]>([]);
   const imageCache = useRef(new Map<string, string>());
+  const uploadLock = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');
@@ -135,7 +138,6 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
 
   const assetKey = JSON.stringify((draft?.assetIds ?? []).map(id => draft?.assets.find(asset => asset.id === id)).filter(Boolean));
   useEffect(() => {
-    if (!onImagesChanged) return;
     const controller = new AbortController();
     const assets: DraftAsset[] = JSON.parse(assetKey);
     void (async () => {
@@ -149,7 +151,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
         }
         views.push({ ...asset, url });
       }
-      if (!controller.signal.aborted) onImagesChanged(views);
+      if (!controller.signal.aborted) { setImageViews(views); onImagesChanged?.(views); }
     })().catch(error => { if (!controller.signal.aborted) setError(error.message); });
     return () => controller.abort();
   }, [assetKey, auctionId, user, onImagesChanged]);
@@ -203,29 +205,18 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     }
   }
 
-  async function updateMedia(action: 'upload' | 'preview' | 'remove' | 'assign', target: File | string, placement = uploadPlacement, category = uploadCategory) {
+  async function updateMedia(action: 'preview' | 'remove' | 'assign', target: string, placement: 'hero' | 'gallery' = 'gallery', category = uploadCategory) {
     if (!draft || busy || (action !== 'preview' && !editable)) return;
     setBusy(true);
     setError('');
-    setMessage(action === 'upload' ? 'Uploading private draft image…' : '');
+    setMessage('');
     try {
       if (action === 'preview' && typeof target === 'string') {
         const response = await request(user, 'media', { action, auctionId, assetId: target });
         setPreview({ assetId: target, image: await readImage(await response.blob()) });
         return;
       }
-      if (action === 'upload' && target instanceof File) {
-        if (target.type !== 'image/jpeg' || target.size > 2 * 1024 * 1024) {
-          throw new Error('Choose a JPEG image no larger than 2 MiB.');
-        }
-        const image = await readImage(target);
-        const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
-          auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1], placement, category
-        });
-        setGalleryOrder(order => [...order, result.assetId]);
-        setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId], assets: [...draft.assets, { id: result.assetId, placement, category }] });
-        setMessage('Image uploaded.');
-      } else if (action === 'assign' && typeof target === 'string') {
+      if (action === 'assign' && typeof target === 'string') {
         const result = await draftRequest<{ revision: number }>(user, 'media', {
           action, auctionId, assetId: target, expectedRevision: draft.revision, placement, category
         });
@@ -245,6 +236,114 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     } finally {
       setBusy(false);
     }
+  }
+
+  async function uploadFiles(files: File[], placement: 'hero' | 'gallery', category: string) {
+    if (!draft || !editable || busy || uploadLock.current) return;
+    uploadLock.current = true;
+    setBusy(true); setError('');
+    let current = draft;
+    let uploaded = 0;
+    const failures: string[] = [];
+    try {
+      for (const [index, file] of files.entries()) {
+        setMessage(`Uploading photo ${index + 1} of ${files.length}…`);
+        if (file.type !== 'image/jpeg' || file.size > 2 * 1024 * 1024) {
+          failures.push(`${file.name}: choose a JPEG no larger than 2 MiB.`);
+          continue;
+        }
+        try {
+          const image = await readImage(file);
+          const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
+            auctionId, expectedRevision: current.revision, jpegBase64: image.split(',')[1], placement, category
+          });
+          imageCache.current.set(result.assetId, image);
+          current = { ...current, revision: result.revision, assetIds: [...current.assetIds, result.assetId],
+            assets: [...current.assets, { id: result.assetId, placement, category }] };
+          setDraft(current);
+          setGalleryOrder(order => [...order, result.assetId]);
+          uploaded++;
+        } catch (error) {
+          failures.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed.'}`);
+          // A lost response may have committed. Stop instead of reusing an uncertain revision.
+          const remaining = files.length - index - 1;
+          if (remaining) failures.push(`${remaining} remaining photo(s) were not attempted. Reload before retrying.`);
+          break;
+        }
+      }
+      setMessage(`${uploaded} of ${files.length} photos uploaded.`);
+      setError(failures.join(' '));
+    } finally { uploadLock.current = false; setBusy(false); }
+  }
+
+  async function moveImage(assetId: string, direction: number) {
+    if (!draft || !editable || busy) return;
+    const placement = draft.assets.find(asset => asset.id === assetId)?.placement;
+    const group = draft.assetIds.filter(id => draft.assets.find(asset => asset.id === id)?.placement === placement);
+    const position = group.indexOf(assetId);
+    const other = group[position + direction];
+    if (!other) return;
+    const order = [...draft.assetIds];
+    const a = order.indexOf(assetId), b = order.indexOf(other);
+    [order[a], order[b]] = [order[b], order[a]];
+    setBusy(true); setError('');
+    try {
+      const result = await draftRequest<{ revision: number }>(user, 'media', {
+        action: 'reorder', auctionId, expectedRevision: draft.revision, assetIds: order
+      });
+      setDraft({ ...draft, revision: result.revision, assetIds: order });
+      setGalleryOrder(order); setMessage('Photo order saved.');
+    } catch (error) { setError(error instanceof Error ? error.message : 'Could not save photo order.'); }
+    finally { setBusy(false); }
+  }
+
+  function privateCards(placement: 'hero' | 'gallery') {
+    if (!draft) return null;
+    const assets = draft.assetIds.map(id => draft.assets.find(asset => asset.id === id)).filter((asset): asset is DraftAsset => !!asset && asset.placement === placement);
+    return <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-private-placement={placement}>
+      {assets.filter(asset => placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter).map(asset => <div key={asset.id} data-asset-id={asset.id} className="rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950 text-zinc-100 text-xs">
+        <button type="button" className="block w-full" disabled={busy} onClick={() => void updateMedia('preview', asset.id)} aria-label={`Preview ${imageLabel(asset.id)}`}>
+          {imageViews.find(image => image.id === asset.id)?.url ? <img src={imageViews.find(image => image.id === asset.id)?.url} alt={`Private ${placement} photo`} className="w-full aspect-[4/3] object-cover" /> : <span>Loading photo…</span>}
+        </button>
+        <div className="p-2 space-y-2">
+          <span>{placement === 'hero' ? 'Hero' : 'Gallery'} · {asset.category}</span>
+          {editable && <>
+            <select aria-label={`Placement for ${imageLabel(asset.id)}`} disabled={busy} value={placement} className="w-full rounded border border-zinc-700 bg-zinc-900 p-1" onChange={event => void updateMedia('assign', asset.id, event.target.value as 'hero' | 'gallery', asset.category)}><option value="hero">Hero</option><option value="gallery">Gallery</option></select>
+            <select aria-label={`Category for ${imageLabel(asset.id)}`} disabled={busy} value={asset.category} className="w-full rounded border border-zinc-700 bg-zinc-900 p-1" onChange={event => void updateMedia('assign', asset.id, placement, event.target.value)}>{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={busy || assets[0]?.id === asset.id} onClick={() => void moveImage(asset.id, -1)}>Move up</button>
+              <button type="button" disabled={busy || assets[assets.length - 1]?.id === asset.id} onClick={() => void moveImage(asset.id, 1)}>Move down</button>
+              <button type="button" disabled={busy} onClick={() => void updateMedia('remove', asset.id)}>Remove</button>
+            </div>
+          </>}
+        </div>
+      </div>)}
+    </div>;
+  }
+
+  if (mediaOnly) {
+    const heroTarget = document.getElementById('private-hero-cards');
+    const galleryTarget = document.getElementById('private-gallery-cards');
+    return <div id="private-draft-images">
+      <p className="text-xs text-zinc-400">Photos save privately until an administrator publishes the listing. Select multiple JPEG photos, up to 2 MiB each.</p>
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {message && <p role="status" className="text-emerald-300">{message}</p>}
+      {!draft && !error && <p>Loading photos…</p>}
+      {draft && !editable && <p>Photos are read-only while the listing is under review.</p>}
+      <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" multiple accept="image/jpeg" disabled={!editable || busy} onChange={event => {
+        const files = Array.from(event.currentTarget.files ?? []) as File[];
+        const placement = event.currentTarget.dataset.placement === 'hero' ? 'hero' : 'gallery';
+        const category = event.currentTarget.dataset.category || 'exterior';
+        event.currentTarget.value = '';
+        if (files.length) void uploadFiles(files, placement, category);
+      }} />
+      {heroTarget && createPortal(privateCards('hero'), heroTarget)}
+      {galleryTarget && createPortal(privateCards('gallery'), galleryTarget)}
+      {preview && <div role="dialog" aria-modal="true" aria-label="Photo preview" className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-6" onClick={() => setPreview(null)}>
+        <button type="button" className="text-white p-3" onClick={() => setPreview(null)}>Close preview</button>
+        <img src={preview.image} alt="Private draft preview" className="max-h-[80vh] max-w-full object-contain" />
+      </div>}
+    </div>;
   }
 
   return (
@@ -319,53 +418,25 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
           </div>
           {editable && dirty && <p>Save your changes before submitting for review.</p>}
         </fieldset>}
-        <section aria-labelledby="draft-media-heading" className="space-y-3">
-          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images ({galleryOrder.length})</h2>
-          <p className="text-sm text-zinc-400">Photos and placement save immediately to this private draft. They become public only when an administrator publishes the listing.</p>
-          {editable && <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={busy} onClick={() => { if (imageInput.current) { delete imageInput.current.dataset.placement; delete imageInput.current.dataset.category; imageInput.current.click(); } }}
-              className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:opacity-50">
-              {busy ? 'Working…' : 'Upload draft photos'}
-            </button>
-            <label>Placement <select aria-label="New draft image placement" value={uploadPlacement} disabled={busy} onChange={event => setUploadPlacement(event.target.value as 'hero' | 'gallery')} className="rounded border bg-zinc-900 p-2 text-white"><option value="hero">Hero</option><option value="gallery">Gallery</option></select></label>
-            <label>Category <select aria-label="New draft image category" value={uploadCategory} disabled={busy} onChange={event => setUploadCategory(event.target.value)} className="rounded border bg-zinc-900 p-2 text-white">{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select></label>
-            <span className="text-sm text-zinc-400">JPEG · up to 2 MiB per photo</span>
-            <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" accept="image/jpeg" disabled={busy} onChange={event => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = '';
-              if (file) void updateMedia('upload', file, event.currentTarget.dataset.placement === 'hero' ? 'hero' : event.currentTarget.dataset.placement === 'gallery' ? 'gallery' : uploadPlacement, event.currentTarget.dataset.category || uploadCategory);
-            }} />
-          </div>}
-          <ul className="space-y-2">
-            {galleryOrder.map((assetId, index) => <li key={assetId} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-100">
-              <span>{index + 1}. {imageLabel(assetId)}</span>
-              <span>{draft.assets.find(asset => asset.id === assetId)?.placement === 'hero' ? 'Hero' : 'Gallery'} · {draft.assets.find(asset => asset.id === assetId)?.category}</span>
-              {editable && <select aria-label={`Placement for ${imageLabel(assetId)}`} disabled={busy} className="rounded border bg-zinc-900 p-2 text-white"
-                value={draft.assets.find(asset => asset.id === assetId)?.placement || 'gallery'}
-                onChange={event => void updateMedia('assign', assetId, event.target.value as 'hero' | 'gallery', draft.assets.find(asset => asset.id === assetId)?.category || 'exterior')}>
-                <option value="hero">Hero</option><option value="gallery">Gallery</option>
-              </select>}
-              {editable && <select aria-label={`Category for ${imageLabel(assetId)}`} disabled={busy} className="rounded border bg-zinc-900 p-2 text-white"
-                value={draft.assets.find(asset => asset.id === assetId)?.category || 'exterior'}
-                onChange={event => void updateMedia('assign', assetId, draft.assets.find(asset => asset.id === assetId)?.placement || 'gallery', event.target.value)}>
-                {['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}
-              </select>}
-              <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
-              {editable && <>
-                {!mediaOnly && <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy || index === 0} onClick={() => {
-                  const next = [...galleryOrder];
-                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                  setGalleryOrder(next);
-                  setMessage(`${imageLabel(assetId)} moved to position ${index}. Save narrative to keep this order.`);
-                }}>Move up</button>}
-                <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
-              </>}
-            </li>)}
-          </ul>
-          {preview && <div>
-            <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" onClick={() => setPreview(null)}>Close preview</button>
-            <img src={preview.image} alt="Private draft preview" className="mt-3 max-h-96 max-w-full rounded-lg border border-zinc-700" />
-          </div>}
+        <section className="space-y-4">
+          <p>Photos save privately until an administrator publishes the listing. Select multiple JPEG photos, up to 2 MiB each.</p>
+          <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" multiple accept="image/jpeg" disabled={!editable || busy} onChange={event => {
+            const files = Array.from(event.currentTarget.files ?? []) as File[];
+            const placement = event.currentTarget.dataset.placement === 'hero' ? 'hero' : 'gallery';
+            event.currentTarget.value = '';
+            if (files.length) void uploadFiles(files, placement, uploadCategory);
+          }} />
+          {(['hero', 'gallery'] as const).map(placement => <section key={placement} className="space-y-3">
+            <h2 className="text-xl font-bold">{placement === 'hero' ? 'Hero Photos' : 'Gallery Photos'} ({draft.assets.filter(asset => asset.placement === placement).length})</h2>
+            {editable && <div className="flex gap-3 items-center">
+              <button type="button" disabled={busy} className="rounded-lg bg-red-700 px-4 py-2 text-white" onClick={() => {
+                if (imageInput.current) { imageInput.current.dataset.placement = placement; imageInput.current.click(); }
+              }}>{placement === 'hero' ? 'Upload Hero Photos' : 'Upload Gallery Photos'}</button>
+              {placement === 'gallery' && <label>Category <select aria-label="New gallery photo category" value={uploadCategory} disabled={busy} onChange={event => setUploadCategory(event.target.value)}>{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select></label>}
+            </div>}
+            {privateCards(placement)}
+          </section>)}
+          {preview && <div><button type="button" onClick={() => setPreview(null)}>Close preview</button><img src={preview.image} alt="Private draft preview" className="max-h-96 max-w-full" /></div>}
         </section>
       </>}
     </div>

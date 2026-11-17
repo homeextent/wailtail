@@ -9,6 +9,34 @@ export function handleSellerDraftMedia(req: any, res: any, services?: FirebaseAd
   return withSellerDraftRequest(req, res, services, async ({ firestore }, uid, email) => {
     const admin = isDesignatedAdminEmail(email);
     const input = req.body;
+    if (input?.action === 'reorder') {
+      if (typeof input.auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(input.auctionId) ||
+          !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || input.expectedRevision >= Number.MAX_SAFE_INTEGER ||
+          !Array.isArray(input.assetIds) || input.assetIds.length > 100 ||
+          !input.assetIds.every((id: unknown) => typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id)) ||
+          new Set(input.assetIds).size !== input.assetIds.length ||
+          Object.keys(input).some(key => !['action', 'auctionId', 'expectedRevision', 'assetIds'].includes(key))) {
+        return res.status(422).json({ error: 'invalid-image-order' });
+      }
+      const auction = firestore.collection('auctions').doc(input.auctionId);
+      const decision = await firestore.runTransaction(async transaction => {
+        const record = (await transaction.get(auction)).data();
+        if (!record || (!admin && record.sellerId !== uid)) return 404;
+        const access = checkDraftNarrativeWrite(record, admin ? record.sellerId : uid, input.expectedRevision);
+        if (access !== 200) return access;
+        if (!admin && !await dealerListingEligible(transaction, firestore, record, uid)) return 403;
+        const active = await transaction.get(auction.collection('draftAssets').where('removedAt', '==', null).limit(101));
+        const ids = new Set(active.docs.map(asset => asset.id));
+        if (ids.size !== input.assetIds.length || !input.assetIds.every((id: string) => ids.has(id))) return 422;
+        const now = Date.now();
+        transaction.set(firestore.collection('settings').doc(draftMediaId(input.auctionId)), {
+          sellerDraftGalleryOrder: input.assetIds, updatedAt: now
+        }, { merge: true });
+        transaction.update(auction, { sellerDraftRevision: input.expectedRevision + 1, updatedAt: now });
+        return 200;
+      });
+      return res.status(decision).json(decision === 200 ? { revision: input.expectedRevision + 1 } : { error: 'draft-order-unavailable' });
+    }
     if (!input || typeof input !== 'object' || Array.isArray(input) ||
         typeof input.auctionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(input.auctionId) ||
         typeof input.assetId !== 'string' || !/^[0-9a-f-]{36}$/.test(input.assetId) ||

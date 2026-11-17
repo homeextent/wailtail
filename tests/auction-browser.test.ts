@@ -515,13 +515,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const convertedId = converted.application.convertedAuctionId;
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
     await eventually(text, value => value.includes('Protected dealer attribution') && value.includes('Canonical Browser Dealer Inc.'), 'admin editor protects dealer attribution');
-    await eventually(text, value => value.includes('Draft images (0)'), 'administrator private draft image controls');
+    await eventually(text, value => value.includes('Hero Carousel Slides (0)'), 'administrator private draft image controls');
     const uploadLayout = await command('Runtime.evaluate', { expression: `(() => {
       const panel = document.querySelector('#private-draft-images');
-      return { inGallery: !!panel?.closest('#sec-gallery'), button: panel?.querySelector('button')?.textContent?.trim() };
+      return { inGallery: !!panel?.closest('#sec-gallery'), multiple: panel?.querySelector('input')?.multiple, duplicate: document.body.innerText.includes('Draft images (') };
     })()`, returnByValue: true });
     assert.equal(uploadLayout.result.value.inGallery, true);
-    assert.equal(uploadLayout.result.value.button, 'Upload draft photos');
+    assert.equal(uploadLayout.result.value.multiple, true);
+    assert.equal(uploadLayout.result.value.duplicate, false);
     const pickerRoute = await command('Runtime.evaluate', { expression: `(() => {
       const input = document.querySelector('#private-draft-images input[type="file"]');
       let opened = 0;
@@ -539,14 +540,31 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       const bytes = Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), value => value.charCodeAt(0));
       const transfer = new DataTransfer();
       transfer.items.add(new File([bytes], 'synthetic.jpg', {type:'image/jpeg'}));
+      transfer.items.add(new File(['invalid'], 'invalid.png', {type:'image/png'}));
+      transfer.items.add(new File([bytes], 'second.jpg', {type:'image/jpeg'}));
       input.files = transfer.files;
       input.dispatchEvent(new Event('change', {bubbles:true}));
     })()` });
-    await eventually(text, value => value.includes('Image uploaded.') && value.includes('Draft images (1)'), 'administrator draft image uploaded privately');
+    await eventually(text, value => value.includes('2 of 3 photos uploaded.') && value.includes('Hero Carousel Slides (2)') && value.includes('invalid.png:'), 'administrator draft image uploaded privately');
     await eventually(async () => {
       const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('img')).some(image => image.src.startsWith('data:image/jpeg') && image.naturalWidth > 0)`, returnByValue: true });
       return result.result.value;
     }, Boolean, 'authenticated hero draft preview renders');
+    await command('Runtime.evaluate', { expression: `(() => {
+      const original = window.fetch;
+      window.__restoreUploadFetch = () => { window.fetch = original; };
+      window.fetch = (url, options) => String(url).endsWith('/api/seller-draft-upload')
+        ? Promise.resolve(new Response('{}', {status:409, headers:{'Content-Type':'application/json'}})) : original(url, options);
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 2;
+      const bytes = Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), value => value.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], 'conflict.jpg', {type:'image/jpeg'}));
+      transfer.items.add(new File([bytes], 'not-attempted.jpg', {type:'image/jpeg'}));
+      input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()` });
+    await eventually(text, value => value.includes('0 of 2 photos uploaded.') && value.includes('1 remaining photo(s) were not attempted'), 'uncertain upload failure stops the batch');
+    await command('Runtime.evaluate', { expression: 'window.__restoreUploadFetch()' });
     await command('Runtime.evaluate', { expression: `(() => {
       const input = document.querySelector('#private-draft-images input[type="file"]');
       const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Upload Photos & Inspection Docs'));
@@ -564,19 +582,29 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       const transfer = new DataTransfer(); transfer.items.add(new File([bytes], 'gallery.jpg', {type:'image/jpeg'}));
       input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
     })()` });
-    await eventually(text, value => value.includes('Draft images (2)') && value.includes('Gallery · engine'), 'gallery upload preserves category');
+    await eventually(text, value => value.includes('Categorized Gallery & Inspection Docs (1)') && value.includes('Gallery · engine'), 'gallery upload preserves category');
     await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Pick from Gallery'); if (!button) return false; button.click(); return true; })()`);
     await click(`(() => { const image = document.querySelector('img[alt="Draft engine photo"]'); if (!image) return false; image.closest('button').click(); return true; })()`);
     await eventually(text, value => value.includes('Private draft hero placement saved.') && value.includes('Hero · engine'), 'gallery picker assigns private hero by asset ID');
-    await click(`(() => { const row = Array.from(document.querySelectorAll('#private-draft-images li')).find(row => row.textContent.includes('Hero · engine')); const select = row?.querySelector('select'); if (!select) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'gallery'); select.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
+    await click(`(() => { const row = Array.from(document.querySelectorAll('[data-private-placement] [data-asset-id]')).find(row => row.textContent.includes('Hero · engine')); const select = row?.querySelector('select'); if (!select) return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'gallery'); select.dispatchEvent(new Event('change', {bubbles:true})); return true; })()`);
     await eventually(text, value => value.includes('Image placement saved.') && value.includes('Gallery · engine'), 'draft reassignment restores gallery category');
 
+    const reorder = await command('Runtime.evaluate', { expression: `(() => {
+      const rows = document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]');
+      const id = rows[1].dataset.assetId;
+      Array.from(rows[1].querySelectorAll('button')).find(button => button.textContent === 'Move up').click();
+      return id;
+    })()`, returnByValue: true });
+    await eventually(text, value => value.includes('Photo order saved.'), 'hero order saved immediately');
     await command('Runtime.evaluate', { expression: 'globalThis.__placementReload = true' });
     await command('Page.reload');
     await eventually(async () => {
-      const result = await command('Runtime.evaluate', { expression: `!globalThis.__placementReload && document.readyState !== 'loading' && document.body.innerText.includes('Draft images (2)') && document.body.innerText.includes('Hero · exterior') && document.body.innerText.includes('Gallery · engine')`, returnByValue: true });
+      const result = await command('Runtime.evaluate', { expression: `!globalThis.__placementReload && document.readyState !== 'loading' && document.body.innerText.includes('Hero Carousel Slides (2)') && document.body.innerText.includes('Hero · exterior') && document.body.innerText.includes('Gallery · engine')`, returnByValue: true });
       return result.result.value;
     }, Boolean, 'image placement survives a new document');
+    const orderAfterReload = await command('Runtime.evaluate', { expression: `document.querySelector('[data-private-placement="hero"] [data-asset-id]').dataset.assetId`, returnByValue: true });
+    assert.equal(orderAfterReload.result.value, reorder.result.value);
+
 
 
     await fill('select[aria-label="Dealer tax handling"]', 'dealer_collects', true);
@@ -585,7 +613,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
-    await eventually(text, value => value.includes('Draft images (2)') && value.includes('Hero · exterior') && value.includes('Gallery · engine'), 'representative sees persisted administrator placements');
+    await eventually(text, value => value.includes('Hero Photos (2)') && value.includes('Gallery Photos (1)') && value.includes('Hero · exterior') && value.includes('Gallery · engine'), 'representative sees persisted administrator placements');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Narrative saved.'), 'assigned representative saves without role promotion');
