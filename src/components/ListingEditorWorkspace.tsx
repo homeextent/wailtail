@@ -1024,9 +1024,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       const finalTitleStatus = titleStatus === 'Other / Custom' && customTitleStatus ? customTitleStatus : titleStatus;
       const startMs = new Date(startTimeInput).getTime() || auction.startTime;
       const endMs = new Date(endTimeInput).getTime() || auction.endTime;
-      const isZeroBids = (auction.bidCount || 0) === 0;
       const effectiveStartingBid = Number(startingBid);
-      const isReserveMet = (isZeroBids ? effectiveStartingBid : (auction.currentBid || 0)) >= Number(reserveAmount);
 
       // 1. Update Core Auction Document
       await onUpdateAuction({
@@ -1054,13 +1052,11 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         serviceRecordsUrl: serviceRecordsUrl.trim() ? formatExternalUrl(serviceRecordsUrl.trim()) : undefined,
         currency: 'CAD',
         startingBid: effectiveStartingBid,
-        ...(isZeroBids ? { currentBid: effectiveStartingBid } : {}),
         minimumIncrement: Number(minimumIncrement),
         reserveAmount: Number(reserveAmount),
         status,
         startTime: startMs,
         endTime: endMs,
-        isReserveMet
       });
 
       // 2. Update Media Configuration
@@ -2308,7 +2304,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 ? 'Locked for Review'
                 : status === 'pending_review'
                 ? 'Submit for Curation Review'
-                : 'Save Draft'}
+                : status === 'preview' ? 'Publish Preview' : 'Save Draft'}
             </span>
           </button>
         </div>
@@ -3651,16 +3647,19 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     {isAdmin ? (
                       <div className="space-y-2">
                         <select
+                          aria-label="Auction lifecycle status"
                           value={status === 'active' ? 'upcoming' : status}
                           onChange={(e) => setStatus(e.target.value as any)}
                           className="w-full p-2.5 rounded-lg bg-black border border-zinc-700 text-white font-bold text-xs cursor-pointer focus:ring-1 focus:ring-amber-500"
                         >
                           <option value="draft">Draft (Private / Unlisted)</option>
                           <option value="pending_review">Pending Review (In Curation Queue)</option>
+                          <option value="preview">Public Preview (Bidding Disabled)</option>
                           <option value="upcoming">Scheduled / Live (Automated Clock)</option>
                           <option value="ended">Ended (Manual Force Close)</option>
                           <option value="sold">Sold (Settled Offline)</option>
                         </select>
+                        {status === 'preview' && <p className="text-sm text-amber-300">Saving publishes this listing and its assigned photos publicly. Bidding remains disabled. Return to Draft to withdraw the listing; published image copies remain public.</p>}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -3934,7 +3933,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                             ? 'Locked for Review'
                             : status === 'pending_review'
                             ? 'Submit for Curation Review'
-                            : 'Save Draft'}
+                            : status === 'preview' ? 'Publish Preview' : 'Save Draft'}
                         </span>
                       </button>
                     </div>
