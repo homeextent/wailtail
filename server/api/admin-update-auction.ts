@@ -67,6 +67,15 @@ export function handleAdminUpdateAuction(req: any, res: any, services?: Pick<Fir
       return snapshots.map(snapshot => {
         const current = snapshot.data()!;
         const changed = { ...patch };
+        // Bid-derived fields come from the transaction's current record, never
+        // the editor's potentially stale zero-bid view. Concurrent bids retry this read.
+        if (patch.startingBid !== undefined || patch.reserveAmount !== undefined) {
+          const hasNoBids = (current.bidCount === 0 || current.bidCount === undefined) && !current.highBidderId;
+          if (patch.startingBid !== undefined && hasNoBids) changed.currentBid = patch.startingBid;
+          const currentBid = Number(changed.currentBid ?? current.currentBid ?? 0);
+          const reserve = Number(patch.reserveAmount ?? current.reserveAmount ?? 0);
+          changed.isReserveMet = reserve <= 0 || currentBid >= reserve;
+        }
         if (changed.status === 'draft' && typeof current.endTime === 'number' && current.endTime > 0 &&
             now >= current.endTime && (Number(current.currentBid) > 0 || Number(current.bidCount) > 0)) {
           changed.status = current.isReserveMet || current.reserveAmount <= 0 || current.currentBid >= current.reserveAmount

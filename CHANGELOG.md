@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Preview withdrawal browser acceptance
+
+- Wait for the complete workspace save and enabled action before changing preview back to Draft. The listing status commits before the separate media save completes; the browser test previously raced the disabled Saving state. Preserve single-click actions and the anonymous 404 withdrawal assertion; application behavior is unchanged.
+
+### Administrator draft save and public preview
+
+- Stop sending protected currentBid from editor saves. Derive zero-bid starting amounts and reserve state inside the administrator update transaction, preserving concurrent bidder values.
+- Expose the existing public preview lifecycle state to administrators with an explicit Publish Preview action and public-visibility guidance. Preserve preview across date boundaries and disable header/sticky bidding controls; existing server bidding rejection and clock exclusion remain unchanged. Cover preview publication and withdrawal in the isolated browser workflow.
+
+### Representative editor tab title
+
+- Use the authenticated route draft title for representative editor tabs, scoped to listing ID and signed-in UID. Show a neutral draft title until loaded; administrator tabs also wait for their matching route listing. Preserve existing editor controls and permissions.
+
 ### Draft image placement and publication
 
 - Support JPG/JPEG and PNG in Hero, plus JPG/JPEG, PNG and PDF in Gallery. Keep supported-file filtering, multiple selection and a 2 MiB per-file limit. Validate MIME/byte agreement on upload and publication, force PDF gallery/documentation placement, prevent chapter/hero PDF assignment, preserve document titles, and serve PDFs as downloads. Published-gallery PDF uploads use the same bounded validation.

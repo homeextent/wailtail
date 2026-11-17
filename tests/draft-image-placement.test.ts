@@ -1,3 +1,4 @@
+import { getEffectiveAuctionStatus, formatAuctionCountdown } from '../src/utils/formatters';
 import { decodeDraftFile } from '../server/api/_lib/draftFile';
 import { moveVisiblePhoto } from '../src/utils/photoOrdering';
 import { test } from 'node:test';
@@ -45,4 +46,17 @@ test('draft files validate MIME/byte agreement, size and PDF boundaries', () => 
   assert.equal(decodeDraftFile(Buffer.alloc(2*1024*1024+1).toString('base64'), 'application/pdf'), null);
   const media = applyPublishedDraftImages({heroImages:[],fullGallery:[]}, [{id:'pdf',removedAt:null,contentType:'application/pdf',placement:'gallery',category:'documentation',title:'Service report.pdf',publishedUrl:'public.pdf'}]);
   assert.equal(media.fullGallery[0].isPdf,true); assert.equal(media.fullGallery[0].title,'Service report.pdf');
+});
+
+// Preview is public but must never become bid-enabled merely because dates pass.
+test('public preview remains non-bidding before, during and after auction dates', () => {
+  for (const now of [50, 150, 250]) {
+    assert.equal(getEffectiveAuctionStatus(100, 200, 'preview', now), 'preview');
+    const countdown = formatAuctionCountdown(100, 200, 'preview', now);
+    assert.equal(countdown.statusType, 'preview');
+    assert.equal(countdown.formatted, 'Preview — bidding disabled');
+    assert.equal(countdown.totalSeconds, 0);
+    assert.equal(countdown.isEnded, false);
+  }
+  assert.equal(getEffectiveAuctionStatus(100, 200, 'upcoming', 150), 'ending_soon');
 });

@@ -34,7 +34,28 @@ test('M2.4 endpoints reject mutable-role administrators and protected generic ed
   assert.equal((await callListing(handleDealerListing, command, {}, 'DELETE')).code, 405);
   assert.equal((await callListing(handleDealerListing, command, {}, 'POST', {})).code, 401);
   const admin = { ...services, auth: { verifyIdToken: async () => ({ uid: 'admin', email: 'jeremygoodmurphy@gmail.com', email_verified: true }) } };
-  for (const updates of [{ dealerId: 'spoof' }, { dealerSnapshot: {} }, { sellerId: 'spoof' }, { dealerDocFee: 1 }, { taxHandling: 'dealer_collects' }]) {
+  for (const updates of [{ dealerId: 'spoof' }, { dealerSnapshot: {} }, { sellerId: 'spoof' }, { dealerDocFee: 1 }, { taxHandling: 'dealer_collects' }, { currentBid: 200 }]) {
     assert.equal((await callListing(handleAdminUpdateAuction, { auctionId: 'draft', updates }, admin)).code, 422);
+  }
+});
+
+test('administrator saves derive zero-bid amounts server-side and preserve a current bidder', async () => {
+  for (const hasBid of [false, true]) {
+    let written: any;
+    const current = { status: 'draft', startingBid: 100, currentBid: hasBid ? 500 : 100,
+      reserveAmount: 400, bidCount: hasBid ? 1 : 0, ...(hasBid ? {highBidderId: 'bidder'} : {}) };
+    const ref = { id: 'draft' };
+    const snapshot = { exists: true, id: 'draft', ref, data: () => current };
+    const firestore = { collection: () => ({doc: () => ref}), runTransaction: async (fn: any) => fn({
+      getAll: async () => [snapshot], update: (_ref: any, patch: any) => {written = patch;}
+    }) };
+    const auth = {verifyIdToken: async () => ({uid:'admin',email:'jeremygoodmurphy@gmail.com',email_verified:true})};
+    const result = await callListing(handleAdminUpdateAuction, {auctionId:'draft', updates:{
+      title:'Edited draft',startingBid:200,reserveAmount:450,status:'draft'
+    }}, {firestore,auth});
+    assert.equal(result.code,200);
+    assert.equal(written.title,'Edited draft');
+    assert.equal(written.currentBid,hasBid ? undefined : 200);
+    assert.equal(written.isReserveMet,hasBid);
   }
 });

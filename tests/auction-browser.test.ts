@@ -676,6 +676,11 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
+    const editorTitle = await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+      return result.result.value;
+    }, value => value === `Listing Editor: ${converted.listing.title} — Wailtail`, 'representative tab uses the assigned draft title rather than the public selection');
+    assert.equal(editorTitle, `Listing Editor: ${converted.listing.title} — Wailtail`);
     await eventually(text, value => value.includes('Hero Photos (3)') && value.includes('Gallery Photos (4)') && value.includes('Service report.pdf'), 'representative sees persisted administrator placements');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
@@ -683,6 +688,49 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Submit for review'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(verificationState, value => value.listing?.status === 'pending_review' && value.user.role === 'bidder' && value.listingAudits === 2, 'dealer submission keeps roles and audit records intact');
     await eventually(text, value => value.includes('read-only while it is under review'), 'submitted dealer draft locks representative fields');
+
+    await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
+    await eventually(text, value => value.includes('Protected dealer attribution'), 'admin reopens submitted draft');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `!!document.querySelector('select[aria-label="Auction lifecycle status"] option[value="preview"]')`, returnByValue: true });
+      return result.result.value;
+    }, Boolean, 'administrator public-preview control');
+    // Force the two-request save gap so this regression does not depend on CI speed.
+    await command('Runtime.evaluate', { expression: `(() => {
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || String(args[0]);
+        if (url.includes('/api/admin-save-auction-media')) await new Promise(resolve => setTimeout(resolve, 1000));
+        return originalFetch.apply(this, args);
+      };
+    })()` });
+    const waitForSaveReady = async (label: string) => eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        return buttons.some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)
+          && !buttons.some(button => button.textContent.trim() === 'Saving...');
+      })()`, returnByValue: true });
+      return result.result.value;
+    }, Boolean, `workspace ready for ${label}`);
+    await fill('select[aria-label="Auction lifecycle status"]', 'preview', true);
+    await waitForSaveReady('Publish Preview');
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Publish Preview'); if (!button || button.disabled) return false; button.click(); return true; })()`);
+    await eventually(verificationState, value => value.listing?.status === 'preview', 'administrator publishes non-bidding preview');
+    const previewResponse = await fetch(origin + '/api/public-auctions?auctionId=' + convertedId);
+    assert.equal(previewResponse.status, 200);
+    const previewData = await previewResponse.json();
+    assert.equal(previewData.auction.status, 'preview');
+    assert.ok(previewData.media.heroImages.length >= 3);
+    // Status commits before the separate media save finishes. Wait for the
+    // complete workspace save before changing lifecycle or clicking again.
+    await eventually(text, value => value.includes('All listing specifications, narrative chapters, and media saved successfully'), 'preview workspace save fully completed');
+    await waitForSaveReady('Publish Preview');
+    await fill('select[aria-label="Auction lifecycle status"]', 'draft', true);
+    await waitForSaveReady('Save Draft');
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Save Draft'); if (!button || button.disabled) return false; button.click(); return true; })()`);
+    await eventually(verificationState, value => value.listing?.status === 'draft', 'administrator withdraws preview');
+    assert.equal((await fetch(origin + '/api/public-auctions?auctionId=' + convertedId)).status, 404);
+
 
 
   } catch (error) {
