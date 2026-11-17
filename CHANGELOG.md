@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Public listing route isolation
+
+- Resolve /lot and /vehicle IDs consistently with /auctions. Explicit listing pages render only their matching public response, with neutral loading and unavailable states/titles. Withdrawn, private or missing listings no longer show the default catalog vehicle. Cover valid aliases and withdrawn routes in the browser suite.
+
 ### Preview withdrawal browser acceptance
 
 - Wait for the complete workspace save and enabled action before changing preview back to Draft. The listing status commits before the separate media save completes; the browser test previously raced the disabled Saving state. Preserve single-click actions and the anonymous 404 withdrawal assertion; application behavior is unchanged.

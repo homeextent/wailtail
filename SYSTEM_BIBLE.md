@@ -1,5 +1,7 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+Public listing route correction (staging proposal): /lot, /vehicle and /auctions resolve the explicit listing ID; withdrawn/private/missing records show Listing unavailable instead of another catalog vehicle.
+
 Administrator draft-save/public-preview correction (staging proposal): omit protected bid fields from editor saves and derive zero-bid amounts transactionally. explicitly publish a non-bidding preview from the lifecycle selector. Preview ignores auction dates for bid availability; returning to Draft hides the listing but retains public image copies.
 
 Representative editor title correction (staging proposal): derive the browser tab from the authenticated route draft, with a neutral loading fallback; do not reuse the public catalog selection.
