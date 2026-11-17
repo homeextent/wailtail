@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Draft image placement and publication
+
+- Support JPG/JPEG and PNG in Hero, plus JPG/JPEG, PNG and PDF in Gallery. Keep supported-file filtering, multiple selection and a 2 MiB per-file limit. Validate MIME/byte agreement on upload and publication, force PDF gallery/documentation placement, prevent chapter/hero PDF assignment, preserve document titles, and serve PDFs as downloads. Published-gallery PDF uploads use the same bounded validation.
+
+- Restore compact production-style thumbnail overlays: hero lead/position badges, drag and Left/Right ordering, gallery category selector and trash buttons. Remove redundant per-photo Hero/Gallery selectors. Replace gallery photo filename strips with ordering controls; retain meaningful document titles and click-to-preview. Filtered gallery ordering swaps only visible neighbours and preserves hidden photo slots.
+
+- Remove the duplicate Draft images panel. Restore direct Hero/Gallery controls with private thumbnails, category filters, placement and immediately saved ordering. Multiple JPEG selection reports progress, individual validation failures and partial completion; uncertain server failures stop the batch for reload/reconciliation.
+
+- Preserve hero/gallery intent and category for private uploads, allow draft reassignment, and render assigned images in authenticated administrator previews. Include private images in hero gallery selection by asset ID and reflect private assignments in counts.
+- Promote private draft assets through administrator publication with eligibility/revision checks, guarded attempt-copy cleanup and atomic Firestore status/media registration. Keep private originals, merge registered copies on later media saves, and avoid duplicate placements on republish. See `docs/draft-image-publication.md` for cross-service limitations.
+
+
 ### Private draft image upload correction
 
 - Refine owner-reviewed controls: keep private uploads within administrator Section 5, open the picker without scrolling, and style upload/preview/remove controls in both workspaces.

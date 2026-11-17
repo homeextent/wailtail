@@ -1,3 +1,5 @@
+import { applyPublishedDraftImages } from './_lib/draftImagePlacement.js';
+import { publicationStatuses } from './_lib/publishDraftImages.js';
 import { isDesignatedAdminEmail } from '../../src/config/adminConfig.js';
 import { projectPublicMedia } from './public-auctions.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
@@ -18,10 +20,15 @@ export default function handler(req: any, res: any) {
     const auction = firestore.collection('auctions').doc(auctionId);
     const mediaId = auctionId === 'wailtail-1978-porsche-911' ? 'main-media-config' : `media-${auctionId}`;
     const saved = await firestore.runTransaction(async tx => {
-      if (!(await tx.get(auction)).exists) return false;
+      const record = await tx.get(auction);
+      if (!record.exists) return false;
+      const assets = publicationStatuses.has(record.get('status'))
+        ? await tx.get(auction.collection('draftAssets').where('removedAt', '==', null).limit(100)) : null;
+      const existingMedia = assets ? await tx.get(firestore.collection('settings').doc(mediaId)) : null;
+      const finalMedia = assets ? applyPublishedDraftImages({ ...media, draftPublishedUrls: existingMedia?.get('draftPublishedUrls') || [] }, assets.docs.map(asset => ({ id: asset.id, ...asset.data() }))) : media;
       const updatedAt = Date.now();
-      tx.set(firestore.collection('settings').doc(mediaId), { ...media, updatedAt }, { merge: true });
-      tx.update(auction, { leadHeroImage: media.heroImages[0] || '', updatedAt });
+      tx.set(firestore.collection('settings').doc(mediaId), { ...finalMedia, updatedAt }, { merge: true });
+      tx.update(auction, { leadHeroImage: finalMedia.heroImages[0] || '', updatedAt });
       return true;
     });
     return saved ? res.status(200).json({ saved: true }) : res.status(404).json({ error: 'Listing not found.' });

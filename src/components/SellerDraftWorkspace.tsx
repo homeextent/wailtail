@@ -1,4 +1,7 @@
+import { PhotoEditorCard } from './PhotoEditorCard';
+import { moveVisiblePhoto } from '../utils/photoOrdering';
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 
 const videoFields = [
@@ -23,7 +26,10 @@ interface SellerVideoChapter {
   videoUrl: string;
 }
 
+export interface DraftImageView { id: string; placement: 'hero' | 'gallery'; category: string; url: string; contentType?: string; title?: string }
+interface DraftAsset { id: string; placement: 'hero' | 'gallery'; category: string; contentType?: string; title?: string }
 interface Draft {
+  assets: DraftAsset[];
   canEdit?: boolean;
   dealer?: { businessName: string; city: string; province: string; documentationFee: number };
   videoChapters: SellerVideoChapter[];
@@ -50,6 +56,7 @@ async function request(user: User, operation: string, body: object, signal?: Abo
   if (!response.ok) {
     if (response.status === 409) throw new Error('The listing changed. Reload it before trying again.');
     if (response.status === 404) throw new Error('This listing is unavailable to your account.');
+    if (response.status === 422 && operation === 'upload') throw new Error('Use a valid JPG/PNG image or gallery PDF, up to 2 MiB.');
     if (response.status === 422 && operation === 'narrative') {
       const failure = await response.clone().json().catch(() => null);
       if (failure?.error === 'invalid-video-chapter-url') {
@@ -86,14 +93,21 @@ function readImage(file: Blob): Promise<string> {
   });
 }
 
-export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false }: {
+export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = false, onImagesChanged, galleryFilter = 'all', heroOffset = 0 }: {
   auctionId: string;
   mediaOnly?: boolean;
+  galleryFilter?: string;
+  heroOffset?: number;
+  onImagesChanged?: (images: DraftImageView[]) => void;
   user: User;
   onBack: () => void;
   // React consumes this JSX attribute when remounting the workspace.
   key?: string;
 }) {
+  const [uploadCategory, setUploadCategory] = useState('exterior');
+  const [imageViews, setImageViews] = useState<DraftImageView[]>([]);
+  const imageCache = useRef(new Map<string, string>());
+  const uploadLock = useRef(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [heading, setHeading] = useState('');
@@ -107,7 +121,6 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState<{ assetId: string; image: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -125,6 +138,26 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     });
     return () => controller.abort();
   }, [auctionId, user]);
+
+  const assetKey = JSON.stringify((draft?.assetIds ?? []).map(id => draft?.assets.find(asset => asset.id === id)).filter(Boolean));
+  useEffect(() => {
+    const controller = new AbortController();
+    const assets: DraftAsset[] = JSON.parse(assetKey);
+    void (async () => {
+      const views: DraftImageView[] = [];
+      for (const asset of assets) {
+        let url = imageCache.current.get(asset.id);
+        if (!url) {
+          const response = await request(user, 'media', { action: 'preview', auctionId, assetId: asset.id }, controller.signal);
+          url = await readImage(await response.blob());
+          imageCache.current.set(asset.id, url);
+        }
+        views.push({ ...asset, url });
+      }
+      if (!controller.signal.aborted) { setImageViews(views); onImagesChanged?.(views); }
+    })().catch(error => { if (!controller.signal.aborted) setError(error.message); });
+    return () => controller.abort();
+  }, [assetKey, auctionId, user, onImagesChanged]);
 
   const videoPatch = Object.fromEntries(videoFields
     .filter(([key]) => draft && video[key] !== draft[key])
@@ -175,35 +208,24 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     }
   }
 
-  async function updateMedia(action: 'upload' | 'preview' | 'remove', target: File | string) {
-    if (!draft || busy || (action !== 'preview' && !editable)) return;
+  async function updateMedia(action: 'remove' | 'assign', target: string, placement: 'hero' | 'gallery' = 'gallery', category = uploadCategory) {
+    if (!draft || busy || !editable) return;
     setBusy(true);
     setError('');
-    setMessage(action === 'upload' ? 'Uploading private draft image…' : '');
+    setMessage('');
     try {
-      if (action === 'preview' && typeof target === 'string') {
-        const response = await request(user, 'media', { action, auctionId, assetId: target });
-        setPreview({ assetId: target, image: await readImage(await response.blob()) });
-        return;
-      }
-      if (action === 'upload' && target instanceof File) {
-        if (target.type !== 'image/jpeg' || target.size > 2 * 1024 * 1024) {
-          throw new Error('Choose a JPEG image no larger than 2 MiB.');
-        }
-        const image = await readImage(target);
-        const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
-          auctionId, expectedRevision: draft.revision, jpegBase64: image.split(',')[1]
+      if (action === 'assign' && typeof target === 'string') {
+        const result = await draftRequest<{ revision: number }>(user, 'media', {
+          action, auctionId, assetId: target, expectedRevision: draft.revision, placement, category
         });
-        setGalleryOrder(order => [...order, result.assetId]);
-        setDraft({ ...draft, revision: result.revision, assetIds: [...draft.assetIds, result.assetId] });
-        setMessage('Image uploaded.');
+        setDraft({ ...draft, revision: result.revision, assets: draft.assets.map(asset => asset.id === target ? { ...asset, placement, category } : asset) });
+        setMessage('Image placement saved.');
       } else if (action === 'remove' && typeof target === 'string') {
         const result = await draftRequest<{ revision: number }>(user, 'media', {
           action, auctionId, assetId: target, expectedRevision: draft.revision
         });
         setGalleryOrder(order => order.filter(id => id !== target));
-        setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target) });
-        if (preview?.assetId === target) setPreview(null);
+        setDraft({ ...draft, revision: result.revision, assetIds: draft.assetIds.filter(id => id !== target), assets: draft.assets.filter(asset => asset.id !== target) });
         setMessage('Image removed from the draft.');
       }
     } catch (err) {
@@ -211,6 +233,115 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
     } finally {
       setBusy(false);
     }
+  }
+
+  async function uploadFiles(files: File[], placement: 'hero' | 'gallery', category: string) {
+    if (!draft || !editable || busy || uploadLock.current) return;
+    uploadLock.current = true;
+    setBusy(true); setError('');
+    let current = draft;
+    let uploaded = 0;
+    const failures: string[] = [];
+    try {
+      for (const [index, file] of files.entries()) {
+        setMessage(`Uploading file ${index + 1} of ${files.length}…`);
+        if (!['image/jpeg', 'image/png', ...(placement === 'gallery' ? ['application/pdf'] : [])].includes(file.type) || file.size > 2 * 1024 * 1024) {
+          failures.push(`${file.name}: choose a JPG/PNG${placement === 'gallery' ? ' or PDF' : ''} no larger than 2 MiB.`);
+          continue;
+        }
+        try {
+          const image = await readImage(file);
+          const fileCategory = file.type === 'application/pdf' ? 'documentation' : category;
+          const title = [...file.name].filter(char => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127).join('').slice(0,180) || 'Inspection report';
+          const result = await draftRequest<{ assetId: string; revision: number }>(user, 'upload', {
+            auctionId, expectedRevision: current.revision, fileBase64: image.split(',')[1], contentType: file.type, title, placement, category: fileCategory
+          });
+          imageCache.current.set(result.assetId, image);
+          current = { ...current, revision: result.revision, assetIds: [...current.assetIds, result.assetId],
+            assets: [...current.assets, { id: result.assetId, placement, category: fileCategory, contentType: file.type, title }] };
+          setDraft(current);
+          setGalleryOrder(order => [...order, result.assetId]);
+          uploaded++;
+        } catch (error) {
+          failures.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed.'}`);
+          // A lost response may have committed. Stop instead of reusing an uncertain revision.
+          const remaining = files.length - index - 1;
+          if (remaining) failures.push(`${remaining} remaining file(s) were not attempted. Reload before retrying.`);
+          break;
+        }
+      }
+      setMessage(`${uploaded} of ${files.length} files uploaded.`);
+      setError(failures.join(' '));
+    } finally { uploadLock.current = false; setBusy(false); }
+  }
+
+  async function moveImage(assetId: string, direction: -1 | 1, targetId?: string) {
+    if (!draft || !editable || busy) return;
+    const placement = draft.assets.find(asset => asset.id === assetId)?.placement;
+    const visible = (id: string) => {
+      const asset = draft.assets.find(asset => asset.id === id);
+      return asset?.placement === placement && (placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter);
+    };
+    let order: string[];
+    if (targetId) {
+      if (targetId === assetId || !visible(targetId)) return;
+      order = [...draft.assetIds];
+      const destination = order.indexOf(targetId);
+      order.splice(order.indexOf(assetId), 1);
+      order.splice(destination, 0, assetId);
+    } else order = moveVisiblePhoto(draft.assetIds, draft.assetIds.indexOf(assetId), direction, visible);
+    if (order === draft.assetIds) return;
+    setBusy(true); setError('');
+    try {
+      const result = await draftRequest<{ revision: number }>(user, 'media', {
+        action: 'reorder', auctionId, expectedRevision: draft.revision, assetIds: order
+      });
+      setDraft({ ...draft, revision: result.revision, assetIds: order });
+      setGalleryOrder(order); setMessage('Photo order saved.');
+    } catch (error) { setError(error instanceof Error ? error.message : 'Could not save photo order.'); }
+    finally { setBusy(false); }
+  }
+
+  function privateCards(placement: 'hero' | 'gallery') {
+    if (!draft) return null;
+    const assets = draft.assetIds.map(id => draft.assets.find(asset => asset.id === id)).filter((asset): asset is DraftAsset => !!asset && asset.placement === placement && (placement === 'hero' || galleryFilter === 'all' || asset.category === galleryFilter));
+    return <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-private-placement={placement}>
+      {assets.map((asset, index) => <PhotoEditorCard key={asset.id} assetId={asset.id}
+        src={imageViews.find(image => image.id === asset.id)?.url} title={asset.contentType === 'application/pdf' ? asset.title || 'Inspection report' : imageLabel(asset.id)} isPdf={asset.contentType === 'application/pdf'}
+        heroPosition={placement === 'hero' ? index + heroOffset : undefined} category={asset.category}
+        disabled={busy || !editable} canLeft={index > 0} canRight={index < assets.length - 1}
+        onCategory={editable && asset.contentType !== 'application/pdf' ? category => void updateMedia('assign', asset.id, placement, category) : undefined}
+        onRemove={editable ? () => void updateMedia('remove', asset.id) : undefined}
+        onMove={editable ? direction => void moveImage(asset.id, direction) : undefined}
+        dragProps={placement === 'hero' && editable ? {
+          draggable: !busy,
+          onDragStart: event => { event.dataTransfer.setData('application/x-wailtail-photo', asset.id); event.dataTransfer.effectAllowed = 'move'; },
+          onDragOver: event => event.preventDefault(),
+          onDrop: event => { event.preventDefault(); const source = event.dataTransfer.getData('application/x-wailtail-photo'); if (assets.some(asset => asset.id === source)) void moveImage(source, 1, asset.id); }
+        } : undefined} />)}
+    </div>;
+  }
+
+  if (mediaOnly) {
+    const heroTarget = document.getElementById('private-hero-cards');
+    const galleryTarget = document.getElementById('private-gallery-cards');
+    return <div id="private-draft-images">
+      <p className="text-xs text-zinc-400">Photos save privately until an administrator publishes the listing. Hero: JPG/PNG. Gallery: JPG/PNG/PDF. Select multiple files, up to 2 MiB each.</p>
+      {error && <p role="alert" className="text-red-300">{error}</p>}
+      {message && <p role="status" className="text-emerald-300">{message}</p>}
+      {!draft && !error && <p>Loading photos…</p>}
+      {draft && !editable && <p>Photos are read-only while the listing is under review.</p>}
+      <input ref={imageInput} aria-label="Upload draft files" className="hidden" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" disabled={!editable || busy} onChange={event => {
+        const files = Array.from(event.currentTarget.files ?? []) as File[];
+        const placement = event.currentTarget.dataset.placement === 'hero' ? 'hero' : 'gallery';
+        const category = event.currentTarget.dataset.category || 'exterior';
+        event.currentTarget.value = '';
+        if (files.length) void uploadFiles(files, placement, category);
+      }} />
+      {heroTarget && createPortal(privateCards('hero'), heroTarget)}
+      {galleryTarget && createPortal(privateCards('gallery'), galleryTarget)}
+
+    </div>;
   }
 
   return (
@@ -247,7 +378,7 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
               <select value={chapter.photoAssetId ?? ''} onChange={event => setChapters(chapters.map((item, position) =>
                 position === index ? { ...item, photoAssetId: event.target.value || null } : item))}>
                 <option value="">No draft photo assigned</option>
-                {galleryOrder.map(id => <option key={id} value={id}>{imageLabel(id)}</option>)}
+                {galleryOrder.filter(id => draft.assets.find(asset => asset.id === id)?.contentType !== 'application/pdf').map(id => <option key={id} value={id}>{imageLabel(id)}</option>)}
               </select>
             </label>
             <label className="block">Highlights (one per line, up to 20)
@@ -285,40 +416,25 @@ export function SellerDraftWorkspace({ auctionId, user, onBack, mediaOnly = fals
           </div>
           {editable && dirty && <p>Save your changes before submitting for review.</p>}
         </fieldset>}
-        <section aria-labelledby="draft-media-heading" className="space-y-3">
-          <h2 id="draft-media-heading" className="text-xl font-bold">Draft images ({galleryOrder.length})</h2>
-          <p className="text-sm text-zinc-400">Photos save immediately to this private draft. Use Preview to view them. Public hero and gallery placement is separate.</p>
-          {editable && <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={busy} onClick={() => imageInput.current?.click()}
-              className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 disabled:opacity-50">
-              {busy ? 'Working…' : 'Upload draft photos'}
-            </button>
-            <span className="text-sm text-zinc-400">JPEG · up to 2 MiB per photo</span>
-            <input ref={imageInput} aria-label="Upload draft JPEG" className="hidden" type="file" accept="image/jpeg" disabled={busy} onChange={event => {
-              const file = event.currentTarget.files?.[0];
-              event.currentTarget.value = '';
-              if (file) void updateMedia('upload', file);
-            }} />
-          </div>}
-          <ul className="space-y-2">
-            {galleryOrder.map((assetId, index) => <li key={assetId} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-sm text-zinc-100">
-              <span>{index + 1}. {imageLabel(assetId)}</span>
-              <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('preview', assetId)}>Preview</button>
-              {editable && <>
-                {!mediaOnly && <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy || index === 0} onClick={() => {
-                  const next = [...galleryOrder];
-                  [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                  setGalleryOrder(next);
-                  setMessage(`${imageLabel(assetId)} moved to position ${index}. Save narrative to keep this order.`);
-                }}>Move up</button>}
-                <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" disabled={busy} onClick={() => void updateMedia('remove', assetId)}>Remove</button>
-              </>}
-            </li>)}
-          </ul>
-          {preview && <div>
-            <button className="rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-amber-400 disabled:opacity-50" type="button" onClick={() => setPreview(null)}>Close preview</button>
-            <img src={preview.image} alt="Private draft preview" className="mt-3 max-h-96 max-w-full rounded-lg border border-zinc-700" />
-          </div>}
+        <section className="space-y-4">
+          <p>Photos save privately until an administrator publishes the listing. Hero: JPG/PNG. Gallery: JPG/PNG/PDF. Select multiple files, up to 2 MiB each.</p>
+          <input ref={imageInput} aria-label="Upload draft files" className="hidden" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" disabled={!editable || busy} onChange={event => {
+            const files = Array.from(event.currentTarget.files ?? []) as File[];
+            const placement = event.currentTarget.dataset.placement === 'hero' ? 'hero' : 'gallery';
+            event.currentTarget.value = '';
+            if (files.length) void uploadFiles(files, placement, uploadCategory);
+          }} />
+          {(['hero', 'gallery'] as const).map(placement => <section key={placement} className="space-y-3">
+            <h2 className="text-xl font-bold">{placement === 'hero' ? 'Hero Photos' : 'Gallery Photos'} ({draft.assets.filter(asset => asset.placement === placement).length})</h2>
+            {editable && <div className="flex gap-3 items-center">
+              <button type="button" disabled={busy} className="rounded-lg bg-red-700 px-4 py-2 text-white" onClick={() => {
+                if (imageInput.current) { imageInput.current.dataset.placement = placement; imageInput.current.accept = placement === 'hero' ? '.jpg,.jpeg,.png,image/jpeg,image/png' : '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf'; imageInput.current.click(); }
+              }}>{placement === 'hero' ? 'Upload Hero Photos' : 'Upload Gallery Photos'}</button>
+              {placement === 'gallery' && <label>Category <select aria-label="New gallery photo category" value={uploadCategory} disabled={busy} onChange={event => setUploadCategory(event.target.value)}>{['exterior','interior','engine','underbody','documentation'].map(category => <option key={category}>{category}</option>)}</select></label>}
+            </div>}
+            {privateCards(placement)}
+          </section>)}
+
         </section>
       </>}
     </div>

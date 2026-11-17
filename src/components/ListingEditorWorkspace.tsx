@@ -1,3 +1,5 @@
+import { PhotoEditorCard } from './PhotoEditorCard';
+import { moveVisiblePhoto } from '../utils/photoOrdering';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Auction, 
@@ -24,7 +26,7 @@ import { formatCurrency, formatAuctionCountdown, getEffectiveAuctionStatus, form
 import { normalizeSectionToChapter, chapterToSection } from '../utils/showcaseConverter';
 import { useAuth } from '../context/AuthContext';
 import { readAndUploadImage } from '../utils/imageUpload';
-import { SellerDraftWorkspace } from './SellerDraftWorkspace';
+import { SellerDraftWorkspace, type DraftImageView } from './SellerDraftWorkspace';
 import { DealerAttributionPanel } from './DealerListingControls';
 import { HeroMediaCarousel } from './HeroMediaCarousel';
 import { InlineShowcaseSection } from './InlineShowcaseSection';
@@ -343,6 +345,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   const [viewMode, setViewMode] = useState<'split' | 'form' | 'preview'>('split');
   const [activeStep, setActiveStep] = useState<number>(1);
   const [saving, setSaving] = useState(false);
+  const [draftImageRefresh, setDraftImageRefresh] = useState(0);
+  const [draftImageViews, setDraftImageViews] = useState<DraftImageView[]>([]);
+  useEffect(() => setDraftImageViews([]), [auction.id, auction.status]);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // AI Assistant and In-line Generator states
@@ -926,8 +931,13 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     setEndTimeInput(formatForInput(auction.endTime ?? (Date.now() + 7 * 86400000)));
   }, [auction.id]);
 
+  // Private order writes must not rehydrate unrelated, unsaved editor fields.
+  const hydratedMedia = useRef<{ auctionId: string; signature: string } | null>(null);
   // Synchronize media config state when mediaConfig or auction changes
   useEffect(() => {
+    const signature = JSON.stringify({ ...mediaConfig, updatedAt: undefined, sellerDraftGalleryOrder: undefined, draftPublishedUrls: undefined });
+    if (hydratedMedia.current?.auctionId === auction.id && hydratedMedia.current.signature === signature) return;
+    hydratedMedia.current = { auctionId: auction.id, signature };
     const isMain = auction.id === MAIN_AUCTION_ID;
     setOverviewHeading(mediaConfig.overviewHeading ?? (isMain ? 'Vehicle Overview & Provenance' : ''));
     if (mediaConfig.overviewParagraphs && mediaConfig.overviewParagraphs.length > 0) {
@@ -978,7 +988,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const s2Status = overviewParagraphsText.trim().length > 50 ? 'complete' : 'draft';
     const s3Status = compiledOverviewSpecs.length >= 6 ? 'complete' : `${compiledOverviewSpecs.length} specs`;
     const s4Status = showcaseChapters.length > 0 ? 'complete' : 'draft';
-    const s5Status = heroImages.length > 0 && galleryImages.length > 0 ? 'complete' : (heroImages.length === 0 ? 'No hero' : 'draft');
+    const hasHero = heroImages.length > 0 || draftImageViews.some(image => image.placement === 'hero');
+    const hasGallery = galleryImages.length > 0 || draftImageViews.some(image => image.placement === 'gallery');
+    const s5Status = hasHero && hasGallery ? 'complete' : (!hasHero ? 'No hero' : 'draft');
     const s6Status = videoChapters.length > 0 ? 'complete' : 'optional';
     const s7Status = startingBid > 0 && minimumIncrement > 0 ? 'complete' : 'review';
 
@@ -991,7 +1003,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       { id: 6, label: 'Videos & Driving', anchor: 'sec-videos', status: s6Status, icon: Video },
       { id: 7, label: 'Financials & Dates', anchor: 'sec-financials', status: s7Status, icon: DollarSign }
     ];
-  }, [title, vin, make, model, overviewParagraphsText, compiledOverviewSpecs, showcaseChapters, heroImages, galleryImages, videoChapters, startingBid, minimumIncrement]);
+  }, [title, vin, make, model, overviewParagraphsText, compiledOverviewSpecs, showcaseChapters, heroImages, galleryImages, draftImageViews, videoChapters, startingBid, minimumIncrement]);
 
   // Scroll smoothly to section anchor
   const scrollToSection = (anchorId: string, stepId: number) => {
@@ -1729,13 +1741,19 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   }) => {
     if (auction.status === 'draft' || auction.status === 'pending_review') {
       const input = document.querySelector<HTMLInputElement>('#private-draft-images input[type="file"]');
-      if (input && !input.disabled) input.click();
+      if (input && !input.disabled) {
+        input.dataset.placement = target.type === 'hero' ? 'hero' : 'gallery';
+        input.dataset.category = target.category || 'exterior';
+        input.accept = target.type === 'gallery' ? '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf' : '.jpg,.jpeg,.png,image/jpeg,image/png';
+        input.click();
+      }
       else setMessage({ type: 'info', text: 'Draft images are read-only while the listing is under review.' });
       return;
     }
     setActiveUploadTarget(target);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+      fileInputRef.current.accept = target.type === 'gallery' ? '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf' : '.jpg,.jpeg,.png,image/jpeg,image/png';
       fileInputRef.current.click();
     }
   };
@@ -1749,14 +1767,10 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
     const oversizedErrors: string[] = [];
 
     for (const f of files) {
-      const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
-      if (isPdf && f.size > 25 * 1024 * 1024) {
-        oversizedErrors.push(`Document ${f.name} exceeds the 25MB limit. Please compress the file or provide a cloud link (Google Drive / Dropbox) under Vehicle Identity.`);
-      } else if (!isPdf && f.size > 20 * 1024 * 1024) {
-        oversizedErrors.push(`Image ${f.name} exceeds the 20MB raw limit. Please compress the image prior to upload.`);
-      } else {
-        validFiles.push(f);
-      }
+      const isPdf = f.type === 'application/pdf';
+      if (!['image/jpeg','image/png', ...(activeUploadTarget.type === 'gallery' ? ['application/pdf'] : [])].includes(f.type) || f.size > 2 * 1024 * 1024) {
+        oversizedErrors.push(`${f.name}: use JPG/PNG${activeUploadTarget.type === 'gallery' ? ' or PDF' : ''}, up to 2 MiB per file.`);
+      } else validFiles.push(f);
     }
 
     if (oversizedErrors.length > 0) {
@@ -1773,7 +1787,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
       const readResults = await Promise.all(
         validFiles.map(async file => {
           const dataUrl = await readAndUploadImage(file, async rawDataUrl => {
-            const compressed = await compressImageDataUrl(rawDataUrl);
+            const compressed = file.type === 'image/jpeg' ? await compressImageDataUrl(rawDataUrl) : rawDataUrl;
             return uploadImageToStorage(auction.id, compressed, activeUploadTarget.type);
           });
           return { dataUrl, name: file.name, cleanedName: file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') };
@@ -1826,8 +1840,26 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
   };
 
   // Select Photo from Existing Gallery Modal
-  const handleSelectFromGallery = (selectedUrl: string) => {
+  const handleSelectFromGallery = async (selectedUrl: string, selectedId?: string) => {
     if (!pickerTarget) return;
+    const privateImage = draftImageViews.find(image => image.id === selectedId);
+    if (privateImage) {
+      if (!user || pickerTarget.type !== 'hero') return;
+      try {
+        const headers = { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' };
+        const read = await fetch('/api/seller-draft-read', { method: 'POST', headers, body: JSON.stringify({ auctionId: auction.id }) });
+        if (!read.ok) throw new Error('Could not reload draft image placement.');
+        const draft = await read.json();
+        const response = await fetch('/api/seller-draft-media', { method: 'POST', headers,
+          body: JSON.stringify({ auctionId: auction.id, assetId: privateImage.id, action: 'assign',
+            expectedRevision: draft.revision, placement: 'hero', category: privateImage.category }) });
+        if (!response.ok) throw new Error('Image placement changed. Reload and try again.');
+        setDraftImageRefresh(value => value + 1);
+        setPickerTarget(null);
+        setMessage({ type: 'success', text: 'Private draft hero placement saved.' });
+      } catch (error) { setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Image assignment failed.' }); }
+      return;
+    }
 
     const matchedGalleryItem = galleryImages.find(img => img.url === selectedUrl);
     const caption = matchedGalleryItem?.caption || matchedGalleryItem?.title || '';
@@ -2099,7 +2131,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
         type="file"
         ref={fileInputRef}
         onChange={handleFileSelected}
-        accept="image/png, image/jpeg, image/webp, image/gif, application/pdf"
+        accept=".jpg,.jpeg,.png,.pdf,image/png,image/jpeg,application/pdf"
         multiple
         className="hidden"
       />
@@ -3046,9 +3078,9 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                 <PhotoGuideDrawer />
 
                 {isAdmin && user && ['draft', 'pending_review'].includes(auction.status) && (
-                  <section id="private-draft-images" className="rounded-xl border border-emerald-800 bg-emerald-950/20 p-4">
-                    <SellerDraftWorkspace key={auction.id} auctionId={auction.id} user={user} mediaOnly onBack={() => {}} />
-                  </section>
+                  <div>
+                    <SellerDraftWorkspace key={`${auction.id}:${auction.status}:${draftImageRefresh}`} auctionId={auction.id} user={user} mediaOnly heroOffset={heroImages.length} galleryFilter={galleryActiveFilter} onImagesChanged={setDraftImageViews} onBack={() => {}} />
+                  </div>
                 )}
 
                 {/* 5A: HERO CAROUSEL BUILDER */}
@@ -3057,7 +3089,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Hero Carousel Slides ({heroImages.length})</span>
+                        <span>Hero Carousel Slides ({heroImages.length + draftImageViews.filter(image => image.placement === 'hero').length}) · {draftImageViews.filter(image => image.placement === 'hero').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         The first image serves as the main lead hero photo. Drag cards or use arrows to reorder.
@@ -3110,81 +3142,15 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
 
                   {/* Hero Images Grid with Drag & Reorder */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {heroImages.map((imgUrl, hIdx) => (
-                      <div
-                        key={hIdx}
-                        draggable
-                        onDragStart={(e) => handleHeroDragStart(e, hIdx)}
-                        onDrop={(e) => handleHeroDrop(e, hIdx)}
-                        onDragOver={(e) => e.preventDefault()}
-                        className={`relative rounded-xl overflow-hidden border aspect-[4/3] bg-black group transition-all cursor-move select-none shadow-md ${
-                          hIdx === 0 
-                            ? 'border-amber-500/80 ring-1 ring-amber-500/40' 
-                            : 'border-zinc-800 hover:border-zinc-600'
-                        } ${draggedHeroIdx === hIdx ? 'opacity-40 scale-95' : 'opacity-100'}`}
-                      >
-                        <img 
-                          src={imgUrl} 
-                          alt={`Hero slide ${hIdx + 1}`} 
-                          className="w-full h-full object-cover pointer-events-none" 
-                        />
-
-                        {/* Top Badge Overlay */}
-                        <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                            hIdx === 0 
-                              ? 'bg-amber-500 text-black font-black' 
-                              : 'bg-black/75 text-zinc-300 backdrop-blur-xs'
-                          }`}>
-                            {hIdx === 0 ? '★ Lead Hero' : `#${hIdx + 1}`}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => setHeroImages(heroImages.filter((_, i) => i !== hIdx))}
-                            className="w-6 h-6 rounded bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-md cursor-pointer transition-colors opacity-90 group-hover:opacity-100"
-                            title="Remove slide"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Bottom Reorder Bar */}
-                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-1.5 flex items-center justify-between z-10">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveHero(hIdx, 'left')}
-                            disabled={hIdx === 0}
-                            className={`p-1 rounded text-[10px] font-bold flex items-center gap-0.5 ${
-                              hIdx === 0 
-                                ? 'text-zinc-600 cursor-not-allowed' 
-                                : 'text-zinc-200 hover:text-white bg-black/60 hover:bg-black/90 cursor-pointer'
-                            }`}
-                            title="Move slide left"
-                          >
-                            <ChevronLeft className="w-3 h-3" />
-                            <span>Left</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleMoveHero(hIdx, 'right')}
-                            disabled={hIdx === heroImages.length - 1}
-                            className={`p-1 rounded text-[10px] font-bold flex items-center gap-0.5 ${
-                              hIdx === heroImages.length - 1 
-                                ? 'text-zinc-600 cursor-not-allowed' 
-                                : 'text-zinc-200 hover:text-white bg-black/60 hover:bg-black/90 cursor-pointer'
-                            }`}
-                            title="Move slide right"
-                          >
-                            <span>Right</span>
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    {heroImages.map((imgUrl, hIdx) => <PhotoEditorCard key={hIdx} src={imgUrl} title={`Hero slide ${hIdx + 1}`} heroPosition={hIdx}
+                      canLeft={hIdx > 0} canRight={hIdx < heroImages.length - 1}
+                      onMove={direction => handleMoveHero(hIdx, direction === -1 ? 'left' : 'right')}
+                      onRemove={() => setHeroImages(heroImages.filter((_, index) => index !== hIdx))}
+                      dragProps={{ draggable: true, onDragStart: event => handleHeroDragStart(event, hIdx), onDragOver: event => event.preventDefault(), onDrop: event => handleHeroDrop(event, hIdx) }} />)}
                   </div>
                 </div>
+
+                <div id="private-hero-cards" />
 
                 {/* 5B: FULL CATEGORIZED GALLERY */}
                 <div className="pt-4 border-t border-zinc-800 space-y-4">
@@ -3192,7 +3158,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     <div>
                       <span className="font-bold text-zinc-200 text-xs flex items-center gap-1.5">
                         <Layers className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length})</span>
+                        <span>Categorized Gallery & Inspection Docs ({galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length}) · {draftImageViews.filter(image => image.placement === 'gallery').length} private draft</span>
                       </span>
                       <p className="text-[11px] text-zinc-400">
                         Upload multi-angle photography or PDF reports categorized by section.
@@ -3269,12 +3235,12 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                   {/* Category Filter Pills */}
                   <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
                     {[
-                      { id: 'all', label: 'All', count: galleryImages.length },
-                      { id: 'exterior', label: 'Exterior', count: galleryImages.filter(g => g.category === 'exterior').length },
-                      { id: 'interior', label: 'Interior', count: galleryImages.filter(g => g.category === 'interior').length },
-                      { id: 'engine', label: 'Engine Bay', count: galleryImages.filter(g => g.category === 'engine').length },
-                      { id: 'underbody', label: 'Underbody', count: galleryImages.filter(g => g.category === 'underbody').length },
-                      { id: 'documentation', label: 'Docs & Records', count: galleryImages.filter(g => g.category === 'documentation').length }
+                      { id: 'all', label: 'All', count: galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length },
+                      { id: 'exterior', label: 'Exterior', count: galleryImages.filter(g => g.category === 'exterior').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'exterior').length },
+                      { id: 'interior', label: 'Interior', count: galleryImages.filter(g => g.category === 'interior').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'interior').length },
+                      { id: 'engine', label: 'Engine Bay', count: galleryImages.filter(g => g.category === 'engine').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'engine').length },
+                      { id: 'underbody', label: 'Underbody', count: galleryImages.filter(g => g.category === 'underbody').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'underbody').length },
+                      { id: 'documentation', label: 'Docs & Records', count: galleryImages.filter(g => g.category === 'documentation').length + draftImageViews.filter(image => image.placement === 'gallery' && image.category === 'documentation').length }
                     ].map((tab) => (
                       <button
                         key={tab.id}
@@ -3296,67 +3262,17 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                     ))}
                   </div>
 
+                  <div id="private-gallery-cards" />
                   {/* Gallery Items Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {galleryImages
-                      .map((img, originalIndex) => ({ img, originalIndex }))
+                    {galleryImages.map((img, originalIndex) => ({ img, originalIndex }))
                       .filter(({ img }) => galleryActiveFilter === 'all' || img.category === galleryActiveFilter)
-                      .map(({ img, originalIndex }) => (
-                        <div
-                          key={img.id || originalIndex}
-                          className="relative rounded-xl overflow-hidden border border-zinc-800 aspect-[4/3] bg-zinc-950 group shadow-sm flex flex-col justify-between"
-                        >
-                          {/* Image or PDF Document Preview */}
-                          {img.isPdf ? (
-                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center bg-zinc-900">
-                              <FileText className="w-8 h-8 text-red-400 mb-1" />
-                              <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-wider">
-                                PDF Document
-                              </span>
-                              <span className="text-[11px] text-zinc-400 line-clamp-2 mt-0.5 font-medium">
-                                {img.title}
-                              </span>
-                            </div>
-                          ) : (
-                            <img
-                              src={img.url}
-                              alt={img.title || 'Vehicle photo'}
-                              className="w-full h-full object-cover"
-                            />
-                          )}
-
-                          {/* Top Controls Overlay: Category Selector + High-Vis Delete Button */}
-                          <div className="absolute top-1.5 inset-x-1.5 flex items-center justify-between z-10">
-                            <select
-                              value={img.category || 'exterior'}
-                              onChange={(e) => handleUpdateGalleryCategory(originalIndex, e.target.value as any)}
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/85 text-zinc-200 border border-zinc-700 backdrop-blur-xs cursor-pointer uppercase tracking-wider"
-                            >
-                              <option value="exterior">Exterior</option>
-                              <option value="interior">Interior</option>
-                              <option value="engine">Engine</option>
-                              <option value="underbody">Underbody</option>
-                              <option value="documentation">Docs</option>
-                            </select>
-
-                            <button
-                              type="button"
-                              onClick={() => setGalleryImages(galleryImages.filter((_, i) => i !== originalIndex))}
-                              className="w-6 h-6 rounded bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-md cursor-pointer transition-colors opacity-90 group-hover:opacity-100"
-                              title="Delete photo"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          {/* Bottom Caption Bar */}
-                          <div className="absolute bottom-0 inset-x-0 bg-black/80 backdrop-blur-xs px-2 py-1 z-10">
-                            <p className="text-[10px] text-zinc-300 truncate font-medium">
-                              {img.title || img.caption || 'Vehicle Photo'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                      .map(({ img, originalIndex }, visibleIndex, visible) => <PhotoEditorCard key={img.id || originalIndex}
+                        src={img.url} title={img.title || img.caption || 'Vehicle photo'} isPdf={img.isPdf} category={img.category}
+                        canLeft={visibleIndex > 0} canRight={visibleIndex < visible.length - 1}
+                        onCategory={category => handleUpdateGalleryCategory(originalIndex, category as GalleryImage['category'])}
+                        onMove={direction => setGalleryImages(images => moveVisiblePhoto<GalleryImage>(images, originalIndex, direction, image => galleryActiveFilter === 'all' || image.category === galleryActiveFilter))}
+                        onRemove={() => setGalleryImages(images => images.filter((_, index) => index !== originalIndex))} />)}
                   </div>
                 </div>
               </section>
@@ -4200,7 +4116,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             {/* 2. Hero Media Carousel */}
             <div className="rounded-2xl overflow-hidden border border-zinc-200 shadow-sm bg-zinc-900">
               <HeroMediaCarousel
-                images={heroImages.length > 0 ? heroImages : ['https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85']}
+                images={heroImages.length + draftImageViews.filter(image => image.placement === 'hero').length > 0 ? [...heroImages, ...draftImageViews.filter(image => image.placement === 'hero').map(image => image.url)] : ['https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1920&q=85']}
                 onOpenLightbox={(idx) => setPreviewLightboxIndex(idx)}
                 onScrollToVideo={() => {}}
                 onScrollToGallery={() => {}}
@@ -4340,14 +4256,14 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
             <YouTubePlaylistSection mediaConfig={currentMedia} />
 
             {/* 6. Section 5: Categorized Photo Gallery Grid */}
-            {galleryImages.length > 0 && (
+            {galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-700">
                   <ImageIcon className="w-4 h-4" />
-                  <span>Full Categorized Photo Gallery ({galleryImages.length} items)</span>
+                  <span>Full Categorized Photo Gallery ({galleryImages.length + draftImageViews.filter(image => image.placement === 'gallery').length} items)</span>
                 </div>
                 <PhotoGalleryGrid
-                  images={galleryImages}
+                  images={[...galleryImages, ...draftImageViews.filter(image => image.placement === 'gallery').map(image => ({ id: image.id, url: image.url, category: image.category as GalleryImage['category'], title: image.title || 'Draft vehicle photo', isPdf: image.contentType === 'application/pdf' }))]}
                   selectedImageIndex={previewLightboxIndex}
                   onOpenLightbox={(idx) => setPreviewLightboxIndex(idx)}
                   onCloseLightbox={() => setPreviewLightboxIndex(null)}
@@ -4601,7 +4517,8 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
               {(() => {
                 const filteredItems = [
                   ...heroImages.map((hUrl, idx) => ({ id: `hero-${idx}`, url: hUrl, title: `Hero Photo #${idx + 1}`, caption: '', category: 'exterior' as const, isPdf: false })),
-                  ...galleryImages
+                  ...galleryImages,
+                  ...(pickerTarget?.type === 'hero' ? draftImageViews.filter(image => image.contentType !== 'application/pdf').map(image => ({ id: image.id, url: image.url, title: 'Draft ' + image.category + ' photo', caption: '', category: image.category as GalleryImage['category'], isPdf: false })) : [])
                 ].filter((item) => {
                   if (!item.url || !item.url.trim()) return false;
                   // Exclude non-image PDF inspection documents from selectable options
@@ -4643,7 +4560,7 @@ export const ListingEditorWorkspace: React.FC<ListingEditorWorkspaceProps> = ({
                         <button
                           key={item.id || idx}
                           type="button"
-                          onClick={() => handleSelectFromGallery(item.url)}
+                          onClick={() => void handleSelectFromGallery(item.url, item.id)}
                           className="relative group w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-800 hover:border-amber-500 bg-slate-950 focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition-all duration-200 cursor-pointer"
                         >
                           {!isBroken ? (
