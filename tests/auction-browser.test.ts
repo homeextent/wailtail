@@ -515,12 +515,168 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const convertedId = converted.application.convertedAuctionId;
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=admin' });
     await eventually(text, value => value.includes('Protected dealer attribution') && value.includes('Canonical Browser Dealer Inc.'), 'admin editor protects dealer attribution');
+    await eventually(text, value => value.includes('Hero Carousel Slides (0)'), 'administrator private draft image controls');
+    const uploadLayout = await command('Runtime.evaluate', { expression: `(() => {
+      const panel = document.querySelector('#private-draft-images');
+      return { inGallery: !!panel?.closest('#sec-gallery'), multiple: panel?.querySelector('input')?.multiple, duplicate: document.body.innerText.includes('Draft images (') };
+    })()`, returnByValue: true });
+    assert.equal(uploadLayout.result.value.inGallery, true);
+    assert.equal(uploadLayout.result.value.multiple, true);
+    assert.equal(uploadLayout.result.value.duplicate, false);
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `(() => { const input=document.querySelector('#private-draft-images input[type="file"]');return !!input && !input.disabled; })()`, returnByValue:true });
+      return result.result.value;
+    }, Boolean, 'private upload control is ready');
+    const pickerRoute = await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      let opened = 0;
+      input.addEventListener('click', event => { event.preventDefault(); opened++; }, {once:true});
+      const before = window.scrollY;
+      Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Upload Hero Photos')).click();
+      return {opened, before, after: window.scrollY, accept:input.accept};
+    })()`, returnByValue: true });
+    assert.equal(pickerRoute.result.value.opened, 1);
+    assert.match(pickerRoute.result.value.accept,/image\/png/); assert.equal(pickerRoute.result.value.accept.includes('pdf'),false);
+    assert.equal(pickerRoute.result.value.after, pickerRoute.result.value.before);
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      input.dataset.placement = 'hero'; input.dataset.category = 'exterior';
+      const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 2;
+      const bytes = Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), value => value.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], 'synthetic.jpg', {type:'image/jpeg'}));
+      transfer.items.add(new File(['invalid'], 'invalid.gif', {type:'image/gif'}));
+      transfer.items.add(new File([bytes], 'second.jpg', {type:'image/jpeg'}));
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()` });
+    await eventually(text, value => value.includes('2 of 3 files uploaded.') && value.includes('Hero Carousel Slides (2)') && value.includes('invalid.gif:'), 'administrator draft image uploaded privately');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('img')).some(image => image.src.startsWith('data:image/jpeg') && image.naturalWidth > 0)`, returnByValue: true });
+      return result.result.value;
+    }, Boolean, 'authenticated hero draft preview renders');
+    await command('Runtime.evaluate', { expression: `(() => {
+      const original = window.fetch;
+      window.__restoreUploadFetch = () => { window.fetch = original; };
+      window.fetch = (url, options) => String(url).endsWith('/api/seller-draft-upload')
+        ? Promise.resolve(new Response('{}', {status:409, headers:{'Content-Type':'application/json'}})) : original(url, options);
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 2;
+      const bytes = Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), value => value.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], 'conflict.jpg', {type:'image/jpeg'}));
+      transfer.items.add(new File([bytes], 'not-attempted.jpg', {type:'image/jpeg'}));
+      input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()` });
+    await eventually(text, value => value.includes('0 of 2 files uploaded.') && value.includes('1 remaining file(s) were not attempted'), 'uncertain upload failure stops the batch');
+    await command('Runtime.evaluate', { expression: 'window.__restoreUploadFetch()' });
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Upload Photos & Inspection Docs'));
+      const select = button.parentElement.querySelector('select');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'engine');
+      select.dispatchEvent(new Event('change', {bubbles:true}));
+      input.addEventListener('click', event => event.preventDefault(), {once:true});
+    })()` });
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]');
+      Array.from(document.querySelectorAll('button')).find(button => button.textContent.includes('Upload Photos & Inspection Docs')).click();
+      if (input.dataset.placement !== 'gallery' || input.dataset.category !== 'engine') throw Error('Gallery intent lost');
+      const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 2;
+      const bytes = Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), value => value.charCodeAt(0));
+      const transfer = new DataTransfer(); transfer.items.add(new File([bytes], 'gallery.jpg', {type:'image/jpeg'}));
+      input.files = transfer.files; input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()` });
+    const privatePhotos = async () => {
+      const result = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('[data-private-placement] [data-asset-id]')).map(card => ({ id:card.dataset.assetId, category:card.dataset.category, placement:card.closest('[data-private-placement]').dataset.privatePlacement }))`, returnByValue:true });
+      return result.result.value as {id:string;category:string;placement:string}[];
+    };
+    await eventually(privatePhotos, photos => photos.some(photo => photo.placement === 'gallery' && photo.category === 'engine'), 'gallery upload preserves category');
+    const compact = await command('Runtime.evaluate', { expression: `(() => {
+      const hero = document.querySelector('[data-private-placement="hero"] [data-asset-id]');
+      return {heroSelects:hero.querySelectorAll('select').length, lead:hero.innerText.includes('Lead Hero'), gallerySelects:document.querySelector('[data-private-placement="gallery"] [data-asset-id]').querySelectorAll('select').length};
+    })()`, returnByValue:true });
+    assert.deepEqual(compact.result.value, {heroSelects:0,lead:true,gallerySelects:1});
+    await click(`(() => { const button = document.querySelector('[data-private-placement="hero"] button[aria-label^="Preview"]'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(text, value => value.includes('Close preview'), 'thumbnail opens photo preview');
+    await click(`(() => { document.querySelector('[role="dialog"] button').click(); return true; })()`);
+    await click(`(() => { const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Pick from Gallery'); if (!button) return false; button.click(); return true; })()`);
+    await click(`(() => { const image = document.querySelector('img[alt="Draft engine photo"]'); if (!image) return false; image.closest('button').click(); return true; })()`);
+    await eventually(privatePhotos, photos => photos.some(photo => photo.placement === 'hero' && photo.category === 'engine'), 'gallery picker assigns private hero by asset ID');
+    await click(`(() => { const card = document.querySelector('[data-private-placement="hero"] [data-category="engine"]'); const button = card?.querySelector('button[aria-label^="Remove"]'); if (!button) return false; button.click(); return true; })()`);
+    await eventually(privatePhotos, photos => photos.length === 2, 'compact trash control removes picked hero');
+    await command('Runtime.evaluate', { expression: `(() => {
+      const input = document.querySelector('#private-draft-images input[type="file"]'); input.dataset.placement='gallery'; input.dataset.category='engine';
+      const canvas = document.createElement('canvas'); canvas.width=2;canvas.height=2;
+      const bytes=Uint8Array.from(atob(canvas.toDataURL('image/jpeg').split(',')[1]), c=>c.charCodeAt(0)); const transfer=new DataTransfer();
+      for(let i=0;i<3;i++) transfer.items.add(new File([bytes], 'gallery-'+i+'.jpg', {type:'image/jpeg'}));
+      input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()` });
+    await eventually(privatePhotos, photos => photos.filter(photo=>photo.placement==='gallery').length===3, 'multiple gallery uploads appear as compact cards');
+    await click(`(() => { const cards=document.querySelectorAll('[data-private-placement="gallery"] [data-asset-id]');const select=cards[1]?.querySelector('select'); if(!select)return false; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'exterior');select.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`);
+    await eventually(privatePhotos, photos=>photos.some(photo=>photo.placement==='gallery'&&photo.category==='exterior'), 'compact gallery category change saved');
+    const galleryBefore = (await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id);
+    await click(`(() => { const tab=Array.from(document.querySelectorAll('#sec-gallery button')).find(button=>button.textContent.trim().startsWith('Engine Bay'));if(!tab)return false;tab.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery').length===2, 'engine filter shows only matching photos');
+    await click(`(() => { const card=document.querySelector('[data-private-placement="gallery"] [data-asset-id]');const button=card?.querySelector('button[aria-label$=" right"]');if(!button||button.disabled)return false;button.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery')[0]?.id===galleryBefore[2], 'filtered Right control swaps matching photos');
+    await click(`(() => { const tab=Array.from(document.querySelectorAll('#sec-gallery button')).find(button=>button.querySelector('span')?.textContent==='All');if(!tab)return false;tab.click();return true; })()`);
+    await eventually(privatePhotos, photos=>photos.filter(photo=>photo.placement==='gallery').length===3, 'all category restored');
+    assert.deepEqual((await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id), [galleryBefore[2],galleryBefore[1],galleryBefore[0]]);
+
+    await click(`(() => {
+      const section = document.querySelector('#sec-narrative');
+      const input = section?.querySelector('input'); if (!input) return false;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Unsaved heading survives photo ordering');
+      input.dispatchEvent(new Event('input', {bubbles:true})); return true;
+    })()`);
+    const reorder = await command('Runtime.evaluate', { expression: `(() => {
+      const rows = document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]');
+      const id = rows[1].dataset.assetId;
+      rows[1].querySelector('button[aria-label$=" left"]').click();
+      return id;
+    })()`, returnByValue: true });
+    await eventually(privatePhotos, photos => photos.filter(photo=>photo.placement==='hero')[0]?.id===reorder.result.value, 'hero order saved immediately');
+    await delay(500); // Allow the media snapshot to arrive before checking unsaved state.
+    const unsavedHeading = await command('Runtime.evaluate', { expression: `document.querySelector('#sec-narrative input').value`, returnByValue: true });
+    assert.equal(unsavedHeading.result.value, 'Unsaved heading survives photo ordering');
+
+    await command('Runtime.evaluate', { expression: 'globalThis.__placementReload = true' });
+    await command('Page.reload');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', { expression: `!globalThis.__placementReload && document.readyState !== 'loading' && document.body.innerText.includes('Hero Carousel Slides (2)') && document.querySelectorAll('[data-private-placement="hero"] [data-asset-id]').length === 2 && document.querySelectorAll('[data-private-placement="gallery"] [data-asset-id]').length === 3`, returnByValue: true });
+      return result.result.value;
+    }, Boolean, 'image placement survives a new document');
+    const orderAfterReload = await command('Runtime.evaluate', { expression: `document.querySelector('[data-private-placement="hero"] [data-asset-id]').dataset.assetId`, returnByValue: true });
+    assert.equal(orderAfterReload.result.value, reorder.result.value);
+    assert.deepEqual((await privatePhotos()).filter(photo=>photo.placement==='gallery').map(photo=>photo.id), [galleryBefore[2],galleryBefore[1],galleryBefore[0]]);
+
+
+
+    await command('Runtime.evaluate', { expression:`(() => {
+      const input=document.querySelector('#private-draft-images input[type="file"]');input.dataset.placement='hero';input.dataset.category='exterior';
+      const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;const bytes=Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1]),c=>c.charCodeAt(0));
+      const transfer=new DataTransfer();transfer.items.add(new File([bytes],'hero.png',{type:'image/png'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()` });
+    await eventually(privatePhotos,photos=>photos.filter(photo=>photo.placement==='hero').length===3,'PNG accepted by hero uploader');
+    await command('Runtime.evaluate', { expression:`(() => {
+      const input=document.querySelector('#private-draft-images input[type="file"]');input.addEventListener('click',event=>event.preventDefault(),{once:true});
+      Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('Upload Photos & Inspection Docs')).click();
+      if(!input.accept.includes('application/pdf'))throw Error('PDF filter missing');
+      const transfer=new DataTransfer();transfer.items.add(new File(['%PDF-1.4\\n1 0 obj<</Type/Catalog>>endobj\\n%%EOF\\n'],'Service report.pdf',{type:'application/pdf'}));
+      input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    })()` });
+    await eventually(text,value=>value.includes('Service report.pdf')&&value.includes('Download PDF'),'private PDF has document title and download control');
+    const pdfControl=await command('Runtime.evaluate',{expression:`(() => {const link=Array.from(document.querySelectorAll('[data-private-placement="gallery"] a')).find(link=>link.download==='Service report.pdf');return {href:link?.getAttribute('href')?.startsWith('data:application/pdf'),category:link?.closest('[data-asset-id]')?.dataset.category,embedded:!!document.querySelector('iframe,embed,object')};})()`,returnByValue:true});
+    assert.equal(pdfControl.result.value.href,true);assert.equal(pdfControl.result.value.category,'documentation');
+
     await fill('select[aria-label="Dealer tax handling"]', 'dealer_collects', true);
     await fill('textarea[aria-label="Dealer tax change reason"]', 'Synthetic tax arrangement confirmed by curator');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save dealer tax indicator'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Dealer tax indicator saved.'), 'dedicated draft tax update saved');
     await command('Page.navigate', { url: origin + '/dashboard/listings/' + convertedId + '/edit?actor=dealer' });
     await eventually(text, value => value.includes('Assigned dealer listing') && value.includes('Overview heading'), 'bidder-role representative opens owned dealer workspace');
+    await eventually(text, value => value.includes('Hero Photos (3)') && value.includes('Gallery Photos (4)') && value.includes('Service report.pdf'), 'representative sees persisted administrator placements');
     await click(`(() => { const label = Array.from(document.querySelectorAll('label')).find(l => l.textContent?.startsWith('Overview heading')); const field = label?.querySelector('input'); if (!field) return false; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'Dealer browser narrative'); field.dispatchEvent(new Event('input', {bubbles:true})); return true; })()`);
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save narrative'); if (!b || b.disabled) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Narrative saved.'), 'assigned representative saves without role promotion');

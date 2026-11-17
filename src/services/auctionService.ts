@@ -154,7 +154,7 @@ export async function uploadImageToStorage(auctionId: string, dataUrl: string, f
   if (!user) throw new Error('Sign in to upload images.');
   const response = await fetch('/api/admin-upload-auction-image', {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` },
-    body: JSON.stringify({ auctionId: ['branding', 'promotions'].includes(folder) ? 'common' : auctionId, dataUrl })
+    body: JSON.stringify({ auctionId: ['branding', 'promotions'].includes(folder) ? 'common' : auctionId, dataUrl, folder })
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || typeof result?.url !== 'string') throw new Error(result?.error || 'Image upload failed.');
