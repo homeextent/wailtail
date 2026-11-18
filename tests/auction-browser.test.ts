@@ -463,6 +463,13 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
     await eventually(text, value => value.includes('Dealer application') && value.includes('Dealer verification: Pending verification'), 'unverified dealer application is distinct from account role');
+    await fill('select[aria-label="Consignment seller type"]', 'private', true);
+    await eventually(text, value => value.includes('Private browser owner') && !value.includes('Dealer Fixture'), 'private application filter');
+    await fill('select[aria-label="Consignment seller type"]', 'dealer', true);
+    await eventually(text, value => value.includes('Dealer Fixture') && !value.includes('Private browser owner'), 'dealer application filter');
+    await fill('select[aria-label="Consignment seller type"]', 'ALL', true);
+    await eventually(text, value => value.includes('Private browser owner') && value.includes('Dealer Fixture'), 'application filter reset');
+
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
     await eventually(text, value => value.includes('Autofilled Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
     assert.ok((await text()).includes('No linked canonical dealer verification information.'));
@@ -538,7 +545,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await saveVerification();
     await eventually(verificationState, value => value.profile?.verificationStatus === 'suspended' && value.events === 3, 'suspension audited');
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
-    await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline after verification reload');
+    await eventually(text, value => value.includes('Dealer Fixture') && value.includes('Dealer verification: Suspended'), 'dealer pipeline after verification reload');
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const b = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!b) return false; b.click(); return true; })()`);
     await eventually(text, value => value.includes('Canonical Browser Dealer Inc.') && value.includes('suspended'), 'canonical verification visible in application review after reload');
     await click(`(() => { const b = Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Manage dealer verification'); if (!b) return false; b.click(); return true; })()`);
