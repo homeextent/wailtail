@@ -1,5 +1,8 @@
 # Private draft image upload correction
 
+> Current status: [November 17 production acceptance](phase1-production-acceptance-2026-11-17.md) supersedes staging-only/pending rollout language below. The original review is retained as dated development history. PRs #26/#27 are released; the separate Draft images panel was removed in favor of Hero/Gallery controls, with multiple JPG/PNG and gallery PDF support. Controlled live acceptance and notification activation are recorded separately; the genuine dealer pilot remains outstanding.
+
+
 Owner production acceptance on November 16, 2026 exposed an administrator upload failure: the full editor called the public image endpoint for a draft (HTTP 409), and a rejected asynchronous FileReader callback did not reject the outer promise or show feedback.
 
 ## Behavior

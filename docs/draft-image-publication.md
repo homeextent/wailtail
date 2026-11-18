@@ -1,5 +1,8 @@
 # Draft image placement and publication
 
+> Current status: [November 17 production acceptance](phase1-production-acceptance-2026-11-17.md) supersedes staging-only/pending rollout language below. The original review is retained as dated development history. PRs #26/#27 are released; the separate Draft images panel was removed in favor of Hero/Gallery controls, with multiple JPG/PNG and gallery PDF support. Controlled live acceptance and notification activation are recorded separately; the genuine dealer pilot remains outstanding.
+
+
 Follow-up to PR #26: staging upload/preview acceptance passed, but both legacy buttons lost their distinct hero/gallery intent. The private images were not part of the publication operation. This correction completes that transition without making draft objects readable anonymously.
 
 - The administrator uses the existing Hero Carousel and Categorized Gallery controls, with compact production-style private thumbnail cards in those sections; there is no separate Draft images editor. Representatives also have Hero Photos and Gallery Photos groups. Multiple supported files upload sequentially using each returned revision; invalid local files are reported individually and skipped. A server failure stops remaining uploads because its response may be lost after a commit; reload before retrying. Progress and partial completion are visible. Category filters and the sidebar include private images. Private ordering metadata updates do not rehydrate or discard unrelated unsaved editor fields.
