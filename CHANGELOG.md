@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Admin dealer identification
 
+- Keep overview/navigation totals independent of filters and count pending applications across the full selected source collection. Add opt-in emulator examples for all dealer verification colours and linked bidder representatives.
+
 - Add independent dealer affiliation and seller-type filters in Member Directory, Consignment Pipeline and Inventory, preserving existing role/status filters and permissions.
 - Identify dealer applications, representative dealership affiliations and historical dealer-listed inventory; clarify Email verified and Submitted as guest labels.
 - Display canonical verification with text and consistent colours, future-expiry checks and unavailable states. No new dealer role, revoked schema state, role promotion or production data/rules changes.

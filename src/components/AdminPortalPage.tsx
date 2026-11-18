@@ -143,6 +143,9 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     const clock = window.setInterval(() => setDealerNow(Date.now()), 30000);
     return () => { unsubscribe(); unsubscribeCases(); window.clearInterval(clock); };
   }, [authUser]);
+  const [overviewMembers, setOverviewMembers] = useState(0);
+  const [overviewConsignments, setOverviewConsignments] = useState(0);
+  const [overviewPending, setOverviewPending] = useState(0);
   const [memberDealerFilter, setMemberDealerFilter] = useState('ALL');
   const [consignmentSellerFilter, setConsignmentSellerFilter] = useState('ALL');
   const [inventorySellerFilter, setInventorySellerFilter] = useState('ALL');
@@ -274,6 +277,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         dealerFilter: memberDealerFilter
       });
       setBiddersList(res.items);
+      setOverviewMembers(res.unfilteredTotal ?? res.total);
       setBiddersTotal(res.total);
       setBiddersTotalPages(res.totalPages);
     } catch (err: any) {
@@ -801,6 +805,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         sellerTypeFilter: consignmentSellerFilter
       });
       setConsignmentsList(res.items);
+      setOverviewConsignments(res.unfilteredTotal ?? res.total);
+      setOverviewPending(res.unfilteredPendingTotal ?? 0);
       setConsignmentsTotal(res.total);
       setConsignmentsTotalPages(res.totalPages);
     } catch (err: any) {
@@ -823,6 +829,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       const newAuctionId = await convertConsignmentToDraftListing(app.id);
       setConsignmentsList(prev => prev.map(c => c.id === app.id ? { ...c, status: 'approved', convertedAuctionId: newAuctionId } : c));
       showToast(`Draft listing created for ${app.year} ${app.make} ${app.model}! (Lot ID: ${newAuctionId})`);
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Conversion failed: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -843,6 +850,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
         setConsignmentsTotal(prev => Math.max(0, prev - 1));
       }
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to reject consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -863,6 +871,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
         setConsignmentsTotal(prev => Math.max(0, prev - 1));
       }
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to re-open consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -880,6 +889,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
       setConsignmentsTotal(prev => Math.max(0, prev - 1));
       showToast(`Permanently deleted consignment record for ${app.year} ${app.make} ${app.model}${cascade ? ' and associated vehicle listing' : ''}.`);
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to delete consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -1401,7 +1411,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Total Members</span>
                 <Users className="w-4 h-4 text-blue-400" />
               </div>
-              <div className="text-2xl font-black text-white font-mono">{biddersTotal || biddersList.length}</div>
+              <div data-admin-overview="members" className="text-2xl font-black text-white font-mono">{overviewMembers}</div>
               <div className="text-[11px] text-zinc-500 mt-1">Authenticated bidders & sellers</div>
             </div>
 
@@ -1410,7 +1420,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Total Consignments</span>
                 <FileText className="w-4 h-4 text-emerald-400" />
               </div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">{consignmentsTotal || consignmentsList.length}</div>
+              <div data-admin-overview="consignments" className="text-2xl font-black text-emerald-400 font-mono">{overviewConsignments}</div>
               <div className="text-[11px] text-zinc-500 mt-1">Inbound vehicle applications</div>
             </div>
 
@@ -1419,8 +1429,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Pending Approvals</span>
                 <Clock className="w-4 h-4 text-amber-400" />
               </div>
-              <div className="text-2xl font-black text-amber-400 font-mono">
-                {consignmentsList.filter(c => !c.status || c.status === 'pending').length}
+              <div data-admin-overview="pending" className="text-2xl font-black text-amber-400 font-mono">
+                {overviewPending}
               </div>
               <div className="text-[11px] text-zinc-500 mt-1">Requiring consignor review</div>
             </div>
@@ -1454,7 +1464,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                 activeTab === 'bidders' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
-                {biddersTotal}
+                {overviewMembers}
               </span>
             </button>
 
@@ -1471,7 +1481,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                 activeTab === 'consignments' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
-                {consignmentsTotal}
+                {overviewConsignments}
               </span>
             </button>
 

@@ -186,11 +186,15 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     assert.equal(selected.result?.value, true, 'Inventory tab must be selectable');
     await eventually(text, value => value.includes('Synthetic browser listing'), 'administrator inventory');
+    const overviewCounts = async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('[data-admin-overview]')).map(el => el.textContent)`, returnByValue: true })).result.value;
+    const initialOverview = await eventually(overviewCounts, values => values.length === 3 && values.every(value => Number(value) > 0), 'unfiltered overview counts');
+
     await eventually(text, value => value.includes('Dealer-listed') && value.includes('Dealer verification: Current'), 'admin inventory dealer attribution');
     await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'private'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
     await eventually(text, value => !value.includes('Dealer-listed'), 'private inventory filter excludes dealer');
     await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'ALL'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
     await eventually(text, value => value.includes('Dealer-listed'), 'dealer remains visible when seller filter clears');
+    assert.deepEqual(await overviewCounts(), initialOverview, 'inventory filtering keeps overview totals stable');
 
 
     const oversizedDelete = await command('Runtime.evaluate', {
@@ -464,10 +468,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
     await eventually(text, value => value.includes('Dealer application') && value.includes('Dealer verification: Pending verification'), 'unverified dealer application is distinct from account role');
+    const applicationOverview = await overviewCounts();
     await fill('select[aria-label="Consignment seller type"]', 'private', true);
     await eventually(text, value => value.includes('Private browser owner') && !value.includes('Dealer Fixture'), 'private application filter');
     await fill('select[aria-label="Consignment seller type"]', 'dealer', true);
     await eventually(text, value => value.includes('Dealer Fixture') && !value.includes('Private browser owner'), 'dealer application filter');
+    assert.deepEqual(await overviewCounts(), applicationOverview, 'application type filtering keeps full totals and pending count');
     await fill('select[aria-label="Consignment seller type"]', 'ALL', true);
     await eventually(text, value => value.includes('Private browser owner') && value.includes('Dealer Fixture'), 'application filter reset');
 
@@ -547,11 +553,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(verificationState, value => value.profile?.verificationStatus === 'suspended' && value.events === 3, 'suspension audited');
     await command('Page.navigate', { url: origin + '/admin' });
     await eventually(text, value => value.includes('Member Directory Management'), 'member directory dealer affiliation');
+    await eventually(text, value => value.includes('Email verified'), 'member profiles loaded');
+    const memberOverview = await overviewCounts();
     await fill('select[aria-label="Member dealer affiliation"]', 'dealer', true);
     await fill('select[aria-label="Member account role"]', 'BIDDER', true);
     await eventually(text, value => value.includes('Dealer representative: Canonical Browser Dealer Inc.') && value.includes('Dealer verification: Suspended') && value.includes('Email verified'), 'bidder representative retains affiliation and suspended status');
     await fill('select[aria-label="Member dealer affiliation"]', 'private', true);
     await eventually(text, value => !value.includes('Dealer representative: Canonical Browser Dealer Inc.'), 'non-dealer member filter excludes representative');
+    assert.deepEqual(await overviewCounts(), memberOverview, 'member filtering keeps full overview totals');
 
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture') && value.includes('Dealer verification: Suspended'), 'dealer pipeline after verification reload');

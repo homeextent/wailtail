@@ -2587,6 +2587,8 @@ export interface FetchPaginatedConsignmentsParams {
 }
 
 export interface PaginatedResult<T> {
+  unfilteredTotal?: number;
+  unfilteredPendingTotal?: number;
   items: T[];
   total: number;
   page: number;
@@ -2631,6 +2633,8 @@ export async function fetchPaginatedBidders({
       // ignore bidders collection error if it doesn't exist
     }
 
+    const unfilteredTotal = list.length;
+
     // Filter by searchQuery (name, email, phone, uid)
     const cleanSearch = searchQuery.trim().toLowerCase();
     if (cleanSearch) {
@@ -2672,6 +2676,7 @@ export async function fetchPaginatedBidders({
 
     return {
       items,
+      unfilteredTotal,
       total,
       page: clampedPage,
       pageSize,
@@ -2721,6 +2726,9 @@ export async function fetchPaginatedConsignments({
       })) as ConsignmentApplication[];
     }
 
+    const unfilteredTotal = list.length;
+    const unfilteredPendingTotal = list.filter(app => !app.status || app.status.toLowerCase() === 'pending').length;
+
     // Filter by searchQuery across make, model, VIN, and consignor email/name
     const cleanSearch = searchQuery.trim().toLowerCase();
     if (cleanSearch) {
@@ -2769,6 +2777,8 @@ export async function fetchPaginatedConsignments({
 
     return {
       items,
+      unfilteredTotal,
+      unfilteredPendingTotal,
       total,
       page: clampedPage,
       pageSize,
