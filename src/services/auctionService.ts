@@ -1087,15 +1087,33 @@ if (typeof window !== 'undefined' && auth) {
 /**
  * Submit Seller Consignment Application
  */
+export interface ReturningDealerContext {
+  status: 'current' | 'expired' | 'suspended' | 'not_current' | 'unavailable';
+  name?: string; legalBusinessName?: string; city?: string; province?: string; expiresAt?: number;
+  representativeName?: string; representativeEmail?: string; representativePhone?: string;
+}
+export async function returningDealerContext(): Promise<ReturningDealerContext | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  const response = await fetch('/api/dealer-vehicle-intake', { method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await user.getIdToken()}` }, body: JSON.stringify({ action: 'context' }) });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || !('dealer' in result)) throw new Error(result?.error || 'Unable to check dealership verification.');
+  return result.dealer;
+}
+
 export async function submitConsignmentApplication(
   app: Omit<ConsignmentApplication, 'id' | 'submittedAt' | 'status'>,
-  submissionId: string
+  submissionId: string,
+  returningDealer = false
 ): Promise<string> {
-  const response = await fetch('/api/submit-consignment', {
+  const token = returningDealer ? await auth.currentUser?.getIdToken() : null;
+  if (returningDealer && !token) throw new Error('Sign in to submit a dealership vehicle.');
+  const response = await fetch(returningDealer ? '/api/dealer-vehicle-intake' : '/api/submit-consignment', {
     signal: AbortSignal.timeout(15000),
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...app, submissionId })
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(returningDealer ? { ...app, applicantType: undefined, action: 'submit', submissionId } : { ...app, submissionId })
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || typeof result?.applicationId !== 'string') {

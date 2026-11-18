@@ -1527,4 +1527,17 @@ describe('Firestore Security Rules — Auction Security Gate Stage 2', () => {
     await assertFails(getDoc(doc(admin, 'dealerListingCommands', 'm23-record')));
   });
 
+  test('M2.7 returning-dealer intake audit records are server-only', async () => {
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(getNamedDb(ctx), 'dealerVehicleIntakeAudits/example'), { actorUid: 'rep', dealerId: 'dealer' });
+    });
+    for (const actor of [testEnv.unauthenticatedContext(), testEnv.authenticatedContext('rep', { email: 'rep@example.test', email_verified: true }), testEnv.authenticatedContext('admin', { email: ADMIN_EMAIL, email_verified: true })]) {
+      const db = getNamedDb(actor);
+      await assertFails(getDoc(doc(db, 'dealerVehicleIntakeAudits/example')));
+      await assertFails(setDoc(doc(db, 'dealerVehicleIntakeAudits/new'), { dealerId: 'forged' }));
+      await assertFails(updateDoc(doc(db, 'dealerVehicleIntakeAudits/example'), { dealerId: 'forged' }));
+      await assertFails(deleteDoc(doc(db, 'dealerVehicleIntakeAudits/example')));
+    }
+  });
+
 });

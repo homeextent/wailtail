@@ -2375,7 +2375,7 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M2.0B**: trusted authorization/security implementation deployed in production; the November 16 application/rules cutover supersedes its former staging-only release status. Account-deletion protections remain deployed; no destructive deletion retest was performed during this closeout.
 - **M2.1–M2.5**: implemented, accepted on staging and deployed; controlled dealer production acceptance completed as documented in [November 17 evidence](docs/phase1-production-acceptance-2026-11-17.md). Original milestone scope and earlier acceptance records remain unchanged.
 - **M2.6 — Optional Private Application Photo Uploads**: explicitly deferred and decoupled from core release. Existing draft listing uploads do not satisfy initial-application uploads.
-- **M2.7 — Returning-dealer vehicle submissions**: PLANNED; owner-approved scope, implementation and two-vehicle/expiry/suspension acceptance outstanding. Required before the genuine dealer pilot; see [scope and acceptance](docs/m2-7-returning-dealer-submissions.md).
+- **M2.7 — Returning-dealer vehicle submissions**: IMPLEMENTATION CANDIDATE; local endpoint and focused two-vehicle emulator checks passed; full CI and owner visual acceptance outstanding. Required before the genuine dealer pilot; see [scope and acceptance](docs/m2-7-returning-dealer-submissions.md).
 - **Founding Dealer Pilot**: outstanding/ongoing; 3–5 genuine dealerships and all six KPIs remain required. Fictional technical acceptance is not a genuine pilot.
 - **Formal Phase 1 completion**: not declared. Section 11.7 includes the returning-dealer readiness requirement; production evidence does not waive that requirement or the pilot.
 
@@ -2423,7 +2423,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 | M2.4 | Dealer vehicle listing integration | Deployed to production; returning-dealer gap tracked in M2.7 |
 | M2.5 | Public dealer presentation | Deployed to production |
 | M2.6 | Optional initial-application photos | Deferred; independently gated |
-| M2.7 | Returning-dealer submissions and two-vehicle acceptance | Planned; required before genuine pilot |
+| M2.7 | Returning-dealer submissions and two-vehicle acceptance | Implementation candidate; required before genuine pilot |
 
 The milestone details below preserve original staging acceptance evidence and implementation boundaries. Statements that a particular historical PR did not deploy production/rules describe that PR only; the November 16–18 production evidence in Section 11.1 supersedes those release gates. M2.7 is a new readiness requirement and is not covered by the earlier acceptance.
 
@@ -2607,10 +2607,10 @@ Implementation contract:
 - **Exit Criteria**: Applicants can optionally upload images; unauthenticated or unauthorized users cannot access uploaded photos; binary data is never stored in Firestore; core dealer program can launch with or without M2.6.
 
 #### M2.7 — Returning-dealer Vehicle Submissions
-- **Status**: **PLANNED — owner-approved scope, November 18, 2026; not implemented**.
+- **Status**: **IMPLEMENTATION CANDIDATE — November 18, 2026; full CI and owner acceptance outstanding**.
 - **Objective**: Reuse one current canonical dealership/representative for separately reviewed additional vehicle applications, without repeating business onboarding or creating conflicting verification cases.
 - **Acceptance**: One dealership submits and manages two independent vehicles; persist each vehicle's narrative/media after refresh; preserve individual approval/publication and assigned-UID access. Exercise expiry, suspension, renewal/restoration, forged identity, retries and concurrent verification changes.
-- **Dependencies and release boundary**: Preserve original M2.1–M2.5 contracts, private media, protected fields and existing role model. Required before the genuine dealer pilot and formal Phase 1 completion. Optional M2.6 remains independent. See [full contract](docs/m2-7-returning-dealer-submissions.md). This planning entry changes no application code or live data/rules.
+- **Dependencies and release boundary**: Preserve original M2.1–M2.5 contracts, private media, protected fields and existing role model. Required before the genuine dealer pilot and formal Phase 1 completion. Optional M2.6 remains independent. See [full contract](docs/m2-7-returning-dealer-submissions.md). The candidate adds a trusted intake endpoint and original-case association, while preserving per-vehicle curation and existing dealer eligibility guards. Build/lint/161 endpoint tests and focused two-vehicle emulator acceptance passed locally. No live data/rules changes or production release is claimed. See the linked guide for the exact implementation and preview command.
 
 
 ### 11.5 Release Governance & Quality Gates

@@ -143,6 +143,29 @@ if (process.env.WAILTAIL_ADMIN_DEALER_PREVIEW === '1') {
   console.log('Admin dealer preview: six linked representatives, six dealer applications and six private draft lots verified in the demo emulator.');
 }
 
+if (process.env.WAILTAIL_RETURNING_DEALER_PREVIEW === '1') {
+  const originalId = `returning-onboarding-${run}`;
+  const caseId = createHash('sha256').update(`consignment_applications:${originalId}`).digest('hex');
+  const dealerId = `returning-dealer-${run}`;
+  const profile = { legalBusinessName: 'TEST — Returning Dealer Inc.', dbaName: 'TEST — Returning Dealer',
+    dealerLicenseNumber: 'FICTIONAL-NOT-A-LICENCE', licensingJurisdiction: 'ON', city: 'Toronto', province: 'ON', phone: '9055550123',
+    primaryRepresentativeUid: dealerRepresentative.uid, primaryRepresentativeEmail: dealerRepresentative.email,
+    verificationCaseId: caseId, verificationStatus: 'verified', verificationExpiresAt: Date.now()+86400000,
+    verifiedAt: Date.now(), streetAddress: 'FICTIONAL 1 Collector Way', postalCode: 'A1A1A1', createdAt: Date.now(), updatedAt: Date.now(), displayPhonePublicly: false, displayWebsitePublicly: false };
+  const original = { applicantType: 'dealer', status: 'pending', year: '1988', make: 'Synthetic', model: 'Original onboarding example',
+    sellerName: 'TEST Returning Representative', sellerEmail: dealerRepresentative.email, sellerPhone: '9055550123',
+    submittedDealershipName: profile.legalBusinessName, submittedDealerLicenseNumber: profile.dealerLicenseNumber,
+    submittedLicensingJurisdiction: 'ON', notes: 'Fictional emulator example only. Keep unpublished.' };
+  await firestore.collection('consignment_applications').doc(originalId).set(original);
+  await firestore.collection('consignments').doc(originalId).set(original);
+  await firestore.collection('dealer_profiles').doc(dealerId).set(profile);
+  await firestore.collection('dealerVerificationCases').doc(caseId).set({dealerId,revision:1,verificationStatus:'verified'});
+  for(const collection of ['users','bidders']) await firestore.collection(collection).doc(dealerRepresentative.uid).set({
+    dealerId,uid:dealerRepresentative.uid,email:dealerRepresentative.email,displayName:'TEST Returning Representative',role:'bidder',welcomeEmailSent:true,isEmailVerified:true
+  },{merge:true});
+  console.log('Returning-dealer preview: synthetic verified representative and canonical case seeded; use catalog?actor=dealer. No live credentials or data.');
+}
+
 const server = express();
 server.use((_req, res, next) => {
   res.setHeader('Content-Security-Policy',
@@ -174,6 +197,23 @@ server.get('/intake-fixture', async (_req, res, next) => {
     const records = await firestore.collection('consignment_applications').where('sellerEmail', '==', 'intake-browser@example.test').get();
     res.json(records.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   } catch (error) { next(error); }
+});
+server.get('/returning-intake-fixture', async (_req, res, next) => {
+  try {
+    const records = await firestore.collection('consignment_applications').where('registeredUserId', '==', dealerRepresentative.uid).get();
+    res.json(records.docs.map(doc=>({id:doc.id,...doc.data()})));
+  } catch(error) { next(error); }
+});
+// Synthetic browser lifecycle control only; this server refuses non-demo emulator bindings at startup.
+server.post('/returning-dealer-state', express.json(), async (req,res,next)=>{
+  try {
+    if(!['current','expired','suspended'].includes(req.body?.state)) return res.status(422).json({error:'invalid-fixture-state'});
+    const member=(await firestore.collection('users').doc(dealerRepresentative.uid).get()).data();
+    if(!member?.dealerId) return res.status(404).json({error:'fixture-not-linked'});
+    const ref=firestore.collection('dealer_profiles').doc(member.dealerId);
+    await ref.update({verificationStatus:req.body.state==='suspended'?'suspended':'verified',verificationExpiresAt:Date.now()+(req.body.state==='expired'?-1000:86400000)});
+    res.json({updated:true});
+  } catch(error) {next(error);}
 });
 server.get('/dealer-verification-fixture/:id', async (req, res, next) => {
   try {
