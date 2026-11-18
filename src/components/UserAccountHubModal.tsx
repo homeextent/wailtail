@@ -241,7 +241,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
   // - Tab 3: Consignment Requests: Visible if user has submitted consignment inquiries or is seller/admin
   const showSellerTab = Boolean(
     isAdmin || 
-    isSeller || 
+    isSeller || Boolean(userProfile?.dealerId) ||
     summary.sellerListings.length > 0
   );
 
@@ -921,7 +921,7 @@ export const UserAccountHubModal: React.FC<UserAccountHubModalProps> = ({
                         className="min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm w-full sm:w-auto"
                       >
                         <Tag className="w-3.5 h-3.5 text-black" />
-                        <span>List New Vehicle</span>
+                        <span>{userProfile?.dealerId ? 'Submit another vehicle' : 'List New Vehicle'}</span>
                       </button>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { connectAuthEmulator, GoogleAuthProvider, initializeAuth, inMemoryPersistence } from 'firebase/auth';
-import { connectFirestoreEmulator, initializeFirestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, initializeFirestore, terminate } from 'firebase/firestore';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 if (location.origin !== 'http://127.0.0.1:4178') throw new Error('Unexpected test browser origin.');
@@ -18,3 +18,6 @@ connectStorageEmulator(storage, '127.0.0.1', 9199);
 export const googleProvider = new GoogleAuthProvider();
 export const messaging = null;
 export const getMessagingInstance = async () => null;
+
+// Release emulator long-poll sockets before the test replaces this document.
+Object.assign(globalThis, { __closeTestFirestore: () => terminate(db) });

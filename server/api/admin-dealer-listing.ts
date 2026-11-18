@@ -1,3 +1,4 @@
+import { caseIdValid } from './_lib/returningDealer.js';
 import { createHash } from 'node:crypto';
 import type { FirebaseAdminServices } from './_lib/firebaseAdmin.js';
 import { withSellerDraftRequest } from './seller-draft-narrative.js';
@@ -39,12 +40,17 @@ export function handleDealerListing(req: any, res: any, services?: Pick<Firebase
     const input = parseDealerListing(req.body);
     if (!input) return res.status(422).json({ error: 'invalid-dealer-listing-command' });
     const applicationRef = input.applicationId ? firestore.collection('consignment_applications').doc(input.applicationId) : null;
-    const caseId = input.applicationId ? hash(`consignment_applications:${input.applicationId}`) : '';
-    const caseRef = firestore.collection('dealerVerificationCases').doc(caseId || 'unused');
+    const resolveCase = (application: any) => application?.intakePath === 'returning_dealer'
+      ? (caseIdValid(application.dealerVerificationCaseId) ? application.dealerVerificationCaseId : '')
+      : input.applicationId ? hash(`consignment_applications:${input.applicationId}`) : '';
+    let checkedCaseId = '';
     // Auth is authoritative but cannot share a transaction with Firestore. Revalidate the UID inside it.
     let checkedUid = '';
     if (input.action === 'convert') {
-      const review = (await caseRef.get()).data();
+      const preApplication = (await applicationRef!.get()).data();
+      checkedCaseId = resolveCase(preApplication);
+      if (!checkedCaseId) return res.status(409).json({ error: 'verified-canonical-dealer-required' });
+      const review = (await firestore.collection('dealerVerificationCases').doc(checkedCaseId).get()).data();
       if (!validId(review?.dealerId)) return res.status(409).json({ error: 'verified-canonical-dealer-required' });
       const p = (await firestore.collection('dealer_profiles').doc(review.dealerId).get()).data();
       try {
@@ -82,17 +88,22 @@ export function handleDealerListing(req: any, res: any, services?: Pick<Firebase
       const application = (await tx.get(applicationRef!)).data();
       if (!application || application.applicantType !== 'dealer') return { status: 404, error: 'canonical-dealer-application-required' };
       const applicationFingerprint = hash(JSON.stringify(Object.entries(application).sort(([a], [b]) => a.localeCompare(b))));
-      const review = (await tx.get(caseRef)).data();
+      const caseId = resolveCase(application);
+      if (!caseId) return { status: 409, error: 'verified-canonical-dealer-required' };
+      const review = (await tx.get(firestore.collection('dealerVerificationCases').doc(caseId))).data();
       const profile = validId(review?.dealerId) ? (await tx.get(firestore.collection('dealer_profiles').doc(review.dealerId))).data() : null;
       const listingIdentity = { sellerType: 'dealer', dealerId: review?.dealerId, sellerId: profile?.primaryRepresentativeUid };
-      const eligible = !!profile && Number.isSafeInteger(review?.revision) && review.revision > 0 && profile.verificationCaseId === caseId &&
+      const returningLinkValid = application.intakePath !== 'returning_dealer' ||
+        (application.dealerId === review?.dealerId && application.registeredUserId === profile?.primaryRepresentativeUid &&
+          application.dealerVerificationCaseId === profile?.verificationCaseId);
+      const eligible = returningLinkValid && !!profile && Number.isSafeInteger(review?.revision) && review.revision > 0 && profile.verificationCaseId === caseId &&
         await dealerListingEligible(tx, firestore, listingIdentity, profile.primaryRepresentativeUid);
       const snapshot = profile && dealerSnapshot(profile, review!.dealerId, review!.revision);
       if (input.action === 'read') return { status: 200, applicationStatus: application.status,
         applicationFingerprint, vehicleTitle: `${application.year || ''} ${application.make || ''} ${application.model || ''}`,
         convertedAuctionId: application.convertedAuctionId || null, revision: review?.revision ?? 0,
         eligible: !!eligible && !!snapshot, dealer: snapshot, representativeUid: profile?.primaryRepresentativeUid || null };
-      if (!eligible || !snapshot || profile!.primaryRepresentativeUid !== checkedUid || review!.revision !== input.expectedRevision) return { status: 409, error: 'dealer-verification-changed-or-ineligible' };
+      if (caseId !== checkedCaseId || !eligible || !snapshot || profile!.primaryRepresentativeUid !== checkedUid || review!.revision !== input.expectedRevision) return { status: 409, error: 'dealer-verification-changed-or-ineligible' };
       if (input.applicationFingerprint !== applicationFingerprint) return { status: 409, error: 'application-changed-reload' };
       if (!['pending', 'reviewed', 'approved'].includes(application.status) || application.convertedAuctionId ||
           application.declarationVersion !== INTAKE_DECLARATION_VERSION || application.termsAccepted !== true ||

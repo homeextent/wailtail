@@ -1,5 +1,10 @@
 # Wailtail Collector Car Auction Platform
 
+## M2.7 returning-dealer submissions — implementation candidate
+
+The feature branch adds Submit another vehicle for an existing authorized dealership representative. Business verification is reused through trusted profile/case links; new vehicles retain separate declarations, review, draft authoring and publication approval. Expiry/suspension blocks new submissions and restricted dealer mutations, while preserving existing records. Local endpoint and focused two-vehicle emulator checks passed; full CI and owner visual acceptance remain outstanding. See [implementation and acceptance](docs/m2-7-returning-dealer-submissions.md). Use `npm run test:returning-dealer-browser` for the isolated synthetic review. No production changes are claimed.
+
+
 ## Public reserve status correction — staging proposal
 
 Catalog cards previously treated a withheld reserve amount as zero. The proposed correction exposes only reserve presence, preserves the private threshold and shares status interpretation across catalog, lot header and sticky bar. Missing/invalid presence is unknown, never No Reserve. Owner local review, staging acceptance and production promotion remain outstanding.
@@ -17,7 +22,7 @@ Public `/dealers` explains eligibility, the combined dealership/vehicle applicat
 
 PR #43 merged to main `89692b5`; staging `1f897fa` has identical source contents (tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`). [Main CI passed](https://github.com/homeextent/wailtail/actions/runs/44337952571). Admin dealer identification/filters and verification colours are deployed. These are release evidence, not completion of the full dealer program.
 
-**M2.7 — Returning-dealer vehicle submissions is planned and required before the genuine dealer pilot.** Reuse the authenticated representative's existing canonical profile, collect only the new vehicle information and fresh declarations, and retain individual vehicle review. Acceptance must cover one dealership managing two distinct vehicles plus expiry, suspension, renewal/restoration, access isolation and safe retries/concurrency. See [scope and acceptance contract](docs/m2-7-returning-dealer-submissions.md). This documentation does not implement the flow.
+**M2.7 — Returning-dealer vehicle submissions is an implementation candidate and required before the genuine dealer pilot.** Reuse the authenticated representative's existing canonical profile, collect only the new vehicle information and fresh declarations, and retain individual vehicle review. Acceptance must cover one dealership managing two distinct vehicles plus expiry, suspension, renewal/restoration, access isolation and safe retries/concurrency. See [scope and acceptance contract](docs/m2-7-returning-dealer-submissions.md). The feature candidate implements the flow; staging/production acceptance remains outstanding.
 
 ## Historical controlled production acceptance — November 17, 2026
 

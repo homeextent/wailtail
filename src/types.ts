@@ -479,6 +479,9 @@ export interface ConsignmentEmailPayload {
 }
 
 export interface ConsignmentApplication {
+  intakePath?: 'returning_dealer';
+  dealerId?: string;
+  dealerVerificationCaseId?: string;
   reviewSource?: 'consignment_applications' | 'consignments';
   id?: string;
   year: string | number;

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### M2.7 returning-dealer vehicle submissions — implementation candidate
+
+- Add authenticated reuse of the protected canonical dealership and original verification case for additional vehicles, with atomic pending applications/audit/idempotency and fresh ownership declarations.
+- Replace repeat business onboarding with a returning-dealer summary, lifecycle guidance and Submit another vehicle in the account hub. Preserve individual vehicle curation, private drafts, restricted authoring, roles and publication approval.
+- Cover two independent vehicles, expiry/suspension/restoration, authority injection, retries, private media and default-deny audit access. Add opt-in synthetic returning-dealer preview; wait for the full loaded overview before testing application filters. Local build/lint/161 endpoints and focused two-vehicle emulator acceptance passed; full CI/owner visual review outstanding. No live data/rules changes or production deployment.
+
+
 ### Public reserve display correction — proposed
 
 - Derive a public reserve-presence indicator without publishing the hidden dollar amount. Share explicit reserve status across catalog, lot header and sticky bar; missing/malformed values never imply No Reserve. Cover public/admin parity, actual zero reserves and withheld amounts. No reserve amounts, rules or live records are modified.
