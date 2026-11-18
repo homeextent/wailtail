@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Public reserve display correction — proposed
+
+- Derive a public reserve-presence indicator without publishing the hidden dollar amount. Share explicit reserve status across catalog, lot header and sticky bar; missing/malformed values never imply No Reserve. Cover public/admin parity, actual zero reserves and withheld amounts. No reserve amounts, rules or live records are modified.
+
+
 ### Documentation synchronization and returning-dealer scope
 
 - Reconcile production status across the core documents and record the November 18 release checkpoint. Preserve earlier acceptance evidence as history; no application version, Git tag, rules, data or deployment change.

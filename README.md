@@ -1,5 +1,10 @@
 # Wailtail Collector Car Auction Platform
 
+## Public reserve status correction — staging proposal
+
+Catalog cards previously treated a withheld reserve amount as zero. The proposed correction exposes only reserve presence, preserves the private threshold and shares status interpretation across catalog, lot header and sticky bar. Missing/invalid presence is unknown, never No Reserve. Owner local review, staging acceptance and production promotion remain outstanding.
+
+
 ## Branded dealer credential — deployed to production
 
 A reusable WAILTAIL Verified Boutique Dealer badge uses the existing whale-tail SVG, a restrained emerald check and dark slate background. Full/compact dealer disclosures display it only when the existing public `verified` flag is true; historical attribution remains neutral. The dealer program page shows a labelled example, awarded following manual verification. No verification eligibility, permissions or disclosure text changes. See [dealer page scope and review](docs/dealer-information-page.md). The owner accepted the design and authorized staging/production release; the credential is included in the November 18 production baseline.

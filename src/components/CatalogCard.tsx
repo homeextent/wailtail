@@ -1,3 +1,4 @@
+import { reserveStatus } from '../utils/reserveStatus';
 import { PublicDealerDisclosure } from './PublicDealerDisclosure';
 import React, { useState } from 'react';
 import { 
@@ -34,8 +35,7 @@ export const CatalogCard: React.FC<CatalogCardProps> = ({
 
   // Status computation
   const status = lot.status || 'upcoming';
-  const hasReserve = (lot.reserveAmount || 0) > 0;
-  const isReserveMet = lot.isReserveMet || (lot.currentBid || 0) >= (lot.reserveAmount || 0);
+  const reserve = reserveStatus(lot);
 
   // Hero image resolution order:
   // 1. lot.leadHeroImage
@@ -156,13 +156,13 @@ export const CatalogCard: React.FC<CatalogCardProps> = ({
               {lot.highlightsBadge}
             </span>
           )}
-          {hasReserve && isReserveMet && (
+          {reserve === 'met' && (
             <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-emerald-900/90 text-emerald-200 border border-emerald-500/50 flex items-center gap-1 shadow-md">
               <ShieldCheck className="w-3 h-3 text-emerald-300" />
               Reserve Met
             </span>
           )}
-          {!hasReserve && (
+          {reserve === 'none' && (
             <span className="px-2 py-1 rounded-md text-[10px] font-bold bg-blue-950/90 text-blue-200 border border-blue-500/40 flex items-center gap-1 shadow-md">
               <Zap className="w-3 h-3 text-blue-300" />
               No Reserve

@@ -90,3 +90,13 @@ test('dealer canvas and copy share truthful campaign headlines', () => {
   assert.equal(dealerCampaignState({}, 'ending_soon', now).hook, 'VEHICLE PREVIEW');
   assert.equal(dealerCampaignState({ status: 'upcoming', startTime: now + 1000 }, 'live', now).hook, 'COMING TO AUCTION');
 });
+
+
+test('reserve projection exposes presence without the private threshold and ignores injected flags', () => {
+  for (const [reserveAmount, presence] of [[5000, true], [0, false], [undefined, undefined], [null, undefined], [-1, undefined], [NaN, undefined], [Infinity, undefined], ['5000', undefined]] as const) {
+    const projected = projectPublicAuction('lot', { status: 'active', reserveAmount, hasReserve: false, isReserveMet: false })!;
+    assert.equal(projected.hasReserve, presence);
+    assert.equal(projected.reserveAmount, undefined);
+    assert.equal(projected.isReserveMet, false);
+  }
+});

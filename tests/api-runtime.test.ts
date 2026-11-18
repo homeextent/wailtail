@@ -29,7 +29,7 @@ test('compiled API handlers load in native Node ESM and retain method guards', a
     }
     await directory('server/api');
     await directory('src/config');
-    await Promise.all(['api/router.ts', 'src/types.ts', 'src/utils/showcaseConverter.ts'].map(compile));
+    await Promise.all(['api/router.ts', 'src/types.ts', 'src/utils/showcaseConverter.ts', 'src/utils/reserveStatus.ts'].map(compile));
     const names = (await readdir('server/api')).filter(name => name.endsWith('.ts')).map(name => name.slice(0, -3));
     const script = `
       import assert from 'node:assert/strict';

@@ -254,6 +254,6 @@ test('public auction projection excludes drafts and private fields', () => {
     heroImages: ['https://example.test/public.jpg', { token: 'private' }]
   }), {
     id: 'public-lot', status: 'active', title: 'Public listing', isReserveMet: false,
-    currentBid: 1000, heroImages: ['https://example.test/public.jpg']
+    hasReserve: true, currentBid: 1000, heroImages: ['https://example.test/public.jpg']
   });
 });
