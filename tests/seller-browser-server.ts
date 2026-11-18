@@ -97,7 +97,7 @@ await firestore.collection('consignment_applications').doc(`submission-${run}`).
 });
 
 const dealerRepresentative = await auth.createUser({ email: `dealer-rep-${run}@example.test`, password, emailVerified: true });
-await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, email: dealerRepresentative.email, role: 'bidder', welcomeEmailSent: true, isEmailVerified: true });
+await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, registeredAt: Date.now(), email: dealerRepresentative.email, role: 'bidder', welcomeEmailSent: true, isEmailVerified: true });
 
 const server = express();
 server.use((_req, res, next) => {

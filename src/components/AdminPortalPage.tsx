@@ -1579,6 +1579,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 {/* Role Filter Dropdown */}
                 <div className="sm:col-span-3">
                   <select
+                    aria-label="Member account role"
                     value={bidderRoleFilter}
                     onChange={(e) => {
                       setBidderRoleFilter(e.target.value);
@@ -1604,7 +1605,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 font-semibold focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer"
                   >
                     <option value="ALL">All Account Statuses</option>
-                    <option value="VERIFIED">Status: Verified Only</option>
+                    <option value="VERIFIED">Email verified only</option>
                     <option value="BANNED">Status: Banned Only</option>
                   </select>
                 </div>
@@ -1756,7 +1757,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 : 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border-emerald-700 font-bold'
                             } disabled:opacity-40`}
                           >
-                            {userItem.isEmailVerified ? 'Mark Unverified' : 'Verify Email'}
+                            {userItem.isEmailVerified ? 'Mark email unverified' : 'Verify Email'}
                           </button>
 
                           {/* Ban / Unban Toggle */}

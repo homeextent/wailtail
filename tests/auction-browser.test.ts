@@ -544,6 +544,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await fill('textarea[aria-label="Verification findings"]', 'Synthetic administrative suspension');
     await saveVerification();
     await eventually(verificationState, value => value.profile?.verificationStatus === 'suspended' && value.events === 3, 'suspension audited');
+    await command('Page.navigate', { url: origin + '/admin' });
+    await eventually(text, value => value.includes('Member Directory Management'), 'member directory dealer affiliation');
+    await fill('select[aria-label="Member dealer affiliation"]', 'dealer', true);
+    await fill('select[aria-label="Member account role"]', 'BIDDER', true);
+    await eventually(text, value => value.includes('Dealer representative: Canonical Browser Dealer Inc.') && value.includes('Dealer verification: Suspended') && value.includes('Email verified'), 'bidder representative retains affiliation and suspended status');
+    await fill('select[aria-label="Member dealer affiliation"]', 'private', true);
+    await eventually(text, value => !value.includes('Dealer representative: Canonical Browser Dealer Inc.'), 'non-dealer member filter excludes representative');
+
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture') && value.includes('Dealer verification: Suspended'), 'dealer pipeline after verification reload');
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const b = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!b) return false; b.click(); return true; })()`);
