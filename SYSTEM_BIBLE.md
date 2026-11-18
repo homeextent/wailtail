@@ -2706,3 +2706,14 @@ A successful CI run establishes that the checked commit passed the automated bui
 
 Additional production promotion remains subject to the release governance and explicit authorization requirements in Section 11.5. The first authorized rollout and bounded operational acceptance are recorded in the November 16 evidence above. Notification activation and controlled dealer workflow acceptance are now recorded in the November 17 evidence; the genuine Founding Dealer Pilot remains outstanding; staging acceptance or deployment alone does not establish formal Phase 1 completion.
 
+
+
+### Admin dealer identification — staging proposal
+
+Member Directory separates account role and email verification from dealer affiliation and canonical dealer verification. Consignment Pipeline labels dealer applications and original guest submission; Inventory labels dealer-listed lots with historical dealership attribution. Independent dealer/seller-type filters combine with existing role/status/search filters before pagination. Missing legacy seller type retains private-seller compatibility.
+
+Dealer verification uses readable colour-coded statuses: Current (green, valid future expiry), Expired (red), Suspended (amber), Pending verification (blue), Rejected (red), Not verified (grey). Loading/read failures show Status unavailable. The canonical schema has no revoked status; no new status or role is introduced. Thirty-second display clock refreshes expiry; server authorization remains authoritative. No account promotion, rules/data migration or production publication is included.
+
+Admin overview and navigation totals use unfiltered member/application counts and the full pending-application count, independently of table filters and pagination. Filtered section totals still reflect matching results. For a richer guarded local visual preview, run `npm run test:admin-dealer-browser`; it adds fictional linked representatives, dealer applications and unpublished draft lots showing current, expired, suspended, pending, rejected and unverified statuses. These examples are opt-in, emulator-only, and do not alter the regular automated browser fixtures or production records.
+
+Inventory status-tab counts follow the selected seller type before the active status filter, search and pagination. Overview/navigation totals remain global; changing status tabs does not collapse the other status counts.
