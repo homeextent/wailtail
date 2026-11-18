@@ -174,12 +174,6 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
     await eventually(text, value => value.includes('Vehicle Inventory & Lots'), 'administrator portal');
-    await eventually(text, value => value.includes('Dealer-listed') && value.includes('Dealer verification: Current'), 'admin inventory dealer attribution');
-    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'private'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
-    await eventually(text, value => !value.includes('Dealer-listed'), 'private inventory filter excludes dealer');
-    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'ALL'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
-    await eventually(text, value => value.includes('Dealer-listed'), 'dealer remains visible when seller filter clears');
-
     const selected = await command('Runtime.evaluate', {
       expression: `(() => {
         const button = Array.from(document.querySelectorAll('button')).find(element =>
@@ -192,6 +186,13 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     });
     assert.equal(selected.result?.value, true, 'Inventory tab must be selectable');
     await eventually(text, value => value.includes('Synthetic browser listing'), 'administrator inventory');
+    await eventually(text, value => value.includes('Dealer-listed') && value.includes('Dealer verification: Current'), 'admin inventory dealer attribution');
+    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'private'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
+    await eventually(text, value => !value.includes('Dealer-listed'), 'private inventory filter excludes dealer');
+    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'ALL'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
+    await eventually(text, value => value.includes('Dealer-listed'), 'dealer remains visible when seller filter clears');
+
+
     const oversizedDelete = await command('Runtime.evaluate', {
       expression: `(() => {
         const row = Array.from(document.querySelectorAll('tr')).find(row => row.textContent?.includes('Synthetic browser listing'));
