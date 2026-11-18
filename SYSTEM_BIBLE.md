@@ -2,7 +2,7 @@
 
 ## Dealer program information page — staging proposal
 
-Public `/dealers` explains eligibility, the combined dealership/vehicle application, manual verification, curation, current CAD fees, privacy and direct settlement. Apply opens the existing consignment form with Dealer selected; regular private-seller entry points retain their default. Header/mobile navigation and footer provide For Dealers links. This is a general program page, not a public dealer directory or individual showroom. See [scope and preview checks](docs/dealer-information-page.md). No new backend, role grants, payments or invitation emails are introduced. Owner visual acceptance and release approval remain separate.
+Public `/dealers` explains eligibility, the combined dealership/vehicle application, manual verification, curation, current CAD fees, privacy and direct settlement. Apply opens the existing consignment form with Dealer selected; regular private-seller entry points retain their default. Selling on Wailtail and the footer provide dealer links; the standalone header/mobile links are omitted. This is a general program page, not a public dealer directory or individual showroom. See [scope and preview checks](docs/dealer-information-page.md). The introductory offer and collector-focused selection guidance do not change fee enforcement. No new backend, role grants, payments or invitation emails are introduced. Static `/privacy-policy/` HTML shares one content source with the modal and remains readable without JavaScript; footer links and hosting/PWA routing use this document. Meta submission and production verification remain separate. Owner visual acceptance and release approval remain separate.
 
 ## Current production status — November 17, 2026
 

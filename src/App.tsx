@@ -831,6 +831,7 @@ const AuctionAppContent: React.FC = () => {
           onOpenHowItWorks={handleOpenHowItWorks}
           onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         />
+        <HowItWorksModal isOpen={isHowItWorksModalOpen} onClose={() => setIsHowItWorksModalOpen(false)} initialTab={howItWorksTab} />
       </div>
     );
   }

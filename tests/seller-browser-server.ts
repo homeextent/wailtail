@@ -164,6 +164,10 @@ server.get('/admin-fixture', async (_req, res, next) => {
     next(err);
   }
 });
+server.get(['/privacy-policy', '/privacy-policy/', '/privacy-policy/index.html'], (_req, res) => {
+  res.sendFile(resolve('public/privacy-policy/index.html'));
+});
+
 // Serve the real app at its real routes, with Firebase modules replaced only in this harness.
 server.get(['/intake','/','/dealers','/dealers/','/catalog','/auctions/:auctionId','/lot/:auctionId','/vehicle/:auctionId','/admin','/dashboard/listings/:auctionId/edit'], (req, res) => {
   const entry = req.path === '/intake' ? '/tests/intake-browser.tsx' : '/tests/full-app-browser.tsx';

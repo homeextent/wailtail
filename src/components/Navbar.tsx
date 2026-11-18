@@ -226,7 +226,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Desktop Action Controls & User state (hidden on viewports below md:) */}
           <div className="hidden md:flex items-center gap-2 sm:gap-3 flex-shrink-0">
-            <a href="/dealers" className="inline-flex text-sm font-semibold text-zinc-300 hover:text-white">For Dealers</a>
             {/* How It Works Link (Desktop >= lg) */}
             {onOpenHowItWorks && (
               <button
@@ -627,7 +626,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Primary Actions Vertical Stack */}
             <div className="space-y-2">
-              <a href="/dealers" className="block px-4 py-3 text-sm font-semibold text-zinc-200 hover:text-white">For Dealers</a>
               {/* How It Works Mobile Action */}
               {onOpenHowItWorks && (
                 <button

@@ -128,13 +128,7 @@ export const Footer: React.FC<FooterProps> = ({
               Terms of Service
             </button>
             <span>•</span>
-            <button
-              type="button"
-              onClick={() => onOpenLegalModal?.('privacy')}
-              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
-            >
-              Privacy Policy
-            </button>
+            <a href="/privacy-policy/" className="hover:text-zinc-300 underline underline-offset-4 transition-colors">Privacy Policy</a>
             <span>•</span>
             <button
               type="button"

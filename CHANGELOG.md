@@ -8,9 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Dealer program information page
+### Dealer information and standalone privacy policy
 
-- Add a shareable `/dealers` page with eligibility, manual application/verification and curation steps, current zero-fee CAD model, privacy and settlement guidance, and FAQs. Add header/mobile/footer discovery links.
+- Add a shareable `/dealers` page with eligibility, manual application/verification and curation steps, current zero-fee CAD model, privacy and settlement guidance, and FAQs. Add Selling on Wailtail and footer discovery links; omit the standalone header/mobile link at owner request. Clarify introductory pricing versus the mandatory zero dealer documentation fee, and collector-focused curation criteria.
+- Serve `/privacy-policy/` as build-generated static HTML from the same policy source as the modal; include access/correction/deletion request guidance. Add real footer links, explicit hosting routes and PWA fallback exclusion. No Meta dashboard submission or compliance approval is claimed.
 - Open the existing combined dealer/vehicle intake with Dealer selected, retaining private seller defaults elsewhere. Support mobile layout, dialog focus containment/return and legal/selling guidance without creating applications on page load.
 - Add isolated browser acceptance for direct route/refresh, title, mobile fit, discovery and dealer-prefilled application opening/closing. No backend, rules, account roles, payments or email changes.
 

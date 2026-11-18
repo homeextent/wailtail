@@ -87,19 +87,19 @@ export const DealerInformationPage: React.FC = () => {
             </div>
             <p className="mt-4 text-xs text-zinc-400">Manual review. No automatic approval or public listing.</p>
           </div>
-          <aside aria-label="Current program fees" className="rounded-2xl border border-white/15 bg-white/5 p-6 sm:p-8">
+          <aside aria-label="Founding dealer introductory offer" className="rounded-2xl border border-white/15 bg-white/5 p-6 sm:p-8">
             <ShieldCheck className="w-8 h-8 text-amber-400 mb-5" aria-hidden="true" />
-            <h2 className="text-2xl font-serif font-bold">Built for a direct sale</h2>
+            <h2 className="text-2xl font-serif font-bold">Founding Dealer Introductory Offer</h2>
             <dl className="mt-6 divide-y divide-white/10">
               {[['Dealer listing fee', '$0 CAD'], ['Platform success commission', '0%'], ['Buyer premium', '0%'], ['Dealer documentation fee', '$0 CAD required']].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-4 text-sm"><dt className="text-zinc-300">{label}</dt><dd className="font-bold text-white text-right">{value}</dd></div>)}
             </dl>
-            <p className="text-xs text-zinc-400 leading-relaxed mt-5">Current Phase 1 program. Applicable taxes are separate. Wailtail does not calculate or collect tax, process payments or hold vehicle funds.</p>
+            <p className="text-xs text-zinc-400 leading-relaxed mt-5">During our introductory program: $0 listing fees and 0% platform success commission. Future pricing will be disclosed before you commit to a listing. The required $0 CAD dealer documentation fee is separate from promotional platform pricing. Applicable taxes are separate. Wailtail does not calculate or collect tax, process payments or hold vehicle funds.</p>
           </aside>
         </div>
       </section>
 
       <section aria-labelledby="dealer-eligibility" className="max-w-7xl mx-auto px-5 sm:px-8 py-14 sm:py-20 grid lg:grid-cols-2 gap-8 lg:gap-20">
-        <div><p className="text-red-700 text-xs font-bold tracking-widest uppercase mb-3">Who it’s for</p><h2 id="dealer-eligibility" className="text-3xl sm:text-4xl font-serif font-bold">Independent dealers.<br />Vehicles you own.</h2><p className="mt-5 text-zinc-600 leading-relaxed">We’re welcoming a small founding group of licensed Canadian boutique dealerships. Every business and every vehicle receives a separate review before publication.</p></div>
+        <div><p className="text-red-700 text-xs font-bold tracking-widest uppercase mb-3">Who it’s for</p><h2 id="dealer-eligibility" className="text-3xl sm:text-4xl font-serif font-bold">Independent dealers.<br />Vehicles you own.</h2><p className="mt-5 text-zinc-600 leading-relaxed">We’re welcoming a small founding group of licensed Canadian boutique dealerships. Every business and every vehicle receives a separate review before publication. We focus on distinctive classics, sports and performance cars, rare specifications, and exceptional enthusiast vehicles with compelling history and presentation. Selection considers condition, provenance and collector appeal—not age alone. All submissions are subject to curation.</p></div>
         <ul className="space-y-5">{['A licensed Canadian dealership with current, verifiable credentials.', 'Exclusive dealership ownership of the vehicle and legal seller-of-record status.', 'One authorized representative with a verified-email account.', 'Accurate condition, history and ownership disclosures, with a $0 CAD documentation fee.'].map(item => <li key={item} className="flex gap-3 leading-relaxed"><Check className="w-5 h-5 text-emerald-700 shrink-0 mt-1" aria-hidden="true" /><span>{item}</span></li>)}</ul>
       </section>
 
@@ -117,7 +117,7 @@ export const DealerInformationPage: React.FC = () => {
       </section>
       <section className="bg-[#121619] text-white"><div className="max-w-7xl mx-auto px-5 sm:px-8 py-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6"><div><h2 className="text-3xl font-serif font-bold">Have the right vehicle in stock?</h2><p className="text-zinc-300 mt-3">Start with your dealership details and one vehicle you own.</p></div><button type="button" onClick={openApplication} className={applyClass}>Apply as a dealer <ArrowRight className="w-4 h-4" aria-hidden="true" /></button></div></section>
     </main>
-    <footer className="bg-[#121619] border-t border-white/10 text-zinc-400"><div className="max-w-7xl mx-auto px-5 sm:px-8 py-7 flex flex-wrap justify-between gap-5 text-xs"><p>© {new Date().getFullYear()} WAILTAIL · Canadian collector vehicle auctions</p><div className="flex gap-5"><button type="button" className="underline underline-offset-4" onClick={() => setLegalTab('terms')}>Terms of Service</button><button type="button" className="underline underline-offset-4" onClick={() => setLegalTab('privacy')}>Privacy Policy</button></div></div></footer>
+    <footer className="bg-[#121619] border-t border-white/10 text-zinc-400"><div className="max-w-7xl mx-auto px-5 sm:px-8 py-7 flex flex-wrap justify-between gap-5 text-xs"><p>© {new Date().getFullYear()} WAILTAIL · Canadian collector vehicle auctions</p><div className="flex gap-5"><button type="button" className="underline underline-offset-4" onClick={() => setLegalTab('terms')}>Terms of Service</button><a href="/privacy-policy/" className="underline underline-offset-4">Privacy Policy</a></div></div></footer>
     {applicationOpen && <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Dealer vehicle application"><ConsignmentModal isOpen onClose={() => setApplicationOpen(false)} initialApplicantType="dealer" onOpenLegalModal={setLegalTab} onOpenHowItWorks={tab => setGuideTab(tab ?? 'selling')} /></div>}
     <LegalModal isOpen={legalTab !== null} onClose={() => setLegalTab(null)} initialTab={legalTab ?? 'terms'} />
     <HowItWorksModal isOpen={guideTab !== null} onClose={() => setGuideTab(null)} initialTab={guideTab ?? 'selling'} />
