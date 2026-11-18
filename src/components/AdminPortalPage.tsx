@@ -951,10 +951,14 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     );
   };
 
+  // Status tabs and rows share the same seller-type scope; overview totals remain global.
+  const sellerScopedInventory = useMemo(() => allAuctions.filter(lot =>
+    inventorySellerFilter === 'ALL' || (lot.sellerType === 'dealer' ? 'dealer' : 'private') === inventorySellerFilter
+  ), [allAuctions, inventorySellerFilter]);
+
   // Inventory Filtering & Pagination
   const filteredInventory = useMemo(() => {
-    return allAuctions.filter(lot => {
-      if (inventorySellerFilter !== 'ALL' && (lot.sellerType === 'dealer' ? 'dealer' : 'private') !== inventorySellerFilter) return false;
+    return sellerScopedInventory.filter(lot => {
 
       if (inventoryStatusFilter !== 'all') {
         const s = (lot.status || 'draft').toLowerCase();
@@ -984,7 +988,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       }
       return true;
     });
-  }, [allAuctions, inventoryStatusFilter, inventorySearch, inventorySellerFilter]);
+  }, [sellerScopedInventory, inventoryStatusFilter, inventorySearch]);
 
   const inventoryTotal = filteredInventory.length;
   const inventoryTotalPages = Math.max(1, Math.ceil(inventoryTotal / inventoryPageSize));
@@ -2513,13 +2517,13 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
                   <SellerTypeFilter label="Inventory seller type" value={inventorySellerFilter} onChange={value => { setInventorySellerFilter(value); setInventoryPage(1); }} />
                   {/* Status Filters */}
-                  <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
+                  <div role="group" aria-label="Inventory status filters" className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
                     {[
-                      { id: 'all', label: `All (${allAuctions.length})` },
-                      { id: 'draft', label: `Draft (${allAuctions.filter(a => (a.status || 'draft') === 'draft').length})` },
-                      { id: 'pending_review', label: `Pending Review (${allAuctions.filter(a => a.status === 'pending_review').length})` },
-                      { id: 'live', label: `Scheduled / Live (${allAuctions.filter(a => a.status === 'live' || a.status === 'upcoming' || a.status === 'active' || a.status === 'preview').length})` },
-                      { id: 'ended', label: `Ended (${allAuctions.filter(a => a.status === 'ended' || a.status === 'sold' || a.status === 'reserve_not_met').length})` }
+                      { id: 'all', label: `All (${sellerScopedInventory.length})` },
+                      { id: 'draft', label: `Draft (${sellerScopedInventory.filter(a => (a.status || 'draft').toLowerCase() === 'draft').length})` },
+                      { id: 'pending_review', label: `Pending Review (${sellerScopedInventory.filter(a => (a.status || 'draft').toLowerCase() === 'pending_review').length})` },
+                      { id: 'live', label: `Scheduled / Live (${sellerScopedInventory.filter(a => ['live', 'upcoming', 'active', 'preview'].includes((a.status || 'draft').toLowerCase())).length})` },
+                      { id: 'ended', label: `Ended (${sellerScopedInventory.filter(a => ['ended', 'sold', 'reserve_not_met'].includes((a.status || 'draft').toLowerCase())).length})` }
                     ].map((item) => (
                       <button
                         key={item.id}

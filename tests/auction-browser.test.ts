@@ -192,8 +192,15 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await eventually(text, value => value.includes('Dealer-listed') && value.includes('Dealer verification: Current'), 'admin inventory dealer attribution');
     await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'private'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
     await eventually(text, value => !value.includes('Dealer-listed'), 'private inventory filter excludes dealer');
+    const inventoryStatusLabels = async () => (await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('[aria-label="Inventory status filters"] button')).map(el => el.textContent)`, returnByValue: true })).result.value;
+    assert.deepEqual(await inventoryStatusLabels(), ['All (2)', 'Draft (2)', 'Pending Review (0)', 'Scheduled / Live (0)', 'Ended (0)']);
+    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'dealer'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
+    await eventually(text, value => value.includes('Dealer-listed') && !value.includes('Synthetic browser listing'), 'dealer inventory filter');
+    assert.deepEqual(await inventoryStatusLabels(), ['All (1)', 'Draft (0)', 'Pending Review (0)', 'Scheduled / Live (1)', 'Ended (0)']);
+
     await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'ALL'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
     await eventually(text, value => value.includes('Dealer-listed'), 'dealer remains visible when seller filter clears');
+    assert.deepEqual(await inventoryStatusLabels(), ['All (3)', 'Draft (2)', 'Pending Review (0)', 'Scheduled / Live (1)', 'Ended (0)']);
     assert.deepEqual(await overviewCounts(), initialOverview, 'inventory filtering keeps overview totals stable');
 
 

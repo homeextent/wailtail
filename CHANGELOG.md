@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Admin dealer identification
 
+- Scope inventory status-tab counts to the selected seller type while preserving global overview/navigation totals; cover dealer/private/reset counts in browser regressions.
+
 - Keep overview/navigation totals independent of filters and count pending applications across the full selected source collection. Add opt-in emulator examples for all dealer verification colours and linked bidder representatives.
 
 - Add independent dealer affiliation and seller-type filters in Member Directory, Consignment Pipeline and Inventory, preserving existing role/status filters and permissions.
