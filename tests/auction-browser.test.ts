@@ -267,8 +267,17 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const dealerY = canvasRows.find(r => r.text.includes('Synthetic Public Dealer')).y;
     const noticeY = canvasRows.find(r => r.text.includes('WAILTAIL review')).y;
     assert.ok(taglineY < dealerY && dealerY < noticeY && Math.max(...canvasRows.map(r => r.y)) + 14 < 460, 'separate text rows remain above the detail photo');
+    // The editor preview also contains the public description and Watch control.
+    // Require a replacement document and hydrated account before member actions.
+    await command('Runtime.evaluate', { expression: 'globalThis.__wailtailLotNavigationMarker = true' });
     await command('Page.navigate', { url: origin + `/auctions/${fixture.publicAuctionId}?actor=admin` });
-    await eventually(text, value => value.includes('Synthetic public description'), 'public lot after social preview');
+    await eventually(async () => {
+      const result = await command('Runtime.evaluate', {
+        expression: `globalThis.__wailtailLotNavigationMarker !== true && document.readyState !== 'loading' && location.pathname === '/auctions/${fixture.publicAuctionId}' && !!document.querySelector('button[title="Account Menu & Activity Hub"]') && document.body.innerText.includes('Synthetic public description')`,
+        returnByValue: true
+      });
+      return result.result?.value;
+    }, Boolean, 'authenticated new lot document after social preview');
 
     await click(`(() => { const b = document.querySelector('button[title="Add to Watchlist"]'); if (!b) return false; b.click(); return true; })()`);
     await eventually(state, value => value.watchCount === 1, 'watchlist persisted');
