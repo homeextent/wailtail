@@ -554,7 +554,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin' });
     await eventually(text, value => value.includes('Member Directory Management'), 'member directory dealer affiliation');
     await eventually(text, value => value.includes('Email verified'), 'member profiles loaded');
-    const memberOverview = await overviewCounts();
+    const memberOverview = await eventually(overviewCounts, values => values.length === 3 && values.every(value => Number(value) > 0), 'full overview loaded before member filters');
     await fill('select[aria-label="Member dealer affiliation"]', 'dealer', true);
     await fill('select[aria-label="Member account role"]', 'BIDDER', true);
     await eventually(text, value => value.includes('Dealer representative: Canonical Browser Dealer Inc.') && value.includes('Dealer verification: Suspended') && value.includes('Email verified'), 'bidder representative retains affiliation and suspended status');
