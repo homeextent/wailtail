@@ -126,6 +126,7 @@ export interface Auction {
   startingBid: number;
   minimumIncrement: number;
   currentBid: number;
+  hasReserve?: boolean; // Public presence only; omitted when unknown
   reserveAmount: number; // Hidden from public
   isReserveMet: boolean;
   bidCount: number;

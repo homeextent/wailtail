@@ -100,6 +100,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
     assert.ok(catalog.includes('Verified Boutique Dealer'));
+    assert.ok(!catalog.includes('No Reserve'), 'withheld reserve amount must not advertise no reserve');
     const catalogBadge = await command('Runtime.evaluate', { expression: `(() => { const p = document.querySelector('section[aria-label="Dealer information"]'); return !!p && p.innerText.includes('WAILTAIL') && !!p.querySelector('svg'); })()`, returnByValue: true });
     assert.equal(catalogBadge.result.value, true, 'Catalog uses branded current-verification badge');
     assert.ok(catalog.includes('Synthetic Public Dealer'));
@@ -171,6 +172,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
 
     assert.equal(publicData.auction.reserveAmount, undefined);
+    assert.equal(publicData.auction.hasReserve, true);
+    assert.ok((await text()).includes('RESERVE NOT MET'));
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
     await eventually(text, value => value.includes('Vehicle Inventory & Lots'), 'administrator portal');

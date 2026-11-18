@@ -1,5 +1,10 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+## Public reserve status correction — proposed November 18, 2026
+
+The public auction allowlist exposes derived `hasReserve` only for finite nonnegative canonical reserve amounts; the threshold remains private. Catalog, lot header and sticky bar share presence/status interpretation. Missing/malformed values are unknown; numeric zero explicitly means no reserve; `isReserveMet === true` is required for Reserve Met on reserved vehicles. Public clients must not infer reserve presence from a withheld amount. Proposal only: local owner review, staging merge and production release are outstanding. No live record/rules changes or bidding/settlement calculation changes are included.
+
+
 ## Branded dealer credential — staging proposal
 
 A reusable WAILTAIL Verified Boutique Dealer badge uses the existing whale-tail SVG, a restrained emerald check and dark slate background. Full/compact dealer disclosures display it only when the existing public `verified` flag is true; historical attribution remains neutral. The dealer program page shows a labelled example, awarded following manual verification. No verification eligibility, permissions or disclosure text changes. See [dealer page scope and review](docs/dealer-information-page.md). Owner local visual acceptance and release authorization remain separate.

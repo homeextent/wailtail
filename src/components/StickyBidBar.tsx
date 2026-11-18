@@ -1,3 +1,4 @@
+import { reserveStatus } from '../utils/reserveStatus';
 import React, { useState, useEffect } from 'react';
 import { Auction } from '../types';
 import { formatCurrency, formatAuctionCountdown } from '../utils/formatters';
@@ -41,7 +42,8 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
   const timeData = formatAuctionCountdown(auction.startTime, auction.endTime, auction.status, now);
   const isEnded = timeData.isEnded;
   const isUpcoming = timeData.isUpcoming;
-  const reserveMet = Boolean(auction.isReserveMet || auction.currentBid >= auction.reserveAmount);
+  const reserve = reserveStatus(auction);
+  const reserveMet = reserve === 'met';
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-30 bg-[#121619]/95 backdrop-blur-md border-t border-zinc-700 shadow-2xl text-white py-2.5 px-4 animate-in slide-in-from-bottom duration-300">
@@ -85,7 +87,7 @@ export const StickyBidBar: React.FC<StickyBidBarProps> = ({
           ) : (
             <span className="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 text-[11px] font-semibold flex items-center gap-1">
               <AlertTriangle className="w-3 h-3 text-amber-400" />
-              RESERVE NOT MET
+              {reserve === 'none' ? 'NO RESERVE' : reserve === 'unknown' ? 'RESERVE STATUS UNAVAILABLE' : 'RESERVE NOT MET'}
             </span>
           )}
         </div>

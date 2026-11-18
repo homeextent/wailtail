@@ -1,3 +1,4 @@
+import { reservePresence } from '../../src/utils/reserveStatus.js';
 import { publicDealerSummary, readPublicDealerProfiles } from './_lib/publicDealer.js';
 import { getFirebaseAdminServices } from './_lib/firebaseAdmin.js';
 
@@ -21,6 +22,8 @@ export function projectPublicAuction(id: string, record: Record<string, unknown>
   if (typeof status !== 'string' || !PUBLIC_STATUSES.includes(status)) return null;
 
   const result: Record<string, unknown> = { id, status, isReserveMet: record.isReserveMet === true };
+  const hasReserve = reservePresence({ reserveAmount: record.reserveAmount });
+  if (hasReserve !== undefined) result.hasReserve = hasReserve;
   for (const field of TEXT_FIELDS) {
     if (typeof record[field] === 'string') result[field] = record[field];
   }
