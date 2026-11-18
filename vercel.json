@@ -10,7 +10,15 @@
       "destination": "/api/router?__endpoint=:endpoint*"
     },
     {
-      "source": "/((?!api(?:/|$)).*)",
+      "source": "/privacy-policy",
+      "destination": "/privacy-policy/index.html"
+    },
+    {
+      "source": "/privacy-policy/",
+      "destination": "/privacy-policy/index.html"
+    },
+    {
+      "source": "/((?!api(?:/|$)|privacy-policy(?:/|$)).*)",
       "destination": "/index.html"
     }
   ]

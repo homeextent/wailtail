@@ -21,10 +21,15 @@ test('deployment keeps one function and routes API requests before SPA fallback'
   });
   assert.equal(config.functions['api/router.ts'].maxDuration, 60);
   // API misses must return JSON 404, rather than the SPA's HTML document.
-  const spa = new RegExp(`^${config.rewrites[1].source}$`);
+  const fallback = config.rewrites.find(rule => rule.destination === '/index.html');
+  assert.ok(fallback, 'SPA fallback must remain configured');
+  const spa = new RegExp(`^${fallback.source}$`);
   assert.ok(spa.test('/auctions/example'));
   assert.ok(!spa.test('/api/missing'));
   assert.ok(!spa.test('/api'));
+  for (const route of ['/privacy-policy', '/privacy-policy/', '/privacy-policy/index.html']) {
+    assert.ok(!spa.test(route), 'Privacy requests must not render auction HTML');
+  }
 });
 
 test('router rejects unknown, nested, prototype and ambiguous endpoint names', async () => {

@@ -51,6 +51,7 @@ export const GEARBOX_OPTIONS = [
 ];
 
 interface ConsignmentModalProps {
+  initialApplicantType?: 'private' | 'dealer';
   isOpen: boolean;
   onClose: () => void;
   onOpenLegalModal?: (tab: 'terms' | 'privacy') => void;
@@ -59,6 +60,7 @@ interface ConsignmentModalProps {
 
 export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   isOpen,
+  initialApplicantType = 'private',
   onClose,
   onOpenLegalModal,
   onOpenHowItWorks
@@ -95,7 +97,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   const [sellerPhone, setSellerPhone] = useState('');
   const [notes, setNotes] = useState('');
 
-  const [applicantType, setApplicantType] = useState<'private' | 'dealer'>('private');
+  const [applicantType, setApplicantType] = useState<'private' | 'dealer'>(initialApplicantType);
   const [dealer, setDealer] = useState({ submittedDealershipName: '', submittedDbaName: '', submittedDealerLicenseNumber: '', submittedLicensingJurisdiction: '' });
   const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
   const submission = useRef<{ key: string; id: string } | null>(null);
@@ -287,7 +289,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
   const handleReset = () => {
     setSubmitted(false);
-    setApplicantType('private');
+    setApplicantType(initialApplicantType);
     setDealer({ submittedDealershipName: '', submittedDbaName: '', submittedDealerLicenseNumber: '', submittedLicensingJurisdiction: '' });
     setDeclarations({});
     submission.current = null;
