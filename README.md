@@ -1,12 +1,16 @@
 # Wailtail Collector Car Auction Platform
 
-## Current production status — November 17, 2026
+## Dealer information and privacy policy — accepted release candidate
 
-Core dealer implementation through M2.5 is deployed to production, with controlled dealer acceptance completed. Production main is `9e132c65cd1072625072c6c5a18967390164afa7` (PR #34); staging is `7f8c233aa78312ae66adf809ce89f53812a618bd`. Both have tree `491a42acf8e651077c0fa57d8a8f0fb142c02ced`. Release and main CI passed. See [November 17 production acceptance](docs/phase1-production-acceptance-2026-11-17.md) for evidence, limits and outstanding operational observation.
+Public `/dealers` explains eligibility, the combined dealership/vehicle application, manual verification, curation, current CAD fees, privacy and direct settlement. Apply opens the existing consignment form with Dealer selected; regular private-seller entry points retain their default. Selling on Wailtail and the footer provide dealer links; the standalone header/mobile links are omitted. This is a general program page, not a public dealer directory or individual showroom. See [scope and preview checks](docs/dealer-information-page.md). The introductory offer and collector-focused selection guidance do not change fee enforcement. No new backend, role grants, payments or invitation emails are introduced. Static `/privacy-policy/` HTML shares one content source with the modal and remains readable without JavaScript; footer links and hosting/PWA routing use this document. Jeremy accepted the combined revision and explicitly approved staging and main promotion. PR #37 merged into staging as `cb76e83` after exact-head CI `44214839940` and Vercel passed. Production release is tracked in PR #38 and remains conditional on its final CI/deployment checks. Meta submission and acceptance remain separate.
+
+## Controlled production acceptance checkpoint — November 17, 2026
+
+Core dealer implementation through M2.5 is deployed to production, with controlled dealer acceptance completed. At that acceptance checkpoint, main was `9e132c65cd1072625072c6c5a18967390164afa7` (PR #34) and staging was `7f8c233aa78312ae66adf809ce89f53812a618bd`. Both have tree `491a42acf8e651077c0fa57d8a8f0fb142c02ced`. Release and main CI passed. See [November 17 production acceptance](docs/phase1-production-acceptance-2026-11-17.md) for evidence, limits and outstanding operational observation.
 
 Clock, review and auction-notification schedules are enabled. The notification worker's scheduled execution succeeded at 19:20 Eastern on November 17; the earlier controlled winner email reached the owner inbox. Actual auction settlement-to-inbox delivery remains to be observed in normal operation. The fictional Jaguar is Draft/unpublished; its public route correctly shows Listing unavailable.
 
-**Formal Phase 1 remains open for the genuine 3–5 dealership pilot and its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The proposed dealer information/application page is separate, not implemented. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
+**Formal Phase 1 remains open for the genuine 3–5 dealership pilot and its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The dealer information/application page is a separate, owner-accepted implementation in PR #37, with its production release tracked above. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
 
 ## Staging development workflow
 

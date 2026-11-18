@@ -75,6 +75,7 @@ export default defineConfig(() => {
           ]
         },
         workbox: {
+          navigateFallbackDenylist: [/^\/privacy-policy(?:\/|$)/],
           runtimeCaching: [
             {
               urlPattern: ({ request }) =>

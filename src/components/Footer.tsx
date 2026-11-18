@@ -101,6 +101,8 @@ export const Footer: React.FC<FooterProps> = ({
               How It Works
             </button>
             <span>•</span>
+            <a href="/dealers" className="hover:text-zinc-300 underline underline-offset-4">For Dealers</a>
+            <span>•</span>
             <a 
               href="https://marketplace.wailtail.com" 
               target="_blank" 
@@ -126,13 +128,7 @@ export const Footer: React.FC<FooterProps> = ({
               Terms of Service
             </button>
             <span>•</span>
-            <button
-              type="button"
-              onClick={() => onOpenLegalModal?.('privacy')}
-              className="hover:text-zinc-300 underline underline-offset-4 transition-colors cursor-pointer"
-            >
-              Privacy Policy
-            </button>
+            <a href="/privacy-policy/" className="hover:text-zinc-300 underline underline-offset-4 transition-colors">Privacy Policy</a>
             <span>•</span>
             <button
               type="button"

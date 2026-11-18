@@ -1,3 +1,5 @@
+import { PrivacyPolicyContent } from './PrivacyPolicyContent';
+import policy from '../content/privacyPolicy.json';
 import React, { useState, useEffect } from 'react';
 import { X, ShieldCheck, FileText, Scale, Lock, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
 
@@ -162,61 +164,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
               </section>
             </div>
           ) : (
-            <div className="space-y-6 animate-in fade-in duration-150">
-              <div className="p-4 rounded-xl bg-blue-950/30 border border-blue-800/50 text-blue-200 text-xs flex items-start gap-3">
-                <Lock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block text-blue-300 font-bold mb-0.5">
-                    PIPEDA & Canadian Privacy Compliance
-                  </strong>
-                  Wailtail is committed to safeguarding personal information in full compliance with Canada's <em>Personal Information Protection and Electronic Documents Act (PIPEDA)</em> and applicable provincial privacy statutes.
-                </div>
-              </div>
-
-              {/* 1. Data Collection */}
-              <section className="space-y-2">
-                <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
-                  <span className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-xs text-zinc-300 font-mono">1</span>
-                  <h3>Information We Collect</h3>
-                </div>
-                <p className="pl-8 text-zinc-300">
-                  Wailtail collects personal information strictly necessary to operate a secure collector vehicle auction platform. This includes contact details (full legal name, email address, telephone number, and municipal location), account verification telemetry, vehicle identification numbers (VINs), consignment documentation, and an immutable log of all bidding actions, timestamps, and public comments.
-                </p>
-              </section>
-
-              {/* 2. Third-Party Disclosures & Offline Settlement */}
-              <section className="space-y-2">
-                <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
-                  <span className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-xs text-zinc-300 font-mono">2</span>
-                  <h3>Third-Party Disclosures & Winner Contact Sharing</h3>
-                </div>
-                <p className="pl-8 text-zinc-300">
-                  Wailtail does not sell, rent, or trade your personal information to third-party marketers. Upon the successful conclusion of an auction meeting reserve, the winning bidder's verified contact information (full name, phone number, and email) is shared strictly and exclusively with the verified seller to facilitate vehicle settlement, title transfer, and transport logistics.
-                </p>
-              </section>
-
-              {/* 3. Web Push & FCM Tokens */}
-              <section className="space-y-2">
-                <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
-                  <span className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-xs text-zinc-300 font-mono">3</span>
-                  <h3>Web Push & Firebase Cloud Messaging (FCM) Tokens</h3>
-                </div>
-                <p className="pl-8 text-zinc-300">
-                  When you grant notification permissions, Wailtail generates a unique Firebase Cloud Messaging (FCM) device token. This cryptographic token is used exclusively to dispatch real-time transactional push alerts, such as immediate notifications when your bid has been outbid, when watched lots enter their final closing minutes, or when new official answers are posted by consignors. You may revoke push notification access at any time through your browser or device settings.
-                </p>
-              </section>
-
-              {/* 4. Data Retention & Access Rights */}
-              <section className="space-y-2">
-                <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base">
-                  <span className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-xs text-zinc-300 font-mono">4</span>
-                  <h3>Data Retention & User Rights Under PIPEDA</h3>
-                </div>
-                <p className="pl-8 text-zinc-300">
-                  Auction transaction records and historical bids are preserved as public immutable records of provenance. Under PIPEDA, Canadian users have the right to request access to their personal information, request corrections, or request account deactivation by contacting Wailtail administration.
-                </p>
-              </section>
-            </div>
+            <PrivacyPolicyContent />
           )}
         </div>
 
@@ -224,7 +172,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
         <div className="p-4 sm:px-6 border-t border-zinc-800 bg-[#0d1114] flex items-center justify-between text-xs text-zinc-400 flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] text-zinc-400">Effective Date: September 2026</span>
+            <span className="text-[11px] text-zinc-400">{activeTab === 'privacy' ? `Last updated: ${policy.updated}` : 'Effective Date: September 2026'}</span>
           </div>
           <button
             type="button"

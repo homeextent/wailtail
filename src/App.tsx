@@ -44,6 +44,7 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { FloatingFeedbackWidget } from './components/FloatingFeedbackWidget';
 import { UserAccountHubModal } from './components/UserAccountHubModal';
 import { ListingSubNav } from './components/ListingSubNav';
+import { DealerInformationPage } from './components/DealerInformationPage';
 import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
 import { HowItWorksModal, HowItWorksTab } from './components/HowItWorksModal';
@@ -830,6 +831,7 @@ const AuctionAppContent: React.FC = () => {
           onOpenHowItWorks={handleOpenHowItWorks}
           onOpenFeedback={() => setIsFeedbackModalOpen(true)}
         />
+        <HowItWorksModal isOpen={isHowItWorksModalOpen} onClose={() => setIsHowItWorksModalOpen(false)} initialTab={howItWorksTab} />
       </div>
     );
   }
@@ -1275,7 +1277,8 @@ const AuctionAppContent: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <AuctionAppContent />
+      {window.location.pathname.replace(/\/$/, '') === '/dealers'
+        ? <DealerInformationPage /> : <AuctionAppContent />}
     </AuthProvider>
   );
 }

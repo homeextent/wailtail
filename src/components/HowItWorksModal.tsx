@@ -180,6 +180,7 @@ export const HowItWorksModal: React.FC<HowItWorksModalProps> = ({
 
           {activeTab === 'selling' && (
             <div className="space-y-6 animate-in fade-in duration-150">
+              <aside className="rounded-xl border border-amber-600/40 bg-amber-950/20 p-4 text-sm text-zinc-200"><p className="font-bold text-amber-300">Listing dealership-owned inventory?</p><a href="/dealers" className="mt-2 inline-block underline underline-offset-4 hover:text-white">Explore our Verified Dealer Program →</a></aside>
               <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-700/50 text-emerald-200 text-xs flex items-start gap-3">
                 <Tag className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div>
