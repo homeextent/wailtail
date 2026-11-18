@@ -2,7 +2,7 @@
 
 ## Scope
 
-Proposed route: `/dealers` (also accepts a trailing slash), public and shareable without signing in. This provides general program information for prospective Canadian boutique dealers or for an administrator to include in a personal invitation. This change does not send invitations and is not a dealer directory, individual profile, separate dealer-only registration or a new milestone requirement.
+Implemented route: `/dealers` (also accepts a trailing slash), public and shareable without signing in. This provides general program information for prospective Canadian boutique dealers or for an administrator to include in a personal invitation. This change does not send invitations and is not a dealer directory, individual profile, separate dealer-only registration or a new milestone requirement.
 
 The page explains current Phase 1 eligibility, exclusive ownership/no broker inventory, one representative with a verified-email account, separate business verification and vehicle approval, private draft preparation, review/revisions, administrator publication, direct settlement and informational taxes. It states current $0 listing/doc fees and 0% platform commission/buyer premium, without promising approval dates or regulatory endorsement. It explains private records and consent-based contact display, format/size limits, and retention of previously published media copies after withdrawal.
 
@@ -10,13 +10,13 @@ The page explains current Phase 1 eligibility, exclusive ownership/no broker inv
 
 Apply opens the existing combined dealership and vehicle intake form, initialized to Dealer. One vehicle and dealer details are required; this is not a business-only signup. Existing private entry points still default to Private seller. The same form, validation, declarations, terms, authenticated server and manual review pipeline are reused. No automatic role promotion, verification, vehicle approval or publication is added. Opening or reading the page makes no application submission.
 
-The page is selected before mounting the auction application, so it does not poll unrelated auction details/catalog data to explain the program. Public navigation and footer include For Dealers links. Standard SPA hosting fallback already supports the route; the isolated harness explicitly serves it. The title identifies the dealer program instead of an auction.
+The page is selected before mounting the auction application, so it does not poll unrelated auction details/catalog data to explain the program. The Selling on Wailtail guide and footer include dealer links; the standalone header/mobile links are omitted. Standard SPA hosting fallback already supports the route; the isolated harness explicitly serves it. The title identifies the dealer program instead of an auction.
 
 ## Review and verification
 
 Local checks: production build/TypeScript, lint and diff review. The existing isolated browser workflow now verifies signed-out catalog discovery, direct page loading/title, 390px layout fit, Dealer radio selection/licence fields, application dialog focus and return after closing, plus trailing-slash navigation. No application is submitted by that new browser coverage.
 
-Owner visual/functional review is required before merge. From a clean checkout of the proposed feature branch, with dependencies and Java/emulator prerequisites in the local development guide:
+Jeremy visually/functionally reviewed the page, requested the refinements below, then accepted the combined revision and explicitly approved staging/main promotion. For repeat local review from a clean checkout, with dependencies and Java/emulator prerequisites in the local development guide:
 
 ```bash
 npm run test:seller-browser
@@ -35,3 +35,9 @@ The standalone header/mobile For Dealers links were removed at the owner's reque
 The same PR supplies /privacy-policy/ as static HTML readable without JavaScript, plus /privacy-policy compatibility. A shared JSON policy source feeds both the retained modal and a build-generated HTML document. The HTML is committed for local development and regenerated during build; regression tests reject divergence and unsafe unescaped markup. The policy includes service/provider disclosures, public/private media boundaries, retention and an email request path for access/correction/deletion. This is product disclosure maintenance, not a claim of legal certification or Meta approval.
 
 Explicit Vercel rewrites route the policy before the SPA fallback; the policy namespace is excluded from that fallback and the PWA navigation fallback. Footer policy links are ordinary links. No Meta dashboard changes/submission are performed. After approved production release, verify HTTP 200 and policy content anonymously with and without a crawler user agent, then use Meta's URL debugger and Required actions form. The existing Meta notice identifies November 23, 2026 as its response deadline; do not claim resolution until Meta confirms review.
+
+## Release checkpoint — November 17, 2026
+
+PR #37 accepted head `0e41cac8ba5c0865c427d7fcc18741bf54934df5`, tree `e21449e5cea00061866c9d9de44320698c4cfa27`; exact-head CI run `44214839940` and Vercel passed. Local build/lint and ten focused router/privacy tests passed; full CI included the catalog Selling guide, dealer page/mobile/application and static policy HTTP/body checks. PR #37 merged into staging as `cb76e8355516aebd7a7afa8c791a4bde61503f26`.
+
+Owner explicitly approved staging and main promotion; PR #38 tracks the production release, conditional on final staging/release checks and deployment verification. Do not interpret this source checkpoint as pre-completed production HTTP/browser or Meta approval. Final release SHA, CI/deployment results and live anonymous/crawler checks are recorded in PR #38 once observed.
