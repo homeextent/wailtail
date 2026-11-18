@@ -103,6 +103,26 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.ok(catalog.includes('Synthetic Public Dealer'));
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
+    const dealerLink = await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('a')).some(a => a.getAttribute('href') === '/dealers' && a.textContent.includes('For Dealers'))`, returnByValue: true });
+    assert.equal(dealerLink.result.value, true, 'Dealer program is discoverable from the catalog');
+    await command('Page.navigate', { url: origin + '/dealers?actor=public' });
+    const dealerPage = await eventually(text, value => value.includes('Your inventory.') && value.includes('Common questions'), 'dealer information page');
+    assert.ok(dealerPage.includes('Current Phase 1 program'));
+    const dealerTitle = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
+    assert.equal(dealerTitle.result.value, 'Verified Dealer Program — Wailtail');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const dealerFits = await command('Runtime.evaluate', { expression: `document.documentElement.scrollWidth <= window.innerWidth`, returnByValue: true });
+    assert.equal(dealerFits.result.value, true, 'Dealer page fits mobile viewport');
+    await command('Runtime.evaluate', { expression: `Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Apply as a dealer')).click()` });
+    await eventually(text, value => value.includes('Dealership details'), 'dealer application opens');
+    const dealerForm = await command('Runtime.evaluate', { expression: `(() => { const f = document.querySelector('form[aria-label="Vehicle consignment application"]'); return { dealer: f.querySelector('input[value="dealer"]').checked, licence: !!f.querySelector('[name="submittedDealerLicenseNumber"]'), focused: document.querySelector('[role="dialog"]').contains(document.activeElement) }; })()`, returnByValue: true });
+    assert.deepEqual(dealerForm.result.value, { dealer: true, licence: true, focused: true });
+    await command('Runtime.evaluate', { expression: `document.querySelector('button[aria-label="Close modal"]').click()` });
+    const closedDealer = await command('Runtime.evaluate', { expression: `!document.querySelector('form[aria-label="Vehicle consignment application"]') && document.activeElement.textContent.includes('Apply as a dealer')`, returnByValue: true });
+    assert.equal(closedDealer.result.value, true, 'Closing application restores focus');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await command('Page.navigate', { url: origin + '/dealers/?actor=public' });
+    await eventually(text, value => value.includes('Your inventory.'), 'dealer page trailing slash refresh');
     for (const route of ['lot', 'vehicle']) {
       await command('Page.navigate', { url: origin + `/${route}/${fixture.publicAuctionId}?actor=public` });
       await eventually(text, value => value.includes('Synthetic public description'), `${route} resolves the requested public listing`);

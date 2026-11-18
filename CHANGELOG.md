@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Dealer program information page
+
+- Add a shareable `/dealers` page with eligibility, manual application/verification and curation steps, current zero-fee CAD model, privacy and settlement guidance, and FAQs. Add header/mobile/footer discovery links.
+- Open the existing combined dealer/vehicle intake with Dealer selected, retaining private seller defaults elsewhere. Support mobile layout, dialog focus containment/return and legal/selling guidance without creating applications on page load.
+- Add isolated browser acceptance for direct route/refresh, title, mobile fit, discovery and dealer-prefilled application opening/closing. No backend, rules, account roles, payments or email changes.
+
 ### Phase 1 production documentation closeout — November 17, 2026
 
 - Synchronize README and System Bible current status with production PRs #28, #32 and #34, controlled dealer acceptance, private withdrawal and notification activation; retain dated historical checkpoints and unchanged milestone definitions.
