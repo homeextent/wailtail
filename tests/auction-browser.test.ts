@@ -100,6 +100,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/catalog?actor=public' });
     const catalog = await eventually(text, value => value.includes('Synthetic public auction'), 'public catalog');
     assert.ok(catalog.includes('Verified Boutique Dealer'));
+    const catalogBadge = await command('Runtime.evaluate', { expression: `(() => { const p = document.querySelector('section[aria-label="Dealer information"]'); return !!p && p.innerText.includes('WAILTAIL') && !!p.querySelector('svg'); })()`, returnByValue: true });
+    assert.equal(catalogBadge.result.value, true, 'Catalog uses branded current-verification badge');
     assert.ok(catalog.includes('Synthetic Public Dealer'));
     assert.ok(!catalog.includes('Unrelated synthetic draft'));
     assert.ok(!catalog.includes('Synthetic browser listing'));
@@ -120,6 +122,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/dealers?actor=public' });
     const dealerPage = await eventually(text, value => value.includes('Your inventory.') && value.includes('Common questions'), 'dealer information page');
     assert.ok(dealerPage.includes('Future pricing will be disclosed'));
+    assert.ok(dealerPage.includes('Example credential') && dealerPage.includes('Awarded following manual verification.'));
     const dealerTitle = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
     assert.equal(dealerTitle.result.value, 'Verified Dealer Program — Wailtail');
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -145,6 +148,8 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     const publicResponse = await fetch(origin + `/api/public-auctions?auctionId=${fixture.publicAuctionId}`);
     const publicData = await publicResponse.json();
     await eventually(text, value => value.includes('Verified Boutique Dealer') && value.includes('Dealer documentation fee: CAD $0') && value.includes('Dealer collects applicable tax at settlement.'), 'public dealer disclosures');
+    const lotBadge = await command('Runtime.evaluate', { expression: `(() => { const p = document.querySelector('section[aria-label="Dealer information"]'); return p.innerText.includes('WAILTAIL') && !!p.querySelector('svg'); })()`, returnByValue: true });
+    assert.equal(lotBadge.result.value, true, 'Lot uses branded current-verification badge');
     assert.equal(publicData.auction.publicDealer.verified, true);
     assert.equal(publicData.auction.publicDealer.phone, '+1 905 555 0100');
     assert.ok(!JSON.stringify(publicData).includes('PRIVATE-DEALER-ADDRESS'));
