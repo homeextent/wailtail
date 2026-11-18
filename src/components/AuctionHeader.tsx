@@ -1,3 +1,4 @@
+import { reserveStatus } from '../utils/reserveStatus';
 import { PublicDealerDisclosure } from './PublicDealerDisclosure';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Auction, PlatformPromoSettings } from '../types';
@@ -230,7 +231,8 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
   const isUpcoming = effectiveStatus === 'upcoming';
 
   // Dynamic reserve status: strictly never reveals the dollar amount
-  const reserveMet = auction.isReserveMet === true;
+  const reserve = reserveStatus(auction);
+  const reserveMet = reserve === 'met';
 
   return (
     <div className="bg-white border-b border-zinc-200">
@@ -436,13 +438,13 @@ export const AuctionHeader: React.FC<AuctionHeaderProps> = ({
                     <span>RESERVE MET</span>
                   </div>
                 ) : (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 font-semibold text-xs shadow-sm" title="The vehicle has a hidden reserve set by the seller">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-300 font-semibold text-xs shadow-sm" title={reserve === 'not_met' ? 'The vehicle has a hidden reserve set by the seller' : undefined}>
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                    <span>RESERVE NOT MET</span>
+                    <span>{reserve === 'none' ? 'NO RESERVE' : reserve === 'unknown' ? 'RESERVE STATUS UNAVAILABLE' : 'RESERVE NOT MET'}</span>
                   </div>
                 )}
                 <span className="text-[10px] text-zinc-500 mt-1 italic">
-                  {reserveMet ? 'Will sell to highest bidder' : 'Hidden dollar reserve'}
+                  {reserveMet || reserve === 'none' ? 'Will sell to highest bidder' : reserve === 'not_met' ? 'Hidden dollar reserve' : 'Reserve information unavailable'}
                 </span>
               </div>
 

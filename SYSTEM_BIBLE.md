@@ -1,5 +1,10 @@
 # Wailtail Auction Platform — System Bible & Architectural Specification
 
+## Public reserve status correction — proposed November 18, 2026
+
+The public auction allowlist exposes derived `hasReserve` only for finite nonnegative canonical reserve amounts; the threshold remains private. Catalog, lot header and sticky bar share presence/status interpretation. Missing/malformed values are unknown; numeric zero explicitly means no reserve; `isReserveMet === true` is required for Reserve Met on reserved vehicles. Public clients must not infer reserve presence from a withheld amount. Proposal only: local owner review, staging merge and production release are outstanding. No live record/rules changes or bidding/settlement calculation changes are included.
+
+
 ## Branded dealer credential — staging proposal
 
 A reusable WAILTAIL Verified Boutique Dealer badge uses the existing whale-tail SVG, a restrained emerald check and dark slate background. Full/compact dealer disclosures display it only when the existing public `verified` flag is true; historical attribution remains neutral. The dealer program page shows a labelled example, awarded following manual verification. No verification eligibility, permissions or disclosure text changes. See [dealer page scope and review](docs/dealer-information-page.md). Owner local visual acceptance and release authorization remain separate.
@@ -2364,16 +2369,17 @@ The M2.0A security model hardens consignment application intake and access contr
 ### 11.1 Executive Summary & Current Program Status
 The Wailtail Verified Boutique Dealer Program establishes an institutional-grade, legally compliant operational framework enabling verified boutique automotive dealerships in Canada to consign and auction collector vehicles alongside private sellers.
 
-**Authoritative Program Status — November 17, 2026**:
+**Authoritative Program Status — November 18, 2026**:
 
 - **M1.0, M1.1 and M2.0A**: complete, with recorded production acceptance.
 - **M2.0B**: trusted authorization/security implementation deployed in production; the November 16 application/rules cutover supersedes its former staging-only release status. Account-deletion protections remain deployed; no destructive deletion retest was performed during this closeout.
 - **M2.1–M2.5**: implemented, accepted on staging and deployed; controlled dealer production acceptance completed as documented in [November 17 evidence](docs/phase1-production-acceptance-2026-11-17.md). Original milestone scope and earlier acceptance records remain unchanged.
 - **M2.6 — Optional Private Application Photo Uploads**: explicitly deferred and decoupled from core release. Existing draft listing uploads do not satisfy initial-application uploads.
+- **M2.7 — Returning-dealer vehicle submissions**: PLANNED; owner-approved scope, implementation and two-vehicle/expiry/suspension acceptance outstanding. Required before the genuine dealer pilot; see [scope and acceptance](docs/m2-7-returning-dealer-submissions.md).
 - **Founding Dealer Pilot**: outstanding/ongoing; 3–5 genuine dealerships and all six KPIs remain required. Fictional technical acceptance is not a genuine pilot.
-- **Formal Phase 1 completion**: not declared. Section 11.7 is unchanged; documentation closeout records production evidence without waiving pilot requirements.
+- **Formal Phase 1 completion**: not declared. Section 11.7 includes the returning-dealer readiness requirement; production evidence does not waive that requirement or the pilot.
 
-Production main `9e132c6` (PR #34) and staging `7f8c233` share tree `491a42acf8e651077c0fa57d8a8f0fb142c02ced`. Notification scheduling is enabled and scheduled execution succeeded; controlled inbox delivery passed. Actual auction settlement-to-inbox remains normal-operation observation, not a completed live financial test. Historical staging checkpoint language elsewhere in this document describes its original dated acceptance, not the current release status.
+Current production main `89692b5` (PR #43) and staging `1f897fa` share tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`; main CI `44337952571` passed. The November 17 acceptance record retains its historical PR #34 baseline. Notification scheduling is enabled and scheduled execution succeeded; controlled inbox delivery passed. Actual auction settlement-to-inbox remains normal-operation observation, not a completed live financial test. Historical staging checkpoint language elsewhere in this document describes its original dated acceptance, not the current release status.
 
 ### 11.2 Phase 1 Strategic Objectives
 1. **Curated Commercial Integrity**: Support licensed Canadian boutique automotive dealers with curated collector inventory while preserving Wailtail's enthusiast-first, peer-to-peer auction culture.
@@ -2406,24 +2412,21 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 
 ### 11.4 Milestone Blueprint & Execution Sequencing
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                             PHASE 1 ROADMAP OVERVIEW                             │
-├────────────────────┬───────────────────────────────────────┬─────────────────────┤
-│ Milestone          │ Title & Description                   │ Status              │
-├────────────────────┼───────────────────────────────────────┼─────────────────────┤
-│ M1.0               │ Dealer Foundation & Data Architecture │ COMPLETE            │
-│ M1.1               │ Dealer Verification Security          │ COMPLETE            │
-│ M2.0A              │ Consignment Security & Persistence    │ COMPLETE (PROD QA)  │
-│ M2.0B              │ Trusted Server-Side Authorization     │ VERIFIED (STAGING) │
-│ M2.1               │ Admin Consignment Review              │ ACCEPTED (STAGING)  │
-│ M2.2               │ Dealer Application Intake             │ ACCEPTED ON STAGING │
-│ M2.3               │ Manual Dealer Verification & Profiles │ ACCEPTED ON STAGING │
-│ M2.4               │ Dealer Vehicle Listing Integration    │ ACCEPTED ON STAGING │
-│ M2.5               │ Public Dealer Presentation & Badging  │ ACCEPTED ON STAGING │
-│ M2.6               │ Optional Application Photo Uploads    │ PLANNED (GATED)     │
-└────────────────────┴───────────────────────────────────────┴─────────────────────┘
-```
+| Milestone | Capability | Current status |
+|---|---|---|
+| M1.0 / M1.1 | Dealer foundation and verification security | Complete |
+| M2.0A | Consignment security and persistence | Complete; production QA recorded |
+| M2.0B | Trusted server-side authorization | Deployed to production |
+| M2.1 | Administrator consignment review | Deployed to production |
+| M2.2 | Initial dealer application intake | Deployed to production |
+| M2.3 | Manual verification and canonical profiles | Deployed to production |
+| M2.4 | Dealer vehicle listing integration | Deployed to production; returning-dealer gap tracked in M2.7 |
+| M2.5 | Public dealer presentation | Deployed to production |
+| M2.6 | Optional initial-application photos | Deferred; independently gated |
+| M2.7 | Returning-dealer submissions and two-vehicle acceptance | Planned; required before genuine pilot |
+
+The milestone details below preserve original staging acceptance evidence and implementation boundaries. Statements that a particular historical PR did not deploy production/rules describe that PR only; the November 16–18 production evidence in Section 11.1 supersedes those release gates. M2.7 is a new readiness requirement and is not covered by the earlier acceptance.
+
 
 #### M1.0 — Dealer Foundation and Data Architecture
 - **Status**: **COMPLETE**.
@@ -2492,7 +2495,7 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 - **Exit Criteria**: Non-admin users cannot mutate protected `role` fields or self-verify via Firestore; self-service approved-consignor claims are authorized through the trusted backend endpoint; administrator-initiated role changes remain restricted to designated administrators; application approval is revalidated transactionally; token revocation is enforced; 126 rules tests and 41 endpoint tests pass; production blockers must be resolved before production promotion.
 
 #### M2.1 — Administrative Consignment Application Review
-- **Status**: **ACCEPTED ON STAGING**.
+- **Status**: **DEPLOYED (PROD)**.
 - **Objectives**: Build a dedicated, read-only administrative inspection view within the Admin Consignment Pipeline for reviewing submitted consignment and dealer applications.
 - **Business Rationale**: Empowers curators to thoroughly evaluate submitted vehicle particulars, condition disclosures, and applicant credentials before making approval or rejection decisions.
 - **Key Deliverables**:
@@ -2514,7 +2517,7 @@ Implementation contract:
 - See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md) for checks and limitations. PR #5 merged as `e7de147`; post-merge checks and owner local acceptance are recorded. Production remains separate.
 
 #### M2.2 — Dealer Application and Intake
-- **Status**: **ACCEPTED ON STAGING** (PR #6, `74d9089`; owner local visual/functional acceptance confirmed).
+- **Status**: **DEPLOYED (PROD)** (PR #6, `74d9089`; owner local visual/functional acceptance confirmed).
 - **Objectives**: Introduce structured boutique dealer intake capabilities into the consignment application workflow.
 - **Business Rationale**: Enables prospective boutique dealers to submit verified commercial credentials and formal declarations during initial platform intake.
 - **Key Deliverables**:
@@ -2541,7 +2544,7 @@ Implementation contract:
 - See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). For all visual implementations, Jeremy must confirm a local visual/functional review before approving the PR merge. Automated browser checks do not substitute for that review.
 
 #### M2.3 — Manual Dealer Verification and Canonical Profile Creation
-- **Status**: **ACCEPTED ON STAGING** (PR #7, reviewed head `75d3641`, merge `d3c5cc5`, November 8, 2026).
+- **Status**: **DEPLOYED (PROD)** (PR #7, reviewed head `75d3641`, merge `d3c5cc5`, November 8, 2026).
 - **Acceptance evidence**: Jeremy confirmed the revised interface and representative selection locally before explicitly approving the merge. Exact-head CI run `42505627075` (attempt 2), post-merge CI run `42507149793` and Vercel checks passed; the owner confirmed clean local staging synchronization at `d3c5cc5`. See the M2.3 guide for linked evidence. No production promotion or live Firebase rules/index publication is claimed.
 - **Local review follow-up**: Exact email/UID account lookup is designated-admin-only, returns minimal eligibility data, requires explicit selection and makes no linking writes. Save rechecks authoritative Auth and transactional conflicts. Method/source dropdowns guide human review; Other retains custom methods and source descriptions always remain required. Local timezone-labelled date controls convert to absolute timestamps; no fixed verification duration is assumed.
 - **Implementation boundary (2026-11-08)**: [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Dedicated view is reached through Consignment Pipeline → View application → Manage dealer verification. Strict admin endpoint atomically writes canonical profile, exact verified-Auth UID associations, identity claims, private case revision and append-only before/after audit. Rejected/pending guests need no canonical profile. Licence/representative reassignment and legacy profile adoption are excluded. Explicit future expiry, manual evidence and contact consent are recorded; dealer seller mutations use a shared server eligibility guard. No vehicle approval, role promotion, conversion or public snapshot is included. Source rules/index changes require a separately approved live rollout; no deployment is claimed. Future visual changes require Jeremy’s local visual/functional review before their PR merge approval.
@@ -2559,7 +2562,7 @@ Implementation contract:
 - **Exit Criteria**: Only administrators can create or update dealer profiles; all verification actions generate immutable audit records; suspension instantly halts dealer listing capabilities; zero automatic lot curation approvals.
 
 #### M2.4 — Dealer Vehicle Listing Integration
-- **Status**: **ACCEPTED ON STAGING** (PR #9, `4a55362`; owner local acceptance and synchronization confirmed).
+- **Status**: **DEPLOYED (PROD)** (PR #9, `4a55362`; owner local acceptance and synchronization confirmed).
 - **Bounded implementation (2026-11-08)**: [M2.4 scope and acceptance](docs/m2-4-dealer-listings.md). Canonical dealer applications only; explicit admin vehicle curation creates one protected draft/media record with atomic approval, command/audit records, current verification/representative/link checks, case revision and inspected-application fingerprint. Legacy/private conversion remains disabled. Creation-time snapshots omit private licence/address/evidence; public projection remains unchanged until M2.5. Dealer doc fee is server-locked at CAD $0; a dedicated audited draft-only tax control defaults to requires confirmation and gates forward publication. Snapshot reassignment/refresh and dealer duplication are excluded. Existing seller authoring routes authorize assigned UIDs without automatic global role promotion; email-based consignor authorization cannot promote dealer applicants or rebind dealer lots. Financial settlement and historical visibility are not automatically changed on later expiry/suspension. Source rules, production and local owner acceptance remain separately gated.
 - **Objectives**: Integrate verified dealer attribution and point-in-time dealer snapshots into vehicle draft and listing authoring workflows.
 - **Business Rationale**: Connects approved dealer inventory to the dealer's verified business identity while ensuring immutable historical lot records and fee compliance.
@@ -2574,7 +2577,7 @@ Implementation contract:
 - **Exit Criteria**: Dealer vehicle drafts correctly link to verified dealer identities; dealer snapshot is protected from non-admin modification; $0 doc fee is locked; dealer representative can edit narrative and media for assigned lots.
 
 #### M2.5 — Public Dealer Presentation and Auction Integration
-- **Status**: **ACCEPTED ON STAGING** (PR #10, `49efa36`; owner local acceptance and synchronization confirmed; post-merge CI and Vercel passed).
+- **Status**: **DEPLOYED (PROD)** (PR #10, `49efa36`; owner local acceptance and synchronization confirmed; post-merge CI and Vercel passed).
 - **Bounded implementation**: [M2.5 scope and acceptance](docs/m2-5-public-dealers.md). Dedicated public-safe projection; current canonical verification/expiry and representative match gate badges and contact disclosures. Snapshot name/city/province remain historical attribution. Contacts additionally require current consent for the identical snapshot value; no automatic snapshot refresh. Failure suppresses claims/contacts while leaving historical lots and settlement intact. Catalog cards, lot disclosures and dealer social templates share the public summary; no raw profile/snapshot publication. Verification is manual WAILTAIL review and recorded declarations, not regulatory endorsement or condition/ownership guarantee. No live Firebase publication or production promotion is included.
 - **Objectives**: Deliver polished, transparent public dealer presentation elements across the catalog grid, auction lot headers, and promotional marketing kits.
 - **Business Rationale**: Enhances buyer trust and marketplace transparency by clearly distinguishing verified boutique dealer inventory from private party lots.
@@ -2602,6 +2605,13 @@ Implementation contract:
   - Automated or administrative cleanup routine purging orphaned storage assets from abandoned submissions.
 - **Dependencies**: M2.1 completion. **Explicitly independent of M2.2–M2.5**; does not gate core dealer program delivery.
 - **Exit Criteria**: Applicants can optionally upload images; unauthenticated or unauthorized users cannot access uploaded photos; binary data is never stored in Firestore; core dealer program can launch with or without M2.6.
+
+#### M2.7 — Returning-dealer Vehicle Submissions
+- **Status**: **PLANNED — owner-approved scope, November 18, 2026; not implemented**.
+- **Objective**: Reuse one current canonical dealership/representative for separately reviewed additional vehicle applications, without repeating business onboarding or creating conflicting verification cases.
+- **Acceptance**: One dealership submits and manages two independent vehicles; persist each vehicle's narrative/media after refresh; preserve individual approval/publication and assigned-UID access. Exercise expiry, suspension, renewal/restoration, forged identity, retries and concurrent verification changes.
+- **Dependencies and release boundary**: Preserve original M2.1–M2.5 contracts, private media, protected fields and existing role model. Required before the genuine dealer pilot and formal Phase 1 completion. Optional M2.6 remains independent. See [full contract](docs/m2-7-returning-dealer-submissions.md). This planning entry changes no application code or live data/rules.
+
 
 ### 11.5 Release Governance & Quality Gates
 Every milestone in the Phase 1 roadmap must satisfy rigorous, independent release governance gates before promotion:
@@ -2635,7 +2645,8 @@ The Wailtail Phase 1 Verified Boutique Dealer Program is formally defined as com
 1. **Core Milestones Delivered**: Milestones M1.0, M1.1, M2.0A, M2.0B, M2.1, M2.2, M2.3, M2.4, and M2.5 are fully implemented, verified in staging, promoted to `main`, deployed to production with active Cloud Firestore security rules, and validated with documented production QA evidence.
 2. **Separately Gated Milestones**: Milestone M2.6 (Optional Private Application Photo Uploads) is either completed or formally confirmed as decoupled from the core dealer release.
 3. **Founding Dealer Pilot Executed**: The Founding Dealer Pilot has concluded with all 6 pilot KPIs satisfied.
-4. **Documentation Synchronized**: All system bibles, API references, user documentation, and changelogs reflect the production state with zero roadmap or status contradictions.
+4. **Returning-dealer Readiness**: M2.7 is implemented, accepted on staging, separately authorized/deployed to production and validated with documented two-vehicle, expiry/suspension and restoration evidence before the genuine dealer pilot.
+5. **Documentation Synchronized**: All system bibles, API references, user documentation, and changelogs reflect the production state with zero roadmap or status contradictions.
 
 ---
 

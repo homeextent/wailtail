@@ -1,20 +1,31 @@
 # Wailtail Collector Car Auction Platform
 
-## Branded dealer credential — staging proposal
+## Public reserve status correction — staging proposal
 
-A reusable WAILTAIL Verified Boutique Dealer badge uses the existing whale-tail SVG, a restrained emerald check and dark slate background. Full/compact dealer disclosures display it only when the existing public `verified` flag is true; historical attribution remains neutral. The dealer program page shows a labelled example, awarded following manual verification. No verification eligibility, permissions or disclosure text changes. See [dealer page scope and review](docs/dealer-information-page.md). Owner local visual acceptance and release authorization remain separate.
+Catalog cards previously treated a withheld reserve amount as zero. The proposed correction exposes only reserve presence, preserves the private threshold and shares status interpretation across catalog, lot header and sticky bar. Missing/invalid presence is unknown, never No Reserve. Owner local review, staging acceptance and production promotion remain outstanding.
 
-## Dealer information and privacy policy — accepted release candidate
 
-Public `/dealers` explains eligibility, the combined dealership/vehicle application, manual verification, curation, current CAD fees, privacy and direct settlement. Apply opens the existing consignment form with Dealer selected; regular private-seller entry points retain their default. Selling on Wailtail and the footer provide dealer links; the standalone header/mobile links are omitted. This is a general program page, not a public dealer directory or individual showroom. See [scope and preview checks](docs/dealer-information-page.md). The introductory offer and collector-focused selection guidance do not change fee enforcement. No new backend, role grants, payments or invitation emails are introduced. Static `/privacy-policy/` HTML shares one content source with the modal and remains readable without JavaScript; footer links and hosting/PWA routing use this document. Jeremy accepted the combined revision and explicitly approved staging and main promotion. PR #37 merged into staging as `cb76e83` after exact-head CI `44214839940` and Vercel passed. Production release is tracked in PR #38 and remains conditional on its final CI/deployment checks. Meta submission and acceptance remain separate.
+## Branded dealer credential — deployed to production
 
-## Controlled production acceptance checkpoint — November 17, 2026
+A reusable WAILTAIL Verified Boutique Dealer badge uses the existing whale-tail SVG, a restrained emerald check and dark slate background. Full/compact dealer disclosures display it only when the existing public `verified` flag is true; historical attribution remains neutral. The dealer program page shows a labelled example, awarded following manual verification. No verification eligibility, permissions or disclosure text changes. See [dealer page scope and review](docs/dealer-information-page.md). The owner accepted the design and authorized staging/production release; the credential is included in the November 18 production baseline.
+
+## Dealer information and privacy policy — deployed to production
+
+Public `/dealers` explains eligibility, the combined dealership/vehicle application, manual verification, curation, current CAD fees, privacy and direct settlement. Apply opens the existing consignment form with Dealer selected; regular private-seller entry points retain their default. Selling on Wailtail and the footer provide dealer links; the standalone header/mobile links are omitted. This is a general program page, not a public dealer directory or individual showroom. See [scope and preview checks](docs/dealer-information-page.md). The introductory offer and collector-focused selection guidance do not change fee enforcement. No new backend, role grants, payments or invitation emails are introduced. Static `/privacy-policy/` HTML shares one content source with the modal and remains readable without JavaScript; footer links and hosting/PWA routing use this document. Jeremy accepted the combined revision and explicitly approved staging and main promotion. PR #37 merged into staging as `cb76e83` after exact-head CI `44214839940` and Vercel passed. Production promotion followed in PR #38 and is included in the current baseline. The owner reported submitting the new policy URL to Meta; Meta review acceptance remains unconfirmed.
+
+## Current production and remaining dealer readiness — November 18, 2026
+
+PR #43 merged to main `89692b5`; staging `1f897fa` has identical source contents (tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`). [Main CI passed](https://github.com/homeextent/wailtail/actions/runs/44337952571). Admin dealer identification/filters and verification colours are deployed. These are release evidence, not completion of the full dealer program.
+
+**M2.7 — Returning-dealer vehicle submissions is planned and required before the genuine dealer pilot.** Reuse the authenticated representative's existing canonical profile, collect only the new vehicle information and fresh declarations, and retain individual vehicle review. Acceptance must cover one dealership managing two distinct vehicles plus expiry, suspension, renewal/restoration, access isolation and safe retries/concurrency. See [scope and acceptance contract](docs/m2-7-returning-dealer-submissions.md). This documentation does not implement the flow.
+
+## Historical controlled production acceptance — November 17, 2026
 
 Core dealer implementation through M2.5 is deployed to production, with controlled dealer acceptance completed. At that acceptance checkpoint, main was `9e132c65cd1072625072c6c5a18967390164afa7` (PR #34) and staging was `7f8c233aa78312ae66adf809ce89f53812a618bd`. Both have tree `491a42acf8e651077c0fa57d8a8f0fb142c02ced`. Release and main CI passed. See [November 17 production acceptance](docs/phase1-production-acceptance-2026-11-17.md) for evidence, limits and outstanding operational observation.
 
 Clock, review and auction-notification schedules are enabled. The notification worker's scheduled execution succeeded at 19:20 Eastern on November 17; the earlier controlled winner email reached the owner inbox. Actual auction settlement-to-inbox delivery remains to be observed in normal operation. The fictional Jaguar is Draft/unpublished; its public route correctly shows Listing unavailable.
 
-**Formal Phase 1 remains open for the genuine 3–5 dealership pilot and its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The dealer information/application page is a separate, owner-accepted implementation in PR #37, with its production release tracked above. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
+**Formal Phase 1 remains open for M2.7 returning-dealer acceptance and the genuine 3–5 dealership pilot with its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The dealer information/application page is deployed; the returning-dealer path remains outstanding. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
 
 ## Staging development workflow
 
@@ -30,39 +41,39 @@ Owner-authorized production cutover and bounded observation are recorded in [Nov
 
 The [read-only preparer](docs/storage-cutover-operations.md) checks approved source files and references, then creates private guarded operation proposals. It has no apply mode. Owner-authenticated validation completed on November 14, 2026: 163 approved files validated, 226 sources reconciled, six reference documents prepared, zero cloud writes. See the [dated evidence record](docs/storage-cutover-validation-2026-11-14.md). Owner follow-up verified 169 backup files and six reference/recovery proposals; both approved PDFs returned HTTP 206 anonymously with and without their original tokens. This is historical pre-cutover evidence, not a restore. Subsequent live execution and denial results are recorded in the November 16 acceptance evidence above.
 
-## M2.5 public dealer presentation — accepted on staging
+## M2.5 public dealer presentation — deployed; historical staging acceptance below
 
-Public catalog/lot responses now provide a minimal dealer summary with current-verification badges, historical business/city/province attribution, CAD $0 dealer documentation fee and informational tax disclosures. Business contacts require snapshot inclusion plus current consent for the same value. Missing/expired/suspended profiles suppress current verification and contacts without interrupting historical auctions. Dealer social copy/graphics use public-safe data and verification limitations. See [M2.5 scope and local review](docs/m2-5-public-dealers.md). No production or live Firebase changes are included. Jeremy locally accepted reviewed head `8f6a1f3`, explicitly approved PR #10, and confirmed a clean local staging checkout synchronized to merge `49efa36` on November 13, 2026. Exact-head CI run `43451784085`, post-merge CI run `43454275497` and Vercel checks passed. Production promotion and live Firebase publication remain separate.
+Public catalog/lot responses now provide a minimal dealer summary with current-verification badges, historical business/city/province attribution, CAD $0 dealer documentation fee and informational tax disclosures. Business contacts require snapshot inclusion plus current consent for the same value. Missing/expired/suspended profiles suppress current verification and contacts without interrupting historical auctions. Dealer social copy/graphics use public-safe data and verification limitations. See [M2.5 scope and local review](docs/m2-5-public-dealers.md). No production or live Firebase changes are included. Jeremy locally accepted reviewed head `8f6a1f3`, explicitly approved PR #10, and confirmed a clean local staging checkout synchronized to merge `49efa36` on November 13, 2026. Exact-head CI run `43451784085`, post-merge CI run `43454275497` and Vercel checks passed. That checkpoint preceded the separately authorized November 16–17 production cutover and acceptance.
 
-Core dealer functionality through M2.5 is accepted on staging. See [Phase 1 production-readiness review](docs/phase1-production-readiness.md) for remaining release evidence, operational gates and pilot requirements. M2.6 remains optional and separately gated.
+Original core functionality through M2.5 is deployed; M2.7 closes the returning-dealer workflow gap. See [Phase 1 production-readiness review](docs/phase1-production-readiness.md) for remaining release evidence, operational gates and pilot requirements. M2.6 remains optional and separately gated.
 
-## M2.4 dealer listing integration — accepted on staging
+## M2.4 dealer listing integration — deployed; historical staging acceptance below
 
 Canonical dealer applications now have an explicit admin vehicle-approval/draft action, independent of business verification. The trusted server assigns the representative UID, immutable internal dealer snapshot, CAD $0 documentation fee and versioned informational tax indicator. Creation, application approval and audit commit atomically with retry/concurrency protection. Assigned representatives use the restricted narrative/media workspace without a global seller-role promotion. Forward public visibility requires current verification and confirmed tax handling; public dealer presentation remains M2.5.
 
-See [M2.4 scope, tests and local acceptance](docs/m2-4-dealer-listings.md). Legacy/private one-click conversion remains disabled; dealer duplication and snapshot reassignment are unavailable. No production promotion or live Firebase publication is included. Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local synchronization to its staging merge `4a55362`. Post-merge CI and Vercel preview passed; production and live Firebase publication remain separate.
+See [M2.4 scope, tests and local acceptance](docs/m2-4-dealer-listings.md). Legacy/private one-click conversion remains disabled; dealer duplication and snapshot reassignment are unavailable. No production promotion or live Firebase publication is included. Jeremy locally accepted `d0ce29f`, approved PR #9, and confirmed clean local synchronization to its staging merge `4a55362`. Post-merge CI and Vercel preview passed; that staging checkpoint preceded the separately authorized November 16–17 production cutover and acceptance.
 
-## M2.3 dealer verification — accepted on staging
+## M2.3 dealer verification — deployed; historical staging acceptance below
 
 Dealer applications now open a dedicated manual verification view. Designated administrators record evidence, link one existing email-verified representative UID, create a private canonical business profile and explicitly verify, reject, suspend, update or renew it. Profile/link changes and immutable before/after audit records commit atomically. Dealer-attributed seller mutations enforce current verification and expiry. Vehicle approval, conversion and public dealer attribution remain separate.
 
 An administrator can look up one exact representative email/UID and explicitly select the eligible account. Guided method/source choices retain required evidence details; date controls use a named local timezone while storing absolute timestamps.
 
-See [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Jeremy locally accepted reviewed head `75d3641` and explicitly approved PR #7, merged into staging as `d3c5cc5` on November 8, 2026. Exact-head CI, post-merge CI and Vercel checks passed; Jeremy confirmed his clean local staging checkout synchronized to that merge. Production and live Firebase rules/index publication remain separate. Future visual changes still require local acceptance before merge approval.
+See [M2.3 acceptance and local preview](docs/m2-3-dealer-verification.md). Jeremy locally accepted reviewed head `75d3641` and explicitly approved PR #7, merged into staging as `d3c5cc5` on November 8, 2026. Exact-head CI, post-merge CI and Vercel checks passed; Jeremy confirmed his clean local staging checkout synchronized to that merge. That checkpoint preceded the separately authorized November 16–17 production application/rules cutover and acceptance. Future visual changes still require local acceptance before merge approval.
 
-## M2.2 dealer intake — accepted on staging
+## M2.2 dealer intake — deployed; historical staging acceptance below
 
 The existing vehicle application form now distinguishes private sellers and dealers. Dealer applications require legal business name, optional DBA, licence number, Canadian licensing jurisdiction, representative contacts and three explicit declarations. A server endpoint validates both flows, stamps pending status and declaration acceptance time, and atomically writes canonical and legacy application records. Submitting does not verify a dealer or grant access.
 
 See [M2.2 acceptance and local preview](docs/m2-2-dealer-intake.md). **Visual changes require Jeremy's local visual/functional verification before PR merge approval.** M2.2 was locally accepted and merged through PR #6 at `74d9089`; Jeremy confirmed his clean staging checkout synchronized to that merge. No production rules are published by a PR.
 
-## M2.1 administrative consignment review — accepted on staging
+## M2.1 administrative consignment review — deployed; historical staging acceptance below
 
 The Consignment Pipeline now offers a dedicated **View application** inspection modal. Submitted vehicle/contact/condition information remains read-only and visibly separate from existing canonical dealer verification information. Opening a record does not mark it reviewed or change its status. Missing data and missing historical reviewers are shown explicitly.
 
 Designated administrators can explicitly save private notes and curator assignments. The authenticated `/api/admin-consignment-review` endpoint stores these in separate `consignmentReviews/{source}:{applicationId}` records, with append-only `events`, server-derived authors/timestamps, revision conflicts and idempotent command retries. Applicant-readable documents never receive private notes. History loads in pages of 50; legacy collection records retain their source identity. Existing status controls remain separate, and one-click conversion remains disabled.
 
-See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). M2.1 merged through PR #5 as `e7de147`; post-merge CI/preview passed and Jeremy confirmed local visual and functional acceptance. Production deployment and rules publication remain separate.
+See [M2.1 acceptance and release boundary](docs/m2-1-consignment-review.md). M2.1 merged through PR #5 as `e7de147`; post-merge CI/preview passed and Jeremy confirmed local visual and functional acceptance. That checkpoint preceded the separately authorized November 16–17 production application/rules cutover and acceptance.
 
 ## Auction security staging checkpoint
 
