@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Phase 1 production documentation closeout — November 17, 2026
+
+- Synchronize README and System Bible current status with production PRs #28, #32 and #34, controlled dealer acceptance, private withdrawal and notification activation; retain dated historical checkpoints and unchanged milestone definitions.
+- Record successful scheduled notification execution and separately confirmed controlled winner inbox delivery. Actual settlement-to-inbox observation remains outstanding; the fictional Jaguar stays Draft. Preserve public-copy retention and cross-service publication limitations.
+- Keep formal Phase 1 open for the genuine 3–5 dealership pilot and all six KPIs. Explicitly defer/decouple optional M2.6; no application code, rules, cloud configuration, email or data mutation is performed by this documentation PR.
+
 ### Public listing route isolation
 
 - Resolve /lot and /vehicle IDs consistently with /auctions. Explicit listing pages render only their matching public response, with neutral loading and unavailable states/titles. Withdrawn, private or missing listings no longer show the default catalog vehicle. Cover valid aliases and withdrawn routes in the browser suite.

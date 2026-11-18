@@ -1,13 +1,13 @@
 # Wailtail Collector Car Auction Platform
 
-Public listing route correction (staging proposal): /lot, /vehicle and /auctions resolve the explicit listing ID; withdrawn/private/missing records show Listing unavailable instead of another catalog vehicle.
+## Current production status — November 17, 2026
 
-Administrator draft-save/public-preview correction (staging proposal): omit protected bid fields from editor saves and derive zero-bid amounts transactionally. explicitly publish a non-bidding preview from the lifecycle selector. Preview ignores auction dates for bid availability; returning to Draft hides the listing but retains public image copies.
+Core dealer implementation through M2.5 is deployed to production, with controlled dealer acceptance completed. Production main is `9e132c65cd1072625072c6c5a18967390164afa7` (PR #34); staging is `7f8c233aa78312ae66adf809ce89f53812a618bd`. Both have tree `491a42acf8e651077c0fa57d8a8f0fb142c02ced`. Release and main CI passed. See [November 17 production acceptance](docs/phase1-production-acceptance-2026-11-17.md) for evidence, limits and outstanding operational observation.
 
-Representative editor title correction (staging proposal): derive the browser tab from the authenticated route draft, with a neutral loading fallback; do not reuse the public catalog selection.
+Clock, review and auction-notification schedules are enabled. The notification worker's scheduled execution succeeded at 19:20 Eastern on November 17; the earlier controlled winner email reached the owner inbox. Actual auction settlement-to-inbox delivery remains to be observed in normal operation. The fictional Jaguar is Draft/unpublished; its public route correctly shows Listing unavailable.
 
+**Formal Phase 1 remains open for the genuine 3–5 dealership pilot and its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The proposed dealer information/application page is separate, not implemented. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
 
-Draft-upload correction accepted on staging in PR #26; follow-up placement/publication correction in preparation: administrator unpublished editors stage JPG/PNG images and gallery PDF documents in private `auctionDraft` assets through authenticated draft endpoints. Public hero/gallery uploads remain restricted to published listings. No live rules change or production deployment is part of this correction. See `docs/draft-image-upload-acceptance.md` and `docs/draft-image-publication.md`. The follow-up uses the compact production Hero/Gallery cards with private thumbnails, multiple-photo uploads, click-to-preview and saved ordering; gallery photo filenames are replaced by Left/Right controls, while document titles are retained; supported-file filters and a 2 MiB per-file limit apply to JPG/PNG images and gallery-only PDFs, with guarded administrator publication; production promotion remains separate.
 ## Staging development workflow
 
 Open the `wailtail-staging` folder in VS Code. A folder name is not a branch: confirm `git status -sb` and `git branch --show-current` before editing. Start focused task branches from synchronized `staging`, review them through a PR into `staging`, and reserve `main` for separately approved production releases. The existing `wailtail-auction` folder holds the shared Git repository and must remain while linked worktrees depend on it.
@@ -16,7 +16,7 @@ See [Local development and worktree housekeeping](docs/local-development.md) for
 
 ## Consolidated cutover execution package
 
-Owner-authorized production cutover and bounded observation are recorded in [November 16 acceptance evidence](docs/storage-cutover-acceptance-2026-11-16.md): 163 public copies, six atomic reference updates, 226 retained originals with legacy tokens revoked/denied; final deployed rules and index verified; review inbox delivery confirmed. Clock/review schedules are enabled, notifications remain paused. Public access is restored. The ordinary Storage policy now matches the final cutover policy; no live rule publication is performed by this source alignment. Formal Phase 1 completion and the Founding Dealer Pilot remain separate.
+Owner-authorized production cutover and bounded observation are recorded in [November 16 acceptance evidence](docs/storage-cutover-acceptance-2026-11-16.md): 163 public copies, six atomic reference updates, 226 retained originals with legacy tokens revoked/denied; final deployed rules and index verified; review inbox delivery confirmed. At the November 16 checkpoint, clock/review schedules were enabled and notifications were paused; the November 17 acceptance record above supersedes that scheduler status. Public access is restored. The ordinary Storage policy now matches the final cutover policy; no live rule publication is performed by this source alignment. Formal Phase 1 completion and the Founding Dealer Pilot remain separate.
 
 ## Storage cutover validation tooling
 
@@ -571,22 +571,17 @@ Wailtail is actively executing the **Phase 1 Verified Boutique Dealer Program**,
 
 For comprehensive milestone specifications, commercial boundaries, architecture, acceptance criteria, and release governance, refer to the authoritative [`SYSTEM_BIBLE.md`](SYSTEM_BIBLE.md).
 
-### Program Status Summary (as of November 5, 2026)
+### Program Status Summary — November 17, 2026
 
-| Milestone | Title & Focus | Status | Details |
-| :--- | :--- | :--- | :--- |
-| **M1.0** | Dealer Foundation and Data Architecture | **COMPLETE** | Core schemas, TypeScript interfaces, and baseline security rules. |
-| **M1.1** | Dealer Verification Metadata and Security Hardening | **COMPLETE** | Dual-collection protection for all 6 trusted verification fields; 18/18 live probe checks passed; production deployed. |
-| **M2.0A** | Consignment Security and Persistence Hardening | **COMPLETE** | Verified-email applicant reads, token-derived auth, modification locks, 83 emulator tests; deployed to production with Cloud Firestore rules; production QA passed. |
-| **M2.0B** | Trusted Server-Side Role Authorization | **VERIFIED ON STAGING** | Firebase Admin SDK ID-token verification with revocation checking; transactional approved-consignor revalidation; protected user/bidder roles and verification state; removal of client-side role elevation; 126 Firestore rules tests and 41 M2.0B endpoint/authority tests. *Not production-approved.* |
-| **Admin Account Deletion Hardening** | Server-Authorized Account Deletion | **VERIFIED ON STAGING** | Revocation-aware designated-administrator authorization; self-deletion and designated-account protection; server-owned Auth and Firestore cleanup with retry handling; 44 regression tests (85 combined endpoint tests). *Not production-deployed; auction mutation security was subsequently accepted on staging through PR #3. Production rollout and live verification remain separate.* |
+| Milestone | Current status | Evidence / boundary |
+|---|---|---|
+| M1.0, M1.1, M2.0A | Complete; production acceptance recorded | Foundation and initial hardening history retained below. |
+| M2.0B and administrator account-deletion hardening | Deployed production security implementation | November 16 rules/application cutover and production acceptance; destructive account deletion was not repeated for this closeout. |
+| M2.1–M2.5 | Deployed; controlled dealer production acceptance completed | Intake, verification, assigned draft, revision loop and bounded public presentation/withdrawal; see the dated acceptance record. |
+| M2.6 | Deferred; optional and decoupled | Initial-application photos remain separate from existing listing uploads. |
+| Founding Dealer Pilot | Outstanding / ongoing recruitment and validation | 3–5 genuine dealerships; all six Section 11.6 KPIs required for formal completion. |
 
-| **M2.1** | Administrative Consignment Application Review | **ACCEPTED ON STAGING** | Dedicated read-only application detail inspection; applicant declarations vs verified metadata; private curator notes. |
-| **M2.2** | Dealer Application and Intake | **ACCEPTED ON STAGING** | Structured dealer intake; regulatory declarations (exclusive vehicle ownership & legal seller of record); representative validation. |
-| **M2.3** | Manual Dealer Verification & Profile Creation | **ACCEPTED ON STAGING** | Administrative verification tools; canonical `dealer_profiles` creation; append-only audit logging in `dealer_verification_audits`. |
-| **M2.4** | Dealer Vehicle Listing Integration | **ACCEPTED ON STAGING** | Approved dealer attribution; protected `dealerId` assignment; point-in-time `dealerSnapshot`; $0 doc fee lock (`dealerDocFee: 0`). |
-| **M2.5** | Public Dealer Presentation & Badging | **ACCEPTED ON STAGING** | Verified boutique dealer badges; privacy-conscious showroom display (City/Province only); conditional phone/website display; regulatory disclaimers. |
-| **M2.6** | Optional Private Application Photo Uploads | **PLANNED (GATED)** | Multi-photo upload in consignment intake; private Cloud Storage bucket; curation transfer to listing gallery. *Separately gated; non-blocker for core program.* |
+The dated milestone sections above preserve their original staging acceptance history; their release-boundary wording describes those earlier checkpoints. Current production status is the November 17 record.
 
 ### Phase 1 Governance & Commercial Boundaries
 - **Core Milestone Execution Order**: M2.0B → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 (with M2.6 separately gated and non-blocking). Administrator account-deletion hardening is a separate security workstream, not a change to the dealer-program milestone sequence.
