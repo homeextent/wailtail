@@ -174,6 +174,12 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.equal(publicData.auction.sellerEmail, undefined);
     await command('Page.navigate', { url: origin + '/admin?tab=inventory' });
     await eventually(text, value => value.includes('Vehicle Inventory & Lots'), 'administrator portal');
+    await eventually(text, value => value.includes('Dealer-listed') && value.includes('Dealer verification: Current'), 'admin inventory dealer attribution');
+    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'private'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
+    await eventually(text, value => !value.includes('Dealer-listed'), 'private inventory filter excludes dealer');
+    await command('Runtime.evaluate', { expression: `(() => { const select = document.querySelector('select[aria-label="Inventory seller type"]'); select.value = 'ALL'; select.dispatchEvent(new Event('change', {bubbles:true})); })()` });
+    await eventually(text, value => value.includes('Dealer-listed'), 'dealer remains visible when seller filter clears');
+
     const selected = await command('Runtime.evaluate', {
       expression: `(() => {
         const button = Array.from(document.querySelectorAll('button')).find(element =>
@@ -456,6 +462,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.ok(both.some(record => record.applicantType === 'private' && record.status === 'pending' && record.make === 'Alpina' && record.model === 'B5' && record.year === '2026' && !record.submittedDealershipName));
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
+    await eventually(text, value => value.includes('Dealer application') && value.includes('Dealer verification: Pending verification'), 'unverified dealer application is distinct from account role');
     await click(`(() => { const row = Array.from(document.querySelectorAll('[id^="consignment-"]')).find(row => row.textContent?.includes('Dealer Fixture')); const button = Array.from(row?.querySelectorAll('button') || []).find(b => b.textContent === 'View application'); if (!button) return false; button.click(); return true; })()`);
     await eventually(text, value => value.includes('Autofilled Dealer Inc.') && value.includes('Synthetic Collectors') && value.includes('TEST-456') && value.includes('No brokered or pass-through inventory declaration'), 'dealer declarations in M2.1 review');
     assert.ok((await text()).includes('No linked canonical dealer verification information.'));

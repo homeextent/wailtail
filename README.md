@@ -595,3 +595,10 @@ The dated milestone sections above preserve their original staging acceptance hi
 - **Core Milestone Execution Order**: M2.0B → M2.1 → M2.2 → M2.3 → M2.4 → M2.5 (with M2.6 separately gated and non-blocking). Administrator account-deletion hardening is a separate security workstream, not a change to the dealer-program milestone sequence.
 - **Commercial Invariants**: Exclusive vehicle ownership (no broker/pass-through inventory); one primary authorized representative per dealer; manual admin verification; verification decoupled from lot curation; private canonical profiles; $0 dealer listing fees, $0 commissions, $0 doc fees, and $0 buyer premiums.
 - **Detailed Specification**: See [`SYSTEM_BIBLE.md` (Section 11)](SYSTEM_BIBLE.md:2280) for authoritative requirements, dependencies, release gates, and Founding Dealer Pilot KPIs.
+
+
+### Admin dealer identification — staging proposal
+
+Member Directory separates account role and email verification from dealer affiliation and canonical dealer verification. Consignment Pipeline labels dealer applications and original guest submission; Inventory labels dealer-listed lots with historical dealership attribution. Independent dealer/seller-type filters combine with existing role/status/search filters before pagination. Missing legacy seller type retains private-seller compatibility.
+
+Dealer verification uses readable colour-coded statuses: Current (green, valid future expiry), Expired (red), Suspended (amber), Pending verification (blue), Rejected (red), Not verified (grey). Loading/read failures show Status unavailable. The canonical schema has no revoked status; no new status or role is introduced. Thirty-second display clock refreshes expiry; server authorization remains authoritative. No account promotion, rules/data migration or production publication is included.

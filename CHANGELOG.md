@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Admin dealer identification
+
+- Add independent dealer affiliation and seller-type filters in Member Directory, Consignment Pipeline and Inventory, preserving existing role/status filters and permissions.
+- Identify dealer applications, representative dealership affiliations and historical dealer-listed inventory; clarify Email verified and Submitted as guest labels.
+- Display canonical verification with text and consistent colours, future-expiry checks and unavailable states. No new dealer role, revoked schema state, role promotion or production data/rules changes.
+
+
 ### Branded dealer credential
 
 - Reuse the existing whale-tail SVG in a compact dark-slate WAILTAIL Verified Boutique Dealer badge with emerald accents. Provide regular and compact presentation in the shared dealer disclosure; show no credential when current verification is not confirmed.
