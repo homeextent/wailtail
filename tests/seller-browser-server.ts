@@ -97,7 +97,51 @@ await firestore.collection('consignment_applications').doc(`submission-${run}`).
 });
 
 const dealerRepresentative = await auth.createUser({ email: `dealer-rep-${run}@example.test`, password, emailVerified: true });
-await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, email: dealerRepresentative.email, role: 'bidder', welcomeEmailSent: true, isEmailVerified: true });
+await firestore.collection('users').doc(dealerRepresentative.uid).set({ uid: dealerRepresentative.uid, registeredAt: Date.now(), email: dealerRepresentative.email, role: 'bidder', welcomeEmailSent: true, isEmailVerified: true });
+
+// Optional interactive-only examples. Never runs against cloud services: emulator guards above are mandatory.
+if (process.env.WAILTAIL_ADMIN_DEALER_PREVIEW === '1') {
+  const examples = [
+    ['current', 'verified', Date.now() + 86400000],
+    ['expired', 'verified', Date.now() - 3600000],
+    ['suspended', 'suspended', Date.now() + 86400000],
+    ['pending', 'pending', 0],
+    ['rejected', 'rejected', 0],
+    ['unverified', 'unverified', 0],
+  ] as const;
+  for (const [label, status, expiry] of examples) {
+    const id = `preview-${label}-${run}`;
+    const uid = `preview-rep-${label}-${run}`;
+    const name = `TEST — ${label[0].toUpperCase() + label.slice(1)} Dealer`;
+    const applicationId = `preview-application-${label}-${run}`;
+    const caseId = createHash('sha256').update(`consignment_applications:${applicationId}`).digest('hex');
+    const snapshot = { dealerId: id, dealershipName: name, displayName: name, city: 'Testville', province: 'ON', verifiedAt: Date.now(), verificationRecordVersion: '1' };
+    await firestore.collection('dealer_profiles').doc(id).set({
+      id, legalBusinessName: name, primaryRepresentativeUid: uid, verificationStatus: status,
+      verificationExpiresAt: expiry, city: 'Testville', province: 'ON', displayPhonePublicly: false, displayWebsitePublicly: false,
+    });
+    await firestore.collection('users').doc(uid).set({ uid, dealerId: id, displayName: `TEST ${label} representative`, email: `${label}@example.test`, role: 'bidder', registeredAt: Date.now(), isEmailVerified: true });
+    await firestore.collection('dealerVerificationCases').doc(caseId).set({ dealerId: id, verificationStatus: status, revision: 1 });
+    await firestore.collection('consignment_applications').doc(applicationId).set({
+      applicantType: 'dealer', dealershipName: name, sellerName: `TEST ${label} representative`, sellerEmail: `${label}@example.test`, dealerId: id,
+      status: 'pending', year: 2000, make: 'Synthetic', model: `${label} dealer example`, submittedAt: Date.now(),
+      notes: 'Emulator display example only. Fictional business and vehicle. Keep unpublished.',
+    });
+    await firestore.collection('auctions').doc(`preview-lot-${label}-${run}`).set({
+      sellerType: 'dealer', dealerId: id, sellerId: uid, dealerSnapshot: snapshot, sellerName: name,
+      status: 'draft', title: `TEST ONLY — ${label} dealer vehicle`, currentBid: 0, startingBid: 1000,
+      dealerDocFee: 0, taxHandling: 'requires_confirmation', currency: 'CAD', bidCount: 0,
+    });
+    const [storedProfile, storedMember, storedApplication, storedLot] = await firestore.getAll(
+      firestore.collection('dealer_profiles').doc(id), firestore.collection('users').doc(uid),
+      firestore.collection('consignment_applications').doc(applicationId), firestore.collection('auctions').doc(`preview-lot-${label}-${run}`));
+    assert.equal(storedProfile.data()?.verificationStatus, status);
+    assert.equal(storedMember.data()?.dealerId, id);
+    assert.equal(storedApplication.data()?.applicantType, 'dealer');
+    assert.equal(storedLot.data()?.status, 'draft');
+  }
+  console.log('Admin dealer preview: six linked representatives, six dealer applications and six private draft lots verified in the demo emulator.');
+}
 
 const server = express();
 server.use((_req, res, next) => {

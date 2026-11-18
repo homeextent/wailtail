@@ -1,9 +1,11 @@
+import { AdminDealerStatus, SellerTypeFilter } from './AdminDealerStatus';
 import { ConsignmentReviewModal } from './ConsignmentReviewModal';
 import { requestAuctionReturnToDraft } from '../services/auctionReview';
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { 
+  DealerProfile,
   Auction, 
   Bid, 
   UserProfile, 
@@ -122,6 +124,32 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
   onOpenSocialKit
 }) => {
   const { user: authUser, userProfile: authUserProfile } = useAuth();
+  const [dealerProfiles, setDealerProfiles] = useState<Record<string, DealerProfile>>({});
+  const [dealerCases, setDealerCases] = useState<Record<string, { dealerId?: string; verificationStatus?: string }>>({});
+  const [dealerCaseKeys, setDealerCaseKeys] = useState<Record<string, string>>({});
+  const [dealerCasesUnavailable, setDealerCasesUnavailable] = useState(true);
+  const [dealerStatusUnavailable, setDealerStatusUnavailable] = useState(true);
+  const [dealerNow, setDealerNow] = useState(Date.now);
+  useEffect(() => {
+    if (!authUser) return;
+    const unsubscribe = onSnapshot(collection(db, 'dealer_profiles'), snapshot => {
+      setDealerProfiles(Object.fromEntries(snapshot.docs.map(doc => [doc.id, { ...doc.data(), id: doc.id } as DealerProfile])));
+      setDealerStatusUnavailable(false);
+    }, () => { setDealerProfiles({}); setDealerStatusUnavailable(true); });
+    const unsubscribeCases = onSnapshot(collection(db, 'dealerVerificationCases'), snapshot => {
+      setDealerCases(Object.fromEntries(snapshot.docs.map(doc => [doc.id, doc.data()])));
+      setDealerCasesUnavailable(false);
+    }, () => { setDealerCases({}); setDealerCasesUnavailable(true); });
+    const clock = window.setInterval(() => setDealerNow(Date.now()), 30000);
+    return () => { unsubscribe(); unsubscribeCases(); window.clearInterval(clock); };
+  }, [authUser]);
+  const [overviewMembers, setOverviewMembers] = useState(0);
+  const [overviewConsignments, setOverviewConsignments] = useState(0);
+  const [overviewPending, setOverviewPending] = useState(0);
+  const [memberDealerFilter, setMemberDealerFilter] = useState('ALL');
+  const [consignmentSellerFilter, setConsignmentSellerFilter] = useState('ALL');
+  const [inventorySellerFilter, setInventorySellerFilter] = useState('ALL');
+
 
   async function returnListingToDraft(lot: Auction, notes = '') {
     if (!authUser) throw new Error('Administrator authentication required.');
@@ -245,9 +273,11 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         pageSize: bidderPageSize,
         searchQuery: bidderSearch,
         roleFilter: bidderRoleFilter,
-        banFilter: bidderStatusFilter
+        banFilter: bidderStatusFilter,
+        dealerFilter: memberDealerFilter
       });
       setBiddersList(res.items);
+      setOverviewMembers(res.unfilteredTotal ?? res.total);
       setBiddersTotal(res.total);
       setBiddersTotalPages(res.totalPages);
     } catch (err: any) {
@@ -256,7 +286,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     } finally {
       setLoadingBidders(false);
     }
-  }, [bidderPage, bidderPageSize, bidderSearch, bidderRoleFilter, bidderStatusFilter]);
+  }, [bidderPage, bidderPageSize, bidderSearch, bidderRoleFilter, bidderStatusFilter, memberDealerFilter]);
 
   useEffect(() => {
     loadBidders();
@@ -753,6 +783,16 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     }
   }, [clearUrlParams]);
 
+  useEffect(() => {
+    let active = true;
+    Promise.all(consignmentsList.filter(app => app.applicantType === 'dealer' && app.id).map(async app => {
+      const source = app.reviewSource || 'consignment_applications';
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${source}:${app.id}`));
+      return [`${source}:${app.id}`, Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('')];
+    })).then(entries => { if (active) setDealerCaseKeys(Object.fromEntries(entries)); }).catch(() => { if (active) setDealerCaseKeys({}); });
+    return () => { active = false; };
+  }, [consignmentsList]);
+
   // Load paginated consignments
   const loadConsignments = useCallback(async () => {
     setLoadingConsignments(true);
@@ -761,9 +801,12 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         page: consignmentPage,
         pageSize: consignmentPageSize,
         searchQuery: consignmentSearch,
-        statusFilter: consignmentStatusFilter
+        statusFilter: consignmentStatusFilter,
+        sellerTypeFilter: consignmentSellerFilter
       });
       setConsignmentsList(res.items);
+      setOverviewConsignments(res.unfilteredTotal ?? res.total);
+      setOverviewPending(res.unfilteredPendingTotal ?? 0);
       setConsignmentsTotal(res.total);
       setConsignmentsTotalPages(res.totalPages);
     } catch (err: any) {
@@ -772,7 +815,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     } finally {
       setLoadingConsignments(false);
     }
-  }, [consignmentPage, consignmentPageSize, consignmentSearch, consignmentStatusFilter]);
+  }, [consignmentPage, consignmentPageSize, consignmentSearch, consignmentStatusFilter, consignmentSellerFilter]);
 
   useEffect(() => {
     loadConsignments();
@@ -786,6 +829,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       const newAuctionId = await convertConsignmentToDraftListing(app.id);
       setConsignmentsList(prev => prev.map(c => c.id === app.id ? { ...c, status: 'approved', convertedAuctionId: newAuctionId } : c));
       showToast(`Draft listing created for ${app.year} ${app.make} ${app.model}! (Lot ID: ${newAuctionId})`);
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Conversion failed: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -806,6 +850,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
         setConsignmentsTotal(prev => Math.max(0, prev - 1));
       }
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to reject consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -826,6 +871,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
         setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
         setConsignmentsTotal(prev => Math.max(0, prev - 1));
       }
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to re-open consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -843,6 +889,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       setConsignmentsList(prev => prev.filter(c => c.id !== app.id));
       setConsignmentsTotal(prev => Math.max(0, prev - 1));
       showToast(`Permanently deleted consignment record for ${app.year} ${app.make} ${app.model}${cascade ? ' and associated vehicle listing' : ''}.`);
+      await loadConsignments();
     } catch (err: any) {
       showToast(`Failed to delete consignment: ${err.message || 'Unknown error'}`, 'error');
     } finally {
@@ -876,11 +923,11 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
 
   useEffect(() => {
     setSelectedConsignmentIds([]);
-  }, [consignmentPage, consignmentSearch, consignmentStatusFilter]);
+  }, [consignmentPage, consignmentSearch, consignmentStatusFilter, consignmentSellerFilter]);
 
   useEffect(() => {
     setSelectedAuctionIds([]);
-  }, [inventoryPage, inventorySearch, inventoryStatusFilter]);
+  }, [inventoryPage, inventorySearch, inventoryStatusFilter, inventorySellerFilter]);
 
   // Master Select All for Consignments
   const areAllCurrentConsignmentsSelected = useMemo(() => {
@@ -904,9 +951,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
     );
   };
 
+  // Status tabs and rows share the same seller-type scope; overview totals remain global.
+  const sellerScopedInventory = useMemo(() => allAuctions.filter(lot =>
+    inventorySellerFilter === 'ALL' || (lot.sellerType === 'dealer' ? 'dealer' : 'private') === inventorySellerFilter
+  ), [allAuctions, inventorySellerFilter]);
+
   // Inventory Filtering & Pagination
   const filteredInventory = useMemo(() => {
-    return allAuctions.filter(lot => {
+    return sellerScopedInventory.filter(lot => {
+
       if (inventoryStatusFilter !== 'all') {
         const s = (lot.status || 'draft').toLowerCase();
         if (inventoryStatusFilter === 'live') {
@@ -935,7 +988,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
       }
       return true;
     });
-  }, [allAuctions, inventoryStatusFilter, inventorySearch]);
+  }, [sellerScopedInventory, inventoryStatusFilter, inventorySearch]);
 
   const inventoryTotal = filteredInventory.length;
   const inventoryTotalPages = Math.max(1, Math.ceil(inventoryTotal / inventoryPageSize));
@@ -1362,7 +1415,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Total Members</span>
                 <Users className="w-4 h-4 text-blue-400" />
               </div>
-              <div className="text-2xl font-black text-white font-mono">{biddersTotal || biddersList.length}</div>
+              <div data-admin-overview="members" className="text-2xl font-black text-white font-mono">{overviewMembers}</div>
               <div className="text-[11px] text-zinc-500 mt-1">Authenticated bidders & sellers</div>
             </div>
 
@@ -1371,7 +1424,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Total Consignments</span>
                 <FileText className="w-4 h-4 text-emerald-400" />
               </div>
-              <div className="text-2xl font-black text-emerald-400 font-mono">{consignmentsTotal || consignmentsList.length}</div>
+              <div data-admin-overview="consignments" className="text-2xl font-black text-emerald-400 font-mono">{overviewConsignments}</div>
               <div className="text-[11px] text-zinc-500 mt-1">Inbound vehicle applications</div>
             </div>
 
@@ -1380,8 +1433,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <span>Pending Approvals</span>
                 <Clock className="w-4 h-4 text-amber-400" />
               </div>
-              <div className="text-2xl font-black text-amber-400 font-mono">
-                {consignmentsList.filter(c => !c.status || c.status === 'pending').length}
+              <div data-admin-overview="pending" className="text-2xl font-black text-amber-400 font-mono">
+                {overviewPending}
               </div>
               <div className="text-[11px] text-zinc-500 mt-1">Requiring consignor review</div>
             </div>
@@ -1415,7 +1468,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                 activeTab === 'bidders' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
-                {biddersTotal}
+                {overviewMembers}
               </span>
             </button>
 
@@ -1432,7 +1485,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
                 activeTab === 'consignments' ? 'bg-red-950 text-red-200' : 'bg-zinc-800 text-zinc-400'
               }`}>
-                {consignmentsTotal}
+                {overviewConsignments}
               </span>
             </button>
 
@@ -1508,6 +1561,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 </div>
               </div>
 
+              <SellerTypeFilter label="Member dealer affiliation" members value={memberDealerFilter} onChange={value => { setMemberDealerFilter(value); setBidderPage(1); }} />
               {/* Filters Row */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center pt-2 border-t border-zinc-800/80">
                 {/* Search Bar */}
@@ -1539,6 +1593,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 {/* Role Filter Dropdown */}
                 <div className="sm:col-span-3">
                   <select
+                    aria-label="Member account role"
                     value={bidderRoleFilter}
                     onChange={(e) => {
                       setBidderRoleFilter(e.target.value);
@@ -1564,7 +1619,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 font-semibold focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer"
                   >
                     <option value="ALL">All Account Statuses</option>
-                    <option value="VERIFIED">Status: Verified Only</option>
+                    <option value="VERIFIED">Email verified only</option>
                     <option value="BANNED">Status: Banned Only</option>
                   </select>
                 </div>
@@ -1588,12 +1643,13 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   <p className="text-xs text-zinc-500 max-w-sm mx-auto">
                     Try adjusting your search terms or clearing your role and status filter criteria.
                   </p>
-                  {(bidderSearch || bidderRoleFilter !== 'ALL' || bidderStatusFilter !== 'ALL') && (
+                  {(bidderSearch || bidderRoleFilter !== 'ALL' || bidderStatusFilter !== 'ALL' || memberDealerFilter !== 'ALL') && (
                     <button
                       onClick={() => {
                         setBidderSearch('');
                         setBidderRoleFilter('ALL');
                         setBidderStatusFilter('ALL');
+                        setMemberDealerFilter('ALL');
                         setBidderPage(1);
                       }}
                       className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
@@ -1614,6 +1670,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     const isUserAdmin = userItem.role?.toUpperCase() === 'ADMIN';
                     const isUserSeller = userItem.role?.toUpperCase() === 'SELLER';
                     const currentRoleUpper: UserRole = isUserAdmin ? 'ADMIN' : isUserSeller ? 'SELLER' : 'BIDDER';
+                    const linkedDealer = userItem.dealerId ? dealerProfiles[userItem.dealerId] : undefined;
+                    const memberDealer = linkedDealer?.primaryRepresentativeUid === userItem.uid ? linkedDealer : undefined;
                     const userBids = getMemberBids(userItem);
                     const isExpanded = expandedBidderId === userItem.uid;
                     const sellerLots = getSellerLots(userItem.uid, userItem.email);
@@ -1657,17 +1715,18 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                               {userItem.isEmailVerified ? (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800 flex items-center gap-1">
                                   <CheckCircle className="w-3 h-3 text-emerald-400" />
-                                  <span>Verified</span>
+                                  <span>Email verified</span>
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                  <span>Unverified</span>
+                                  <span>Email unverified</span>
                                 </span>
                               )}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
+                              {userItem.dealerId && <div className="flex w-full flex-wrap items-center gap-2"><span>Dealer representative: {memberDealer?.dbaName || memberDealer?.legalBusinessName || userItem.dealerId}</span><AdminDealerStatus profile={memberDealer} now={dealerNow} unavailable={dealerStatusUnavailable} /></div>}
                               <span className="font-mono text-[11px] text-zinc-300">{userItem.email}</span>
                               {userItem.phone && <span>Phone: <strong className="text-zinc-300">{userItem.phone}</strong></span>}
                               {userItem.registeredAt && (
@@ -1712,7 +1771,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 : 'bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border-emerald-700 font-bold'
                             } disabled:opacity-40`}
                           >
-                            {userItem.isEmailVerified ? 'Mark Unverified' : 'Verify Email'}
+                            {userItem.isEmailVerified ? 'Mark email unverified' : 'Verify Email'}
                           </button>
 
                           {/* Ban / Unban Toggle */}
@@ -2092,6 +2151,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   )}
                 </div>
 
+                <SellerTypeFilter label="Consignment seller type" value={consignmentSellerFilter} onChange={value => { setConsignmentSellerFilter(value); setConsignmentPage(1); }} />
                 {/* Master Select All and Status Filter Tabs */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900 rounded-xl border border-zinc-800 text-xs text-zinc-300">
@@ -2146,11 +2206,12 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                 <p className="text-xs text-zinc-500 max-w-sm mx-auto">
                   No submissions match your active filter and search terms.
                 </p>
-                {(consignmentSearch || consignmentStatusFilter.toLowerCase() !== 'all') && (
+                {(consignmentSearch || consignmentStatusFilter.toLowerCase() !== 'all' || consignmentSellerFilter !== 'ALL') && (
                   <button
                     onClick={() => {
                       setConsignmentSearch('');
                       setConsignmentStatusFilter('pending');
+                      setConsignmentSellerFilter('ALL');
                       setConsignmentPage(1);
                     }}
                     className="px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 cursor-pointer"
@@ -2167,6 +2228,8 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   const isApproved = appStatus === 'approved' || Boolean(app.convertedAuctionId);
                   const isRejected = appStatus === 'rejected' || appStatus === 'declined';
                   const convertedAuctionId = app.convertedAuctionId;
+                  const verificationCase = dealerCases[dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`]];
+                  const applicationDealer = dealerProfiles[verificationCase?.dealerId || app.dealerId || allAuctions.find(lot => lot.id === app.convertedAuctionId)?.dealerId || ''];
 
                   // Member Auto-Link Badge (ADMIN / BIDDER / GUEST)
                   const memberBadge = app.registeredUserRole 
@@ -2213,6 +2276,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                             </span>
                           )}
 
+                          {app.applicantType === 'dealer' && <span className="rounded border border-zinc-600 px-2 py-0.5 text-xs text-zinc-300">Dealer application</span>}
                           {/* Auto-link Member Badge */}
                           <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                             memberBadge === 'ADMIN'
@@ -2221,7 +2285,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                               ? 'bg-blue-950 text-blue-300 border border-blue-800'
                               : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
                           }`}>
-                            {memberBadge}
+                            {memberBadge === 'GUEST' ? 'Submitted as guest' : `Submitted as ${memberBadge.toLowerCase()}`}
                           </span>
 
                           {/* Status Badge */}
@@ -2241,6 +2305,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                           <div className="space-y-0.5">
                             <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold block">Consignor</span>
                             <span className="font-bold text-zinc-200">{app.sellerName}</span>
+                            {app.applicantType === 'dealer' && <div className="space-y-1"><span className="block text-zinc-200">{app.submittedDealershipName || app.dealershipName || 'Dealer application'}</span><AdminDealerStatus profile={applicationDealer} caseStatus={verificationCase?.verificationStatus} now={dealerNow} pending unavailable={dealerStatusUnavailable || dealerCasesUnavailable || !dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`]} /></div>}
                             <span className="block font-mono text-zinc-400 text-[11px] truncate">{app.sellerEmail}</span>
                             {app.sellerPhone && <span className="block text-zinc-400">{app.sellerPhone}</span>}
                           </div>
@@ -2450,14 +2515,15 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                     </label>
                   </div>
 
+                  <SellerTypeFilter label="Inventory seller type" value={inventorySellerFilter} onChange={value => { setInventorySellerFilter(value); setInventoryPage(1); }} />
                   {/* Status Filters */}
-                  <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
+                  <div role="group" aria-label="Inventory status filters" className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800 text-xs font-semibold overflow-x-auto">
                     {[
-                      { id: 'all', label: `All (${allAuctions.length})` },
-                      { id: 'draft', label: `Draft (${allAuctions.filter(a => (a.status || 'draft') === 'draft').length})` },
-                      { id: 'pending_review', label: `Pending Review (${allAuctions.filter(a => a.status === 'pending_review').length})` },
-                      { id: 'live', label: `Scheduled / Live (${allAuctions.filter(a => a.status === 'live' || a.status === 'upcoming' || a.status === 'active' || a.status === 'preview').length})` },
-                      { id: 'ended', label: `Ended (${allAuctions.filter(a => a.status === 'ended' || a.status === 'sold' || a.status === 'reserve_not_met').length})` }
+                      { id: 'all', label: `All (${sellerScopedInventory.length})` },
+                      { id: 'draft', label: `Draft (${sellerScopedInventory.filter(a => (a.status || 'draft').toLowerCase() === 'draft').length})` },
+                      { id: 'pending_review', label: `Pending Review (${sellerScopedInventory.filter(a => (a.status || 'draft').toLowerCase() === 'pending_review').length})` },
+                      { id: 'live', label: `Scheduled / Live (${sellerScopedInventory.filter(a => ['live', 'upcoming', 'active', 'preview'].includes((a.status || 'draft').toLowerCase())).length})` },
+                      { id: 'ended', label: `Ended (${sellerScopedInventory.filter(a => ['ended', 'sold', 'reserve_not_met'].includes((a.status || 'draft').toLowerCase())).length})` }
                     ].map((item) => (
                       <button
                         key={item.id}
@@ -2595,6 +2661,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                                 <span className="font-mono text-[10px] text-zinc-400 block truncate max-w-[160px]">
                                   VIN: {lot.vin || '—'}
                                 </span>
+                                {lot.sellerType === 'dealer' && <div className="mb-1 space-y-1"><span className="block text-zinc-300">Dealer-listed · {lot.dealerSnapshot?.displayName || lot.sellerName || 'Dealer'}</span><AdminDealerStatus profile={dealerProfiles[lot.dealerId || '']?.primaryRepresentativeUid === lot.sellerId ? dealerProfiles[lot.dealerId || ''] : undefined} now={dealerNow} unavailable={dealerStatusUnavailable} /></div>}
                                 {lot.sellerName || lot.sellerEmail ? (
                                   <button
                                     type="button"

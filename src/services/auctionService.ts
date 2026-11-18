@@ -2574,6 +2574,7 @@ export interface FetchPaginatedBiddersParams {
   pageSize: number;
   searchQuery?: string;
   roleFilter?: string; // 'ALL' | 'ADMIN' | 'SELLER' | 'BIDDER'
+  dealerFilter?: string;
   banFilter?: string;  // 'ALL' | 'BANNED' | 'VERIFIED'
 }
 
@@ -2581,10 +2582,13 @@ export interface FetchPaginatedConsignmentsParams {
   page: number;
   pageSize: number;
   searchQuery?: string;
+  sellerTypeFilter?: string;
   statusFilter?: string; // 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
 }
 
 export interface PaginatedResult<T> {
+  unfilteredTotal?: number;
+  unfilteredPendingTotal?: number;
   items: T[];
   total: number;
   page: number;
@@ -2600,7 +2604,8 @@ export async function fetchPaginatedBidders({
   pageSize = 10,
   searchQuery = '',
   roleFilter = 'ALL',
-  banFilter = 'ALL'
+  banFilter = 'ALL',
+  dealerFilter = 'ALL'
 }: FetchPaginatedBiddersParams): Promise<PaginatedResult<UserProfile>> {
   try {
     const usersSnap = await getDocs(query(collection(db, 'users'), orderBy('registeredAt', 'desc')));
@@ -2628,6 +2633,8 @@ export async function fetchPaginatedBidders({
       // ignore bidders collection error if it doesn't exist
     }
 
+    const unfilteredTotal = list.length;
+
     // Filter by searchQuery (name, email, phone, uid)
     const cleanSearch = searchQuery.trim().toLowerCase();
     if (cleanSearch) {
@@ -2639,6 +2646,8 @@ export async function fetchPaginatedBidders({
         return name.includes(cleanSearch) || email.includes(cleanSearch) || phone.includes(cleanSearch) || uid.includes(cleanSearch);
       });
     }
+
+    if (dealerFilter !== 'ALL') list = list.filter(user => dealerFilter === 'dealer' ? Boolean(user.dealerId) : !user.dealerId);
 
     // Filter by role
     if (roleFilter && roleFilter !== 'ALL') {
@@ -2667,6 +2676,7 @@ export async function fetchPaginatedBidders({
 
     return {
       items,
+      unfilteredTotal,
       total,
       page: clampedPage,
       pageSize,
@@ -2685,7 +2695,8 @@ export async function fetchPaginatedConsignments({
   page = 1,
   pageSize = 10,
   searchQuery = '',
-  statusFilter = 'ALL'
+  statusFilter = 'ALL',
+  sellerTypeFilter = 'ALL'
 }: FetchPaginatedConsignmentsParams): Promise<PaginatedResult<ConsignmentApplication>> {
   try {
     let list: ConsignmentApplication[] = [];
@@ -2715,6 +2726,9 @@ export async function fetchPaginatedConsignments({
       })) as ConsignmentApplication[];
     }
 
+    const unfilteredTotal = list.length;
+    const unfilteredPendingTotal = list.filter(app => !app.status || app.status.toLowerCase() === 'pending').length;
+
     // Filter by searchQuery across make, model, VIN, and consignor email/name
     const cleanSearch = searchQuery.trim().toLowerCase();
     if (cleanSearch) {
@@ -2728,6 +2742,7 @@ export async function fetchPaginatedConsignments({
         const year = String(app.year || '').toLowerCase();
         const appId = (app.id || '').toLowerCase();
         return (
+          (app.submittedDealershipName || app.dealershipName || '').toLowerCase().includes(cleanSearch) ||
           appId.includes(cleanSearch) ||
           make.includes(cleanSearch) ||
           model.includes(cleanSearch) ||
@@ -2739,6 +2754,8 @@ export async function fetchPaginatedConsignments({
         );
       });
     }
+
+    if (sellerTypeFilter !== 'ALL') list = list.filter(app => (app.applicantType === 'dealer' ? 'dealer' : 'private') === sellerTypeFilter);
 
     // Filter by status
     if (statusFilter && statusFilter.toUpperCase() !== 'ALL') {
@@ -2760,6 +2777,8 @@ export async function fetchPaginatedConsignments({
 
     return {
       items,
+      unfilteredTotal,
+      unfilteredPendingTotal,
       total,
       page: clampedPage,
       pageSize,
