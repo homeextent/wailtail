@@ -74,7 +74,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       }
       if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message.method)) pendingRequests.delete(message.params.requestId);
       if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
-      if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args);
+      if (message.method === 'Runtime.consoleAPICalled' && (message.params.type === 'error' || (message.params.type === 'warning' && message.params.args?.some(arg => String(arg.value).includes('[AuthContext]'))))) browserErrors.push(message.params.args);
       const call = pending.get(message.id);
       if (!call) return;
       pending.delete(message.id);
@@ -859,7 +859,9 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     assert.ok(additional.every(value=>value.dealerId===verified.profile.id && value.registeredUserId===fixture.dealerRepresentativeUid && value.status==='pending'));
     // Individual curator approval reuses the original canonical verification.
     for (const application of additional) {
-      await command('Page.navigate',{url:origin+'/admin?tab=consignments'});
+      await command('Runtime.evaluate', { expression: 'globalThis.__m27AdminNavigation = true' });
+      await command('Page.navigate',{url:origin+'/admin?tab=consignments&actor=admin'});
+      await eventually(async()=> (await command('Runtime.evaluate',{expression:`globalThis.__m27AdminNavigation !== true && location.pathname === '/admin' && document.body.innerText.includes('Consignment Applications Pipeline')`,returnByValue:true})).result.value,Boolean,'new administrator pipeline document');
       await eventually(text,value=>value.includes(application.model),'returning application in admin pipeline');
       await click(`(() => {const row=document.getElementById('consignment-${application.id}');const b=Array.from(row?.querySelectorAll('button')||[]).find(b=>b.textContent==='View application');if(!b)return false;b.click();return true;})()`);
       await eventually(text,value=>value.includes('Dealer eligible: Yes') && value.includes('Returning dealership vehicle.'),'returning curation uses current original case');
@@ -874,6 +876,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate',{url:origin+'/catalog?actor=dealer'});
     await eventually(async()=> (await command('Runtime.evaluate',{expression:`!!document.querySelector('button[title="Account Menu & Activity Hub"]') && document.body.innerText.includes('Vehicle Auction Catalog')`,returnByValue:true})).result.value,Boolean,'returning portfolio signed in');
     await click(`(() => {document.querySelector('button[title="Account Menu & Activity Hub"]').click();return true;})()`);
+    await eventually(text,value=>value.includes('My Vehicle Listings'),'account hub listings menu');
     await click(`(() => {const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('My Vehicle Listings'));if(!b)return false;b.click();return true;})()`);
     await eventually(text,value=>value.includes('Returning Vehicle A')&&value.includes('Returning Vehicle B')&&value.includes('Submit another vehicle'),'both vehicle drafts visible to same bidder representative');
     for(const state of ['expired','suspended','current']) {
