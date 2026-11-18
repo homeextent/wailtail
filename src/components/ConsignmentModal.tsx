@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import vehicleTaxonomyRaw from '../data/vehicleTaxonomy.json';
 import { ConsignmentApplication, UserRole } from '../types';
-import { submitConsignmentApplication, checkUserAccountByEmail } from '../services/auctionService';
+import { submitConsignmentApplication, checkUserAccountByEmail, returningDealerContext, type ReturningDealerContext } from '../services/auctionService';
 import { useAuth } from '../context/AuthContext';
 import { trackConsignmentSubmitted } from '../utils/analytics';
 
@@ -65,7 +65,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
   onOpenLegalModal,
   onOpenHowItWorks
 }) => {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
 
   // Seller FAQ Accordion State (closed by default to avoid layout shifts)
   const [isFaqOpen, setIsFaqOpen] = useState(false);
@@ -159,6 +159,39 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     }
   }, [user]);
 
+  const [returningContext, setReturningContext] = useState<{ uid: string; dealer: ReturningDealerContext | null; failed?: boolean } | null>(null);
+  const [checkingDealer, setCheckingDealer] = useState(false);
+  const [dealerCheckAttempt, setDealerCheckAttempt] = useState(0);
+  const linkedDealer = returningContext?.uid === user?.uid ? returningContext?.dealer : null;
+  const returning = applicantType === 'dealer' && !!linkedDealer;
+  const dealerCheckReady = !user || (!checkingDealer && returningContext?.uid === user.uid && !returningContext.failed);
+  const returningBlocked = applicantType === 'dealer' && (!dealerCheckReady || (returning && linkedDealer?.status !== 'current'));
+  useEffect(() => {
+    if (!isOpen || !user) { if (!user) setReturningContext(null); return; }
+    let cancelled = false;
+    const uid = user.uid;
+    if (!user.emailVerified && !userProfile?.dealerId) {
+      setReturningContext({ uid, dealer: null }); setCheckingDealer(false); return;
+    }
+    setCheckingDealer(true);
+    returningDealerContext().then(dealer => {
+      if (cancelled) return;
+      setReturningContext({ uid, dealer });
+      if (dealer) {
+        setApplicantType('dealer');
+        setSellerName(name => name || dealer.representativeName || user.displayName || '');
+        setSellerEmail(dealer.representativeEmail || user.email || '');
+        setSellerPhone(phone => phone || dealer.representativePhone || '');
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setReturningContext({ uid, dealer: userProfile?.dealerId ? { status: 'unavailable' } : null, failed: true });
+        if (userProfile?.dealerId) setApplicantType('dealer');
+      }
+    }).finally(() => { if (!cancelled) setCheckingDealer(false); });
+    return () => { cancelled = true; };
+  }, [isOpen, user?.uid, user?.emailVerified, userProfile?.dealerId, dealerCheckAttempt]);
+
   const dealerDeclarationsAccepted = DEALER_DECLARATIONS.every(([key]) => declarations[key] === true);
 
   // Derived effective values
@@ -239,6 +272,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     const submittedMake = makeSelection === TAXONOMY_OTHER_CUSTOM ? value('customMake') : makeSelection;
     const submittedModel = modelSelection === TAXONOMY_OTHER_CUSTOM || makeSelection === TAXONOMY_OTHER_CUSTOM ? value('customModel') : modelSelection;
     const submittedGeneration = generationSelection === TAXONOMY_OTHER_CUSTOM || !generationSelection ? value('customGeneration') : generationSelection;
+    if (returningBlocked) { setErrorMsg('Dealership verification is not current. Contact Wailtail for administrator review.'); return; }
     if (!value('year') || !submittedMake || !submittedModel || !value('sellerName') || !value('sellerEmail')) {
       setErrorMsg('Complete the vehicle year, make, model, contact name and email.'); return;
     }
@@ -262,8 +296,8 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
     try {
       const payload = {
         applicantType, termsAccepted: true, declarationVersion: INTAKE_DECLARATION_VERSION,
-        ...(applicantType === 'dealer' ? { ...submittedDealer,
-          submittedLicensingJurisdiction: submittedDealer.submittedLicensingJurisdiction as ConsignmentApplication['submittedLicensingJurisdiction'],
+        ...(applicantType === 'dealer' ? { ...(returning ? {} : { ...submittedDealer,
+          submittedLicensingJurisdiction: submittedDealer.submittedLicensingJurisdiction as ConsignmentApplication['submittedLicensingJurisdiction'] }),
           ...Object.fromEntries(DEALER_DECLARATIONS.map(([key]) => [key, data.has(key)])) } : {}),
         year: value('year'), make: submittedMake, model: submittedModel, generation: submittedGeneration,
         vin: value('vin').toUpperCase(), mileage: value('mileage'),
@@ -274,12 +308,13 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
       };
       const key = JSON.stringify(payload);
       if (submission.current?.key !== key) submission.current = { key, id: crypto.randomUUID() };
-      await submitConsignmentApplication(payload, submission.current.id);
+      await submitConsignmentApplication(payload, submission.current.id, returning);
 
       setSubmitted(true);
       trackConsignmentSubmitted(payload.year, payload.make, payload.model);
     } catch (err: any) {
-      if (err.status === 409) submission.current = null;
+      if (err.status === 409 && !returning) submission.current = null;
+      if (err.status === 409 && returning) setDealerCheckAttempt(value => value + 1);
       console.error('Error submitting consignment application:', err);
       setErrorMsg(err.message || 'Failed to submit consignment. Please check your connection and try again.');
     } finally {
@@ -289,7 +324,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
   const handleReset = () => {
     setSubmitted(false);
-    setApplicantType(initialApplicantType);
+    setApplicantType(linkedDealer ? 'dealer' : initialApplicantType);
     setDealer({ submittedDealershipName: '', submittedDbaName: '', submittedDealerLicenseNumber: '', submittedLicensingJurisdiction: '' });
     setDeclarations({});
     submission.current = null;
@@ -434,17 +469,27 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
               </div>
 
 
-              <fieldset disabled={submitting} className="space-y-3 p-4 rounded-xl border border-slate-700 bg-slate-800/40">
+              <fieldset disabled={submitting || checkingDealer} className="space-y-3 p-4 rounded-xl border border-slate-700 bg-slate-800/40">
                 <legend className="text-sm font-bold px-1">Who is submitting this vehicle?</legend>
                 <div className="flex flex-wrap gap-4">{(['private', 'dealer'] as const).map(type => <label key={type} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="radio" name="applicantType" value={type} checked={applicantType === type}
                     onChange={() => { setApplicantType(type); setDeclarations({}); setErrorMsg(null); }} />
                   {type === 'private' ? 'Private seller' : 'Dealer'}
                 </label>)}</div>
-                {applicantType === 'dealer' && <p className="text-xs text-slate-300">Apply on behalf of a Canadian dealership that owns this vehicle. All business details and declarations are subject to manual review. Submission does not grant verified dealer status.</p>}
+                {applicantType === 'dealer' && !returning && <p className="text-xs text-slate-300">Apply on behalf of a Canadian dealership that owns this vehicle. All business details and declarations are subject to manual review. Submission does not grant verified dealer status.</p>}
               </fieldset>
+              {checkingDealer && <p role="status">Checking your dealership verification…</p>}
+              {applicantType === 'dealer' && !dealerCheckReady && !checkingDealer && <p role="alert">Unable to check your dealership. <button type="button" className="underline" onClick={() => setDealerCheckAttempt(value => value + 1)}>Retry verification check</button></p>}
+              {returning && <section aria-label="Your verified dealership" className="p-4 rounded-xl border border-emerald-700 bg-emerald-950/20 space-y-2">
+                <h3 className="font-bold">Submit another vehicle</h3>
+                <p>{linkedDealer?.name || linkedDealer?.legalBusinessName || 'Your linked dealership'}</p>
+                <p className="text-sm text-slate-300">{[linkedDealer?.city, linkedDealer?.province].filter(Boolean).join(', ')}</p>
+                <p className={linkedDealer?.status === 'current' ? 'text-emerald-300' : 'text-amber-300'}>Dealer verification: {linkedDealer?.status === 'current' ? 'Current' : linkedDealer?.status === 'expired' ? 'Expired' : linkedDealer?.status === 'suspended' ? 'Suspended' : 'Administrator review required'}</p>
+                {linkedDealer?.status === 'current' ? <p className="text-xs text-slate-300">Your dealership profile is already verified. Confirm ownership of this vehicle below; each vehicle receives its own curator review.</p> : <p className="text-sm">New dealership submissions are unavailable. <a className="underline" href="mailto:contact@wailtail.com">Contact Wailtail for administrator review</a>. Your existing listings are retained.</p>}
+              </section>}
               {applicantType === 'dealer' && <fieldset disabled={submitting} className="space-y-4 p-4 rounded-xl border border-emerald-800/60 bg-emerald-950/20">
-                <legend className="text-sm font-bold px-1">Dealership details</legend>
+                <legend className="text-sm font-bold px-1">{returning ? 'Vehicle ownership declarations' : 'Dealership details'}</legend>
+                {!returning && <>
                 <div className="grid sm:grid-cols-2 gap-3">
                   {([['submittedDealershipName', 'Legal business name', 200], ['submittedDbaName', 'Trade name / DBA (optional)', 200], ['submittedDealerLicenseNumber', 'Dealer licence number', 100]] as const).map(([key, label, max]) => <label key={key} className="text-xs font-semibold text-slate-300">{label}{key !== 'submittedDbaName' && <span className="text-red-500"> *</span>}
                     <input type="text" name={key} aria-label={label} value={dealer[key]} maxLength={max} required={key !== 'submittedDbaName'} onChange={event => setDealer({ ...dealer, [key]: event.target.value })} className="block mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white text-sm" />
@@ -455,7 +500,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                     </select>
                   </label>
                 </div>
-                <p className="text-xs text-slate-400">Licence details are collected privately for administrative review.</p>
+                <p className="text-xs text-slate-400">Licence details are collected privately for administrative review.</p></>}
                 <fieldset className="space-y-3"><legend className="font-semibold text-sm mb-2">Required dealer declarations <span className="text-red-500">*</span></legend>
                   <p className="text-xs text-slate-300">All three declarations must be checked before you can submit a dealer application.</p>
                   {DEALER_DECLARATIONS.map(([key, wording]) => <label key={key} className="flex gap-2 text-xs text-slate-300 cursor-pointer"><input className="mt-0.5" type="checkbox" name={key} aria-label={wording} required checked={declarations[key] === true} onChange={event => setDeclarations({ ...declarations, [key]: event.target.checked })} /><span>{wording}</span></label>)}
@@ -778,7 +823,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
                       type="email"
                       placeholder="e.g. alex@example.com"
                       aria-label={applicantType === 'dealer' ? 'Representative email' : 'Email address'}
-                      name="sellerEmail" value={sellerEmail}
+                      name="sellerEmail" value={sellerEmail} readOnly={returning}
                       onChange={(e) => setSellerEmail(e.target.value)}
                       onBlur={handleEmailBlur}
                       className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder:text-slate-500 text-base sm:text-sm focus:ring-2 focus:ring-red-600 focus:outline-none"
@@ -929,7 +974,7 @@ export const ConsignmentModal: React.FC<ConsignmentModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={submitting || !hasAgreedToTerms || (applicantType === 'dealer' && !dealerDeclarationsAccepted)}
+                  disabled={submitting || returningBlocked || !hasAgreedToTerms || (applicantType === 'dealer' && !dealerDeclarationsAccepted)}
                   className="min-h-[44px] px-5 sm:px-6 py-2.5 rounded-xl bg-red-700 hover:bg-red-600 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" />

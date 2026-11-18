@@ -74,14 +74,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       }
       if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message.method)) pendingRequests.delete(message.params.requestId);
       if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
-      if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args);
+      if (message.method === 'Runtime.consoleAPICalled' && (message.params.type === 'error' || (message.params.type === 'warning' && message.params.args?.some(arg => String(arg.value).includes('[AuthContext]'))))) browserErrors.push(message.params.args);
       const call = pending.get(message.id);
       if (!call) return;
       pending.delete(message.id);
       if (message.error) call.reject(new Error(JSON.stringify(message.error)));
       else call.resolve(message.result);
     });
-    const command = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
+    const sendCommand = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => { pending.delete(id); reject(new Error('Chrome command timed out: ' + method)); }, 15000);
       pending.set(id, {
@@ -90,6 +90,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       });
       socket!.send(JSON.stringify({ id, method, params }));
     });
+    const command = async (method: string, params: object = {}) => {
+      if (method === 'Page.navigate') {
+        await sendCommand('Runtime.evaluate', {
+          expression: 'globalThis.__closeTestFirestore?.()', awaitPromise: true, returnByValue: true
+        });
+      }
+      return sendCommand(method, params);
+    };
     const text = async () => {
       const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
       return String(result.result?.value || '');
@@ -487,7 +495,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
     await command('Page.navigate', { url: origin + '/admin?tab=consignments' });
     await eventually(text, value => value.includes('Dealer Fixture'), 'dealer pipeline');
     await eventually(text, value => value.includes('Dealer application') && value.includes('Dealer verification: Pending verification'), 'unverified dealer application is distinct from account role');
-    const applicationOverview = await overviewCounts();
+    const applicationOverview = await eventually(overviewCounts, values => values.length === 3 && values.every(value => Number(value) > 0), 'full overview loaded before application filters');
     await fill('select[aria-label="Consignment seller type"]', 'private', true);
     await eventually(text, value => value.includes('Private browser owner') && !value.includes('Dealer Fixture'), 'private application filter');
     await fill('select[aria-label="Consignment seller type"]', 'dealer', true);
@@ -828,6 +836,67 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       assert.ok(!unavailable.includes('Synthetic public description'));
       const title = await command('Runtime.evaluate', { expression: 'document.title', returnByValue: true });
       assert.equal(title.result.value, 'Listing unavailable — Wailtail');
+    }
+
+
+    // M2.7: returning representative never repeats business onboarding.
+    const returningRecords = async () => (await fetch(origin + '/returning-intake-fixture')).json();
+    const openReturning = async () => {
+      await command('Runtime.evaluate', { expression: 'globalThis.__m27Navigation = true' });
+      await command('Page.navigate', { url: origin + '/catalog?actor=dealer' });
+      await eventually(async () => (await command('Runtime.evaluate', { expression: `globalThis.__m27Navigation !== true && document.readyState !== 'loading' && !!document.querySelector('button[title="Account Menu & Activity Hub"]') && document.body.innerText.includes('Vehicle Auction Catalog')`, returnByValue:true })).result.value, Boolean, 'returning representative catalog');
+      await click(`(() => { const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Sell Your Vehicle');if(!b)return false;b.click();return true;})()`);
+      await eventually(text, value=>value.includes('Submit another vehicle') && value.includes('Dealer verification:'), 'canonical returning dealership summary');
+    };
+    for (const model of ['Returning Vehicle A','Returning Vehicle B']) {
+      await openReturning();
+      await eventually(text, value=>value.includes('Dealer verification: Current'), 'current canonical dealership');
+      const businessFields = await command('Runtime.evaluate',{expression:`!!document.querySelector('input[name="submittedDealerLicenseNumber"]') || !!document.querySelector('input[name="submittedDealershipName"]')`,returnByValue:true});
+      assert.equal(businessFields.result.value,false,'no repeated legal business/licence inputs');
+      await fill('select[aria-label="Vehicle year"]','1988',true);
+      await fill('select[aria-label="Vehicle make"]','OTHER_CUSTOM',true);
+      await fill('input[placeholder="Enter custom make..."]','Synthetic');
+      await fill('input[placeholder="Enter custom model..."]',model);
+      await fill('input[name="sellerName"]','Returning Representative');
+      await fill('input[name="sellerPhone"]','9055550123');
+      await click(`(() => {for(const name of ['dealershipOwnershipDeclaration','legalSellerOfRecordDeclaration','noBrokeredInventoryDeclaration','termsAccepted']){const b=document.querySelector('input[name="'+name+'"]');if(!b)return false;b.click();}return true;})()`);
+      await submitIntake();
+      await eventually(text,value=>value.includes('Consignment Request Received!'), 'returning vehicle submitted independently');
+    }
+    const additional = await eventually(returningRecords, value=>value.length===2,'two returning applications persisted');
+    assert.ok(additional.every(value=>value.dealerId===verified.profile.id && value.registeredUserId===fixture.dealerRepresentativeUid && value.status==='pending'));
+    // Individual curator approval reuses the original canonical verification.
+    for (const application of additional) {
+      await command('Runtime.evaluate', { expression: 'globalThis.__m27AdminNavigation = true' });
+      await command('Page.navigate',{url:origin+'/admin?tab=consignments&actor=admin'});
+      await eventually(async()=> (await command('Runtime.evaluate',{expression:`globalThis.__m27AdminNavigation !== true && location.pathname === '/admin' && document.body.innerText.includes('Consignment Applications Pipeline')`,returnByValue:true})).result.value,Boolean,'new administrator pipeline document');
+      await eventually(text,value=>value.includes(application.model),'returning application in admin pipeline');
+      await click(`(() => {const row=document.getElementById('consignment-${application.id}');const b=Array.from(row?.querySelectorAll('button')||[]).find(b=>b.textContent==='View application');if(!b)return false;b.click();return true;})()`);
+      await eventually(text,value=>value.includes('Dealer eligible: Yes') && value.includes('Returning dealership vehicle.'),'returning curation uses current original case');
+      assert.ok(!(await text()).includes('Manage dealer verification'),'new vehicle cannot create a competing verification case');
+      await fill('textarea[aria-label="Dealer vehicle approval reason"]','Synthetic independent returning vehicle approval');
+      await click(`(() => {document.querySelector('input[aria-label="Confirm dealer vehicle approval"]').click();return true;})()`);
+      await click(`(() => {const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Approve vehicle and create dealer draft');if(!b||b.disabled)return false;b.click();return true;})()`);
+      await eventually(text,value=>value.includes('Dealer draft created.'),'returning draft approved separately');
+    }
+    const ready = await eventually(returningRecords,value=>value.every(v=>v.convertedAuctionId),'two returning drafts linked');
+    assert.notEqual(ready[0].convertedAuctionId,ready[1].convertedAuctionId);
+    await command('Page.navigate',{url:origin+'/catalog?actor=dealer'});
+    await eventually(async()=> (await command('Runtime.evaluate',{expression:`!!document.querySelector('button[title="Account Menu & Activity Hub"]') && document.body.innerText.includes('Vehicle Auction Catalog')`,returnByValue:true})).result.value,Boolean,'returning portfolio signed in');
+    await click(`(() => {document.querySelector('button[title="Account Menu & Activity Hub"]').click();return true;})()`);
+    await eventually(text,value=>value.includes('My Vehicle Listings'),'account hub listings menu');
+    await click(`(() => {const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.includes('My Vehicle Listings'));if(!b)return false;b.click();return true;})()`);
+    await eventually(text,value=>value.includes('Returning Vehicle A')&&value.includes('Returning Vehicle B')&&value.includes('Submit another vehicle'),'both vehicle drafts visible to same bidder representative');
+    for(const state of ['expired','suspended','current']) {
+      const response=await fetch(origin+'/returning-dealer-state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})});
+      assert.equal(response.status,200);
+      await openReturning();
+      await eventually(text,value=>value.includes('Dealer verification: '+state[0].toUpperCase()+state.slice(1)), 'returning dealer lifecycle '+state);
+      if(state!=='current') {
+        assert.ok((await text()).includes('Contact Wailtail for administrator review'));
+        const blocked=await command('Runtime.evaluate',{expression:`document.querySelector('button[type="submit"]').disabled`,returnByValue:true});
+        assert.equal(blocked.result.value,true);
+      }
     }
 
 

@@ -44,7 +44,7 @@ test('router rejects unknown, nested, prototype and ambiguous endpoint names', a
 
 test('every deployed handler remains reachable and retains its method guard', async () => {
   const names = readdirSync(new URL('../server/api/', import.meta.url)).filter(name => name.endsWith('.ts'));
-  assert.equal(names.length, 34);
+  assert.equal(names.length, 35);
   for (const name of names) {
     const res = response();
     await router({ method: 'DELETE', query: { __endpoint: name.slice(0, -3) }, headers: {} }, res);
@@ -53,7 +53,7 @@ test('every deployed handler remains reachable and retains its method guard', as
 });
 
 test('routed administrator and seller mutations still require credentials', async () => {
-  for (const endpoint of ['auction-member-actions', 'admin-create-auction', 'admin-delete-auction', 'admin-duplicate-auction',
+  for (const endpoint of ['dealer-vehicle-intake', 'auction-member-actions', 'admin-create-auction', 'admin-delete-auction', 'admin-duplicate-auction',
     'admin-reset-auction-bids', 'admin-update-auction', 'seller-draft-narrative', 'place-auction-bid', 'auction-comments']) {
     const res = response();
     await router({ method: 'POST', query: { __endpoint: endpoint }, headers: {}, body: {} }, res);

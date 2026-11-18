@@ -2228,7 +2228,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                   const isApproved = appStatus === 'approved' || Boolean(app.convertedAuctionId);
                   const isRejected = appStatus === 'rejected' || appStatus === 'declined';
                   const convertedAuctionId = app.convertedAuctionId;
-                  const verificationCase = dealerCases[dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`]];
+                  const verificationCase = dealerCases[app.dealerVerificationCaseId || dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`]];
                   const applicationDealer = dealerProfiles[verificationCase?.dealerId || app.dealerId || allAuctions.find(lot => lot.id === app.convertedAuctionId)?.dealerId || ''];
 
                   // Member Auto-Link Badge (ADMIN / BIDDER / GUEST)
@@ -2305,7 +2305,7 @@ export const AdminPortalPage: React.FC<AdminPortalPageProps> = ({
                           <div className="space-y-0.5">
                             <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold block">Consignor</span>
                             <span className="font-bold text-zinc-200">{app.sellerName}</span>
-                            {app.applicantType === 'dealer' && <div className="space-y-1"><span className="block text-zinc-200">{app.submittedDealershipName || app.dealershipName || 'Dealer application'}</span><AdminDealerStatus profile={applicationDealer} caseStatus={verificationCase?.verificationStatus} now={dealerNow} pending unavailable={dealerStatusUnavailable || dealerCasesUnavailable || !dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`]} /></div>}
+                            {app.applicantType === 'dealer' && <div className="space-y-1"><span className="block text-zinc-200">{app.submittedDealershipName || app.dealershipName || 'Dealer application'}</span><AdminDealerStatus profile={applicationDealer} caseStatus={verificationCase?.verificationStatus} now={dealerNow} pending unavailable={dealerStatusUnavailable || dealerCasesUnavailable || !(app.dealerVerificationCaseId || dealerCaseKeys[`${app.reviewSource || 'consignment_applications'}:${app.id}`])} /></div>}
                             <span className="block font-mono text-zinc-400 text-[11px] truncate">{app.sellerEmail}</span>
                             {app.sellerPhone && <span className="block text-zinc-400">{app.sellerPhone}</span>}
                           </div>

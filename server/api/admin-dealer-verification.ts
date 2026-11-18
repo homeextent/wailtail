@@ -91,6 +91,7 @@ export function handleDealerVerification(req: any, res: any, services?: Pick<Fir
     const result = await firestore.runTransaction(async transaction => {
       const application = (await transaction.get(firestore.collection(input.source).doc(input.applicationId))).data();
       if (!application || application.applicantType !== 'dealer') return { status: 404, error: 'dealer-application-not-found' };
+      if (application.intakePath === 'returning_dealer') return { status: 409, error: 'Manage dealership verification through its original application.' };
       const review = (await transaction.get(caseRef)).data() ?? { revision: 0, verificationStatus: 'pending' };
       const dealerId = review.dealerId || application.dealerId || `dealer_${caseId}`;
       if (typeof dealerId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(dealerId)) return { status: 409, error: 'invalid-existing-dealer-link' };

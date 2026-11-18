@@ -22,7 +22,7 @@ const fields = [
   ['noBrokeredInventoryDeclaration', 'No brokered or pass-through inventory declaration'],
   ['declarationVersion', 'Declaration wording version'], ['termsAccepted', 'Ownership and terms accepted']
 ];
-const metadata = new Set(['id', 'reviewSource', 'status', 'submittedAt', 'reviewedAt', 'reviewedBy', 'updatedAt',
+const metadata = new Set(['intakePath', 'dealerVerificationCaseId', 'id', 'reviewSource', 'status', 'submittedAt', 'reviewedAt', 'reviewedBy', 'updatedAt',
   'declarationAcceptedAt', 'convertedAuctionId', 'registeredUserId', 'registeredUserRole', 'isRegisteredUser', 'sellerId',
   'sellerType', 'dealerId', 'dealerSnapshot', 'dealerDocFee', 'taxHandling', 'taxDisclaimerVersion',
   'verifiedAt', 'verifierUid', 'verificationStatus', 'verificationMethod', 'verificationExpiresAt', 'verificationRecordVersion']);
@@ -126,7 +126,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
       <button type="button" onClick={reload} disabled={busy || loading} className="underline">Reload review</button>
       {loading && <p role="status">Loading application…</p>}
       {record && <>
-        {record.applicantType === 'dealer' && <button type="button" className="bg-emerald-800 px-4 py-3 rounded" onClick={() => setVerificationOpen(true)}>Manage dealer verification</button>}
+        {record.applicantType === 'dealer' && record.intakePath !== 'returning_dealer' && <button type="button" className="bg-emerald-800 px-4 py-3 rounded" onClick={() => setVerificationOpen(true)}>Manage dealer verification</button>}
         <p>Status: <strong data-testid="review-status">{record.status || 'pending'}</strong>. Viewing and saving internal notes do not change this status.</p>
         <section aria-label="Applicant-submitted information" className="space-y-3">
           <h3 className="font-bold text-lg">Applicant-submitted information</h3>
@@ -134,6 +134,7 @@ export function ConsignmentReviewModal({ application, user, onClose }: {
           <dl className="grid sm:grid-cols-2 gap-4">{[...fields, ...extraFields.map(key => [key, key])].map(([key, label]) =>
             <div key={key}><dt className="text-sm text-slate-400">{label}</dt><dd className="whitespace-pre-wrap break-words">{display(record[key])}</dd></div>)}</dl>
         </section>
+        {record.applicantType === 'dealer' && record.intakePath === 'returning_dealer' && <p className="text-emerald-300">Returning dealership vehicle. Business verification is reused from the original application; this vehicle still requires its own review.</p>}
         <section aria-label="Administrator verification information" className="border-t border-slate-700 pt-4 space-y-2">
           <h3 className="font-bold text-lg">Administrator verification information</h3>
           {detail.verifiedInformation ? <><p>Existing canonical dealer profile. Status and expiry below are recorded values; reviewing this application does not verify a dealer.</p>
