@@ -81,7 +81,7 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       if (message.error) call.reject(new Error(JSON.stringify(message.error)));
       else call.resolve(message.result);
     });
-    const command = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
+    const sendCommand = (method: string, params: object = {}) => new Promise<any>((resolve, reject) => {
       const id = ++sequence;
       const timer = setTimeout(() => { pending.delete(id); reject(new Error('Chrome command timed out: ' + method)); }, 15000);
       pending.set(id, {
@@ -90,6 +90,14 @@ test('signed-out catalog and lot render, and administrator inventory renders und
       });
       socket!.send(JSON.stringify({ id, method, params }));
     });
+    const command = async (method: string, params: object = {}) => {
+      if (method === 'Page.navigate') {
+        await sendCommand('Runtime.evaluate', {
+          expression: 'globalThis.__closeTestFirestore?.()', awaitPromise: true, returnByValue: true
+        });
+      }
+      return sendCommand(method, params);
+    };
     const text = async () => {
       const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
       return String(result.result?.value || '');
