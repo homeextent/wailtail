@@ -1,10 +1,11 @@
 import React from 'react';
+import { VerifiedDealerBadge } from './VerifiedDealerBadge';
 import type { PublicDealerSummary } from '../types';
 import { DEALER_VERIFICATION_NOTICE, dealerTaxText } from '../utils/dealerPresentation';
 export function PublicDealerDisclosure({ dealer, compact = false }: { dealer?: PublicDealerSummary; compact?: boolean }) {
   if (!dealer) return null;
   return <section aria-label="Dealer information" className={`break-words rounded-lg border border-emerald-200 bg-emerald-50 text-zinc-800 ${compact ? 'p-2 mt-2 text-xs' : 'p-3 sm:p-4 my-4 text-sm space-y-1'}`}>
-    <p className="font-semibold">{dealer.verified ? 'Verified Boutique Dealer' : 'Dealer-listed vehicle'}</p>
+    {dealer.verified ? <div className="mb-1"><VerifiedDealerBadge compact={compact} /></div> : <p className="font-semibold">Dealer-listed vehicle</p>}
     <p>{dealer.name} · {dealer.city}, {dealer.province}{!compact && <span className="text-xs"> (dealership location)</span>}</p>
     {!compact && <>
       {!dealer.verified && <p>Historical dealer attribution. Current WAILTAIL verification is not confirmed.</p>}

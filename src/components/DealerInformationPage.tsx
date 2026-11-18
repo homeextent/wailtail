@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronRight, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight } from 'lucide-react';
 import { trackPageView } from '../utils/analytics';
+import { VerifiedDealerBadge } from './VerifiedDealerBadge';
 import { WailtailLogo } from './WailtailLogo';
 import { ConsignmentModal } from './ConsignmentModal';
 import { LegalModal } from './LegalModal';
@@ -88,7 +89,10 @@ export const DealerInformationPage: React.FC = () => {
             <p className="mt-4 text-xs text-zinc-400">Manual review. No automatic approval or public listing.</p>
           </div>
           <aside aria-label="Founding dealer introductory offer" className="rounded-2xl border border-white/15 bg-white/5 p-6 sm:p-8">
-            <ShieldCheck className="w-8 h-8 text-amber-400 mb-5" aria-hidden="true" />
+            <div className="mb-5 space-y-2" aria-label="Example dealer verification badge">
+              <VerifiedDealerBadge />
+              <p className="text-xs text-zinc-400">Example credential · Awarded following manual verification.</p>
+            </div>
             <h2 className="text-2xl font-serif font-bold">Founding Dealer Introductory Offer</h2>
             <dl className="mt-6 divide-y divide-white/10">
               {[['Dealer listing fee', '$0 CAD'], ['Platform success commission', '0%'], ['Buyer premium', '0%'], ['Dealer documentation fee', '$0 CAD required']].map(([label, value]) => <div key={label} className="flex justify-between gap-4 py-4 text-sm"><dt className="text-zinc-300">{label}</dt><dd className="font-bold text-white text-right">{value}</dd></div>)}

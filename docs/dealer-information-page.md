@@ -41,3 +41,11 @@ Explicit Vercel rewrites route the policy before the SPA fallback; the policy na
 PR #37 accepted head `0e41cac8ba5c0865c427d7fcc18741bf54934df5`, tree `e21449e5cea00061866c9d9de44320698c4cfa27`; exact-head CI run `44214839940` and Vercel passed. Local build/lint and ten focused router/privacy tests passed; full CI included the catalog Selling guide, dealer page/mobile/application and static policy HTTP/body checks. PR #37 merged into staging as `cb76e8355516aebd7a7afa8c791a4bde61503f26`.
 
 Owner explicitly approved staging and main promotion; PR #38 tracks the production release, conditional on final staging/release checks and deployment verification. Do not interpret this source checkpoint as pre-completed production HTTP/browser or Meta approval. Final release SHA, CI/deployment results and live anonymous/crawler checks are recorded in PR #38 once observed.
+
+## Branded badge refinement — proposed
+
+`VerifiedDealerBadge` composes the existing Wailtail whale-tail SVG and styled WAILTAIL wordmark with the contiguous Verified Boutique Dealer label and a small emerald check. Regular and compact sizes share the design. `PublicDealerDisclosure` continues to rely solely on its trusted public `verified` boolean; false/expired/suspended projections retain Dealer-listed vehicle and historical attribution. No new public field, verification check or privilege is introduced. The badge does not assert ownership, mechanical inspection, regulator approval or a guarantee. Existing expanded disclosures remain unchanged.
+
+The dealer information page displays the same badge as an Example credential, with Awarded following manual verification text. It does not confer verification on the visitor. The generic offer-card shield is removed. No exported credential or invitation workflow is added.
+
+Focused rendering tests cover both sizes, missing dealers and current versus historical display. Browser checks verify branded catalog/lot rendering and example qualification while retaining mobile fit and collapsed height ≤270px at a 390px viewport. Owner visual review should inspect both page/catalog sizes, logo clarity, disclosure expansion and the dealer example before merge; use the guarded local harness and fictional data only.

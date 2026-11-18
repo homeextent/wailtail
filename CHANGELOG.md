@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Branded dealer credential
+
+- Reuse the existing whale-tail SVG in a compact dark-slate WAILTAIL Verified Boutique Dealer badge with emerald accents. Provide regular and compact presentation in the shared dealer disclosure; show no credential when current verification is not confirmed.
+- Replace the dealer program offer card's generic shield with a clearly labelled example credential and manual-verification qualification. Preserve existing historical attribution, fee/tax details, disclosure copy and server eligibility rules.
+- Add credential visibility regressions and browser assertions while retaining the 390px mobile overflow/270px collapsed disclosure-height checks.
+
 ### Dealer information and standalone privacy policy — owner accepted
 
 - Owner accepted head `0e41cac8ba5c0865c427d7fcc18741bf54934df5` and approved staging/main promotion. PR #37 merged as `cb76e83`; exact-head CI `44214839940` and Vercel passed. PR #38 tracks the conditional production release. Meta review/submission is not completed by this release.
