@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Documentation synchronization and returning-dealer scope
+
+- Reconcile production status across the core documents and record the November 18 release checkpoint. Preserve earlier acceptance evidence as history; no application version, Git tag, rules, data or deployment change.
+- Add planned M2.7 returning-dealer submissions, secure reuse of canonical affiliation, two-vehicle acceptance and expiry/suspension scenarios. Implementation is outstanding and gates the genuine dealer pilot.
+
+## 2026-11-18 — Production reconciliation checkpoint (through PR #43)
+
+Cumulative record of previously shipped changes below, not a claim that all changes first deployed on November 18. Verified main `89692b5` and staging `1f897fa` share tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`; main CI [44337952571](https://github.com/homeextent/wailtail/actions/runs/44337952571) passed. PR #43 merged November 18 at 10:38 Eastern. No semantic version or GitHub Release is created by this documentation checkpoint.
+
 ### Admin dealer identification
 
 - Scope inventory status-tab counts to the selected seller type while preserving global overview/navigation totals; cover dealer/private/reset counts in browser regressions.
@@ -27,7 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Dealer information and standalone privacy policy — owner accepted
 
-- Owner accepted head `0e41cac8ba5c0865c427d7fcc18741bf54934df5` and approved staging/main promotion. PR #37 merged as `cb76e83`; exact-head CI `44214839940` and Vercel passed. PR #38 tracks the conditional production release. Meta review/submission is not completed by this release.
+- Owner accepted head `0e41cac8ba5c0865c427d7fcc18741bf54934df5` and approved staging/main promotion. PR #37 merged as `cb76e83`; exact-head CI `44214839940` and Vercel passed. Production promotion followed in PR #38. The owner subsequently reported submitting the policy URL to Meta; review acceptance has not been reported.
 - Add a shareable `/dealers` page with eligibility, manual application/verification and curation steps, current zero-fee CAD model, privacy and settlement guidance, and FAQs. Add Selling on Wailtail and footer discovery links; omit the standalone header/mobile link at owner request. Clarify introductory pricing versus the mandatory zero dealer documentation fee, and collector-focused curation criteria.
 - Serve `/privacy-policy/` as build-generated static HTML from the same policy source as the modal; include access/correction/deletion request guidance. Add real footer links, explicit hosting routes and PWA fallback exclusion. No Meta dashboard submission or compliance approval is claimed.
 - Open the existing combined dealer/vehicle intake with Dealer selected, retaining private seller defaults elsewhere. Support mobile layout, dialog focus containment/return and legal/selling guidance without creating applications on page load.
@@ -251,19 +260,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Optional Resend dependency typing (`api/send-consignment-email.ts`)**: Replaced the suppression directive with a documented `@ts-expect-error`, preserving the optional SDK import and existing HTTP API fallback.
 - **Verified staging CI run**: GitHub Actions run [#42092748121](https://github.com/homeextent/wailtail/actions/runs/42092748121) completed successfully for commit [`a28f8b0`](https://github.com/homeextent/wailtail/commit/a28f8b0eaabbaeacd285a2b268212884d4c0bb07). The run passed the production build/TypeScript checks, ESLint, **41 endpoint tests**, and **126 Firestore security rules tests**. This is CI validation evidence for the staging commit, not production deployment or production security sign-off.
 
-### Next Milestone
-- **M2.1 — Administrative Consignment Application Review**: ACCEPTED ON STAGING. Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
+### Historical milestone delivery — current release status
+- **M2.1 — Administrative Consignment Application Review**: DEPLOYED TO PRODUCTION (original staging acceptance retained in the milestone guides). Dedicated read-only application detail review, applicant declarations versus verified information, review history, and private administrative notes.
 
 ### Milestone Status
-- **M2.2 — Dealer Application and Intake**: ACCEPTED ON STAGING. Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
-- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: ACCEPTED ON STAGING. Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
-- **M2.4 — Dealer Vehicle Listing Integration**: ACCEPTED ON STAGING. Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
-- **M2.5 — Public Dealer Presentation and Auction Integration**: ACCEPTED ON STAGING. Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
+- **M2.2 — Dealer Application and Intake**: DEPLOYED TO PRODUCTION (original staging acceptance retained in the milestone guides). Dealer applicant classification, licensing information, authorized representative, exclusive ownership and legal seller-of-record declarations, and appropriate validation.
+- **M2.3 — Manual Dealer Verification and Canonical Profile Creation**: DEPLOYED TO PRODUCTION (original staging acceptance retained in the milestone guides). Manual administrator verification, canonical `dealer_profiles` creation, verification audit records, expiry/suspension handling, and separation of verification from lot curation.
+- **M2.4 — Dealer Vehicle Listing Integration**: DEPLOYED TO PRODUCTION (original staging acceptance retained in the milestone guides). Approved dealer attribution, protected `dealerId` assignment, `dealerSnapshot` creation, and integration with existing auction draft and listing workflows.
+- **M2.5 — Public Dealer Presentation and Auction Integration**: DEPLOYED TO PRODUCTION (original staging acceptance retained in the milestone guides). Public dealer identity, approved dealer badges, privacy-conscious disclosures, conditional phone/website visibility, and dealer-specific social marketing templates.
 - **M2.6 — Optional Private Application Photo Uploads**: PLANNED — SEPARATELY GATED. Optional JPEG/PNG/WebP uploads, private Firebase Storage access, applicant/admin authorization, secure transfer into listing workflows, and orphan cleanup. Not a prerequisite for completion of the core dealer program.
 
 ---
 
 ## 2026-11-05 — Trusted Server-Side Role Authorization (M2.0B Milestone & Security Corrections)
+
+Historical checkpoint: staging-only status and unresolved deployment gates in this dated entry were superseded by the November 16–18 production evidence above. Retained test counts describe that historical revision.
 
 ### M2.0B — Trusted Server-Side Role Authorization & Security Corrections
 
