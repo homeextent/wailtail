@@ -28,48 +28,93 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test CI classifier
+        run: python3 scripts/ci/test_classify.py
+
+      - name: Classify changes
+        id: classify
+        env:
+          CI_EVENT: ${{ github.event_name }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: python3 scripts/ci/classify.py
+
+      - name: Validate documentation changes
+        if: steps.classify.outputs.mode == 'docs'
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: |
+          git diff --check "$CI_BASE" "$CI_HEAD" --
+          python3 - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          paths = subprocess.check_output(["git", "diff", "--name-only", "-z", os.environ["CI_BASE"], os.environ["CI_HEAD"], "--"]).split(b"\0")
+          for path in filter(None, paths):
+              data = Path(os.fsdecode(path)).read_bytes()
+              if not data.strip() or b"\0" in data:
+                  raise SystemExit("Empty or binary documentation")
+              data.decode("utf-8")
+          PY
+
       - name: Set up Node.js
+        if: steps.classify.outputs.mode != 'docs'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Set up Java for Firebase emulators
+        if: steps.classify.outputs.mode != 'docs'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Install dependencies
+        if: steps.classify.outputs.mode != 'docs'
         run: npm ci
 
       - name: Set up Python for offline cutover preparation tests
+        if: steps.classify.outputs.mode != 'docs'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Test read-only cutover preparation with synthetic data
+        if: steps.classify.outputs.mode != 'docs'
         run: |
           python -m pip install -r scripts/storage-cutover-requirements.txt
           python -m unittest discover -s tests -p 'test_storage_cutover*.py' -v
 
       - name: Run production build and TypeScript checks
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run build
 
       - name: Run ESLint
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run lint
 
       - name: Run endpoint tests
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run test:endpoint
 
       - name: Run Firestore security rules tests
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run test:rules
 
       - name: Run isolated auction workflow tests
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run test:seller-emulator
 
       - name: Test final cutover Storage rules in isolation
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run test:cutover-rules
 
       - name: Run isolated auction browser tests
+        if: steps.classify.outputs.mode != 'docs'
         run: npm run test:auction-browser
