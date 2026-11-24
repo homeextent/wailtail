@@ -8,22 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### M2.7 returning-dealer vehicle submissions — implementation candidate
+No pending application changes are recorded in this closeout.
 
-- Add authenticated reuse of the protected canonical dealership and original verification case for additional vehicles, with atomic pending applications/audit/idempotency and fresh ownership declarations.
-- Replace repeat business onboarding with a returning-dealer summary, lifecycle guidance and Submit another vehicle in the account hub. Preserve individual vehicle curation, private drafts, restricted authoring, roles and publication approval.
-- Cover two independent vehicles, expiry/suspension/restoration, authority injection, retries, private media and default-deny audit access. Add opt-in synthetic returning-dealer preview; wait for the full loaded overview before testing application filters. Local build/lint/161 endpoints and focused two-vehicle emulator acceptance passed; full CI/owner visual review outstanding. No live data/rules changes or production deployment.
+## 2026-11-18 — M2.7 returning-dealer production release
 
+- Reuse the protected canonical dealership and original verification case for additional vehicles, with atomic pending applications/audit/idempotency and fresh ownership declarations. Replace repeated business onboarding with a read-only dealership summary and Submit another vehicle; preserve separate vehicle approval, private drafts, restricted authoring and publication approval.
+- Owner accepted two fictional vehicle submissions, independent approvals and both drafts in the representative portfolio. Automated acceptance passed expiry/suspension/restoration, authority injection, retries/concurrency, private media and default-deny audit access. Build/lint, 161 endpoint tests, 138 rules tests, seven workflow emulator tests and browser regression passed.
+- Staging PR #47 merged as `3a40c75`; staging CI [44423353840](https://github.com/homeextent/wailtail/actions/runs/44423353840) passed. Production PR #48 deployed main `5975ec7`; main CI [44424502850](https://github.com/homeextent/wailtail/actions/runs/44424502850) passed. Vercel production READY and live smoke checks passed. No Firebase rule publication, data migration or fictional listing publication occurred.
+- Genuine founding-dealer pilot and remaining operational evidence remain outstanding; optional M2.6 stays deferred. This dated release record creates no semantic version or GitHub Release.
 
-### Public reserve display correction — proposed
+### Public reserve display correction — released before M2.7
 
-- Derive a public reserve-presence indicator without publishing the hidden dollar amount. Share explicit reserve status across catalog, lot header and sticky bar; missing/malformed values never imply No Reserve. Cover public/admin parity, actual zero reserves and withheld amounts. No reserve amounts, rules or live records are modified.
+- PR #46 deployed main `1a65e83`; main CI [44410362043](https://github.com/homeextent/wailtail/actions/runs/44410362043) passed after owner visual acceptance. Expose reserve presence without the private dollar amount; share status across catalog, header and sticky bar. Missing/malformed presence never implies No Reserve. No live reserve records or rules changed.
 
+### Documentation history
 
-### Documentation synchronization and returning-dealer scope
-
-- Reconcile production status across the core documents and record the November 18 release checkpoint. Preserve earlier acceptance evidence as history; no application version, Git tag, rules, data or deployment change.
-- Add planned M2.7 returning-dealer submissions, secure reuse of canonical affiliation, two-vehicle acceptance and expiry/suspension scenarios. Implementation is outstanding and gates the genuine dealer pilot.
+- The earlier scope-only cleanup introduced M2.7 as planned work; its outstanding status is superseded by the release evidence above. The November 18 reconciliation checkpoint below preserves earlier production history.
 
 ## 2026-11-18 — Production reconciliation checkpoint (through PR #43)
 
