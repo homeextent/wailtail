@@ -1,6 +1,6 @@
 # Phase 1 production-readiness review
 
-> **November 18 update:** Original M2.1–M2.5 functionality is deployed. M2.7 returning-dealer submissions is an implementation candidate, pending full CI and owner acceptance, and required before the genuine dealer pilot: one dealership must submit/manage two vehicles with expiry, suspension and restoration acceptance. See [scope and acceptance](m2-7-returning-dealer-submissions.md). Earlier readiness checkpoints below retain their dated meaning.
+> **November 18 update:** Original M2.1–M2.5 functionality and M2.7 returning-dealer submissions are deployed. M2.7 owner two-vehicle acceptance, full CI and production deployment completed via PR #48, main `5975ec7`. Expiry, suspension and restoration acceptance passed in guarded synthetic tests. The genuine 3–5 dealership pilot and remaining operational evidence are still outstanding; M2.6 remains separately deferred. See [acceptance and release evidence](m2-7-returning-dealer-submissions.md). Earlier checkpoints below retain their dated meaning.
 
 > Current status: [November 17 production acceptance](phase1-production-acceptance-2026-11-17.md) supersedes staging-only/pending rollout language below. The original review is retained as dated development history. PRs #26/#27 are released; the separate Draft images panel was removed in favor of Hero/Gallery controls, with multiple JPG/PNG and gallery PDF support. Controlled live acceptance and notification activation are recorded separately; the genuine dealer pilot remains outstanding.
 
