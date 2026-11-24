@@ -80,12 +80,12 @@ These paths record the owner's reported setup. Other developers should use their
 
 | Location or reference | State and purpose |
 |---|---|
-| `/media/jeremy/MEDIA1/GITHUB/wailtail-staging` | Active linked development worktree; clean staging at `1bf4d6a` after PR #3. It will advance with later merges. |
-| `/media/jeremy/MEDIA1/GITHUB/wailtail-auction` | Primary shared repository; clean detached checkout at `02ff8b7`, not a confirmed main checkout. Retain it while linked staging depends on it. |
+| `/media/jeremy/MEDIA/dev/repos/wailtail-staging` | Active linked development worktree; clean staging at `1bf4d6a` after PR #3. It will advance with later merges. |
+| `/media/jeremy/MEDIA/dev/repos/wailtail-auction` | Primary shared repository; clean detached checkout at `02ff8b7`, not a confirmed main checkout. Retain it while linked staging depends on it. |
 | Shared stash: `Archived local seller edits already included in staging 1bf4d6a` | Two tracked seller edits preserved; their equivalent changes are already in staging. Stash numbers can change. |
 | Local branch `archive/review-worker-22f3850` | Preserves the retired worker-test commit. Not automatically pushed. |
-| `/media/jeremy/MEDIA1/GITHUB/wailtail-worker-backup-7FT0Vp/worktree.tar.gz` | Verified private worker archive, including local settings. Worker worktree removed. |
-| `/media/jeremy/MEDIA1/GITHUB/wailtail-rehearsal-backup-lOPuPE/worktree.tar.gz` | Verified rehearsal source/scripts/manifest/log archive; generated dependencies/build output excluded. Rehearsal worktree removed. |
+| `/media/jeremy/MEDIA/dev/archive/wailtail-worker-backup-TFTDvp/worktree.tar.gz` | Verified private worker archive, including local settings. Worker worktree removed. |
+| `/media/jeremy/MEDIA/dev/archive/wailtail-rehearsal-backup-iCFuFE/worktree.tar.gz` | Verified rehearsal source/scripts/manifest/log archive; generated dependencies/build output excluded. Rehearsal worktree removed. |
 | Same rehearsal backup directory: `rehearsal-history.bundle` | Verified complete history containing `security/stage3-closeout` at `f28702d`. |
 
 The only remaining registered worktrees at housekeeping completion were the primary repository and active staging. GitHub still retained `security/auction-security-gate`, `test/review-worker-https` and `security/stage3-closeout`; removal of local worktrees did not retire remote branches. PR #2 remained open and separate. Recheck current remote state before any future branch/PR cleanup.
