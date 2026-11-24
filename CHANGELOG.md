@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-No pending application changes are recorded in this closeout.
+- CI-01 candidate: conservative documentation-only CI path with classifier regression coverage; full application/security suite retained. See [CI change-aware validation](docs/ci-change-aware.md). Staging acceptance and production promotion pending.
 
 ## 2026-11-18 — M2.7 returning-dealer production release
 
