@@ -2375,11 +2375,11 @@ The Wailtail Verified Boutique Dealer Program establishes an institutional-grade
 - **M2.0B**: trusted authorization/security implementation deployed in production; the November 16 application/rules cutover supersedes its former staging-only release status. Account-deletion protections remain deployed; no destructive deletion retest was performed during this closeout.
 - **M2.1–M2.5**: implemented, accepted on staging and deployed; controlled dealer production acceptance completed as documented in [November 17 evidence](docs/phase1-production-acceptance-2026-11-17.md). Original milestone scope and earlier acceptance records remain unchanged.
 - **M2.6 — Optional Private Application Photo Uploads**: explicitly deferred and decoupled from core release. Existing draft listing uploads do not satisfy initial-application uploads.
-- **M2.7 — Returning-dealer vehicle submissions**: IMPLEMENTATION CANDIDATE; local endpoint and focused two-vehicle emulator checks passed; full CI and owner visual acceptance outstanding. Required before the genuine dealer pilot; see [scope and acceptance](docs/m2-7-returning-dealer-submissions.md).
+- **M2.7 — Returning-dealer vehicle submissions**: DEPLOYED TO PRODUCTION; owner two-vehicle acceptance and full CI passed. Released November 18 in PR #48, main `5975ec7`; see [scope and acceptance](docs/m2-7-returning-dealer-submissions.md).
 - **Founding Dealer Pilot**: outstanding/ongoing; 3–5 genuine dealerships and all six KPIs remain required. Fictional technical acceptance is not a genuine pilot.
-- **Formal Phase 1 completion**: not declared. Section 11.7 includes the returning-dealer readiness requirement; production evidence does not waive that requirement or the pilot.
+- **Formal Phase 1 completion**: not declared. The M2.7 readiness requirement is satisfied by the documented synthetic acceptance and production deployment; the genuine pilot and remaining operational evidence are not waived.
 
-Current production main `89692b5` (PR #43) and staging `1f897fa` share tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`; main CI `44337952571` passed. The November 17 acceptance record retains its historical PR #34 baseline. Notification scheduling is enabled and scheduled execution succeeded; controlled inbox delivery passed. Actual auction settlement-to-inbox remains normal-operation observation, not a completed live financial test. Historical staging checkpoint language elsewhere in this document describes its original dated acceptance, not the current release status.
+Production release [PR #48](https://github.com/homeextent/wailtail/pull/48) deployed main `5975ec7` on November 18, 2026. [Main CI 44424502850](https://github.com/homeextent/wailtail/actions/runs/44424502850) passed; Vercel production was READY and serving both public domains. Owner local acceptance confirmed two distinct applications, independent approvals and both drafts in My Vehicle Listings. Automated acceptance covered expiry, suspension, restoration, private media, access isolation and safe retries/concurrency. No live dealer records or Firebase rules were changed by this release. The accepted staging integration was `3a40c75` (PR #47), with CI `44423353840` passed; its source contents match the production release. The November 17 acceptance record retains its historical PR #34 baseline. Notification scheduling is enabled and scheduled execution succeeded; controlled inbox delivery passed. Actual auction settlement-to-inbox remains normal-operation observation, not a completed live financial test. Historical staging checkpoint language elsewhere in this document describes its original dated acceptance, not the current release status.
 
 ### 11.2 Phase 1 Strategic Objectives
 1. **Curated Commercial Integrity**: Support licensed Canadian boutique automotive dealers with curated collector inventory while preserving Wailtail's enthusiast-first, peer-to-peer auction culture.
@@ -2420,12 +2420,12 @@ To ensure execution velocity and regulatory clarity, Phase 1 strictly enforces t
 | M2.1 | Administrator consignment review | Deployed to production |
 | M2.2 | Initial dealer application intake | Deployed to production |
 | M2.3 | Manual verification and canonical profiles | Deployed to production |
-| M2.4 | Dealer vehicle listing integration | Deployed to production; returning-dealer gap tracked in M2.7 |
+| M2.4 | Dealer vehicle listing integration | Deployed to production; additional-vehicle workflow completed in M2.7 |
 | M2.5 | Public dealer presentation | Deployed to production |
 | M2.6 | Optional initial-application photos | Deferred; independently gated |
-| M2.7 | Returning-dealer submissions and two-vehicle acceptance | Implementation candidate; required before genuine pilot |
+| M2.7 | Returning-dealer submissions and two-vehicle acceptance | Accepted and deployed to production via PR #48 |
 
-The milestone details below preserve original staging acceptance evidence and implementation boundaries. Statements that a particular historical PR did not deploy production/rules describe that PR only; the November 16–18 production evidence in Section 11.1 supersedes those release gates. M2.7 is a new readiness requirement and is not covered by the earlier acceptance.
+The milestone details below preserve original staging acceptance evidence and implementation boundaries. Statements that a particular historical PR did not deploy production/rules describe that PR only; the November 16–18 production evidence in Section 11.1 supersedes those release gates. M2.7 has separate November 18 acceptance and release evidence in its linked guide; earlier acceptance alone did not cover it.
 
 
 #### M1.0 — Dealer Foundation and Data Architecture
@@ -2607,10 +2607,10 @@ Implementation contract:
 - **Exit Criteria**: Applicants can optionally upload images; unauthenticated or unauthorized users cannot access uploaded photos; binary data is never stored in Firestore; core dealer program can launch with or without M2.6.
 
 #### M2.7 — Returning-dealer Vehicle Submissions
-- **Status**: **IMPLEMENTATION CANDIDATE — November 18, 2026; full CI and owner acceptance outstanding**.
+- **Status**: **DEPLOYED TO PRODUCTION — November 18, 2026; owner acceptance and full CI passed**.
 - **Objective**: Reuse one current canonical dealership/representative for separately reviewed additional vehicle applications, without repeating business onboarding or creating conflicting verification cases.
 - **Acceptance**: One dealership submits and manages two independent vehicles; persist each vehicle's narrative/media after refresh; preserve individual approval/publication and assigned-UID access. Exercise expiry, suspension, renewal/restoration, forged identity, retries and concurrent verification changes.
-- **Dependencies and release boundary**: Preserve original M2.1–M2.5 contracts, private media, protected fields and existing role model. Required before the genuine dealer pilot and formal Phase 1 completion. Optional M2.6 remains independent. See [full contract](docs/m2-7-returning-dealer-submissions.md). The candidate adds a trusted intake endpoint and original-case association, while preserving per-vehicle curation and existing dealer eligibility guards. Build/lint/161 endpoint tests and focused two-vehicle emulator acceptance passed locally. No live data/rules changes or production release is claimed. See the linked guide for the exact implementation and preview command.
+- **Dependencies and release boundary**: Preserve original M2.1–M2.5 contracts, private media, protected fields and existing role model. Required before the genuine dealer pilot and formal Phase 1 completion. Optional M2.6 remains independent. See [full contract](docs/m2-7-returning-dealer-submissions.md). The release adds a trusted intake endpoint and original-case association, while preserving per-vehicle curation and existing dealer eligibility guards. Build/lint/161 endpoint tests, 138 rules tests, seven workflow emulator tests and browser acceptance passed. Production release [PR #48](https://github.com/homeextent/wailtail/pull/48) deployed main `5975ec7` on November 18, 2026. [Main CI 44424502850](https://github.com/homeextent/wailtail/actions/runs/44424502850) passed; Vercel production was READY and serving both public domains. Owner local acceptance confirmed two distinct applications, independent approvals and both drafts in My Vehicle Listings. Automated acceptance covered expiry, suspension, restoration, private media, access isolation and safe retries/concurrency. No live dealer records or Firebase rules were changed by this release. See the linked guide for the exact implementation and preview command.
 
 
 ### 11.5 Release Governance & Quality Gates

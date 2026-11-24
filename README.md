@@ -1,13 +1,13 @@
 # Wailtail Collector Car Auction Platform
 
-## M2.7 returning-dealer submissions — implementation candidate
+## M2.7 returning-dealer submissions — deployed to production
 
-The feature branch adds Submit another vehicle for an existing authorized dealership representative. Business verification is reused through trusted profile/case links; new vehicles retain separate declarations, review, draft authoring and publication approval. Expiry/suspension blocks new submissions and restricted dealer mutations, while preserving existing records. Local endpoint and focused two-vehicle emulator checks passed; full CI and owner visual acceptance remain outstanding. See [implementation and acceptance](docs/m2-7-returning-dealer-submissions.md). Use `npm run test:returning-dealer-browser` for the isolated synthetic review. No production changes are claimed.
+The deployed workflow provides Submit another vehicle for an existing authorized dealership representative. Business verification is reused through trusted profile/case links; new vehicles retain separate declarations, review, draft authoring and publication approval. Expiry/suspension blocks new submissions and restricted dealer mutations, while preserving existing records. Build, lint, 161 endpoint tests, 138 rules tests, seven workflow emulator tests and browser acceptance passed; the owner accepted the two-vehicle workflow. See [implementation and acceptance](docs/m2-7-returning-dealer-submissions.md). Use `npm run test:returning-dealer-browser` for the isolated synthetic review. Production release [PR #48](https://github.com/homeextent/wailtail/pull/48) deployed main `5975ec7` on November 18, 2026. [Main CI 44424502850](https://github.com/homeextent/wailtail/actions/runs/44424502850) passed; Vercel production was READY and serving both public domains. Owner local acceptance confirmed two distinct applications, independent approvals and both drafts in My Vehicle Listings. Automated acceptance covered expiry, suspension, restoration, private media, access isolation and safe retries/concurrency. No live dealer records or Firebase rules were changed by this release.
 
 
-## Public reserve status correction — staging proposal
+## Public reserve status correction — deployed to production
 
-Catalog cards previously treated a withheld reserve amount as zero. The proposed correction exposes only reserve presence, preserves the private threshold and shares status interpretation across catalog, lot header and sticky bar. Missing/invalid presence is unknown, never No Reserve. Owner local review, staging acceptance and production promotion remain outstanding.
+Catalog cards previously treated a withheld reserve amount as zero. The deployed correction exposes only reserve presence, preserves the private threshold and shares status interpretation across catalog, lot header and sticky bar. Missing/invalid presence is unknown, never No Reserve. Owner review and production promotion completed in PR #46, main `1a65e83`; main CI 44410362043 passed.
 
 
 ## Branded dealer credential — deployed to production
@@ -20,9 +20,9 @@ Public `/dealers` explains eligibility, the combined dealership/vehicle applicat
 
 ## Current production and remaining dealer readiness — November 18, 2026
 
-PR #43 merged to main `89692b5`; staging `1f897fa` has identical source contents (tree `256ebe67bbed8f4c869ff2ded385b0f99e555955`). [Main CI passed](https://github.com/homeextent/wailtail/actions/runs/44337952571). Admin dealer identification/filters and verification colours are deployed. These are release evidence, not completion of the full dealer program.
+Production release [PR #48](https://github.com/homeextent/wailtail/pull/48) deployed main `5975ec7` on November 18, 2026. [Main CI 44424502850](https://github.com/homeextent/wailtail/actions/runs/44424502850) passed; Vercel production was READY and serving both public domains. Owner local acceptance confirmed two distinct applications, independent approvals and both drafts in My Vehicle Listings. Automated acceptance covered expiry, suspension, restoration, private media, access isolation and safe retries/concurrency. No live dealer records or Firebase rules were changed by this release. Admin dealer identification/filters and verification colours remain deployed. This release does not complete the genuine dealership pilot.
 
-**M2.7 — Returning-dealer vehicle submissions is an implementation candidate and required before the genuine dealer pilot.** Reuse the authenticated representative's existing canonical profile, collect only the new vehicle information and fresh declarations, and retain individual vehicle review. Acceptance must cover one dealership managing two distinct vehicles plus expiry, suspension, renewal/restoration, access isolation and safe retries/concurrency. See [scope and acceptance contract](docs/m2-7-returning-dealer-submissions.md). The feature candidate implements the flow; staging/production acceptance remains outstanding.
+**M2.7 — Returning-dealer vehicle submissions is deployed and accepted; the genuine dealer pilot remains outstanding.** Reuse the authenticated representative's existing canonical profile, collect only the new vehicle information and fresh declarations, and retain individual vehicle review. Acceptance covered one dealership managing two distinct vehicles plus expiry, suspension, renewal/restoration, access isolation and safe retries/concurrency. See [scope and acceptance contract](docs/m2-7-returning-dealer-submissions.md). Staging acceptance and production deployment are complete; see the linked evidence record.
 
 ## Historical controlled production acceptance — November 17, 2026
 
@@ -30,7 +30,7 @@ Core dealer implementation through M2.5 is deployed to production, with controll
 
 Clock, review and auction-notification schedules are enabled. The notification worker's scheduled execution succeeded at 19:20 Eastern on November 17; the earlier controlled winner email reached the owner inbox. Actual auction settlement-to-inbox delivery remains to be observed in normal operation. The fictional Jaguar is Draft/unpublished; its public route correctly shows Listing unavailable.
 
-**Formal Phase 1 remains open for M2.7 returning-dealer acceptance and the genuine 3–5 dealership pilot with its six KPIs.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The dealer information/application page is deployed; the returning-dealer path remains outstanding. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
+**Formal Phase 1 remains open for the genuine 3–5 dealership pilot with its six KPIs and remaining operational evidence.** M2.6 private initial-application photos are explicitly deferred and decoupled from the core release; existing listing draft uploads do not implement M2.6. The dealer information/application page is deployed; the returning-dealer path is deployed. No pilot satisfaction, real licence/ownership verification or broad-availability claim follows from fictional acceptance testing.
 
 ## Staging development workflow
 
